@@ -27,10 +27,15 @@ export function convertOpenAIContentToParts(content) {
       if (item.type === "text") {
         parts.push({ text: item.text });
       } else if (item.type === "image_url" && item.image_url?.url?.startsWith("data:")) {
-        const match = item.image_url.url.match(/^data:([^;]+);base64,(.+)$/);
-        if (match) {
+        const url = item.image_url.url;
+        const commaIndex = url.indexOf(",");
+        if (commaIndex !== -1) {
+          const mimePart = url.substring(5, commaIndex); // skip "data:"
+          const data = url.substring(commaIndex + 1);
+          const mimeType = mimePart.split(";")[0];
+
           parts.push({
-            inlineData: { mime_type: match[1], data: match[2] }
+            inlineData: { mime_type: mimeType, data: data }
           });
         }
       }
