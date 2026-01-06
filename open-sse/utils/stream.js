@@ -1,6 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { saveRequestUsage } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest } from "@/lib/usageDb.js";
 
 // Get HH:MM timestamp
 function getTimeString() {
@@ -219,6 +219,7 @@ export function createSSEStream(options = {}) {
     },
 
     flush(controller) {
+      trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;

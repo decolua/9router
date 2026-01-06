@@ -36,7 +36,7 @@ export default function UsageStats() {
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const toggleSort = (field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -49,12 +49,13 @@ export default function UsageStats() {
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const sortData = (dataMap) => {
+  const sortData = (dataMap, pendingMap = {}) => {
     return Object.entries(dataMap || {})
       .map(([key, data]) => ({
         ...data,
         key,
         totalTokens: (data.promptTokens || 0) + (data.completionTokens || 0),
+        pending: pendingMap[key] || 0,
       }))
       .sort((a, b) => {
         let valA = a[sortBy];
@@ -71,13 +72,27 @@ export default function UsageStats() {
   };
 
   const sortedModels = useMemo(
-    () => sortData(stats?.byModel),
-    [stats?.byModel, sortBy, sortOrder]
+    () => sortData(stats?.byModel, stats?.pending?.byModel),
+    [stats?.byModel, stats?.pending?.byModel, sortBy, sortOrder]
   );
-  const sortedAccounts = useMemo(
-    () => sortData(stats?.byAccount),
-    [stats?.byAccount, sortBy, sortOrder]
-  );
+  const sortedAccounts = useMemo(() => {
+    // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
+    // We need to map connectionId pending counts to accountKeys
+    const accountPendingMap = {};
+    if (stats?.pending?.byAccount) {
+      Object.entries(stats.byAccount || {}).forEach(([accountKey, data]) => {
+        const connPending = stats.pending.byAccount[data.connectionId];
+        if (connPending) {
+          // Get modelKey (rawModel (provider))
+          const modelKey = data.provider
+            ? `${data.rawModel} (${data.provider})`
+            : data.rawModel;
+          accountPendingMap[accountKey] = connPending[modelKey] || 0;
+        }
+      });
+    }
+    return sortData(stats?.byAccount, accountPendingMap);
+  }, [stats?.byAccount, stats?.pending?.byAccount, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchStats();
@@ -118,6 +133,20 @@ export default function UsageStats() {
   // Format number with commas
   const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 
+  // Time format for "Last Used"
+  const fmtTime = (iso) => {
+    if (!iso) return "Never";
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header with Auto Refresh Toggle */}
@@ -141,6 +170,40 @@ export default function UsageStats() {
           </label>
         </div>
       </div>
+
+      {/* Active Requests Summary */}
+      {(stats.activeRequests || []).length > 0 && (
+        <Card className="p-3 border-primary/20 bg-primary/5">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-primary font-semibold text-sm uppercase tracking-wider">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+              Active Requests
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {stats.activeRequests.map((req, i) => (
+                <div
+                  key={i}
+                  className="px-3 py-1.5 rounded-md bg-bg-subtle border border-primary/20 text-xs font-mono shadow-sm"
+                >
+                  <span className="text-primary font-bold">{req.model}</span>
+                  <span className="mx-1 text-text-muted">|</span>
+                  <span className="text-text">{req.provider}</span>
+                  <span className="mx-1 text-text-muted">|</span>
+                  <span className="text-text font-medium">{req.account}</span>
+                  {req.count > 1 && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded bg-primary text-white font-bold">
+                      x{req.count}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -238,6 +301,17 @@ export default function UsageStats() {
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("lastUsed")}
+                >
+                  Last Used{" "}
+                  <SortIcon
+                    field="lastUsed"
+                    currentSort={sortBy}
+                    currentOrder={sortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("promptTokens")}
                 >
                   Input Tokens{" "}
@@ -274,13 +348,25 @@ export default function UsageStats() {
             <tbody className="divide-y divide-border">
               {sortedModels.map((data) => (
                 <tr key={data.key} className="hover:bg-bg-subtle/20">
-                  <td className="px-6 py-3 font-medium">{data.rawModel}</td>
+                  <td
+                    className={`px-6 py-3 font-medium transition-colors ${
+                      data.pending > 0 ? "text-primary" : ""
+                    }`}
+                  >
+                    {data.rawModel}
+                  </td>
                   <td className="px-6 py-3">
-                    <Badge variant="neutral" size="sm">
+                    <Badge
+                      variant={data.pending > 0 ? "primary" : "neutral"}
+                      size="sm"
+                    >
                       {data.provider}
                     </Badge>
                   </td>
                   <td className="px-6 py-3 text-right">{fmt(data.requests)}</td>
+                  <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                    {fmtTime(data.lastUsed)}
+                  </td>
                   <td className="px-6 py-3 text-right text-text-muted">
                     {fmt(data.promptTokens)}
                   </td>
@@ -295,7 +381,7 @@ export default function UsageStats() {
               {sortedModels.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={8}
                     className="px-6 py-8 text-center text-text-muted"
                   >
                     No usage recorded yet. Make some requests to see data here.
@@ -362,6 +448,17 @@ export default function UsageStats() {
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("lastUsed")}
+                >
+                  Last Used{" "}
+                  <SortIcon
+                    field="lastUsed"
+                    currentSort={sortBy}
+                    currentOrder={sortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("promptTokens")}
                 >
                   Input Tokens{" "}
@@ -398,19 +495,35 @@ export default function UsageStats() {
             <tbody className="divide-y divide-border">
               {sortedAccounts.map((data) => (
                 <tr key={data.key} className="hover:bg-bg-subtle/20">
-                  <td className="px-6 py-3 font-medium">{data.rawModel}</td>
+                  <td
+                    className={`px-6 py-3 font-medium transition-colors ${
+                      data.pending > 0 ? "text-primary" : ""
+                    }`}
+                  >
+                    {data.rawModel}
+                  </td>
                   <td className="px-6 py-3">
-                    <Badge variant="neutral" size="sm">
+                    <Badge
+                      variant={data.pending > 0 ? "primary" : "neutral"}
+                      size="sm"
+                    >
                       {data.provider}
                     </Badge>
                   </td>
                   <td className="px-6 py-3">
-                    <span className="font-medium">
+                    <span
+                      className={`font-medium transition-colors ${
+                        data.pending > 0 ? "text-primary" : ""
+                      }`}
+                    >
                       {data.accountName ||
                         `Account ${data.connectionId?.slice(0, 8)}...`}
                     </span>
                   </td>
                   <td className="px-6 py-3 text-right">{fmt(data.requests)}</td>
+                  <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                    {fmtTime(data.lastUsed)}
+                  </td>
                   <td className="px-6 py-3 text-right text-text-muted">
                     {fmt(data.promptTokens)}
                   </td>
@@ -425,7 +538,7 @@ export default function UsageStats() {
               {sortedAccounts.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={9}
                     className="px-6 py-8 text-center text-text-muted"
                   >
                     No account-specific usage recorded yet. Make requests using

@@ -49,6 +49,35 @@ const defaultData = {
 // Singleton instance
 let dbInstance = null;
 
+// Track in-flight requests in memory
+const pendingRequests = {
+  byModel: {},
+  byAccount: {}
+};
+
+/**
+ * Track a pending request
+ * @param {string} model
+ * @param {string} provider
+ * @param {string} connectionId
+ * @param {boolean} started - true if started, false if finished
+ */
+export function trackPendingRequest(model, provider, connectionId, started) {
+  const modelKey = provider ? `${model} (${provider})` : model;
+
+  // Track by model
+  if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
+  pendingRequests.byModel[modelKey] = Math.max(0, pendingRequests.byModel[modelKey] + (started ? 1 : -1));
+
+  // Track by account
+  if (connectionId) {
+    const accountKey = connectionId; // We use connectionId as key here
+    if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
+    if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
+    pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
+  }
+}
+
 /**
  * Get usage database instance (singleton)
  */
@@ -170,8 +199,30 @@ export async function getUsageStats() {
     byProvider: {},
     byModel: {},
     byAccount: {},
-    last10Minutes: []
+    last10Minutes: [],
+    pending: pendingRequests,
+    activeRequests: []
   };
+
+  // Build active requests list from pending counts
+  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    for (const [modelKey, count] of Object.entries(models)) {
+      if (count > 0) {
+        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
+        // modelKey is "model (provider)"
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        const modelName = match ? match[1] : modelKey;
+        const providerName = match ? match[2] : "unknown";
+
+        stats.activeRequests.push({
+          model: modelName,
+          provider: providerName,
+          account: accountName,
+          count
+        });
+      }
+    }
+  }
 
   // Initialize 10-minute buckets using stable minute boundaries
   const now = new Date();
@@ -232,12 +283,16 @@ export async function getUsageStats() {
         promptTokens: 0,
         completionTokens: 0,
         rawModel: entry.model,
-        provider: entry.provider
+        provider: entry.provider,
+        lastUsed: entry.timestamp
       };
     }
     stats.byModel[modelKey].requests++;
     stats.byModel[modelKey].promptTokens += promptTokens;
     stats.byModel[modelKey].completionTokens += completionTokens;
+    if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) {
+      stats.byModel[modelKey].lastUsed = entry.timestamp;
+    }
 
     // By Account (model + oauth account)
     // Use connectionId if available, otherwise fallback to provider name
@@ -253,12 +308,16 @@ export async function getUsageStats() {
           rawModel: entry.model,
           provider: entry.provider,
           connectionId: entry.connectionId,
-          accountName: accountName
+          accountName: accountName,
+          lastUsed: entry.timestamp
         };
       }
       stats.byAccount[accountKey].requests++;
       stats.byAccount[accountKey].promptTokens += promptTokens;
       stats.byAccount[accountKey].completionTokens += completionTokens;
+      if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) {
+        stats.byAccount[accountKey].lastUsed = entry.timestamp;
+      }
     }
   }
 
