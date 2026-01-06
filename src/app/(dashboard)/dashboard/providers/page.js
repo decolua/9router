@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardSkeleton, Badge, UsageStats } from "@/shared/components";
+import { Card, CardSkeleton, Badge, UsageStats, RequestLogger } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 
 export default function ProvidersPage() {
   const [activeTab, setActiveTab] = useState("connections");
+  const [usageSubTab, setUsageSubTab] = useState("overview");
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -97,7 +98,27 @@ export default function ProvidersPage() {
       </div>
 
       {activeTab === "usage" ? (
-        <UsageStats />
+        <div className="flex flex-col gap-6">
+          <div className="flex gap-4">
+            <button
+              onClick={() => setUsageSubTab("overview")}
+              className={`text-sm font-semibold transition-colors ${
+                usageSubTab === "overview" ? "text-primary" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setUsageSubTab("logs")}
+              className={`text-sm font-semibold transition-colors ${
+                usageSubTab === "logs" ? "text-primary" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              Logger
+            </button>
+          </div>
+          {usageSubTab === "overview" ? <UsageStats /> : <RequestLogger />}
+        </div>
       ) : (
         <>
           {/* OAuth Providers */}

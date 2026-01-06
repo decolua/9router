@@ -35,6 +35,7 @@ function getUserDataDir() {
 // Data file path - stored in user home directory
 const DATA_DIR = getUserDataDir();
 const DB_FILE = path.join(DATA_DIR, "usage.json");
+const LOG_FILE = path.join(DATA_DIR, "log.txt");
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
@@ -165,6 +166,67 @@ export async function getUsageHistory(filter = {}) {
   }
 
   return history;
+}
+
+/**
+ * Format date as dd-mm-yyyy h:m:s
+ */
+function formatLogDate(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const d = pad(date.getDate());
+  const m = pad(date.getMonth() + 1);
+  const y = date.getFullYear();
+  const h = pad(date.getHours());
+  const min = pad(date.getMinutes());
+  const s = pad(date.getSeconds());
+  return `${d}-${m}-${y} ${h}:${min}:${s}`;
+}
+
+/**
+ * Append to log.txt
+ * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
+ */
+export async function appendRequestLog({ model, provider, connectionId, tokens, status }) {
+  try {
+    const timestamp = formatLogDate();
+    const p = provider?.toUpperCase() || "-";
+    const m = model || "-";
+
+    // Resolve account name
+    let account = connectionId ? connectionId.slice(0, 8) : "-";
+    try {
+      const { getProviderConnections } = await import("@/lib/localDb.js");
+      const connections = await getProviderConnections();
+      const conn = connections.find(c => c.id === connectionId);
+      if (conn) {
+        account = conn.name || conn.email || account;
+      }
+    } catch {}
+
+    const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
+    const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
+
+    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
+
+    fs.appendFileSync(LOG_FILE, line);
+  } catch (error) {
+    console.error("Failed to append to log.txt:", error.message);
+  }
+}
+
+/**
+ * Get last N lines of log.txt
+ */
+export async function getRecentLogs(limit = 200) {
+  if (!fs.existsSync(LOG_FILE)) return [];
+  try {
+    const content = fs.readFileSync(LOG_FILE, "utf-8");
+    const lines = content.trim().split("\n");
+    return lines.slice(-limit).reverse();
+  } catch (error) {
+    console.error("Failed to read log.txt:", error.message);
+    return [];
+  }
 }
 
 /**

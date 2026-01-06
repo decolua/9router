@@ -1,6 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { saveRequestUsage, trackPendingRequest } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 
 // Get HH:MM timestamp
 function getTimeString() {
@@ -65,6 +65,9 @@ function logUsage(provider, usage, model = null, connectionId = null) {
   if (usage.reasoning_tokens) msg += ` | reasoning=${usage.reasoning_tokens}`;
 
   console.log(`${COLORS.green}${msg}${COLORS.reset}`);
+
+  // Log to log.txt
+  appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
 
   // Save to DB
   saveRequestUsage({

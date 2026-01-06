@@ -8,7 +8,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { saveRequestUsage, trackPendingRequest } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 
 /**
  * Extract usage from non-streaming response body
@@ -122,6 +122,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Track pending request
   trackPendingRequest(model, provider, connectionId, true);
 
+  // Log start
+  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+
   // 2. Log converted request to provider
   reqLogger.logConvertedRequest(providerUrl, providerHeaders, translatedBody);
 
@@ -156,6 +159,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     });
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -251,6 +255,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message } = await parseUpstreamError(providerResponse);
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     
@@ -272,6 +277,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
+    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
     if (usage) {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage.prompt_tokens || 0} | out=${usage.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);

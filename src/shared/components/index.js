@@ -16,6 +16,7 @@ export { default as Footer } from "./Footer";
 export { default as OAuthModal } from "./OAuthModal";
 export { default as ModelSelectModal } from "./ModelSelectModal";
 export { default as UsageStats } from "./UsageStats";
+export { default as RequestLogger } from "./RequestLogger";
 
 // Layouts
 export * from "./layouts";
