@@ -4,14 +4,16 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3091",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
+    "jose": "^6.1.3",
     "lowdb": "^7.0.1",
     "next": "^15.2.0",
     "node-machine-id": "^1.1.12",

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardSkeleton, Badge } from "@/shared/components";
+import { Card, CardSkeleton, Badge, UsageStats, RequestLogger } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
-import Image from "next/image";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 
 export default function ProvidersPage() {
+  const [activeTab, setActiveTab] = useState("connections");
+  const [usageSubTab, setUsageSubTab] = useState("overview");
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,33 +32,33 @@ export default function ProvidersPage() {
     const providerConnections = connections.filter(
       c => c.provider === providerId && c.authType === authType
     );
-    
+
     // Helper: check if connection is effectively active (cooldown expired)
     const getEffectiveStatus = (conn) => {
       const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
       return (conn.testStatus === "unavailable" && !isCooldown) ? "active" : conn.testStatus;
     };
-    
+
     const connected = providerConnections.filter(c => {
       const status = getEffectiveStatus(c);
       return status === "active" || status === "success";
     }).length;
-    
+
     const errorConns = providerConnections.filter(c => {
       const status = getEffectiveStatus(c);
       return status === "error" || status === "expired" || status === "unavailable";
     });
-    
+
     const error = errorConns.length;
     const total = providerConnections.length;
-    
+
     // Get latest error info
-    const latestError = errorConns.sort((a, b) => 
+    const latestError = errorConns.sort((a, b) =>
       new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0)
     )[0];
     const errorCode = latestError ? getErrorCode(latestError.lastError) : null;
     const errorTime = latestError?.lastErrorAt ? getRelativeTime(latestError.lastErrorAt) : null;
-    
+
     return { connected, error, total, errorCode, errorTime };
   };
 
@@ -71,36 +72,86 @@ export default function ProvidersPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* OAuth Providers */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-xl font-semibold">OAuth Providers</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(OAUTH_PROVIDERS).map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-            />
-          ))}
-        </div>
+    <div className="flex flex-col gap-6">
+      {/* Tabs */}
+      <div className="flex border-b border-border">
+        <button
+          onClick={() => setActiveTab("connections")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "connections"
+              ? "border-primary text-primary"
+              : "border-transparent text-text-muted hover:text-text-primary"
+          }`}
+        >
+          Connections
+        </button>
+        <button
+          onClick={() => setActiveTab("usage")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "usage"
+              ? "border-primary text-primary"
+              : "border-transparent text-text-muted hover:text-text-primary"
+          }`}
+        >
+          Usage
+        </button>
       </div>
 
-      {/* API Key Providers */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-xl font-semibold">API Key Providers</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-            />
-          ))}
+      {activeTab === "usage" ? (
+        <div className="flex flex-col gap-6">
+          <div className="flex gap-4">
+            <button
+              onClick={() => setUsageSubTab("overview")}
+              className={`text-sm font-semibold transition-colors ${
+                usageSubTab === "overview" ? "text-primary" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              Overview
+            </button>
+            <button
+              onClick={() => setUsageSubTab("logs")}
+              className={`text-sm font-semibold transition-colors ${
+                usageSubTab === "logs" ? "text-primary" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              Logger
+            </button>
+          </div>
+          {usageSubTab === "overview" ? <UsageStats /> : <RequestLogger />}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* OAuth Providers */}
+          <div className="flex flex-col gap-4">
+            <h2 className="text-xl font-semibold">OAuth Providers</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Object.entries(OAUTH_PROVIDERS).map(([key, info]) => (
+                <ProviderCard
+                  key={key}
+                  providerId={key}
+                  provider={info}
+                  stats={getProviderStats(key, "oauth")}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* API Key Providers */}
+          <div className="flex flex-col gap-4">
+            <h2 className="text-xl font-semibold">API Key Providers</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
+                <ApiKeyProviderCard
+                  key={key}
+                  providerId={key}
+                  provider={info}
+                  stats={getProviderStats(key, "apikey")}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

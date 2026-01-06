@@ -1,11 +1,98 @@
 "use client";
 
-import { Card, Button, Badge, Toggle } from "@/shared/components";
+import { useState, useEffect } from "react";
+import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { APP_CONFIG } from "@/shared/constants/config";
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
+  const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
+  const [loading, setLoading] = useState(true);
+  const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
+  const [passStatus, setPassStatus] = useState({ type: "", message: "" });
+  const [passLoading, setPassLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        setSettings(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch settings:", err);
+        setLoading(false);
+      });
+  }, []);
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (passwords.new !== passwords.confirm) {
+      setPassStatus({ type: "error", message: "Passwords do not match" });
+      return;
+    }
+
+    setPassLoading(true);
+    setPassStatus({ type: "", message: "" });
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwords.current,
+          newPassword: passwords.new,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setPassStatus({ type: "success", message: "Password updated successfully" });
+        setPasswords({ current: "", new: "", confirm: "" });
+      } else {
+        setPassStatus({ type: "error", message: data.error || "Failed to update password" });
+      }
+    } catch (err) {
+      setPassStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
+  const updateFallbackStrategy = async (strategy) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fallbackStrategy: strategy }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, fallbackStrategy: strategy }));
+      }
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+    }
+  };
+
+  const updateStickyLimit = async (limit) => {
+    const numLimit = parseInt(limit);
+    if (isNaN(numLimit) || numLimit < 1) return;
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, stickyRoundRobinLimit: numLimit }));
+      }
+    } catch (err) {
+      console.error("Failed to update sticky limit:", err);
+    }
+  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -24,6 +111,104 @@ export default function ProfilePage() {
           <div className="pt-4 border-t border-border">
             <p className="text-sm text-text-muted">
               All data is stored locally in the <code className="bg-sidebar px-1 rounded">data/db.json</code> file.
+            </p>
+          </div>
+        </Card>
+
+        {/* Routing Preferences */}
+        <Card>
+          <h3 className="text-lg font-semibold mb-4">Security</h3>
+          <form onSubmit={handlePasswordChange} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Current Password</label>
+              <Input
+                type="password"
+                placeholder="Enter current password"
+                value={passwords.current}
+                onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Enter new password"
+                  value={passwords.new}
+                  onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Confirm New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={passwords.confirm}
+                  onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            {passStatus.message && (
+              <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {passStatus.message}
+              </p>
+            )}
+
+            <div className="pt-2">
+              <Button type="submit" variant="primary" isLoading={passLoading}>
+                Update Password
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        {/* Routing Preferences */}
+        <Card>
+          <h3 className="text-lg font-semibold mb-4">Routing Strategy</h3>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Round Robin</p>
+                <p className="text-sm text-text-muted">
+                  Cycle through accounts to distribute load
+                </p>
+              </div>
+              <Toggle
+                checked={settings.fallbackStrategy === "round-robin"}
+                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
+                disabled={loading}
+              />
+            </div>
+
+            {/* Sticky Round Robin Limit */}
+            {settings.fallbackStrategy === "round-robin" && (
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <div>
+                  <p className="font-medium">Sticky Limit</p>
+                  <p className="text-sm text-text-muted">
+                    Calls per account before switching
+                  </p>
+                </div>
+                <Input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={settings.stickyRoundRobinLimit || 3}
+                  onChange={(e) => updateStickyLimit(e.target.value)}
+                  disabled={loading}
+                  className="w-20 text-center"
+                />
+              </div>
+            )}
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              {settings.fallbackStrategy === "round-robin"
+                ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
+                : "Currently using accounts in priority order (Fill First)."}
             </p>
           </div>
         </Card>

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, Toggle } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
@@ -140,20 +140,50 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleUpdateConnectionStatus = async (id, isActive) => {
+    try {
+      const res = await fetch(`/api/providers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (res.ok) {
+        setConnections(prev => prev.map(c => c.id === id ? { ...c, isActive } : c));
+      }
+    } catch (error) {
+      console.log("Error updating connection status:", error);
+    }
+  };
+
   const handleSwapPriority = async (conn1, conn2) => {
     if (!conn1 || !conn2) return;
     try {
-      // Swap priorities
+      // If they have the same priority, we need to ensure the one moving up
+      // gets a lower value than the one moving down.
+      // We use a small offset which the backend re-indexing will fix.
+      let p1 = conn2.priority;
+      let p2 = conn1.priority;
+
+      if (p1 === p2) {
+        // If moving conn1 "up" (index decreases)
+        const isConn1MovingUp = connections.indexOf(conn1) > connections.indexOf(conn2);
+        if (isConn1MovingUp) {
+          p1 = conn2.priority - 0.5;
+        } else {
+          p1 = conn2.priority + 0.5;
+        }
+      }
+
       await Promise.all([
         fetch(`/api/providers/${conn1.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: conn2.priority }),
+          body: JSON.stringify({ priority: p1 }),
         }),
         fetch(`/api/providers/${conn2.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: conn1.priority }),
+          body: JSON.stringify({ priority: p2 }),
         }),
       ]);
       await fetchConnections();
@@ -247,6 +277,7 @@ export default function ProviderDetailPage() {
                 isLast={index === connections.length - 1}
                 onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
+                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
@@ -499,21 +530,21 @@ function CooldownTimer({ until }) {
   );
 }
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
-  
+
   useEffect(() => {
     const checkCooldown = () => {
-      const cooldown = connection.rateLimitedUntil && 
+      const cooldown = connection.rateLimitedUntil &&
         new Date(connection.rateLimitedUntil).getTime() > Date.now();
       setIsCooldown(cooldown);
     };
-    
+
     checkCooldown();
     // Update every second while in cooldown
     const interval = connection.rateLimitedUntil ? setInterval(checkCooldown, 1000) : null;
@@ -521,13 +552,14 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
       if (interval) clearInterval(interval);
     };
   }, [connection.rateLimitedUntil]);
-  
+
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
     ? "active"  // Cooldown expired → treat as active
     : connection.testStatus;
 
   const getStatusVariant = () => {
+    if (connection.isActive === false) return "default";
     if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
@@ -536,7 +568,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   const hasError = effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable";
 
   return (
-    <div className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-sidebar/50 hover:cursor-pointer">
+    <div className={`flex items-center justify-between p-3 rounded-lg border border-border hover:bg-sidebar/50 ${connection.isActive === false ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Priority arrows */}
         <div className="flex flex-col">
@@ -562,10 +594,10 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
-              {effectiveStatus || "Unknown"}
+              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
-            {isCooldown && <CooldownTimer until={connection.rateLimitedUntil} />}
-            {connection.lastError && (
+            {isCooldown && connection.isActive !== false && <CooldownTimer until={connection.rateLimitedUntil} />}
+            {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
               </span>
@@ -577,13 +609,21 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           </div>
         </div>
       </div>
-      <div className="flex gap-1">
-        <button onClick={onEdit} className="p-2 hover:bg-sidebar rounded">
-          <span className="material-symbols-outlined text-base">edit</span>
-        </button>
-        <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded text-red-500">
-          <span className="material-symbols-outlined text-base">delete</span>
-        </button>
+      <div className="flex items-center gap-2">
+        <Toggle
+          size="sm"
+          checked={connection.isActive !== false}
+          onChange={onToggleActive}
+          title={connection.isActive !== false ? "Disable connection" : "Enable connection"}
+        />
+        <div className="flex gap-1 ml-1">
+          <button onClick={onEdit} className="p-2 hover:bg-sidebar rounded">
+            <span className="material-symbols-outlined text-base">edit</span>
+          </button>
+          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded text-red-500">
+            <span className="material-symbols-outlined text-base">delete</span>
+          </button>
+        </div>
       </div>
     </div>
   );

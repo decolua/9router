@@ -1,5 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 
 // Get HH:MM timestamp
 function getTimeString() {
@@ -48,27 +49,42 @@ export const COLORS = {
 };
 
 // Log usage with cache info (green color)
-function logUsage(provider, usage) {
+function logUsage(provider, usage, model = null, connectionId = null) {
   if (!usage) return;
-  
+
   const p = provider?.toUpperCase() || "UNKNOWN";
   const inTokens = usage.prompt_tokens || 0;
   const outTokens = usage.completion_tokens || 0;
-  
+
   let msg = `[${getTimeString()}] 📊 [USAGE] ${p} | in=${inTokens} | out=${outTokens}`;
-  
+  if (connectionId) msg += ` | account=${connectionId.slice(0, 8)}...`;
+
   if (usage.cache_creation_input_tokens) msg += ` | cache_write=${usage.cache_creation_input_tokens}`;
   if (usage.cache_read_input_tokens) msg += ` | cache_read=${usage.cache_read_input_tokens}`;
   if (usage.cached_tokens) msg += ` | cached=${usage.cached_tokens}`;
   if (usage.reasoning_tokens) msg += ` | reasoning=${usage.reasoning_tokens}`;
-  
+
   console.log(`${COLORS.green}${msg}${COLORS.reset}`);
+
+  // Log to log.txt
+  appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
+
+  // Save to DB
+  saveRequestUsage({
+    provider: provider || "unknown",
+    model: model || "unknown",
+    tokens: usage,
+    timestamp: new Date().toISOString(),
+    connectionId: connectionId || undefined
+  }).catch(err => {
+    console.error("Failed to save usage stats:", err.message);
+  });
 }
 
 // Parse SSE data line
 function parseSSELine(line) {
   if (!line || !line.startsWith("data:")) return null;
-  
+
   const data = line.slice(5).trim();
   if (data === "[DONE]") return { done: true };
 
@@ -91,17 +107,17 @@ function parseSSELine(line) {
  */
 export function formatSSE(data, sourceFormat) {
   if (data.done) return "data: [DONE]\n\n";
-  
+
   // OpenAI Responses API format: has event field
   if (data.event && data.data) {
     return `event: ${data.event}\ndata: ${JSON.stringify(data.data)}\n\n`;
   }
-  
+
   // Claude format: include event prefix
   if (sourceFormat === FORMATS.CLAUDE && data.type) {
     return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
   }
-  
+
   return `data: ${JSON.stringify(data)}\n\n`;
 }
 
@@ -121,21 +137,25 @@ const STREAM_MODE = {
  * @param {string} options.sourceFormat - Client format (for translate mode)
  * @param {string} options.provider - Provider name
  * @param {object} options.reqLogger - Request logger instance
+ * @param {string} options.model - Model name
+ * @param {string} options.connectionId - Connection ID for usage tracking
  */
 export function createSSEStream(options = {}) {
-  const { 
-    mode = STREAM_MODE.TRANSLATE, 
-    targetFormat, 
-    sourceFormat, 
-    provider = null, 
-    reqLogger = null 
+  const {
+    mode = STREAM_MODE.TRANSLATE,
+    targetFormat,
+    sourceFormat,
+    provider = null,
+    reqLogger = null,
+    model = null,
+    connectionId = null
   } = options;
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
   let usage = null;
-  
+
   // State for translate mode
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider } : null;
 
@@ -150,7 +170,7 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        
+
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
@@ -202,6 +222,7 @@ export function createSSEStream(options = {}) {
     },
 
     flush(controller) {
+      trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
@@ -215,7 +236,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
-          if (usage) logUsage(provider, usage);
+          if (usage) logUsage(provider, usage, model, connectionId);
           return;
         }
 
@@ -249,7 +270,7 @@ export function createSSEStream(options = {}) {
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(encoder.encode(doneOutput));
 
-        if (state?.usage) logUsage(state.provider || targetFormat, state.usage);
+        if (state?.usage) logUsage(state.provider || targetFormat, state.usage, model, connectionId);
       } catch (error) {
         console.log("Error in flush:", error);
       }
@@ -258,21 +279,24 @@ export function createSSEStream(options = {}) {
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null) {
-  return createSSEStream({ 
-    mode: STREAM_MODE.TRANSLATE, 
-    targetFormat, 
-    sourceFormat, 
-    provider, 
-    reqLogger 
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, model = null, connectionId = null) {
+  return createSSEStream({
+    mode: STREAM_MODE.TRANSLATE,
+    targetFormat,
+    sourceFormat,
+    provider,
+    reqLogger,
+    model,
+    connectionId
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null) {
-  return createSSEStream({ 
-    mode: STREAM_MODE.PASSTHROUGH, 
-    provider, 
-    reqLogger 
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null) {
+  return createSSEStream({
+    mode: STREAM_MODE.PASSTHROUGH,
+    provider,
+    reqLogger,
+    model,
+    connectionId
   });
 }
-

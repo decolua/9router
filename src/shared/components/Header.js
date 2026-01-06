@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/shared/components";
 import { APP_CONFIG, OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 
@@ -36,7 +37,20 @@ const getPageInfo = (pathname) => {
 
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { title, description, breadcrumbs } = getPageInfo(pathname);
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (res.ok) {
+        router.push("/login");
+        router.refresh();
+      }
+    } catch (err) {
+      console.error("Failed to logout:", err);
+    }
+  };
 
   return (
     <header className="flex items-center justify-between px-8 py-5 border-b border-border bg-bg/80 backdrop-blur-md z-10 sticky top-0">
@@ -102,6 +116,15 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       <div className="flex items-center gap-3 ml-auto">
         {/* Theme toggle */}
         <ThemeToggle />
+
+        {/* Logout button */}
+        <button
+          onClick={handleLogout}
+          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
+          title="Logout"
+        >
+          <span className="material-symbols-outlined">logout</span>
+        </button>
       </div>
     </header>
   );
