@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, Badge, Toggle } from "@/shared/components";
+import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { APP_CONFIG } from "@/shared/constants/config";
 
@@ -9,6 +9,9 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
+  const [passStatus, setPassStatus] = useState({ type: "", message: "" });
+  const [passLoading, setPassLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -22,6 +25,41 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (passwords.new !== passwords.confirm) {
+      setPassStatus({ type: "error", message: "Passwords do not match" });
+      return;
+    }
+
+    setPassLoading(true);
+    setPassStatus({ type: "", message: "" });
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: passwords.current,
+          newPassword: passwords.new,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setPassStatus({ type: "success", message: "Password updated successfully" });
+        setPasswords({ current: "", new: "", confirm: "" });
+      } else {
+        setPassStatus({ type: "error", message: data.error || "Failed to update password" });
+      }
+    } catch (err) {
+      setPassStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setPassLoading(false);
+    }
+  };
 
   const updateFallbackStrategy = async (strategy) => {
     try {
@@ -57,6 +95,57 @@ export default function ProfilePage() {
               All data is stored locally in the <code className="bg-sidebar px-1 rounded">data/db.json</code> file.
             </p>
           </div>
+        </Card>
+
+        {/* Routing Preferences */}
+        <Card>
+          <h3 className="text-lg font-semibold mb-4">Security</h3>
+          <form onSubmit={handlePasswordChange} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Current Password</label>
+              <Input
+                type="password"
+                placeholder="Enter current password"
+                value={passwords.current}
+                onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Enter new password"
+                  value={passwords.new}
+                  onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium">Confirm New Password</label>
+                <Input
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={passwords.confirm}
+                  onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            {passStatus.message && (
+              <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {passStatus.message}
+              </p>
+            )}
+
+            <div className="pt-2">
+              <Button type="submit" variant="primary" isLoading={passLoading}>
+                Update Password
+              </Button>
+            </div>
+          </form>
         </Card>
 
         {/* Routing Preferences */}
