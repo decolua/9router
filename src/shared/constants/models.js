@@ -1,5 +1,5 @@
-// Re-export from open-sse (single source of truth)
-export { 
+// Import directly from file to avoid pulling in server-side dependencies via index.js
+export {
   PROVIDER_MODELS,
   getProviderModels,
   getDefaultModel,
@@ -8,10 +8,10 @@ export {
   getModelTargetFormat,
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId
-} from "open-sse";
+} from "open-sse/config/providerModels.js";
 
 import { AI_PROVIDERS } from "./providers.js";
-import { PROVIDER_MODELS as MODELS } from "open-sse";
+import { PROVIDER_MODELS as MODELS } from "open-sse/config/providerModels.js";
 
 // Providers that accept any model (passthrough)
 const PASSTHROUGH_PROVIDERS = new Set(

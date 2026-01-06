@@ -98,6 +98,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null) {
       credentials: refreshedCredentials,
       log,
       clientRawRequest,
+      connectionId: credentials.connectionId,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

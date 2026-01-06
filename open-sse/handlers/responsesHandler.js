@@ -17,9 +17,10 @@ import { createResponsesApiTransformStream } from "../transformer/responsesTrans
  * @param {function} options.onCredentialsRefreshed - Callback when credentials are refreshed
  * @param {function} options.onRequestSuccess - Callback when request succeeds
  * @param {function} options.onDisconnect - Callback when client disconnects
+ * @param {string} options.connectionId - Connection ID for usage tracking
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
-export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect }) {
+export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
   
@@ -34,7 +35,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     log,
     onCredentialsRefreshed,
     onRequestSuccess,
-    onDisconnect
+    onDisconnect,
+    connectionId
   });
 
   if (!result.success || !result.response) {
