@@ -6,7 +6,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:security": "vitest run tests/security",
+    "test:browser": "playwright test",
+    "test:watch": "vitest watch",
+    "test:all": "npm run test:security && npm run test:browser",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -26,9 +33,17 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4.1.18",
+    "@vitest/ui": "^4.0.17",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
-    "tailwindcss": "^4"
+    "get-port": "^7.1.0",
+    "playwright": "^1.57.0",
+    "supertest": "^7.2.2",
+    "tailwindcss": "^4",
+    "tree-kill": "^1.2.2",
+    "vitest": "^4.0.17",
+    "wait-on": "^9.0.3"
   }
 }

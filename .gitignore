@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/test-results
+/playwright-report
+test-plan/
 
 # next.js
 /.next/
@@ -44,6 +47,10 @@ next-env.d.ts
 .bin/*
 data/
 logs/*
+
+# Machine ID salt (security sensitive)
+.9router/machine-salt
+machine-salt
 source/*
 .cursor/*
 docs/*
@@ -59,3 +66,6 @@ Thanks.md
 PUBLIC.en.md
 PR/*
 package-lock.json
+test-plan/
+CLAUDE.md.backup*
+./**/*.local.*
