@@ -222,7 +222,7 @@ export default function RequestLogger() {
         </div>
       </Card>
       <div className="text-[10px] text-text-muted italic">
-        Click on a log row to inspect request and response details.
+        Logs are saved to log.txt in the application data directory. Click on a log row to inspect request and response details.
       </div>
 
       {/* Log Details Modal */}
