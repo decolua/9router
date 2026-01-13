@@ -42,10 +42,16 @@ function getUserDataDir() {
 const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
+const LOG_DETAILS_DIR = isCloud ? null : path.join(DATA_DIR, "log-details");
 
 // Ensure data directory exists
 if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Ensure log-details directory exists
+if (!isCloud && LOG_DETAILS_DIR && !fs.existsSync(LOG_DETAILS_DIR)) {
+  fs.mkdirSync(LOG_DETAILS_DIR, { recursive: true });
 }
 
 // Default data structure
@@ -200,10 +206,81 @@ function formatLogDate(date = new Date()) {
 }
 
 /**
- * Append to log.txt
- * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
+ * Save log details (request/response bodies) to a separate file
+ * @param {string} logId - Unique log ID
+ * @param {object} details - { requestBody?, responseBody?, timestamp? }
  */
-export async function appendRequestLog({ model, provider, connectionId, tokens, status }) {
+export async function saveLogDetails(logId, details) {
+  if (isCloud || !LOG_DETAILS_DIR || !logId) return;
+
+  try {
+    const filePath = path.join(LOG_DETAILS_DIR, `${logId}.json`);
+    const data = {
+      ...details,
+      timestamp: details.timestamp || new Date().toISOString()
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error("Failed to save log details:", error.message);
+  }
+}
+
+/**
+ * Update existing log details (e.g., add response after request completes)
+ * @param {string} logId - Unique log ID
+ * @param {object} updates - Fields to update/add
+ */
+export async function updateLogDetails(logId, updates) {
+  if (isCloud || !LOG_DETAILS_DIR || !logId) return;
+
+  try {
+    const filePath = path.join(LOG_DETAILS_DIR, `${logId}.json`);
+    let existing = {};
+    
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, "utf-8");
+      existing = JSON.parse(content);
+    }
+    
+    const updated = { ...existing, ...updates };
+    fs.writeFileSync(filePath, JSON.stringify(updated, null, 2));
+  } catch (error) {
+    console.error("Failed to update log details:", error.message);
+  }
+}
+
+/**
+ * Get log details by ID
+ * @param {string} logId - Unique log ID
+ * @returns {object|null} Log details or null if not found
+ */
+export async function getLogDetails(logId) {
+  if (isCloud || !LOG_DETAILS_DIR || !logId) return null;
+
+  try {
+    const filePath = path.join(LOG_DETAILS_DIR, `${logId}.json`);
+    
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    
+    const content = fs.readFileSync(filePath, "utf-8");
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("Failed to read log details:", error.message);
+    return null;
+  }
+}
+
+/**
+ * Append to log.txt
+ * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status | logId
+ * @param {object} params - Log parameters
+ * @param {string} params.logId - Unique log ID (optional, for linking to details)
+ * @param {object} params.requestBody - Request body to save (optional)
+ * @param {object|string} params.responseBody - Response body to save (optional)
+ */
+export async function appendRequestLog({ model, provider, connectionId, tokens, status, logId, requestBody, responseBody }) {
   if (isCloud) return; // Skip logging in Workers
 
   try {
@@ -224,17 +301,31 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
 
     const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
+    const logIdField = logId || "-";
 
-    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
+    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status} | ${logIdField}\n`;
 
     fs.appendFileSync(LOG_FILE, line);
+
+    // Save or update log details if we have bodies
+    if (logId && (requestBody || responseBody)) {
+      if (requestBody && !responseBody) {
+        // Initial request - save new details file
+        await saveLogDetails(logId, { requestBody });
+      } else if (responseBody) {
+        // Response received - update existing details
+        await updateLogDetails(logId, { responseBody });
+      }
+    }
   } catch (error) {
     console.error("Failed to append to log.txt:", error.message);
   }
 }
 
 /**
- * Get last N lines of log.txt
+ * Get last N lines of log.txt as parsed objects
+ * @param {number} limit - Maximum number of logs to return
+ * @returns {Array} Array of parsed log objects
  */
 export async function getRecentLogs(limit = 200) {
   if (isCloud) return []; // Skip in Workers
@@ -242,7 +333,22 @@ export async function getRecentLogs(limit = 200) {
   try {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const lines = content.trim().split("\n");
-    return lines.slice(-limit).reverse();
+    const recentLines = lines.slice(-limit).reverse();
+    
+    // Parse each line into an object
+    return recentLines.map(line => {
+      const parts = line.split(" | ");
+      return {
+        datetime: parts[0] || "",
+        model: parts[1] || "",
+        provider: parts[2] || "",
+        account: parts[3] || "",
+        tokensIn: parts[4] || "-",
+        tokensOut: parts[5] || "-",
+        status: parts[6] || "",
+        logId: parts[7] && parts[7] !== "-" ? parts[7].trim() : null
+      };
+    });
   } catch (error) {
     console.error("Failed to read log.txt:", error.message);
     return [];
