@@ -131,6 +131,103 @@ function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
   return result;
 }
 
-// Register
+/**
+ * Convert OpenAI Chat Completions to OpenAI Responses API format
+ */
+function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
+  const result = {
+    model,
+    input: [],
+    stream: true,
+    store: false
+  };
+
+  // Extract system message as instructions
+  let hasSystemMessage = false;
+  const messages = body.messages || [];
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      // Use first system message as instructions
+      if (!hasSystemMessage) {
+        result.instructions = typeof msg.content === "string" ? msg.content : "";
+        hasSystemMessage = true;
+      }
+      continue; // Skip system messages in input
+    }
+
+    // Convert user/assistant messages to input items
+    if (msg.role === "user" || msg.role === "assistant") {
+      const contentType = msg.role === "user" ? "input_text" : "output_text";
+      const content = typeof msg.content === "string" 
+        ? [{ type: contentType, text: msg.content }]
+        : Array.isArray(msg.content)
+          ? msg.content.map(c => {
+              if (c.type === "text") return { type: contentType, text: c.text };
+              if (c.type === "image_url") return { type: contentType, text: "[Image content]" };
+              return c;
+            })
+          : [];
+
+      result.input.push({
+        type: "message",
+        role: msg.role,
+        content
+      });
+    }
+
+    // Convert tool calls
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        result.input.push({
+          type: "function_call",
+          call_id: tc.id,
+          name: tc.function?.name || "",
+          arguments: tc.function?.arguments || "{}"
+        });
+      }
+    }
+
+    // Convert tool results
+    if (msg.role === "tool") {
+      result.input.push({
+        type: "function_call_output",
+        call_id: msg.tool_call_id,
+        output: msg.content
+      });
+    }
+  }
+
+  // If no system message, leave instructions empty (will be filled by executor)
+  if (!hasSystemMessage) {
+    result.instructions = "";
+  }
+
+  // Convert tools format
+  if (body.tools && Array.isArray(body.tools)) {
+    result.tools = body.tools.map(tool => {
+      if (tool.type === "function") {
+        return {
+          type: "function",
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters,
+          strict: tool.function.strict
+        };
+      }
+      return tool;
+    });
+  }
+
+  // Pass through other relevant fields
+  if (body.temperature !== undefined) result.temperature = body.temperature;
+  if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
+  if (body.top_p !== undefined) result.top_p = body.top_p;
+
+  return result;
+}
+
+// Register both directions
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, openaiResponsesToOpenAIRequest, null);
+register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, openaiToOpenAIResponsesRequest, null);
 

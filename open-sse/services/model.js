@@ -7,6 +7,7 @@ const ALIAS_TO_PROVIDER_ID = {
   if: "iflow",
   ag: "antigravity",
   gh: "github",
+  kr: "kiro",
   // API Key providers (alias = id)
   openai: "openai",
   anthropic: "anthropic",

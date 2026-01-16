@@ -2,6 +2,8 @@
  * Shared combo (model combo) handling with fallback support
  */
 
+import { checkFallbackError } from "./accountFallback.js";
+
 /**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
@@ -42,20 +44,34 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     
     // Success (2xx) - return response
     if (result.ok) {
+      log.info("COMBO", `Model ${modelStr} succeeded`);
       return result;
     }
 
-    // 401 unauthorized - return immediately (auth error)
-    if (result.status === 401) {
+    // Extract error message from response
+    let errorText = result.statusText || "";
+    try {
+      const errorBody = await result.clone().json();
+      errorText = errorBody.error || errorBody.message || errorText;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Check if should fallback to next model
+    const { shouldFallback } = checkFallbackError(result.status, errorText);
+    
+    if (!shouldFallback) {
+      // Don't fallback - return error immediately (e.g. 401 auth errors)
+      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
       return result;
     }
 
-    // 4xx/5xx - try next model
-    lastError = `${modelStr}: ${result.statusText || result.status}`;
-    log.warn("COMBO", `Model failed, trying next`, { model: modelStr, status: result.status });
+    // Fallback to next model
+    lastError = `${modelStr}: ${errorText || result.status}`;
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status, error: errorText.slice(0, 100) });
   }
 
-  log.warn("COMBO", "All models failed");
+  log.warn("COMBO", "All combo models failed");
   
   // Return 503 with last error
   return new Response(

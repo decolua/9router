@@ -5,19 +5,14 @@ import { SKIP_PATTERNS } from "../config/constants.js";
 import { formatSSE } from "./stream.js";
 
 /**
- * Check for bypass patterns (warmup, skip) - return fake response without calling provider
- * Supports both streaming and non-streaming responses
- * Returns response in the correct sourceFormat using translator
- * 
- * @param {object} body - Request body
- * @param {string} model - Model name
- * @returns {object|null} { success: true, response: Response } or null if not bypass
+ * Check for bypass patterns - return fake response without calling provider
+ * Only works for Claude CLI requests
  */
-export function handleBypassRequest(body, model) {
-  const messages = body.messages;
-  if (!messages?.length) return null;
+export function handleBypassRequest(body, model, userAgent = "") {
+  if (!userAgent.includes("claude-cli")) return null;
+  if (!body.messages?.length) return null;
 
-  // Helper to extract text from content
+  const messages = body.messages;
   const getText = (content) => {
     if (typeof content === "string") return content;
     if (Array.isArray(content)) {
@@ -28,43 +23,45 @@ export function handleBypassRequest(body, model) {
 
   let shouldBypass = false;
 
-  // Check warmup: first message "Warmup"
-  const firstText = getText(messages[0]?.content);
-  if (firstText === "Warmup") {
+  // Pattern 1: Title extraction (assistant message = "{")
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg?.role === "assistant" && lastMsg.content?.[0]?.text === "{") {
     shouldBypass = true;
   }
 
-  // Check count pattern: [{"role":"user","content":"count"}]
-  // if (!shouldBypass && 
-  //     messages.length === 1 && 
-  //     messages[0]?.role === "user" && 
-  //     firstText === "count") {
-  //   shouldBypass = true;
-  // }
+  // Pattern 2: Warmup
+  if (!shouldBypass) {
+    const firstText = getText(messages[0]?.content);
+    if (firstText === "Warmup") {
+      shouldBypass = true;
+    }
+  }
 
-  // Check skip patterns - only check user messages, not system prompt
+  // Pattern 3: Count
+  if (!shouldBypass && messages.length === 1 && messages[0]?.role === "user") {
+    const firstText = getText(messages[0]?.content);
+    if (firstText === "count") {
+      shouldBypass = true;
+    }
+  }
+
+  // Pattern 4: Skip patterns
   if (!shouldBypass && SKIP_PATTERNS?.length) {
-    // Only check user messages, skip system/assistant messages to avoid matching system prompts
     const userMessages = messages.filter(m => m.role === "user");
     const userText = userMessages.map(m => getText(m.content)).join(" ");
-    const matchedPattern = SKIP_PATTERNS.find(p => userText.includes(p));
-    if (matchedPattern) {
+    if (SKIP_PATTERNS.some(p => userText.includes(p))) {
       shouldBypass = true;
     }
   }
 
   if (!shouldBypass) return null;
 
-  // Detect source format and stream mode
   const sourceFormat = detectFormat(body);
   const stream = body.stream !== false;
 
-  // Create bypass response using translator
-  if (stream) {
-    return createStreamingResponse(sourceFormat, model);
-  } else {
-    return createNonStreamingResponse(sourceFormat, model);
-  }
+  return stream 
+    ? createStreamingResponse(sourceFormat, model)
+    : createNonStreamingResponse(sourceFormat, model);
 }
 
 /**
@@ -102,7 +99,7 @@ function createOpenAIResponse(model) {
  */
 function createNonStreamingResponse(sourceFormat, model) {
   const openaiResponse = createOpenAIResponse(model);
-  
+
   // If sourceFormat is OpenAI, return directly
   if (sourceFormat === FORMATS.OPENAI) {
     return {
@@ -119,26 +116,26 @@ function createNonStreamingResponse(sourceFormat, model) {
   // Use translator to convert: simulate streaming then collect all chunks
   const state = initState(sourceFormat);
   state.model = model;
-  
+
   const openaiChunks = createOpenAIStreamingChunks(openaiResponse);
   const allTranslated = [];
-  
+
   for (const chunk of openaiChunks) {
     const translated = translateResponse(FORMATS.OPENAI, sourceFormat, chunk, state);
     if (translated?.length > 0) {
       allTranslated.push(...translated);
     }
   }
-  
+
   // Flush remaining
   const flushed = translateResponse(FORMATS.OPENAI, sourceFormat, null, state);
   if (flushed?.length > 0) {
     allTranslated.push(...flushed);
   }
-  
+
   // For non-streaming, merge all chunks into final response
   const finalResponse = mergeChunksToResponse(allTranslated, sourceFormat);
-  
+
   return {
     success: true,
     response: new Response(JSON.stringify(finalResponse), {
@@ -164,7 +161,7 @@ function createStreamingResponse(sourceFormat, model) {
 
   // Translate each chunk to sourceFormat using translator
   const translatedChunks = [];
-  
+
   for (const chunk of openaiChunks) {
     const translated = translateResponse(FORMATS.OPENAI, sourceFormat, chunk, state);
     if (translated?.length > 0) {
@@ -206,11 +203,11 @@ function mergeChunksToResponse(chunks, sourceFormat) {
   if (!chunks || chunks.length === 0) {
     return createOpenAIResponse("unknown");
   }
-  
+
   // For most formats, the last chunk before done contains the complete response
   // Find the most complete chunk (usually the last one with content)
   let finalChunk = chunks[chunks.length - 1];
-  
+
   // For Claude format, find the message_stop or final message
   if (sourceFormat === FORMATS.CLAUDE) {
     const messageStop = chunks.find(c => c.type === "message_stop");
@@ -219,7 +216,7 @@ function mergeChunksToResponse(chunks, sourceFormat) {
       const contentDelta = chunks.find(c => c.type === "content_block_delta");
       const messageDelta = chunks.find(c => c.type === "message_delta");
       const messageStart = chunks.find(c => c.type === "message_start");
-      
+
       if (messageStart?.message) {
         finalChunk = messageStart.message;
         // Merge usage if available
@@ -229,7 +226,7 @@ function mergeChunksToResponse(chunks, sourceFormat) {
       }
     }
   }
-  
+
   return finalChunk;
 }
 

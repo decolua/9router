@@ -147,8 +147,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow (GitHub, Qwen)
-      if (provider === "github" || provider === "qwen") {
+      // Device code flow (GitHub, Qwen, Kiro)
+      if (provider === "github" || provider === "qwen" || provider === "kiro") {
         setIsDeviceCode(true);
         setStep("waiting");
 
@@ -162,8 +162,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
-        // Start polling
-        startPolling(data.device_code, data.codeVerifier, data.interval || 5);
+        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
+        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
 
@@ -209,7 +210,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   };
 
   // Poll for device code token
-  const startPolling = async (deviceCode, codeVerifier, interval) => {
+  const startPolling = async (deviceCode, codeVerifier, interval, extraData) => {
     setPolling(true);
     const maxAttempts = 60;
 
@@ -220,7 +221,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier }),
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
         });
 
         const data = await res.json();

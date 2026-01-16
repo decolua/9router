@@ -51,7 +51,8 @@ export class DefaultExecutor extends BaseExecutor {
       codex: () => this.refreshWithForm(OAUTH_ENDPOINTS.openai.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.codex.clientId, scope: "openid profile email offline_access" }),
       qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }),
       iflow: () => this.refreshIflow(credentials.refreshToken),
-      gemini: () => this.refreshGoogle(credentials.refreshToken)
+      gemini: () => this.refreshGoogle(credentials.refreshToken),
+      kiro: () => this.refreshKiro(credentials.refreshToken)
     };
 
     const refresher = refreshers[this.provider];
@@ -110,6 +111,17 @@ export class DefaultExecutor extends BaseExecutor {
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
+  }
+
+  async refreshKiro(refreshToken) {
+    const response = await fetch(PROVIDERS.kiro.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "kiro-cli/1.0.0" },
+      body: JSON.stringify({ refreshToken })
+    });
+    if (!response.ok) return null;
+    const tokens = await response.json();
+    return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
   }
 }
 

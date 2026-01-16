@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
 
@@ -8,7 +8,38 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasPassword, setHasPassword] = useState(null);
   const router = useRouter();
+
+  // Check if password is set on mount
+  useEffect(() => {
+    async function checkPassword() {
+      try {
+        const res = await fetch("/api/settings");
+        if (res.ok) {
+          const data = await res.json();
+          if (!data.password) {
+            // No password set - auto login
+            const loginRes = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ password: "123456" }),
+            });
+            if (loginRes.ok) {
+              router.push("/dashboard");
+              router.refresh();
+              return;
+            }
+          }
+          setHasPassword(!!data.password);
+        }
+      } catch (err) {
+        console.error("Failed to check password status:", err);
+        setHasPassword(true); // Default to showing login form
+      }
+    }
+    checkPassword();
+  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -35,6 +66,18 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  // Show loading state while checking password
+  if (hasPassword === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <p className="text-text-muted mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-4">

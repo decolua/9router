@@ -61,19 +61,19 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request),
       log
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -88,6 +88,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null) {
   } else {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
   }
+
+  // Extract userAgent from request
+  const userAgent = request?.headers?.get("user-agent") || "";
 
   // Try with available accounts (fallback on errors)
   let excludeConnectionId = null;
@@ -121,6 +124,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null) {
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
+      userAgent,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

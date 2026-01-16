@@ -317,6 +317,12 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
         await updateLogDetails(logId, { responseBody });
       }
     }
+    // Trim to keep only last 200 lines
+    const content = fs.readFileSync(LOG_FILE, "utf-8");
+    const lines = content.trim().split("\n");
+    if (lines.length > 200) {
+      fs.writeFileSync(LOG_FILE, lines.slice(-200).join("\n") + "\n");
+    }
   } catch (error) {
     console.error("Failed to append to log.txt:", error.message);
   }

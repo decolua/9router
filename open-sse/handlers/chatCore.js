@@ -64,7 +64,7 @@ function extractUsageFromResponse(responseBody, provider) {
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
 
   // Generate unique log ID for this request
@@ -73,7 +73,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const sourceFormat = detectFormat(body);
 
   // Check for bypass patterns (warmup, skip) - return fake response
-  const bypassResponse = handleBypassRequest(body, model);
+  const bypassResponse = handleBypassRequest(body, model, userAgent);
   if (bypassResponse) {
     return bypassResponse;
   }
@@ -100,15 +100,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   
   // 1. Log raw request from client
   reqLogger.logRawRequest(body);
-  
-  // 1a. Log format detection info
-  reqLogger.logFormatInfo({
-    sourceFormat,
-    targetFormat,
-    provider,
-    model,
-    stream
-  });
 
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
@@ -176,17 +167,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     return createErrorResult(502, errMsg);
   }
-
-  // Log headers (mask sensitive values)
-  const safeHeaders = {};
-  for (const [key, value] of Object.entries(providerHeaders || {})) {
-    if (key.toLowerCase().includes("auth") || key.toLowerCase().includes("key") || key.toLowerCase().includes("token")) {
-      safeHeaders[key] = value ? `${value.slice(0, 10)}...` : "";
-    } else {
-      safeHeaders[key] = value;
-    }
-  }
-  log?.debug?.("HEADERS", JSON.stringify(safeHeaders));
 
   // Handle 401/403 - try token refresh using executor
   if (providerResponse.status === 401 || providerResponse.status === 403) {

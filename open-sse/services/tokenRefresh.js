@@ -241,6 +241,96 @@ export async function refreshCodexToken(refreshToken, log) {
 }
 
 /**
+ * Specialized refresh for Kiro (AWS CodeWhisperer) tokens
+ * Supports both AWS SSO OIDC (Builder ID/IDC) and Social Auth (Google/GitHub)
+ */
+export async function refreshKiroToken(refreshToken, providerSpecificData, log) {
+  const authMethod = providerSpecificData?.authMethod;
+  const clientId = providerSpecificData?.clientId;
+  const clientSecret = providerSpecificData?.clientSecret;
+  const region = providerSpecificData?.region;
+  
+  // AWS SSO OIDC (Builder ID or IDC)
+  // If clientId and clientSecret exist, assume AWS SSO OIDC (default to builder-id if authMethod not specified)
+  if (clientId && clientSecret) {
+    const isIDC = authMethod === "idc";
+    const endpoint = isIDC && region
+      ? `https://oidc.${region}.amazonaws.com/token`
+      : "https://oidc.us-east-1.amazonaws.com/token";
+      
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        clientId: clientId,
+        clientSecret: clientSecret,
+        refreshToken: refreshToken,
+        grantType: "refresh_token",
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
+        status: response.status,
+        error: errorText,
+      });
+      return null;
+    }
+
+    const tokens = await response.json();
+    
+    log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro AWS token", {
+      hasNewAccessToken: !!tokens.accessToken,
+      expiresIn: tokens.expiresIn,
+    });
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken || refreshToken,
+      expiresIn: tokens.expiresIn,
+    };
+  }
+  
+  // Social Auth (Google/GitHub) - use Kiro's refresh endpoint
+  const response = await fetch(PROVIDERS.kiro.tokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      refreshToken: refreshToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
+      status: response.status,
+      error: errorText,
+    });
+    return null;
+  }
+
+  const tokens = await response.json();
+  
+  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
+    hasNewAccessToken: !!tokens.accessToken,
+    expiresIn: tokens.expiresIn,
+  });
+
+  return {
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken || refreshToken,
+    expiresIn: tokens.expiresIn,
+  };
+}
+
+/**
  * Specialized refresh for iFlow OAuth tokens
  */
 export async function refreshIflowToken(refreshToken, log) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, ModelSelectModal } from "@/shared/components";
+import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -27,8 +27,8 @@ export default function ClaudeToolCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [copiedConfig, setCopiedConfig] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
+  const [showManualConfigModal, setShowManualConfigModal] = useState(false);
 
   const getConfigStatus = () => {
     if (!claudeStatus?.installed) return null;
@@ -163,7 +163,7 @@ export default function ClaudeToolCard({
   };
 
   // Generate settings.json content for manual copy
-  const getSettingsContent = () => {
+  const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
@@ -172,17 +172,13 @@ export default function ClaudeToolCard({
       const targetModel = modelMappings[model.alias];
       if (targetModel && model.envKey) env[model.envKey] = targetModel;
     });
-    return JSON.stringify({ env }, null, 2);
-  };
-
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedConfig(true);
-      setTimeout(() => setCopiedConfig(false), 2000);
-    } catch (err) {
-      console.log("Failed to copy:", err);
-    }
+    
+    return [
+      {
+        filename: "~/.claude/settings.json",
+        content: JSON.stringify({ env }, null, 2),
+      },
+    ];
   };
 
   return (
@@ -289,24 +285,9 @@ export default function ClaudeToolCard({
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!claudeStatus?.has9Router} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
-                <Button variant="ghost" size="sm" onClick={checkClaudeStatus}>
-                  <span className="material-symbols-outlined text-[14px]">refresh</span>
+                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
-              </div>
-
-              {/* Manual Config Section */}
-              <div className="pt-4 border-t border-border flex flex-col gap-3">
-                <p className="text-xs text-text-muted">Or copy config manually:</p>
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-text-main">~/.claude/settings.json</span>
-                    <Button variant="ghost" size="sm" onClick={() => copyToClipboard(getSettingsContent())}>
-                      <span className="material-symbols-outlined text-[14px] mr-1">{copiedConfig ? "check" : "content_copy"}</span>
-                      {copiedConfig ? "Copied!" : "Copy"}
-                    </Button>
-                  </div>
-                  <pre className="px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-40 overflow-y-auto">{getSettingsContent()}</pre>
-                </div>
               </div>
             </>
           )}
@@ -314,6 +295,13 @@ export default function ClaudeToolCard({
       )}
 
       <ModelSelectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSelect={handleModelSelect} selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null} activeProviders={activeProviders} modelAliases={modelAliases} title={`Select model for ${currentEditingAlias}`} />
+      
+      <ManualConfigModal
+        isOpen={showManualConfigModal}
+        onClose={() => setShowManualConfigModal(false)}
+        title="Claude CLI - Manual Configuration"
+        configs={getManualConfigs()}
+      />
     </Card>
   );
 }

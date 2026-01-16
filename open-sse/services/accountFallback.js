@@ -2,7 +2,7 @@ import { COOLDOWN_MS, BACKOFF_CONFIG } from "../config/constants.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
- * Level 0: 1s, Level 1: 2s, Level 2: 4s... → max 30 min
+ * Level 0: 1s, Level 1: 2s, Level 2: 4s... → max 2 min
  * @param {number} backoffLevel - Current backoff level
  * @returns {number} Cooldown in milliseconds
  */
@@ -21,13 +21,14 @@ export function getQuotaCooldown(backoffLevel = 0) {
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
   // Check error message FIRST - specific patterns take priority over status codes
   if (errorText) {
-    const lowerError = errorText.toLowerCase();
-    
+    const errorStr = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
+    const lowerError = errorStr.toLowerCase();
+
     // "Request not allowed" - short cooldown (5s), takes priority over status code
     if (lowerError.includes("request not allowed")) {
       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.requestNotAllowed };
     }
-    
+
     // Rate limit keywords - exponential backoff
     if (
       lowerError.includes("rate limit") ||
@@ -37,8 +38,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
       lowerError.includes("overloaded")
     ) {
       const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-      return { 
-        shouldFallback: true, 
+      return {
+        shouldFallback: true,
         cooldownMs: getQuotaCooldown(backoffLevel),
         newBackoffLevel: newLevel
       };
@@ -63,8 +64,8 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   // 429 - Rate limit with exponential backoff
   if (status === 429) {
     const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-    return { 
-      shouldFallback: true, 
+    return {
+      shouldFallback: true,
       cooldownMs: getQuotaCooldown(backoffLevel),
       newBackoffLevel: newLevel
     };
@@ -134,10 +135,10 @@ export function resetAccountState(account) {
  */
 export function applyErrorState(account, status, errorText) {
   if (!account) return account;
-  
+
   const backoffLevel = account.backoffLevel || 0;
   const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
-  
+
   return {
     ...account,
     rateLimitedUntil: cooldownMs > 0 ? getUnavailableUntil(cooldownMs) : null,

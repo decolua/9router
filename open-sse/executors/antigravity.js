@@ -121,6 +121,22 @@ export class AntigravityExecutor extends BaseExecutor {
     return null;
   }
 
+  // Parse retry time from Antigravity error message body
+  // Format: "Your quota will reset after 2h7m23s" or "1h30m" or "45m" or "30s"
+  parseRetryFromErrorMessage(errorMessage) {
+    if (!errorMessage || typeof errorMessage !== "string") return null;
+
+    const match = errorMessage.match(/reset after (\d+h)?(\d+m)?(\d+s)?/i);
+    if (!match) return null;
+
+    let totalMs = 0;
+    if (match[1]) totalMs += parseInt(match[1]) * 3600 * 1000; // hours
+    if (match[2]) totalMs += parseInt(match[2]) * 60 * 1000; // minutes
+    if (match[3]) totalMs += parseInt(match[3]) * 1000; // seconds
+
+    return totalMs > 0 ? totalMs : null;
+  }
+
   async execute({ model, body, stream, credentials, signal, log }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
@@ -147,7 +163,20 @@ export class AntigravityExecutor extends BaseExecutor {
         });
 
         if (response.status === 429 || response.status === 503) {
-          const retryMs = this.parseRetryHeaders(response.headers);
+          // Try to get retry time from headers first
+          let retryMs = this.parseRetryHeaders(response.headers);
+
+          // If no retry time in headers, try to parse from error message body
+          if (!retryMs) {
+            try {
+              const errorBody = await response.clone().text();
+              const errorJson = JSON.parse(errorBody);
+              const errorMessage = errorJson?.error?.message || errorJson?.message || "";
+              retryMs = this.parseRetryFromErrorMessage(errorMessage);
+            } catch (e) {
+              // Ignore parse errors, will fall back to exponential backoff
+            }
+          }
 
           if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
             log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs/1000)}s, waiting...`);
@@ -160,7 +189,7 @@ export class AntigravityExecutor extends BaseExecutor {
           if (response.status === 429 && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
             retryAttemptsByUrl[urlIndex]++;
             // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * Math.pow(2, retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
+            const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
             log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs/1000}s`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             urlIndex--;

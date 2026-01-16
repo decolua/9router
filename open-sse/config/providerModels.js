@@ -69,6 +69,11 @@ export const PROVIDER_MODELS = {
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
   ],
+  kr: [  // Kiro AI
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+  ],
 
   // API Key Providers (alias = id)
   openai: [
@@ -145,6 +150,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   iflow: "if",
   antigravity: "ag",
   github: "gh",
+  kiro: "kr",
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",

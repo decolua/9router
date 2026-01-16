@@ -38,7 +38,8 @@ export async function GET(request, { params }) {
       
       // For providers that don't use PKCE (like GitHub), don't pass codeChallenge
       let deviceData;
-      if (provider === "github") {
+      if (provider === "github" || provider === "kiro") {
+        // GitHub and Kiro don't use PKCE for device code
         deviceData = await requestDeviceCode(provider);
       } else {
         // Qwen and other providers use PKCE
@@ -101,16 +102,19 @@ export async function POST(request, { params }) {
     }
 
     if (action === "poll") {
-      const { deviceCode, codeVerifier } = body;
+      const { deviceCode, codeVerifier, extraData } = body;
 
       if (!deviceCode) {
         return NextResponse.json({ error: "Missing device code" }, { status: 400 });
       }
 
-      // For providers that don't use PKCE (like GitHub), don't pass codeVerifier
+      // For providers that don't use PKCE (like GitHub, Kiro), don't pass codeVerifier
       let result;
       if (provider === "github") {
         result = await pollForToken(provider, deviceCode);
+      } else if (provider === "kiro") {
+        // Kiro needs extraData (clientId, clientSecret) from device code response
+        result = await pollForToken(provider, deviceCode, null, extraData);
       } else {
         // Qwen and other providers use PKCE
         if (!codeVerifier) {
@@ -143,24 +147,14 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Still pending or error
-      if (!result.pending) {
-        // Save error to database for actual errors (not pending)
-        await createProviderConnection({
-          provider,
-          authType: "oauth",
-          testStatus: "error",
-          lastError: result.errorDescription,
-          errorCode: result.error,
-          lastErrorAt: new Date().toISOString(),
-        });
-      }
-
+      // Still pending or error - don't create connection for pending states
+      const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
+      
       return NextResponse.json({
         success: false,
         error: result.error,
         errorDescription: result.errorDescription,
-        pending: result.pending || result.error === "authorization_pending",
+        pending: isPending,
       });
     }
 

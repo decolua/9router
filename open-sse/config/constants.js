@@ -37,7 +37,7 @@ export const PROVIDERS = {
   },
   codex: {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
-    format: "codex",
+    format: "openai-responses", // Use OpenAI Responses API format (reuse translator)
     headers: {
       "Version": "0.21.0",
       "Openai-Beta": "responses=experimental",
@@ -76,7 +76,6 @@ export const PROVIDERS = {
     baseUrls: [
       "https://daily-cloudcode-pa.googleapis.com",
       "https://cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com"
     ],
     format: "antigravity",
     headers: {
@@ -136,6 +135,20 @@ export const PROVIDERS = {
       "Accept": "application/json",
       "Content-Type": "application/json"
     }
+  },
+  kiro: {
+    baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+    format: "kiro",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/vnd.amazon.eventstream",
+      "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
+      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
+      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0"
+    },
+    // Kiro OAuth endpoints
+    tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
+    authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev"
   }
 };
 
@@ -189,21 +202,21 @@ export const DEFAULT_MIN_TOKENS = 32000;
 // Exponential backoff config for rate limits (like CLIProxyAPI)
 export const BACKOFF_CONFIG = {
   base: 1000,              // 1 second base
-  max: 30 * 60 * 1000,     // 30 minutes max
+  max: 2 * 60 * 1000,      // 2 minutes max
   maxLevel: 15             // Cap backoff level
 };
 
 // Error-based cooldown times (aligned with CLIProxyAPI)
 export const COOLDOWN_MS = {
-  unauthorized: 30 * 60 * 1000,       // 401 → 30 min
-  paymentRequired: 30 * 60 * 1000,    // 402/403 → 30 min
-  notFound: 12 * 60 * 60 * 1000,      // 404 → 12 hours
+  unauthorized: 2 * 60 * 1000,       // 401 → 30 min
+  paymentRequired: 2 * 60 * 1000,    // 402/403 → 30 min
+  notFound: 2 * 60 * 60 * 1000,      // 404 → 12 hours
   transient: 30 * 1000,               // 408/500/502/503/504 → 1 min
   requestNotAllowed: 5 * 1000,        // "Request not allowed" → 5 sec
   // Legacy aliases for backward compatibility
-  rateLimit: 15 * 60 * 1000,
-  serviceUnavailable: 60 * 1000,
-  authExpired: 30 * 60 * 1000
+  rateLimit: 2 * 60 * 1000,
+  serviceUnavailable: 2 * 1000,
+  authExpired: 2 * 60 * 1000
 };
 
 // Skip patterns - requests containing these texts will bypass provider

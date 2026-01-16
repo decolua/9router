@@ -163,10 +163,12 @@ export async function initTranslators() {
   await import("./request/gemini-to-openai.js");
   await import("./request/openai-to-gemini.js");
   await import("./request/openai-responses.js");
+  await import("./request/openai-to-kiro.js");
   
   // Response translators
   await import("./response/claude-to-openai.js");
   await import("./response/openai-to-claude.js");
   await import("./response/gemini-to-openai.js");
   await import("./response/openai-responses.js");
+  await import("./response/kiro-to-openai.js");
 }

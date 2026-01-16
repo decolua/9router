@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, ModelSelectModal } from "@/shared/components";
+import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled }) {
@@ -13,9 +13,9 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
-  const [copiedConfig, setCopiedConfig] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
+  const [showManualConfigModal, setShowManualConfigModal] = useState(false);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -123,7 +123,12 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setModalOpen(false);
   };
 
-  const configContent = `# 9Router Configuration for Codex CLI
+  const getManualConfigs = () => {
+    const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
+      ? selectedApiKey 
+      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    
+    const configContent = `# 9Router Configuration for Codex CLI
 model = "${selectedModel}"
 model_provider = "9router"
 
@@ -133,22 +138,20 @@ base_url = "${baseUrl}/v1"
 wire_api = "responses"
 `;
 
-  const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
-    ? selectedApiKey 
-    : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
-  
-  const authContent = JSON.stringify({
-    OPENAI_API_KEY: keyToUse
-  }, null, 2);
+    const authContent = JSON.stringify({
+      OPENAI_API_KEY: keyToUse
+    }, null, 2);
 
-  const copyToClipboard = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedConfig(true);
-      setTimeout(() => setCopiedConfig(false), 2000);
-    } catch (err) {
-      console.log("Failed to copy:", err);
-    }
+    return [
+      {
+        filename: "~/.codex/config.toml",
+        content: configContent,
+      },
+      {
+        filename: "~/.codex/auth.json",
+        content: authContent,
+      },
+    ];
   };
 
   return (
@@ -257,39 +260,12 @@ wire_api = "responses"
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.has9Router} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
-                <Button variant="ghost" size="sm" onClick={checkCodexStatus}>
-                  <span className="material-symbols-outlined text-[14px]">refresh</span>
+                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
+                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
               </div>
             </>
           )}
-
-          {/* Manual Config Section */}
-          <div className="pt-4 border-t border-border flex flex-col gap-3">
-            <p className="text-xs text-text-muted">Or copy config manually:</p>
-            
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-main">~/.codex/config.toml</span>
-                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(configContent)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">{copiedConfig ? "check" : "content_copy"}</span>
-                  {copiedConfig ? "Copied!" : "Copy"}
-                </Button>
-              </div>
-              <pre className="px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-32 overflow-y-auto">{configContent}</pre>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-main">~/.codex/auth.json</span>
-                <Button variant="ghost" size="sm" onClick={() => copyToClipboard(authContent)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">{copiedConfig ? "check" : "content_copy"}</span>
-                  {copiedConfig ? "Copied!" : "Copy"}
-                </Button>
-              </div>
-              <pre className="px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-32 overflow-y-auto">{authContent}</pre>
-            </div>
-          </div>
         </div>
       )}
 
@@ -301,6 +277,13 @@ wire_api = "responses"
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Select Model for Codex"
+      />
+
+      <ManualConfigModal
+        isOpen={showManualConfigModal}
+        onClose={() => setShowManualConfigModal(false)}
+        title="Codex CLI - Manual Configuration"
+        configs={getManualConfigs()}
       />
     </Card>
   );

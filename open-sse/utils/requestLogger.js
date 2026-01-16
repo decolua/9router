@@ -68,22 +68,25 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers
+// Mask sensitive data in headers (DISABLED - keep full token for testing)
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  const masked = { ...headers };
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
+  return { ...headers };
   
-  for (const key of Object.keys(masked)) {
-    const lowerKey = key.toLowerCase();
-    if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-      const value = masked[key];
-      if (value && value.length > 20) {
-        masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-      }
-    }
-  }
-  return masked;
+  // Old masking code (disabled):
+  // const masked = { ...headers };
+  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
+  // 
+  // for (const key of Object.keys(masked)) {
+  //   const lowerKey = key.toLowerCase();
+  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
+  //     const value = masked[key];
+  //     if (value && value.length > 20) {
+  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
+  //     }
+  //   }
+  // }
+  // return masked;
 }
 
 // No-op logger when logging is disabled
@@ -92,7 +95,6 @@ function createNoOpLogger() {
     sessionPath: null,
     logClientRawRequest() {},
     logRawRequest() {},
-    logFormatInfo() {},
     logConvertedRequest() {},
     logRawResponse() {},
     logConvertedResponse() {},
@@ -121,9 +123,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
   return {
     get sessionPath() { return sessionPath; },
     
-    // 0. Log client raw request (before any conversion)
+    // 1. Log client raw request (before any conversion)
     logClientRawRequest(endpoint, body, headers = {}) {
-      writeJsonFile(sessionPath, "0_client_raw_request.json", {
+      writeJsonFile(sessionPath, "1_client_raw_request.json", {
         timestamp: new Date().toISOString(),
         endpoint,
         headers: maskSensitiveHeaders(headers),
@@ -131,26 +133,18 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       });
     },
     
-    // 1. Log raw request from client (after initial conversion like responsesApi)
+    // 2. Log raw request from client (after initial conversion like responsesApi)
     logRawRequest(body, headers = {}) {
-      writeJsonFile(sessionPath, "1_raw_request.json", {
+      writeJsonFile(sessionPath, "2_raw_request.json", {
         timestamp: new Date().toISOString(),
         headers: maskSensitiveHeaders(headers),
         body
       });
     },
     
-    // 1a. Log format detection info
-    logFormatInfo(info) {
-      writeJsonFile(sessionPath, "1a_format_info.json", {
-        timestamp: new Date().toISOString(),
-        ...info
-      });
-    },
-    
-    // 2. Log converted request to send to provider
+    // 3. Log converted request to send to provider
     logConvertedRequest(url, headers, body) {
-      writeJsonFile(sessionPath, "2_converted_request.json", {
+      writeJsonFile(sessionPath, "3_converted_request.json", {
         timestamp: new Date().toISOString(),
         url,
         headers: maskSensitiveHeaders(headers),
@@ -158,9 +152,9 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       });
     },
     
-    // 3. Log provider response (for non-streaming or error)
+    // 4. Log provider response (for non-streaming or error)
     logProviderResponse(status, statusText, headers, body) {
-      const filename = "3_provider_response.json";
+      const filename = "4_provider_response.json";
       writeJsonFile(sessionPath, filename, {
         timestamp: new Date().toISOString(),
         status,
@@ -170,39 +164,39 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       });
     },
     
-    // 3. Append streaming chunk to provider response
+    // 4. Append streaming chunk to provider response
     appendProviderChunk(chunk) {
       if (!fs || !sessionPath) return;
       try {
-        const filePath = path.join(sessionPath, "3_provider_response.txt");
+        const filePath = path.join(sessionPath, "4_provider_response.txt");
         fs.appendFileSync(filePath, chunk);
       } catch (err) {
         // Ignore append errors
       }
     },
     
-    // 4. Log converted response to client (for non-streaming)
+    // 5. Log converted response to client (for non-streaming)
     logConvertedResponse(body) {
-      writeJsonFile(sessionPath, "4_converted_response.json", {
+      writeJsonFile(sessionPath, "5_converted_response.json", {
         timestamp: new Date().toISOString(),
         body
       });
     },
     
-    // 4. Append streaming chunk to converted response
+    // 5. Append streaming chunk to converted response
     appendConvertedChunk(chunk) {
       if (!fs || !sessionPath) return;
       try {
-        const filePath = path.join(sessionPath, "4_converted_response.txt");
+        const filePath = path.join(sessionPath, "5_converted_response.txt");
         fs.appendFileSync(filePath, chunk);
       } catch (err) {
         // Ignore append errors
       }
     },
     
-    // 5. Log error
+    // 6. Log error
     logError(error, requestBody = null) {
-      writeJsonFile(sessionPath, "5_error.json", {
+      writeJsonFile(sessionPath, "6_error.json", {
         timestamp: new Date().toISOString(),
         error: error?.message || String(error),
         stack: error?.stack,

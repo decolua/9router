@@ -113,6 +113,24 @@ export const GITHUB_CONFIG = {
   editorPluginVersion: "copilot-chat/0.26.7",
 };
 
+// Kiro OAuth Configuration (AWS SSO OIDC Device Code Flow)
+export const KIRO_CONFIG = {
+  // AWS SSO OIDC endpoints for Builder ID
+  ssoOidcEndpoint: "https://oidc.us-east-1.amazonaws.com",
+  registerClientUrl: "https://oidc.us-east-1.amazonaws.com/client/register",
+  deviceAuthUrl: "https://oidc.us-east-1.amazonaws.com/device_authorization",
+  tokenUrl: "https://oidc.us-east-1.amazonaws.com/token",
+  refreshTokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
+  // AWS Builder ID start URL
+  startUrl: "https://view.awsapps.com/start",
+  // Client registration params
+  clientName: "kiro-cli",
+  clientType: "public",
+  scopes: ["codewhisperer:completions", "codewhisperer:analysis", "codewhisperer:conversations"],
+  grantTypes: ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"],
+  issuerUrl: "https://identitycenter.amazonaws.com/ssoins-722374e8c3c8e6c6",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -126,4 +144,5 @@ export const PROVIDERS = {
   ANTIGRAVITY: "antigravity",
   OPENAI: "openai",
   GITHUB: "github",
+  KIRO: "kiro",
 };
