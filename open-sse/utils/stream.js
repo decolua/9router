@@ -49,7 +49,7 @@ export const COLORS = {
 };
 
 // Log usage with cache info (green color)
-function logUsage(provider, usage, model = null, connectionId = null) {
+function logUsage(provider, usage, model = null, connectionId = null, logId = null, accumulatedResponse = null) {
   if (!usage) return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
@@ -66,8 +66,16 @@ function logUsage(provider, usage, model = null, connectionId = null) {
 
   console.log(`${COLORS.green}${msg}${COLORS.reset}`);
 
-  // Log to log.txt
-  appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
+  // Log to log.txt with logId and accumulated response
+  appendRequestLog({ 
+    model, 
+    provider, 
+    connectionId, 
+    tokens: usage, 
+    status: "200 OK",
+    logId,
+    responseBody: accumulatedResponse
+  }).catch(() => {});
 
   // Save to DB
   saveRequestUsage({
@@ -155,6 +163,7 @@ const STREAM_MODE = {
  * @param {object} options.reqLogger - Request logger instance
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
+ * @param {string} options.logId - Log ID for linking request/response details
  */
 export function createSSEStream(options = {}) {
   const {
@@ -165,13 +174,17 @@ export function createSSEStream(options = {}) {
     reqLogger = null,
     toolNameMap = null,
     model = null,
-    connectionId = null
+    connectionId = null,
+    logId = null
   } = options;
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
   let usage = null;
+  
+  // Accumulate response chunks for log details
+  const accumulatedChunks = [];
 
   // State for translate mode
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
@@ -204,6 +217,7 @@ export function createSSEStream(options = {}) {
           } else {
             output = line + "\n";
           }
+          accumulatedChunks.push(output);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(encoder.encode(output));
           continue;
@@ -217,6 +231,7 @@ export function createSSEStream(options = {}) {
 
         if (parsed && parsed.done) {
           const output = "data: [DONE]\n\n";
+          accumulatedChunks.push(output);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(encoder.encode(output));
           continue;
@@ -231,6 +246,7 @@ export function createSSEStream(options = {}) {
         if (translated?.length > 0) {
           for (const item of translated) {
             const output = formatSSE(item, sourceFormat);
+            accumulatedChunks.push(output);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
@@ -250,10 +266,13 @@ export function createSSEStream(options = {}) {
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
             }
+            accumulatedChunks.push(output);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
-          if (usage) logUsage(provider, usage, model, connectionId);
+          // Pass accumulated response to logUsage
+          const accumulatedResponse = accumulatedChunks.join("");
+          if (usage) logUsage(provider, usage, model, connectionId, logId, accumulatedResponse);
           return;
         }
 
@@ -265,6 +284,7 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
+                accumulatedChunks.push(output);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(encoder.encode(output));
               }
@@ -277,6 +297,7 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             const output = formatSSE(item, sourceFormat);
+            accumulatedChunks.push(output);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
@@ -284,10 +305,13 @@ export function createSSEStream(options = {}) {
 
         // Send [DONE] and log usage
         const doneOutput = "data: [DONE]\n\n";
+        accumulatedChunks.push(doneOutput);
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(encoder.encode(doneOutput));
 
-        if (state?.usage) logUsage(state.provider || targetFormat, state.usage, model, connectionId);
+        // Pass accumulated response to logUsage
+        const accumulatedResponse = accumulatedChunks.join("");
+        if (state?.usage) logUsage(state.provider || targetFormat, state.usage, model, connectionId, logId, accumulatedResponse);
       } catch (error) {
         console.log("Error in flush:", error);
       }
@@ -296,7 +320,7 @@ export function createSSEStream(options = {}) {
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, logId = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -305,16 +329,18 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     reqLogger,
     toolNameMap,
     model,
-    connectionId
+    connectionId,
+    logId
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, logId = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
     model,
-    connectionId
+    connectionId,
+    logId
   });
 }
