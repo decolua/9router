@@ -10,6 +10,7 @@ import { createErrorResult, parseUpstreamError, formatProviderError } from "../u
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Extract usage from non-streaming response body
@@ -66,6 +67,9 @@ function extractUsageFromResponse(responseBody, provider) {
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
 
+  // Generate unique log ID for this request
+  const logId = uuidv4();
+
   const sourceFormat = detectFormat(body);
 
   // Check for bypass patterns (warmup, skip) - return fake response
@@ -116,8 +120,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Track pending request
   trackPendingRequest(model, provider, connectionId, true);
 
-  // Log start
-  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+  // Log start with request body
+  appendRequestLog({ model, provider, connectionId, status: "PENDING", logId, requestBody: body }).catch(() => {});
 
   const msgCount = translatedBody.messages?.length 
     || translatedBody.contents?.length 
@@ -154,7 +158,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}`, logId }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -210,7 +214,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}`, logId }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
     
@@ -238,7 +242,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
-    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK", logId, responseBody }).catch(() => {});
     if (usage) {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage.prompt_tokens || 0} | out=${usage.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
@@ -282,9 +286,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Create transform stream with logger for streaming response
   let transformStream;
   if (needsTranslation(targetFormat, sourceFormat)) {
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, logId);
   } else {
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, logId);
   }
 
   // Pipe response through transform with disconnect detection
