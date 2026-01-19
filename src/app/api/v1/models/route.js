@@ -1,5 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderConnections } from "@/models";
+import { getProviderConnections, getCombos } from "@/lib/localDb";
 
 /**
  * Handle CORS preflight
@@ -16,7 +16,7 @@ export async function OPTIONS() {
 
 /**
  * GET /v1/models - OpenAI compatible models list
- * Returns models from all active providers in OpenAI format
+ * Returns models from all active providers and combos in OpenAI format
  */
 export async function GET() {
   try {
@@ -31,6 +31,14 @@ export async function GET() {
       console.log("Could not fetch providers, returning all models");
     }
 
+    // Get combos
+    let combos = [];
+    try {
+      combos = await getCombos();
+    } catch (e) {
+      console.log("Could not fetch combos");
+    }
+
     // Build set of active provider aliases
     const activeAliases = new Set();
     for (const conn of connections) {
@@ -42,6 +50,20 @@ export async function GET() {
     const models = [];
     const timestamp = Math.floor(Date.now() / 1000);
 
+    // Add combos first (they appear at the top)
+    for (const combo of combos) {
+      models.push({
+        id: combo.name,
+        object: "model",
+        created: timestamp,
+        owned_by: "combo",
+        permission: [],
+        root: combo.name,
+        parent: null,
+      });
+    }
+
+    // Add provider models
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       // If we have active providers, only include those; otherwise include all
       if (connections.length > 0 && !activeAliases.has(alias)) {
