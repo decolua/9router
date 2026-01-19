@@ -20,101 +20,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const popupRef = useRef(null);
   const { copied, copy } = useCopyToClipboard();
 
-  // Detect if running on localhost
-  const isLocalhost = typeof window !== "undefined" && 
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-
-  // Reset state and start OAuth when modal opens
-  useEffect(() => {
-    if (isOpen && provider) {
-      setAuthData(null);
-      setCallbackUrl("");
-      setError(null);
-      setIsDeviceCode(false);
-      setDeviceData(null);
-      setPolling(false);
-      // Auto start OAuth
-      startOAuthFlow();
-    }
-  }, [isOpen, provider, startOAuthFlow]);
-
-  // Listen for OAuth callback via multiple methods
+  // State for client-only values to avoid hydration mismatch
+  const [isLocalhost, setIsLocalhost] = useState(false);
+  const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
-  
+
+  // Detect if running on localhost (client-side only)
   useEffect(() => {
-    if (!authData) return;
-    callbackProcessedRef.current = false; // Reset when authData changes
-
-    // Handler for callback data - only process once
-    const handleCallback = async (data) => {
-      if (callbackProcessedRef.current) return; // Already processed
-      
-      const { code, state, error: callbackError, errorDescription } = data;
-
-      if (callbackError) {
-        callbackProcessedRef.current = true;
-        setError(errorDescription || callbackError);
-        setStep("error");
-        return;
-      }
-
-      if (code) {
-        callbackProcessedRef.current = true;
-        await exchangeTokens(code, state);
-      }
-    };
-
-    // Method 1: postMessage from popup
-    const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type === "oauth_callback") {
-        handleCallback(event.data.data);
-      }
-    };
-    window.addEventListener("message", handleMessage);
-
-    // Method 2: BroadcastChannel
-    let channel;
-    try {
-      channel = new BroadcastChannel("oauth_callback");
-      channel.onmessage = (event) => handleCallback(event.data);
-    } catch (e) {
-      console.log("BroadcastChannel not supported");
+    if (typeof window !== "undefined") {
+      setIsLocalhost(
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      );
+      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
+  }, []);
 
-    // Method 3: localStorage event
-    const handleStorage = (event) => {
-      if (event.key === "oauth_callback" && event.newValue) {
-        try {
-          const data = JSON.parse(event.newValue);
-          handleCallback(data);
-          localStorage.removeItem("oauth_callback");
-        } catch (e) {
-          console.log("Failed to parse localStorage data");
-        }
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-
-    // Also check localStorage on mount (in case callback already happened)
-    try {
-      const stored = localStorage.getItem("oauth_callback");
-      if (stored) {
-        const data = JSON.parse(stored);
-        // Only use if recent (within 30 seconds)
-        if (data.timestamp && Date.now() - data.timestamp < 30000) {
-          handleCallback(data);
-          localStorage.removeItem("oauth_callback");
-        }
-      }
-    } catch (e) {}
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-      window.removeEventListener("storage", handleStorage);
-      if (channel) channel.close();
-    };
-  }, [authData, exchangeTokens]);
+  // Define all useCallback hooks BEFORE the useEffects that reference them
 
   // Exchange tokens
   const exchangeTokens = useCallback(async (code, state) => {
@@ -254,6 +175,96 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, [provider, isLocalhost, startPolling]);
 
+  // Reset state and start OAuth when modal opens
+  useEffect(() => {
+    if (isOpen && provider) {
+      setAuthData(null);
+      setCallbackUrl("");
+      setError(null);
+      setIsDeviceCode(false);
+      setDeviceData(null);
+      setPolling(false);
+      // Auto start OAuth
+      startOAuthFlow();
+    }
+  }, [isOpen, provider, startOAuthFlow]);
+
+  // Listen for OAuth callback via multiple methods
+  useEffect(() => {
+    if (!authData) return;
+    callbackProcessedRef.current = false; // Reset when authData changes
+
+    // Handler for callback data - only process once
+    const handleCallback = async (data) => {
+      if (callbackProcessedRef.current) return; // Already processed
+
+      const { code, state, error: callbackError, errorDescription } = data;
+
+      if (callbackError) {
+        callbackProcessedRef.current = true;
+        setError(errorDescription || callbackError);
+        setStep("error");
+        return;
+      }
+
+      if (code) {
+        callbackProcessedRef.current = true;
+        await exchangeTokens(code, state);
+      }
+    };
+
+    // Method 1: postMessage from popup
+    const handleMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === "oauth_callback") {
+        handleCallback(event.data.data);
+      }
+    };
+    window.addEventListener("message", handleMessage);
+
+    // Method 2: BroadcastChannel
+    let channel;
+    try {
+      channel = new BroadcastChannel("oauth_callback");
+      channel.onmessage = (event) => handleCallback(event.data);
+    } catch (e) {
+      console.log("BroadcastChannel not supported");
+    }
+
+    // Method 3: localStorage event
+    const handleStorage = (event) => {
+      if (event.key === "oauth_callback" && event.newValue) {
+        try {
+          const data = JSON.parse(event.newValue);
+          handleCallback(data);
+          localStorage.removeItem("oauth_callback");
+        } catch (e) {
+          console.log("Failed to parse localStorage data");
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // Also check localStorage on mount (in case callback already happened)
+    try {
+      const stored = localStorage.getItem("oauth_callback");
+      if (stored) {
+        const data = JSON.parse(stored);
+        // Only use if recent (within 30 seconds)
+        if (data.timestamp && Date.now() - data.timestamp < 30000) {
+          handleCallback(data);
+          localStorage.removeItem("oauth_callback");
+        }
+      }
+    } catch (e) {}
+
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      window.removeEventListener("storage", handleStorage);
+      if (channel) channel.close();
+    };
+  }, [authData, exchangeTokens]);
+
   // Handle manual URL input
   const handleManualSubmit = async () => {
     try {
@@ -364,7 +375,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <Input
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder={`${window.location.origin}/callback?code=...`}
+                  placeholder={placeholderUrl}
                   className="font-mono text-xs"
                 />
               </div>

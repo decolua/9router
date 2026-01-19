@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -27,11 +27,7 @@ export default function ProviderDetailPage() {
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
 
-  useEffect(() => {
-    fetchConnections();
-    fetchAliases();
-  }, [fetchConnections, fetchAliases]);
-
+  // Define callbacks BEFORE the useEffect that uses them
   const fetchAliases = useCallback(async () => {
     try {
       const res = await fetch("/api/models/alias");
@@ -43,6 +39,26 @@ export default function ProviderDetailPage() {
       console.log("Error fetching aliases:", error);
     }
   }, []);
+
+  const fetchConnections = useCallback(async () => {
+    try {
+      const res = await fetch("/api/providers");
+      const data = await res.json();
+      if (res.ok) {
+        const filtered = (data.connections || []).filter(c => c.provider === providerId);
+        setConnections(filtered);
+      }
+    } catch (error) {
+      console.log("Error fetching connections:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [providerId]);
+
+  useEffect(() => {
+    fetchConnections();
+    fetchAliases();
+  }, [fetchConnections, fetchAliases]);
 
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
@@ -75,21 +91,6 @@ export default function ProviderDetailPage() {
       console.log("Error deleting alias:", error);
     }
   };
-
-  const fetchConnections = useCallback(async () => {
-    try {
-      const res = await fetch("/api/providers");
-      const data = await res.json();
-      if (res.ok) {
-        const filtered = (data.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
-      }
-    } catch (error) {
-      console.log("Error fetching connections:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [providerId]);
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this connection?")) return;
