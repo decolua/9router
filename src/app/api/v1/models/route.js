@@ -8,29 +8,32 @@ export async function OPTIONS() {
 }
 
 /**
- * GET /v1beta/models - Gemini compatible models list
- * Returns models in Gemini API format
+ * GET /v1/models - Return models list (OpenAI compatible)
  */
 export async function GET(request) {
   try {
     const models = await getAuthorizedModelList(request);
 
-    return Response.json({
-      models: models.map((model) => ({
-        name: `models/${model.provider}/${model.id}`,
-        displayName: model.name,
-        description: `${model.provider} model: ${model.name}`,
-        supportedGenerationMethods: ["generateContent"],
-        inputTokenLimit: 128000,
-        outputTokenLimit: 8192,
-      }))
-    });
+    return new Response(
+      JSON.stringify({
+        object: "list",
+        data: models.map((model) => ({
+          id: model.id,
+          object: "model",
+          owned_by: model.provider,
+        }))
+      }),
+      { headers: { "Content-Type": "application/json", ...getModelCorsHeaders() } }
+    );
   } catch (error) {
     const status = error.status || 500;
     const message = status === 401 ? error.message : "Failed to fetch models";
     if (status !== 401) {
       console.log("Error fetching models:", error);
     }
-    return Response.json({ error: message }, { status });
+    return new Response(
+      JSON.stringify({ error: message }),
+      { status, headers: { "Content-Type": "application/json", ...getModelCorsHeaders() } }
+    );
   }
 }

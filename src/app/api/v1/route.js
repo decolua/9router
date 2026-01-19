@@ -1,53 +1,10 @@
-import { getProviderConnections, validateApiKey } from "@/models";
-import { PROVIDER_ID_TO_ALIAS, PROVIDER_MODELS } from "@/shared/constants/models";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "*"
-};
+import { getAuthorizedModelList, getModelCorsHeaders } from "@/shared/utils/modelList";
 
 /**
  * Handle CORS preflight
  */
 export async function OPTIONS() {
-  return new Response(null, { headers: CORS_HEADERS });
-}
-
-function buildModels(connections) {
-  const models = [];
-  const seenProviders = new Set();
-  const seenModels = new Set();
-
-  for (const connection of connections) {
-    if (connection.provider === "openrouter") {
-      continue;
-    }
-
-    if (seenProviders.has(connection.provider)) {
-      continue;
-    }
-
-    seenProviders.add(connection.provider);
-
-    const alias = PROVIDER_ID_TO_ALIAS[connection.provider] || connection.provider;
-    const providerModels = PROVIDER_MODELS[alias] || [];
-
-    for (const model of providerModels) {
-      const key = `${connection.provider}:${model.id}`;
-      if (seenModels.has(key)) {
-        continue;
-      }
-      seenModels.add(key);
-      models.push({
-        id: model.id,
-        object: "model",
-        owned_by: connection.provider,
-      });
-    }
-  }
-
-  return models;
+  return new Response(null, { headers: getModelCorsHeaders() });
 }
 
 /**
@@ -55,39 +12,28 @@ function buildModels(connections) {
  */
 export async function GET(request) {
   try {
-    const authHeader = request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Missing API key" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-      );
-    }
-
-    const apiKey = authHeader.slice(7);
-    const isValid = await validateApiKey(apiKey);
-
-    if (!isValid) {
-      return new Response(
-        JSON.stringify({ error: "Invalid API key" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
-      );
-    }
-
-    const connections = await getProviderConnections({ isActive: true });
-    const models = buildModels(connections);
+    const models = await getAuthorizedModelList(request);
 
     return new Response(
       JSON.stringify({
         object: "list",
-        data: models
+        data: models.map((model) => ({
+          id: model.id,
+          object: "model",
+          owned_by: model.provider,
+        }))
       }),
-      { headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+      { headers: { "Content-Type": "application/json", ...getModelCorsHeaders() } }
     );
   } catch (error) {
-    console.log("Error fetching models:", error);
+    const status = error.status || 500;
+    const message = status === 401 ? error.message : "Failed to fetch models";
+    if (status !== 401) {
+      console.log("Error fetching models:", error);
+    }
     return new Response(
-      JSON.stringify({ error: "Failed to fetch models" }),
-      { status: 500, headers: { "Content-Type": "application/json", ...CORS_HEADERS } }
+      JSON.stringify({ error: message }),
+      { status, headers: { "Content-Type": "application/json", ...getModelCorsHeaders() } }
     );
   }
 }
