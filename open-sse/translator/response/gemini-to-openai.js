@@ -4,10 +4,16 @@ import { FORMATS } from "../formats.js";
 // Convert Gemini response chunk to OpenAI format
 function geminiToOpenAIResponse(chunk, state) {
   if (!chunk) return null;
-  
+
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+
+  // Debug logging for empty responses
+  if (!response || !response.candidates?.[0]) {
+    console.log("[DEBUG] gemini-to-openai: Empty response received");
+    console.log("[DEBUG] chunk:", JSON.stringify(chunk).slice(0, 500));
+    return null;
+  }
 
   const results = [];
   const candidate = response.candidates[0];

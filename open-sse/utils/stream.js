@@ -244,6 +244,9 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
+        } else if (parsed && !parsed.done) {
+          // Debug: log when translation returns empty for non-done chunks
+          console.log("[DEBUG] stream: translateResponse returned empty for:", targetFormat, "->", sourceFormat);
         }
       }
     },

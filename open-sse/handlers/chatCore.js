@@ -282,6 +282,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Create transform stream with logger for streaming response
   let transformStream;
   if (needsTranslation(targetFormat, sourceFormat)) {
+    console.log(`[DEBUG] chatCore: Starting stream translation ${targetFormat} -> ${sourceFormat} for ${model}`);
     transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId);
   } else {
     transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId);
