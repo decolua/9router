@@ -24,6 +24,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     const errorStr = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
     const lowerError = errorStr.toLowerCase();
 
+    // "No credentials" - should fallback to next model in combo
+    if (lowerError.includes("no credentials")) {
+      return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
+    }
+
     // "Request not allowed" - short cooldown (5s), takes priority over status code
     if (lowerError.includes("request not allowed")) {
       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.requestNotAllowed };

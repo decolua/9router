@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { UsageStats, RequestLogger } from "@/shared/components";
 
 export default function UsagePage() {
@@ -33,7 +33,9 @@ export default function UsagePage() {
       </div>
 
       {/* Content */}
-      {activeTab === "overview" ? <UsageStats /> : <RequestLogger />}
+      <Suspense fallback={<div className="text-text-muted">Loading...</div>}>
+        {activeTab === "overview" ? <UsageStats /> : <RequestLogger />}
+      </Suspense>
     </div>
   );
 }
