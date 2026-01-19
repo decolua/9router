@@ -355,6 +355,153 @@ function flushEvents(state) {
   return events;
 }
 
-// Register
+/**
+ * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
+ * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
+ */
+function openaiResponsesToOpenAIResponse(chunk, state) {
+  if (!chunk) {
+    // Flush: send final chunk with finish_reason
+    if (!state.finishReasonSent && state.started) {
+      state.finishReasonSent = true;
+      return {
+        id: state.chatId || `chatcmpl-${Date.now()}`,
+        object: "chat.completion.chunk",
+        created: state.created || Math.floor(Date.now() / 1000),
+        model: state.model || "gpt-4",
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: "stop"
+        }]
+      };
+    }
+    return null;
+  }
+
+  // Handle different event types from Responses API
+  const eventType = chunk.type || chunk.event;
+  const data = chunk.data || chunk;
+
+  // Initialize state
+  if (!state.started) {
+    state.started = true;
+    state.chatId = `chatcmpl-${Date.now()}`;
+    state.created = Math.floor(Date.now() / 1000);
+    state.toolCallIndex = 0;
+    state.currentToolCallId = null;
+  }
+
+  // Text content delta
+  if (eventType === "response.output_text.delta") {
+    const delta = data.delta || "";
+    if (!delta) return null;
+
+    return {
+      id: state.chatId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "gpt-4",
+      choices: [{
+        index: 0,
+        delta: { content: delta },
+        finish_reason: null
+      }]
+    };
+  }
+
+  // Text content done (ignore, we handle via delta)
+  if (eventType === "response.output_text.done") {
+    return null;
+  }
+
+  // Function call started
+  if (eventType === "response.output_item.added" && data.item?.type === "function_call") {
+    const item = data.item;
+    state.currentToolCallId = item.call_id || `call_${Date.now()}`;
+
+    return {
+      id: state.chatId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "gpt-4",
+      choices: [{
+        index: 0,
+        delta: {
+          tool_calls: [{
+            index: state.toolCallIndex,
+            id: state.currentToolCallId,
+            type: "function",
+            function: {
+              name: item.name || "",
+              arguments: ""
+            }
+          }]
+        },
+        finish_reason: null
+      }]
+    };
+  }
+
+  // Function call arguments delta
+  if (eventType === "response.function_call_arguments.delta") {
+    const argsDelta = data.delta || "";
+    if (!argsDelta) return null;
+
+    return {
+      id: state.chatId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "gpt-4",
+      choices: [{
+        index: 0,
+        delta: {
+          tool_calls: [{
+            index: state.toolCallIndex,
+            function: { arguments: argsDelta }
+          }]
+        },
+        finish_reason: null
+      }]
+    };
+  }
+
+  // Function call done
+  if (eventType === "response.output_item.done" && data.item?.type === "function_call") {
+    state.toolCallIndex++;
+    return null;
+  }
+
+  // Response completed
+  if (eventType === "response.completed") {
+    if (!state.finishReasonSent) {
+      state.finishReasonSent = true;
+      return {
+        id: state.chatId,
+        object: "chat.completion.chunk",
+        created: state.created,
+        model: state.model || "gpt-4",
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: "stop"
+        }]
+      };
+    }
+    return null;
+  }
+
+  // Reasoning events (convert to content or skip)
+  if (eventType === "response.reasoning_summary_text.delta") {
+    // Optionally include reasoning as content, or skip
+    return null;
+  }
+
+  // Ignore other events
+  return null;
+}
+
+// Register both directions
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, null, openaiToOpenAIResponsesResponse);
+register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, null, openaiResponsesToOpenAIResponse);
 
