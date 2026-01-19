@@ -39,7 +39,6 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
     { id: "minimax-m2", name: "MiniMax M2" },
-    { id: "glm-4.6", name: "GLM 4.6" },
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
   ag: [  // Antigravity - special case: models call different backends
@@ -70,7 +69,7 @@ export const PROVIDER_MODELS = {
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
   ],
   kr: [  // Kiro AI
-    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
   ],
@@ -99,7 +98,6 @@ export const PROVIDER_MODELS = {
   ],
   glm: [
     { id: "glm-4.7", name: "GLM 4.7" },
-    { id: "glm-4.6", name: "GLM 4.6" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
   kimi: [

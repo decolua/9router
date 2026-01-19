@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Card from "./Card";
 import Badge from "./Badge";
@@ -38,6 +38,8 @@ export default function UsageStats() {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [viewMode, setViewMode] = useState("tokens"); // 'tokens' or 'costs'
+  const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
+  const [prevTotalRequests, setPrevTotalRequests] = useState(0);
 
   const toggleSort = (field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -114,34 +116,66 @@ export default function UsageStats() {
     return sortData(stats?.byAccount, accountPendingMap);
   }, [stats?.byAccount, stats?.pending?.byAccount, sortBy, sortOrder]);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  useEffect(() => {
-    let interval;
-    if (autoRefresh) {
-      interval = setInterval(() => {
-        fetchStats(false); // fetch without loading skeleton
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
-  const fetchStats = async (showLoading = true) => {
+  const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
       const res = await fetch("/api/usage/history");
       if (res.ok) {
         const data = await res.json();
         setStats(data);
+
+        // Smart polling: adjust interval based on activity
+        const currentTotal = data.totalRequests || 0;
+        if (currentTotal > prevTotalRequests) {
+          // New requests detected - reset to fast polling
+          setRefreshInterval(5000);
+        } else {
+          // No change - increase interval (exponential backoff)
+          setRefreshInterval((prev) => Math.min(prev * 2, 60000)); // Max 60s
+        }
+        setPrevTotalRequests(currentTotal);
       }
     } catch (error) {
       console.error("Failed to fetch usage stats:", error);
     } finally {
       if (showLoading) setLoading(false);
     }
-  };
+  }, [prevTotalRequests]);
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  useEffect(() => {
+    let intervalId;
+    let isPageVisible = true;
+
+    // Page Visibility API - pause when tab is hidden
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible && autoRefresh) {
+        fetchStats(false); // Fetch immediately when tab becomes visible
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    if (autoRefresh) {
+      // Clear any existing interval first
+      if (intervalId) clearInterval(intervalId);
+      
+      intervalId = setInterval(() => {
+        if (isPageVisible) {
+          fetchStats(false); // fetch without loading skeleton
+        }
+      }, refreshInterval);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [autoRefresh, refreshInterval, fetchStats]);
 
   if (loading) return <CardSkeleton />;
 
@@ -202,7 +236,7 @@ export default function UsageStats() {
 
           {/* Auto Refresh Toggle */}
           <label className="text-sm font-medium text-text-muted flex items-center gap-2 cursor-pointer">
-            <span>Auto Refresh (1s)</span>
+            <span>Auto Refresh ({refreshInterval / 1000}s)</span>
             <div
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
@@ -291,7 +325,7 @@ export default function UsageStats() {
           <div className="flex justify-between items-start gap-4">
             <div className="flex flex-col gap-1 flex-1">
               <span className="text-text-muted text-sm uppercase font-semibold">
-                Total Output Tokens
+                Output Tokens
               </span>
               <span className="text-2xl font-bold text-success">
                 {fmt(stats.totalCompletionTokens)}

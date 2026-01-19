@@ -8,6 +8,9 @@ import { normalizeThinkingConfig } from "../services/provider.js";
 const requestRegistry = new Map();
 const responseRegistry = new Map();
 
+// Track initialization state
+let initialized = false;
+
 // Register translator
 export function register(from, to, requestFn, responseFn) {
   const key = `${from}:${to}`;
@@ -19,8 +22,30 @@ export function register(from, to, requestFn, responseFn) {
   }
 }
 
+// Lazy load translators (called once on first use)
+function ensureInitialized() {
+  if (initialized) return;
+  initialized = true;
+  
+  // Request translators - sync require pattern for bundler
+  require("./request/claude-to-openai.js");
+  require("./request/openai-to-claude.js");
+  require("./request/gemini-to-openai.js");
+  require("./request/openai-to-gemini.js");
+  require("./request/openai-responses.js");
+  require("./request/openai-to-kiro.js");
+  
+  // Response translators
+  require("./response/claude-to-openai.js");
+  require("./response/openai-to-claude.js");
+  require("./response/gemini-to-openai.js");
+  require("./response/openai-responses.js");
+  require("./response/kiro-to-openai.js");
+}
+
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null) {
+  ensureInitialized();
   let result = body;
 
   // Normalize thinking config: remove if lastMessage is not user
@@ -66,6 +91,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
+  ensureInitialized();
   // If same format, return as-is
   if (sourceFormat === targetFormat) {
     return [chunk];
@@ -155,20 +181,7 @@ export function initState(sourceFormat) {
   return base;
 }
 
-// Initialize all translators
-export async function initTranslators() {
-  // Request translators
-  await import("./request/claude-to-openai.js");
-  await import("./request/openai-to-claude.js");
-  await import("./request/gemini-to-openai.js");
-  await import("./request/openai-to-gemini.js");
-  await import("./request/openai-responses.js");
-  await import("./request/openai-to-kiro.js");
-  
-  // Response translators
-  await import("./response/claude-to-openai.js");
-  await import("./response/openai-to-claude.js");
-  await import("./response/gemini-to-openai.js");
-  await import("./response/openai-responses.js");
-  await import("./response/kiro-to-openai.js");
+// Initialize all translators (kept for backward compatibility)
+export function initTranslators() {
+  ensureInitialized();
 }

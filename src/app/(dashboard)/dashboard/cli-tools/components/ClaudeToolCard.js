@@ -185,8 +185,8 @@ export default function ClaudeToolCard({
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-4">
-          <div className="size-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${tool.color}15` }}>
-            <Image src="/providers/claude.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" onError={(e) => { e.target.style.display = "none"; }} />
+          <div className="size-12 flex items-center justify-center">
+            <Image src="/providers/claude.png" alt={tool.name} width={40} height={40} className="size-12 object-contain rounded-xl" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div>
             <div className="flex items-center gap-2">

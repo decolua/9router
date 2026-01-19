@@ -28,6 +28,7 @@ const getPageInfo = (pathname) => {
   
   if (pathname.includes("/providers")) return { title: "Providers", description: "Manage your AI provider connections", breadcrumbs: [] };
   if (pathname.includes("/combos")) return { title: "Combos", description: "Model combos with fallback", breadcrumbs: [] };
+  if (pathname.includes("/usage")) return { title: "Usage & Analytics", description: "Monitor your API usage, token consumption, and request logs", breadcrumbs: [] };
   if (pathname.includes("/cli-tools")) return { title: "CLI Tools", description: "Configure CLI tools", breadcrumbs: [] };
   if (pathname.includes("/endpoint")) return { title: "Endpoint", description: "API endpoint configuration", breadcrumbs: [] };
   if (pathname.includes("/profile")) return { title: "Settings", description: "Manage your preferences", breadcrumbs: [] };

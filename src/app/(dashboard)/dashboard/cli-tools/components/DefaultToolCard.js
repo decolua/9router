@@ -227,23 +227,23 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
         <Image 
           src={tool.image} 
           alt={tool.name} 
-          width={32} 
-          height={32} 
-          className="size-8 object-contain rounded-lg" 
+          width={40} 
+          height={40} 
+          className="size-12 object-contain rounded-xl bg-gray-500" 
           onError={(e) => { e.target.style.display = "none"; }} 
         />
       );
     }
     if (tool.icon) {
-      return <span className="material-symbols-outlined text-2xl" style={{ color: tool.color }}>{tool.icon}</span>;
+      return <span className="material-symbols-outlined text-3xl" style={{ color: tool.color }}>{tool.icon}</span>;
     }
     return (
       <Image 
         src={`/providers/${toolId}.png`} 
         alt={tool.name} 
-        width={32} 
-        height={32} 
-        className="size-8 object-contain rounded-lg" 
+        width={40} 
+        height={40} 
+        className="size-10 object-contain rounded-xl" 
         onError={(e) => { e.target.style.display = "none"; }} 
       />
     );
@@ -253,7 +253,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-4">
-          <div className="size-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${tool.color}15` }}>
+          <div className="size-12 rounded-xl flex items-center justify-center">
             {renderIcon()}
           </div>
           <div>

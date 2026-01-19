@@ -49,43 +49,57 @@ function convertMessages(messages, tools, model) {
     }
 
     if (role === "user") {
-      // Skip user messages with only tool_result blocks (Kiro API doesn't support tool results)
+      let finalContent = content;
+      
+      // Check if this user message contains tool_result blocks
       if (Array.isArray(msg.content)) {
-        const hasOnlyToolResults = msg.content.every(c => c.type === "tool_result");
-        if (hasOnlyToolResults) {
-          continue;
+        const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
+        if (toolResultBlocks.length > 0) {
+          const toolResults = toolResultBlocks.map(block => ({
+            content: [{ 
+              text: Array.isArray(block.content) 
+                ? block.content.map(c => c.text || "").join("\n")
+                : (typeof block.content === "string" ? block.content : "")
+            }],
+            status: "success",
+            toolUseId: block.tool_use_id
+          }));
+          
+          // JSON stringify tool results and add to content
+          finalContent = JSON.stringify(toolResults);
         }
       }
       
       const userMsg = {
         userInputMessage: {
-          content: content,
+          content: finalContent,
           modelId: "",
           origin: "AI_EDITOR"
         }
       };
 
       if (tools && tools.length > 0 && history.length === 0) {
-        userMsg.userInputMessage.userInputMessageContext = {
-          tools: tools.map(t => {
-            const name = t.function?.name || t.name;
-            let description = t.function?.description || t.description || "";
-            
-            if (!description.trim()) {
-              description = `Tool: ${name}`;
-            }
-            
-            return {
-              toolSpecification: {
-                name,
-                description,
-                inputSchema: {
-                  json: t.function?.parameters || t.parameters || t.input_schema || {}
-                }
+        if (!userMsg.userInputMessage.userInputMessageContext) {
+          userMsg.userInputMessage.userInputMessageContext = {};
+        }
+        userMsg.userInputMessage.userInputMessageContext.tools = tools.map(t => {
+          const name = t.function?.name || t.name;
+          let description = t.function?.description || t.description || "";
+          
+          if (!description.trim()) {
+            description = `Tool: ${name}`;
+          }
+          
+          return {
+            toolSpecification: {
+              name,
+              description,
+              inputSchema: {
+                json: t.function?.parameters || t.parameters || t.input_schema || {}
               }
-            };
-          })
-        };
+            }
+          };
+        });
       }
 
       currentMessage = userMsg;
@@ -120,58 +134,13 @@ function convertMessages(messages, tools, model) {
             };
           }
         });
-        
-        const toolResults = [];
-        for (const tc of toolCallsOrUses) {
-          const toolId = tc.id;
-          const toolResult = toolResultsMap.get(toolId);
-          if (toolResult !== undefined) {
-            toolResults.push({
-              content: [{ text: toolResult }],
-              status: "success",
-              toolUseId: toolId
-            });
-          }
-        }
-        
-        if (toolResults.length > 0) {
-          assistantMsg._pendingToolResults = toolResults;
-        }
       }
 
       history.push(assistantMsg);
     }
   }
   
-  for (let i = 0; i < history.length; i++) {
-    if (history[i].assistantResponseMessage?._pendingToolResults) {
-      const toolResults = history[i].assistantResponseMessage._pendingToolResults;
-      delete history[i].assistantResponseMessage._pendingToolResults;
-      
-      for (let j = i + 1; j < history.length; j++) {
-        if (history[j].userInputMessage) {
-          if (!history[j].userInputMessage.userInputMessageContext) {
-            history[j].userInputMessage.userInputMessageContext = {};
-          }
-          history[j].userInputMessage.userInputMessageContext.toolResults = toolResults;
-          break;
-        }
-      }
-    }
-  }
-  
-  if (history.length > 0 && history[history.length - 1].assistantResponseMessage?._pendingToolResults) {
-    const toolResults = history[history.length - 1].assistantResponseMessage._pendingToolResults;
-    delete history[history.length - 1].assistantResponseMessage._pendingToolResults;
-    
-    if (currentMessage?.userInputMessage) {
-      if (!currentMessage.userInputMessage.userInputMessageContext) {
-        currentMessage.userInputMessage.userInputMessageContext = {};
-      }
-      currentMessage.userInputMessage.userInputMessageContext.toolResults = toolResults;
-    }
-  }
-
+  // If last message in history is userInputMessage, use it as currentMessage
   if (history.length > 0 && history[history.length - 1].userInputMessage) {
     currentMessage = history.pop();
   }
@@ -194,10 +163,6 @@ function convertMessages(messages, tools, model) {
     
     if (item.userInputMessage?.userInputMessageContext?.tools) {
       delete item.userInputMessage.userInputMessageContext.tools;
-    }
-    
-    if (item.userInputMessage?.userInputMessageContext?.toolResults) {
-      delete item.userInputMessage.userInputMessageContext.toolResults;
     }
     
     if (item.userInputMessage?.userInputMessageContext && 
@@ -235,7 +200,7 @@ function convertMessages(messages, tools, model) {
 function buildKiroPayload(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const maxTokens = body.max_tokens || 32000;
+  const maxTokens = 32000;
   const temperature = body.temperature;
   const topP = body.top_p;
 
