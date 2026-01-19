@@ -7,7 +7,7 @@ function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-// Extract usage from any format (Claude, OpenAI, Gemini)
+// Extract usage from any format (Claude, OpenAI, Gemini, Responses API)
 function extractUsage(chunk) {
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage) {
@@ -16,6 +16,16 @@ function extractUsage(chunk) {
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+    };
+  }
+  // OpenAI Responses API format (response.completed or response.done)
+  if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage) {
+    const usage = chunk.response.usage;
+    return {
+      prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
+      completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
+      cached_tokens: usage.input_tokens_details?.cached_tokens,
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens
     };
   }
   // OpenAI format
@@ -253,7 +263,12 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(encoder.encode(output));
           }
-          if (usage) logUsage(provider, usage, model, connectionId);
+          if (usage) {
+            logUsage(provider, usage, model, connectionId);
+          } else {
+            // No usage data available - still mark request as completed
+            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => {});
+          }
           return;
         }
 
@@ -287,7 +302,12 @@ export function createSSEStream(options = {}) {
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(encoder.encode(doneOutput));
 
-        if (state?.usage) logUsage(state.provider || targetFormat, state.usage, model, connectionId);
+        if (state?.usage) {
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId);
+        } else {
+          // No usage data available - still mark request as completed
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => {});
+        }
       } catch (error) {
         console.log("Error in flush:", error);
       }
