@@ -1,6 +1,6 @@
 "use client";
 
-import { ThemeToggle } from "@/shared/components";
+import ThemeToggle from "../ThemeToggle";
 
 export default function AuthLayout({ children }) {
   return (
