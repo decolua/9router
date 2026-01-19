@@ -36,7 +36,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Auto start OAuth
       startOAuthFlow();
     }
-  }, [isOpen, provider]);
+  }, [isOpen, provider, startOAuthFlow]);
 
   // Listen for OAuth callback via multiple methods
   const callbackProcessedRef = useRef(false);
@@ -114,10 +114,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       window.removeEventListener("storage", handleStorage);
       if (channel) channel.close();
     };
-  }, [authData]);
+  }, [authData, exchangeTokens]);
 
   // Exchange tokens
-  const exchangeTokens = async (code, state) => {
+  const exchangeTokens = useCallback(async (code, state) => {
+    if (!authData) return;
     try {
       const res = await fetch(`/api/oauth/${provider}/exchange`, {
         method: "POST",
@@ -139,10 +140,54 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  };
+  }, [authData, provider, onSuccess]);
+
+  // Poll for device code token
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+    setPolling(true);
+    const maxAttempts = 60;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, interval * 1000));
+
+      try {
+        const res = await fetch(`/api/oauth/${provider}/poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setStep("success");
+          setPolling(false);
+          onSuccess?.();
+          return;
+        }
+
+        if (data.error === "expired_token" || data.error === "access_denied") {
+          throw new Error(data.errorDescription || data.error);
+        }
+
+        if (data.error === "slow_down") {
+          interval = Math.min(interval + 5, 30);
+        }
+      } catch (err) {
+        setError(err.message);
+        setStep("error");
+        setPolling(false);
+        return;
+      }
+    }
+
+    setError("Authorization timeout");
+    setStep("error");
+    setPolling(false);
+  }, [provider, onSuccess]);
 
   // Start OAuth flow
-  const startOAuthFlow = async () => {
+  const startOAuthFlow = useCallback(async () => {
     if (!provider) return;
     try {
       setError(null);
@@ -207,51 +252,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  };
-
-  // Poll for device code token
-  const startPolling = async (deviceCode, codeVerifier, interval, extraData) => {
-    setPolling(true);
-    const maxAttempts = 60;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, interval * 1000));
-
-      try {
-        const res = await fetch(`/api/oauth/${provider}/poll`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-          setStep("success");
-          setPolling(false);
-          onSuccess?.();
-          return;
-        }
-
-        if (data.error === "expired_token" || data.error === "access_denied") {
-          throw new Error(data.errorDescription || data.error);
-        }
-
-        if (data.error === "slow_down") {
-          interval = Math.min(interval + 5, 30);
-        }
-      } catch (err) {
-        setError(err.message);
-        setStep("error");
-        setPolling(false);
-        return;
-      }
-    }
-
-    setError("Authorization timeout");
-    setStep("error");
-    setPolling(false);
-  };
+  }, [provider, isLocalhost, startPolling]);
 
   // Handle manual URL input
   const handleManualSubmit = async () => {

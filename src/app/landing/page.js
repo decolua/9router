@@ -47,7 +47,7 @@ export default function LandingPage() {
         
         {/* CTA Section */}
         <section className="py-32 px-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-t from-[#f97815]/5 to-transparent pointer-events-none"></div>
+          <div className="absolute inset-0 bg-linear-to-t from-[#f97815]/5 to-transparent pointer-events-none"></div>
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <h2 className="text-4xl md:text-5xl font-black mb-6">Ready to Simplify Your AI Infrastructure?</h2>
             <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">

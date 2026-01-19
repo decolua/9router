@@ -21,14 +21,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     if (apiKeys?.length > 0 && !selectedApiKey) {
       setSelectedApiKey(apiKeys[0].key);
     }
-  }, [apiKeys]);
+  }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
     if (isExpanded && !codexStatus) {
       checkCodexStatus();
       fetchModelAliases();
     }
-  }, [isExpanded]);
+  }, [isExpanded, codexStatus]);
 
   const fetchModelAliases = async () => {
     try {

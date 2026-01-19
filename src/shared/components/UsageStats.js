@@ -52,7 +52,7 @@ export default function UsageStats() {
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const sortData = (dataMap, pendingMap = {}) => {
+  const sortData = useCallback((dataMap, pendingMap = {}) => {
     return Object.entries(dataMap || {})
       .map(([key, data]) => {
         const totalTokens =
@@ -91,11 +91,11 @@ export default function UsageStats() {
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
         return 0;
       });
-  };
+  }, [sortBy, sortOrder]);
 
   const sortedModels = useMemo(
     () => sortData(stats?.byModel, stats?.pending?.byModel),
-    [stats?.byModel, stats?.pending?.byModel, sortBy, sortOrder]
+    [stats?.byModel, stats?.pending?.byModel, sortData]
   );
   const sortedAccounts = useMemo(() => {
     // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
@@ -114,7 +114,7 @@ export default function UsageStats() {
       });
     }
     return sortData(stats?.byAccount, accountPendingMap);
-  }, [stats?.byAccount, stats?.pending?.byAccount, sortBy, sortOrder]);
+  }, [stats?.byAccount, stats?.pending?.byAccount, sortData]);
 
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);

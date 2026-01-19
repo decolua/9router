@@ -11,7 +11,7 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Logo */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => router.push("/")}>
-          <div className="size-8 rounded bg-gradient-to-br from-[#f97815] to-orange-700 flex items-center justify-center text-white">
+          <div className="size-8 rounded bg-linear-to-br from-[#f97815] to-orange-700 flex items-center justify-center text-white">
             <span className="material-symbols-outlined text-[20px]">hub</span>
           </div>
           <h2 className="text-white text-xl font-bold tracking-tight">9Router</h2>

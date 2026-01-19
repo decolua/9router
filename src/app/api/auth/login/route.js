@@ -18,7 +18,9 @@ export async function POST(request) {
 
     let isValid = false;
     if (!storedHash) {
-      isValid = password === "123456";
+      // Use env var or default
+      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
+      isValid = password === initialPassword;
     } else {
       isValid = await bcrypt.compare(password, storedHash);
     }

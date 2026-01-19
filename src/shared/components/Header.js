@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/shared/components";
 import { APP_CONFIG, OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
@@ -88,11 +89,13 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                 ) : (
                   <div className="flex items-center gap-2">
                     {crumb.image && (
-                      <img
+                      <Image
                         src={crumb.image}
                         alt={crumb.label}
-                        className="size-7 object-contain rounded"
-                        onError={(e) => { e.target.style.display = "none"; }}
+                        width={28}
+                        height={28}
+                        className="object-contain rounded"
+                        onError={(e) => { e.currentTarget.style.display = "none"; }}
                       />
                     )}
                     <h1 className="text-2xl font-semibold text-text-main tracking-tight">

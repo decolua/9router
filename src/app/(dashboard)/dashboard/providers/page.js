@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Card, CardSkeleton, Badge } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import Link from "next/link";
@@ -11,20 +12,19 @@ export default function ProvidersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch("/api/providers");
+        const data = await res.json();
+        if (res.ok) setConnections(data.connections || []);
+      } catch (error) {
+        console.log("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
-
-  const fetchData = async () => {
-    try {
-      const res = await fetch("/api/providers");
-      const data = await res.json();
-      if (res.ok) setConnections(data.connections || []);
-    } catch (error) {
-      console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getProviderStats = (providerId, authType) => {
     const providerConnections = connections.filter(
@@ -141,10 +141,12 @@ function ProviderCard({ providerId, provider, stats }) {
               style={{ backgroundColor: `${provider.color}15` }}
             >
               {!imgError ? (
-                <img
+                <Image
                   src={`/providers/${provider.id}.png`}
                   alt={provider.name}
-                  className="size-10 object-contain rounded-lg"
+                  width={40}
+                  height={40}
+                  className="object-contain rounded-lg"
                   onError={() => setImgError(true)}
                 />
               ) : (

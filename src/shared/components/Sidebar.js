@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
@@ -38,7 +39,7 @@ export default function Sidebar({ onClose }) {
     try {
       await fetch("/api/shutdown", { method: "POST" });
     } catch (e) {
-      // Expected to fail as server shuts down
+      // Expected to fail as server shuts down; ignore error
     }
     setIsShuttingDown(false);
     setShowShutdownModal(false);
@@ -51,7 +52,7 @@ export default function Sidebar({ onClose }) {
         {/* Logo */}
         <div className="p-8">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded bg-gradient-to-br from-[#f97815] to-[#c2590a]">
+            <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
             <h1 className="text-lg font-semibold tracking-tight text-text-main">
@@ -161,7 +162,7 @@ export default function Sidebar({ onClose }) {
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
             <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-            <Button variant="secondary" onClick={() => window.location.reload()}>
+            <Button variant="secondary" onClick={() => globalThis.location.reload()}>
               Reload Page
             </Button>
           </div>
@@ -170,3 +171,7 @@ export default function Sidebar({ onClose }) {
     </>
   );
 }
+
+Sidebar.propTypes = {
+  onClose: PropTypes.func,
+};

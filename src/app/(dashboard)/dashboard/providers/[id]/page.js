@@ -30,9 +30,9 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     fetchConnections();
     fetchAliases();
-  }, [providerId]);
+  }, [fetchConnections, fetchAliases]);
 
-  const fetchAliases = async () => {
+  const fetchAliases = useCallback(async () => {
     try {
       const res = await fetch("/api/models/alias");
       const data = await res.json();
@@ -42,7 +42,7 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error fetching aliases:", error);
     }
-  };
+  }, []);
 
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
@@ -76,7 +76,7 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const fetchConnections = async () => {
+  const fetchConnections = useCallback(async () => {
     try {
       const res = await fetch("/api/providers");
       const data = await res.json();
@@ -89,7 +89,7 @@ export default function ProviderDetailPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [providerId]);
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this connection?")) return;
@@ -228,11 +228,13 @@ export default function ProviderDetailPage() {
             className="rounded-lg flex items-center justify-center"
             style={{ backgroundColor: `${providerInfo.color}15` }}
           >
-            <img
+            <Image
               src={`/providers/${providerInfo.id}.png`}
               alt={providerInfo.name}
-              className="size-12 object-contain rounded-lg"
-              onError={(e) => { e.target.style.display = "none"; }}
+              width={48}
+              height={48}
+              className="object-contain rounded-lg"
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           </div>
           <div>

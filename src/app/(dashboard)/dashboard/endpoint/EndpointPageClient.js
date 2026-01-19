@@ -18,7 +18,7 @@ export default function APIPageClient({ machineId }) {
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState(null);
+  const [setCloudStatus] = useState(null);
   const [syncStep, setSyncStep] = useState(""); // "syncing" | "verifying" | "disabling" | ""
 
   const { copied, copy } = useCopyToClipboard();
@@ -110,7 +110,7 @@ export default function APIPageClient({ machineId }) {
     
     try {
       // Step 1: Sync latest data from cloud
-      const syncRes = await fetch("/api/sync/cloud", {
+      await fetch("/api/sync/cloud", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sync" })
@@ -198,13 +198,9 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const isLocalhost = typeof window !== "undefined" && 
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
   const baseUrl = typeof window !== "undefined" ? `${window.location.origin}/v1` : "/v1";
-  const localApiKey = "HELLO";
   // New format: /v1 (machineId in key), Old format: /{machineId}/v1
   const cloudEndpointNew = `${CLOUD_URL}/v1`;
-  const cloudEndpointOld = `${CLOUD_URL}/${machineId}/v1`;
 
   if (loading) {
     return (
@@ -244,7 +240,7 @@ export default function APIPageClient({ machineId }) {
                 icon="cloud_off"
                 onClick={() => handleCloudToggle(false)}
                 disabled={cloudSyncing}
-                className="!bg-red-500/10 !text-red-500 hover:!bg-red-500/20 !border-red-500/30"
+                className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
               >
                 Disable Cloud
               </Button>
@@ -254,7 +250,7 @@ export default function APIPageClient({ machineId }) {
                 icon="cloud_upload"
                 onClick={() => handleCloudToggle(true)}
                 disabled={cloudSyncing}
-                className="bg-gradient-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
+                className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
               >
                 Enable Cloud
               </Button>
@@ -371,7 +367,7 @@ export default function APIPageClient({ machineId }) {
                     icon="cloud_off"
                     onClick={() => handleCloudToggle(false)}
                     disabled={cloudSyncing}
-                    className="!bg-red-500/10 !text-red-500 hover:!bg-red-500/20 !border-red-500/30"
+                    className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
                   >
                     Disable
                   </Button>
@@ -381,7 +377,7 @@ export default function APIPageClient({ machineId }) {
                     icon="cloud_upload"
                     onClick={() => handleCloudToggle(true)}
                     disabled={cloudSyncing}
-                    className="bg-gradient-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600 px-6"
+                    className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600 px-6"
                   >
                     Enable Cloud
                   </Button>
@@ -580,7 +576,7 @@ export default function APIPageClient({ machineId }) {
               onClick={handleConfirmDisable}
               fullWidth
               disabled={cloudSyncing}
-              className="!bg-red-500 hover:!bg-red-600 !text-white"
+              className="bg-red-500! hover:bg-red-600! text-white!"
             >
               {cloudSyncing ? (
                 <span className="flex items-center gap-2">
@@ -603,3 +599,7 @@ export default function APIPageClient({ machineId }) {
     </div>
   );
 }
+
+APIPageClient.propTypes = {
+  machineId: import("prop-types").string.isRequired,
+};

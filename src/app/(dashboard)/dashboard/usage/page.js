@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { UsageStats, RequestLogger } from "@/shared/components";
+import { UsageStats, RequestLogger, CardSkeleton } from "@/shared/components";
 
 export default function UsagePage() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -33,9 +33,13 @@ export default function UsagePage() {
       </div>
 
       {/* Content */}
-      <Suspense fallback={<div className="text-text-muted">Loading...</div>}>
-        {activeTab === "overview" ? <UsageStats /> : <RequestLogger />}
-      </Suspense>
+      {activeTab === "overview" ? (
+        <Suspense fallback={<CardSkeleton />}>
+          <UsageStats />
+        </Suspense>
+      ) : (
+        <RequestLogger />
+      )}
     </div>
   );
 }
