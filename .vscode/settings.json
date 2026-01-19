@@ -1,3 +1,8 @@
 {
-  "css.lint.unknownAtRules": "ignore"
+  "css.lint.unknownAtRules": "ignore",
+  "sonarlint.rules": {
+    "css:S4662": {
+      "level": "off"
+    }
+  }
 }
