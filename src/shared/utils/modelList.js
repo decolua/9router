@@ -27,7 +27,7 @@ function buildModels(connections) {
     const providerModels = PROVIDER_MODELS[alias] || [];
 
     for (const model of providerModels) {
-      const key = `${connection.provider}:${model.id}`;
+      const key = `${alias}:${model.id}`;
       if (seenModels.has(key)) {
         continue;
       }
@@ -36,6 +36,7 @@ function buildModels(connections) {
         id: model.id,
         name: model.name || model.id,
         provider: connection.provider,
+        providerAlias: alias,
       });
     }
   }

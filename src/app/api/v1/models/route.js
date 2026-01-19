@@ -18,7 +18,7 @@ export async function GET(request) {
       JSON.stringify({
         object: "list",
         data: models.map((model) => ({
-          id: model.id,
+          id: `${model.providerAlias}/${model.id}`,
           object: "model",
           owned_by: model.provider,
         }))

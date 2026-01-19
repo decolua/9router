@@ -17,7 +17,7 @@ export async function GET(request) {
 
     return Response.json({
       models: models.map((model) => ({
-        name: `models/${model.provider}/${model.id}`,
+        name: `models/${model.providerAlias}/${model.id}`,
         displayName: model.name,
         description: `${model.provider} model: ${model.name}`,
         supportedGenerationMethods: ["generateContent"],
