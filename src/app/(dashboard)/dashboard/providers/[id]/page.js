@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
+import PropTypes from "prop-types";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, Toggle } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
-import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 export default function ProviderDetailPage() {
@@ -27,12 +27,8 @@ export default function ProviderDetailPage() {
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
 
-  useEffect(() => {
-    fetchConnections();
-    fetchAliases();
-  }, [providerId]);
-
-  const fetchAliases = async () => {
+  // Define callbacks BEFORE the useEffect that uses them
+  const fetchAliases = useCallback(async () => {
     try {
       const res = await fetch("/api/models/alias");
       const data = await res.json();
@@ -42,7 +38,27 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error fetching aliases:", error);
     }
-  };
+  }, []);
+
+  const fetchConnections = useCallback(async () => {
+    try {
+      const res = await fetch("/api/providers");
+      const data = await res.json();
+      if (res.ok) {
+        const filtered = (data.connections || []).filter(c => c.provider === providerId);
+        setConnections(filtered);
+      }
+    } catch (error) {
+      console.log("Error fetching connections:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [providerId]);
+
+  useEffect(() => {
+    fetchConnections();
+    fetchAliases();
+  }, [fetchConnections, fetchAliases]);
 
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
@@ -73,21 +89,6 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error deleting alias:", error);
-    }
-  };
-
-  const fetchConnections = async () => {
-    try {
-      const res = await fetch("/api/providers");
-      const data = await res.json();
-      if (res.ok) {
-        const filtered = (data.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
-      }
-    } catch (error) {
-      console.log("Error fetching connections:", error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -192,6 +193,47 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const renderModelsSection = () => {
+    if (providerInfo.passthroughModels) {
+      return (
+        <PassthroughModelsSection
+          providerAlias={providerAlias}
+          modelAliases={modelAliases}
+          copied={copied}
+          onCopy={copy}
+          onSetAlias={handleSetAlias}
+          onDeleteAlias={handleDeleteAlias}
+        />
+      );
+    }
+    if (models.length === 0) {
+      return <p className="text-sm text-text-muted">No models configured</p>;
+    }
+    return (
+      <div className="flex flex-wrap gap-3">
+        {models.map((model) => {
+          const fullModel = `${providerAlias}/${model.id}`;
+          const oldFormatModel = `${providerId}/${model.id}`;
+          const existingAlias = Object.entries(modelAliases).find(
+            ([, m]) => m === fullModel || m === oldFormatModel
+          )?.[0];
+          return (
+            <ModelRow
+              key={model.id}
+              model={model}
+              fullModel={fullModel}
+              alias={existingAlias}
+              copied={copied}
+              onCopy={copy}
+              onSetAlias={(alias) => handleSetAlias(model.id, alias)}
+              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
   if (!providerInfo) {
     return (
       <div className="text-center py-20">
@@ -228,17 +270,20 @@ export default function ProviderDetailPage() {
             className="rounded-lg flex items-center justify-center"
             style={{ backgroundColor: `${providerInfo.color}15` }}
           >
-            <img
+            <Image
               src={`/providers/${providerInfo.id}.png`}
               alt={providerInfo.name}
-              className="size-12 object-contain rounded-lg"
-              onError={(e) => { e.target.style.display = "none"; }}
+              width={48}
+              height={48}
+              className="object-contain rounded-lg"
+              style={{ width: "auto", height: "auto" }}
+              onError={(e) => { e.currentTarget.style.display = "none"; }}
             />
           </div>
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
             <p className="text-text-muted">
-              {connections.length} connection{connections.length !== 1 ? "s" : ""}
+              {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
           </div>
         </div>
@@ -294,41 +339,7 @@ export default function ProviderDetailPage() {
         <h2 className="text-lg font-semibold mb-4">
           {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
         </h2>
-        {providerInfo.passthroughModels ? (
-          <PassthroughModelsSection
-            providerAlias={providerAlias}
-            modelAliases={modelAliases}
-            copied={copied}
-            onCopy={copy}
-            onSetAlias={handleSetAlias}
-            onDeleteAlias={handleDeleteAlias}
-          />
-        ) : models.length === 0 ? (
-          <p className="text-sm text-text-muted">No models configured</p>
-        ) : (
-          <div className="flex flex-wrap gap-3">
-            {models.map((model) => {
-              const fullModel = `${providerAlias}/${model.id}`;
-              // Also check for old format (providerId/model) for backward compatibility
-              const oldFormatModel = `${providerId}/${model.id}`;
-              const existingAlias = Object.entries(modelAliases).find(
-                ([, m]) => m === fullModel || m === oldFormatModel
-              )?.[0];
-              return (
-                <ModelRow
-                  key={model.id}
-                  model={model}
-                  fullModel={fullModel}
-                  alias={existingAlias}
-                  copied={copied}
-                  onCopy={copy}
-                  onSetAlias={(alias) => handleSetAlias(model.id, alias)}
-                  onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-                />
-              );
-            })}
-          </div>
-        )}
+        {renderModelsSection()}
 
       </Card>
 
@@ -373,6 +384,16 @@ function ModelRow({ model, fullModel, alias, copied, onCopy }) {
     </div>
   );
 }
+
+ModelRow.propTypes = {
+  model: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+  }).isRequired,
+  fullModel: PropTypes.string.isRequired,
+  alias: PropTypes.string,
+  copied: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
+};
 
 function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
   const [newModel, setNewModel] = useState("");
@@ -426,8 +447,9 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
       {/* Add new model */}
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
+          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
           <input
+            id="new-model-input"
             type="text"
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
@@ -460,14 +482,23 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
   );
 }
 
+PassthroughModelsSection.propTypes = {
+  providerAlias: PropTypes.string.isRequired,
+  modelAliases: PropTypes.object.isRequired,
+  copied: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
+  onSetAlias: PropTypes.func.isRequired,
+  onDeleteAlias: PropTypes.func.isRequired,
+};
+
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-sidebar/50">
       <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
-      
+
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
-        
+
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <button
@@ -493,6 +524,14 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
     </div>
   );
 }
+
+PassthroughModelRow.propTypes = {
+  modelId: PropTypes.string.isRequired,
+  fullModel: PropTypes.string.isRequired,
+  copied: PropTypes.string,
+  onCopy: PropTypes.func.isRequired,
+  onDeleteAlias: PropTypes.func.isRequired,
+};
 
 function CooldownTimer({ until }) {
   const [remaining, setRemaining] = useState("");
@@ -530,6 +569,10 @@ function CooldownTimer({ until }) {
   );
 }
 
+CooldownTimer.propTypes = {
+  until: PropTypes.string.isRequired,
+};
+
 function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
@@ -564,8 +607,6 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
   };
-
-  const hasError = effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable";
 
   return (
     <div className={`flex items-center justify-between p-3 rounded-lg border border-border hover:bg-sidebar/50 ${connection.isActive === false ? 'opacity-60' : ''}`}>
@@ -612,9 +653,9 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
       <div className="flex items-center gap-2">
         <Toggle
           size="sm"
-          checked={connection.isActive !== false}
+          checked={connection.isActive ?? true}
           onChange={onToggleActive}
-          title={connection.isActive !== false ? "Disable connection" : "Enable connection"}
+          title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
         <div className="flex gap-1 ml-1">
           <button onClick={onEdit} className="p-2 hover:bg-sidebar rounded">
@@ -628,6 +669,29 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     </div>
   );
 }
+
+ConnectionRow.propTypes = {
+  connection: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    email: PropTypes.string,
+    displayName: PropTypes.string,
+    rateLimitedUntil: PropTypes.string,
+    testStatus: PropTypes.string,
+    isActive: PropTypes.bool,
+    lastError: PropTypes.string,
+    priority: PropTypes.number,
+    globalPriority: PropTypes.number,
+  }).isRequired,
+  isOAuth: PropTypes.bool.isRequired,
+  isFirst: PropTypes.bool.isRequired,
+  isLast: PropTypes.bool.isRequired,
+  onMoveUp: PropTypes.func.isRequired,
+  onMoveDown: PropTypes.func.isRequired,
+  onToggleActive: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
+  onDelete: PropTypes.func.isRequired,
+};
 
 function AddApiKeyModal({ isOpen, provider, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -698,7 +762,7 @@ function AddApiKeyModal({ isOpen, provider, onSave, onClose }) {
           label="Priority"
           type="number"
           value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey}>
@@ -712,6 +776,13 @@ function AddApiKeyModal({ isOpen, provider, onSave, onClose }) {
     </Modal>
   );
 }
+
+AddApiKeyModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  provider: PropTypes.string,
+  onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
 
 function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -779,9 +850,9 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
           label="Priority"
           type="number"
           value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 1 })}
+          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
-        
+
         {/* Test Connection */}
         <div className="flex items-center gap-3">
           <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -802,3 +873,17 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     </Modal>
   );
 }
+
+EditConnectionModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  connection: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    email: PropTypes.string,
+    priority: PropTypes.number,
+    authType: PropTypes.string,
+    provider: PropTypes.string,
+  }),
+  onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+};

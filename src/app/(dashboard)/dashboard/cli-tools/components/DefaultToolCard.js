@@ -224,13 +224,14 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const renderIcon = () => {
     if (tool.image) {
       return (
-        <Image 
-          src={tool.image} 
-          alt={tool.name} 
-          width={40} 
-          height={40} 
-          className="size-12 object-contain rounded-xl bg-gray-500" 
-          onError={(e) => { e.target.style.display = "none"; }} 
+        <Image
+          src={tool.image}
+          alt={tool.name}
+          width={40}
+          height={40}
+          className="size-12 object-contain rounded-xl bg-gray-500"
+          style={{ width: "auto", height: "auto" }}
+          onError={(e) => { e.target.style.display = "none"; }}
         />
       );
     }
@@ -238,13 +239,14 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       return <span className="material-symbols-outlined text-3xl" style={{ color: tool.color }}>{tool.icon}</span>;
     }
     return (
-      <Image 
-        src={`/providers/${toolId}.png`} 
-        alt={tool.name} 
-        width={40} 
-        height={40} 
-        className="size-10 object-contain rounded-xl" 
-        onError={(e) => { e.target.style.display = "none"; }} 
+      <Image
+        src={`/providers/${toolId}.png`}
+        alt={tool.name}
+        width={40}
+        height={40}
+        className="size-10 object-contain rounded-xl"
+        style={{ width: "auto", height: "auto" }}
+        onError={(e) => { e.target.style.display = "none"; }}
       />
     );
   };

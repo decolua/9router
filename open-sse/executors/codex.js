@@ -23,6 +23,16 @@ export class CodexExecutor extends BaseExecutor {
     // Ensure store is false (Codex requirement)
     body.store = false;
 
+    // Remove unsupported parameters for Codex API
+    delete body.temperature;
+    delete body.top_p;
+    delete body.frequency_penalty;
+    delete body.presence_penalty;
+    delete body.logprobs;
+    delete body.top_logprobs;
+    delete body.n;
+    delete body.seed;
+
     return body;
   }
 }

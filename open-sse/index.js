@@ -1,3 +1,6 @@
+// Patch global fetch with proxy support (must be first)
+import "./utils/proxyFetch.js";
+
 // Config
 export { PROVIDERS, OAUTH_ENDPOINTS, CACHE_TTL, DEFAULT_MAX_TOKENS, CLAUDE_SYSTEM_PROMPT, COOLDOWN_MS, BACKOFF_CONFIG } from "./config/constants.js";
 export { 

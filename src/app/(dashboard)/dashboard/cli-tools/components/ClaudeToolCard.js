@@ -46,14 +46,14 @@ export default function ClaudeToolCard({
     if (apiKeys?.length > 0 && !selectedApiKey) {
       setSelectedApiKey(apiKeys[0].key);
     }
-  }, [apiKeys]);
+  }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
     if (isExpanded && !claudeStatus) {
       checkClaudeStatus();
       fetchModelAliases();
     }
-  }, [isExpanded]);
+  }, [isExpanded, claudeStatus]);
 
   const fetchModelAliases = async () => {
     try {
@@ -80,7 +80,7 @@ export default function ClaudeToolCard({
         setSelectedApiKey(tokenFromFile);
       }
     }
-  }, [claudeStatus, apiKeys]);
+  }, [claudeStatus, apiKeys, tool.defaultModels, onModelMappingChange]);
 
   const checkClaudeStatus = async () => {
     setCheckingClaude(true);
@@ -186,7 +186,7 @@ export default function ClaudeToolCard({
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-4">
           <div className="size-12 flex items-center justify-center">
-            <Image src="/providers/claude.png" alt={tool.name} width={40} height={40} className="size-12 object-contain rounded-xl" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/claude.png" alt={tool.name} width={40} height={40} className="size-12 object-contain rounded-xl" style={{ width: "auto", height: "auto" }} onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div>
             <div className="flex items-center gap-2">

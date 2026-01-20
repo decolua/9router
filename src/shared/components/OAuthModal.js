@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -20,9 +21,156 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const popupRef = useRef(null);
   const { copied, copy } = useCopyToClipboard();
 
-  // Detect if running on localhost
-  const isLocalhost = typeof window !== "undefined" && 
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  // State for client-only values to avoid hydration mismatch
+  const [isLocalhost, setIsLocalhost] = useState(false);
+  const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
+  const callbackProcessedRef = useRef(false);
+
+  // Detect if running on localhost (client-side only)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setIsLocalhost(
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      );
+      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
+    }
+  }, []);
+
+  // Define all useCallback hooks BEFORE the useEffects that reference them
+
+  // Exchange tokens
+  const exchangeTokens = useCallback(async (code, state) => {
+    if (!authData) return;
+    try {
+      const res = await fetch(`/api/oauth/${provider}/exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          redirectUri: authData.redirectUri,
+          codeVerifier: authData.codeVerifier,
+          state,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setStep("success");
+      onSuccess?.();
+    } catch (err) {
+      setError(err.message);
+      setStep("error");
+    }
+  }, [authData, provider, onSuccess]);
+
+  // Poll for device code token
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+    setPolling(true);
+    const maxAttempts = 60;
+
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, interval * 1000));
+
+      try {
+        const res = await fetch(`/api/oauth/${provider}/poll`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setStep("success");
+          setPolling(false);
+          onSuccess?.();
+          return;
+        }
+
+        if (data.error === "expired_token" || data.error === "access_denied") {
+          throw new Error(data.errorDescription || data.error);
+        }
+
+        if (data.error === "slow_down") {
+          interval = Math.min(interval + 5, 30);
+        }
+      } catch (err) {
+        setError(err.message);
+        setStep("error");
+        setPolling(false);
+        return;
+      }
+    }
+
+    setError("Authorization timeout");
+    setStep("error");
+    setPolling(false);
+  }, [provider, onSuccess]);
+
+  // Start OAuth flow
+  const startOAuthFlow = useCallback(async () => {
+    if (!provider) return;
+    try {
+      setError(null);
+
+      // Device code flow (GitHub, Qwen, Kiro)
+      if (provider === "github" || provider === "qwen" || provider === "kiro") {
+        setIsDeviceCode(true);
+        setStep("waiting");
+
+        const res = await fetch(`/api/oauth/${provider}/device-code`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        setDeviceData(data);
+
+        // Open verification URL
+        const verifyUrl = data.verification_uri_complete || data.verification_uri;
+        if (verifyUrl) window.open(verifyUrl, "_blank");
+
+        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
+        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
+        return;
+      }
+
+      // Authorization code flow - always use localhost with current port (except Codex)
+      let redirectUri;
+      if (provider === "codex") {
+        // Codex requires fixed port 1455
+        redirectUri = "http://localhost:1455/auth/callback";
+      } else {
+        // Always use localhost with current port for OAuth callback
+        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+        redirectUri = `http://localhost:${port}/callback`;
+      }
+
+      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setAuthData({ ...data, redirectUri });
+
+      // For Codex or non-localhost: use manual input mode
+      if (provider === "codex" || !isLocalhost) {
+        setStep("input");
+        window.open(data.authUrl, "_blank");
+      } else {
+        // Localhost (non-Codex): Open popup and wait for message
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+
+        // Check if popup was blocked
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      }
+    } catch (err) {
+      setError(err.message);
+      setStep("error");
+    }
+  }, [provider, isLocalhost, startPolling]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -36,11 +184,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Auto start OAuth
       startOAuthFlow();
     }
-  }, [isOpen, provider]);
+  }, [isOpen, provider, startOAuthFlow]);
 
   // Listen for OAuth callback via multiple methods
-  const callbackProcessedRef = useRef(false);
-  
   useEffect(() => {
     if (!authData) return;
     callbackProcessedRef.current = false; // Reset when authData changes
@@ -48,7 +194,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     // Handler for callback data - only process once
     const handleCallback = async (data) => {
       if (callbackProcessedRef.current) return; // Already processed
-      
+
       const { code, state, error: callbackError, errorDescription } = data;
 
       if (callbackError) {
@@ -107,151 +253,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           localStorage.removeItem("oauth_callback");
         }
       }
-    } catch (e) {}
+    } catch {
+      // localStorage may be unavailable or data may be malformed - ignore silently
+    }
 
     return () => {
       window.removeEventListener("message", handleMessage);
       window.removeEventListener("storage", handleStorage);
       if (channel) channel.close();
     };
-  }, [authData]);
-
-  // Exchange tokens
-  const exchangeTokens = async (code, state) => {
-    try {
-      const res = await fetch(`/api/oauth/${provider}/exchange`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          redirectUri: authData.redirectUri,
-          codeVerifier: authData.codeVerifier,
-          state,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setStep("success");
-      onSuccess?.();
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
-    }
-  };
-
-  // Start OAuth flow
-  const startOAuthFlow = async () => {
-    if (!provider) return;
-    try {
-      setError(null);
-
-      // Device code flow (GitHub, Qwen, Kiro)
-      if (provider === "github" || provider === "qwen" || provider === "kiro") {
-        setIsDeviceCode(true);
-        setStep("waiting");
-
-        const res = await fetch(`/api/oauth/${provider}/device-code`);
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-
-        setDeviceData(data);
-
-        // Open verification URL
-        const verifyUrl = data.verification_uri_complete || data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, "_blank");
-
-        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
-        startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
-        return;
-      }
-
-      // Authorization code flow - always use localhost with current port (except Codex)
-      let redirectUri;
-      if (provider === "codex") {
-        // Codex requires fixed port 1455
-        redirectUri = "http://localhost:1455/auth/callback";
-      } else {
-        // Always use localhost with current port for OAuth callback
-        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-        redirectUri = `http://localhost:${port}/callback`;
-      }
-
-      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setAuthData({ ...data, redirectUri });
-
-      // For Codex, always use manual input since it requires fixed port 1455
-      if (provider === "codex") {
-        setStep("input");
-        window.open(data.authUrl, "_blank");
-      } else if (isLocalhost) {
-        // Other providers on localhost: Open popup and wait for message
-        setStep("waiting");
-        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
-
-        // Check if popup was blocked
-        if (!popupRef.current) {
-          setStep("input");
-        }
-      } else {
-        // Remote: Show manual input
-        setStep("input");
-        window.open(data.authUrl, "_blank");
-      }
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
-    }
-  };
-
-  // Poll for device code token
-  const startPolling = async (deviceCode, codeVerifier, interval, extraData) => {
-    setPolling(true);
-    const maxAttempts = 60;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, interval * 1000));
-
-      try {
-        const res = await fetch(`/api/oauth/${provider}/poll`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-          setStep("success");
-          setPolling(false);
-          onSuccess?.();
-          return;
-        }
-
-        if (data.error === "expired_token" || data.error === "access_denied") {
-          throw new Error(data.errorDescription || data.error);
-        }
-
-        if (data.error === "slow_down") {
-          interval = Math.min(interval + 5, 30);
-        }
-      } catch (err) {
-        setError(err.message);
-        setStep("error");
-        setPolling(false);
-        return;
-      }
-    }
-
-    setError("Authorization timeout");
-    setStep("error");
-    setPolling(false);
-  };
+  }, [authData, exchangeTokens]);
 
   // Handle manual URL input
   const handleManualSubmit = async () => {
@@ -363,7 +374,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <Input
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder={`${window.location.origin}/callback?code=...`}
+                  placeholder={placeholderUrl}
                   className="font-mono text-xs"
                 />
               </div>
@@ -418,3 +429,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     </Modal>
   );
 }
+
+OAuthModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  provider: PropTypes.string,
+  providerInfo: PropTypes.shape({
+    name: PropTypes.string,
+  }),
+  onSuccess: PropTypes.func,
+  onClose: PropTypes.func.isRequired,
+};

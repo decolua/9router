@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/providers";
@@ -33,7 +34,7 @@ export default function ModelSelectModal({
     }
   }, [isOpen]);
 
-  const allProviders = { ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS };
+  const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -141,7 +142,7 @@ export default function ModelSelectModal({
       }}
       title={title}
       size="md"
-      className="!p-4"
+      className="p-4!"
     >
       {/* Search - compact */}
       <div className="mb-3">
@@ -245,4 +246,18 @@ export default function ModelSelectModal({
     </Modal>
   );
 }
+
+ModelSelectModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSelect: PropTypes.func.isRequired,
+  selectedModel: PropTypes.string,
+  activeProviders: PropTypes.arrayOf(
+    PropTypes.shape({
+      provider: PropTypes.string.isRequired,
+    })
+  ),
+  title: PropTypes.string,
+  modelAliases: PropTypes.object,
+};
 

@@ -1,9 +1,9 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { v4 as uuidv4 } from "uuid";
-import path from "path";
-import os from "os";
-import fs from "fs";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -15,6 +15,8 @@ function getAppName() {
 // Get user data directory based on platform
 function getUserDataDir() {
   if (isCloud) return "/tmp"; // Fallback for Workers
+
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
 
   const platform = process.platform;
   const homeDir = os.homedir();
@@ -599,7 +601,7 @@ export async function getPricingForModel(provider, model) {
   const pricing = await getPricing();
 
   // Try direct lookup
-  if (pricing[provider] && pricing[provider][model]) {
+  if (pricing[provider]?.[model]) {
     return pricing[provider][model];
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import PropTypes from "prop-types";
 import { useSearchParams, useRouter } from "next/navigation";
 import Card from "./Card";
 import Badge from "./Badge";
@@ -11,21 +12,32 @@ function SortIcon({ field, currentSort, currentOrder }) {
   return <span className="ml-1">{currentOrder === "asc" ? "↑" : "↓"}</span>;
 }
 
+SortIcon.propTypes = {
+  field: PropTypes.string.isRequired,
+  currentSort: PropTypes.string.isRequired,
+  currentOrder: PropTypes.string.isRequired,
+};
+
 function MiniBarGraph({ data, colorClass = "bg-primary" }) {
   const max = Math.max(...data, 1);
   return (
     <div className="flex items-end gap-1 h-8 w-24">
-      {data.slice(-9).map((val, i) => (
+      {data.slice(-9).map((val, idx) => (
         <div
-          key={i}
+          key={`bar-${idx}-${val}`}
           className={`flex-1 rounded-t-sm transition-all duration-500 ${colorClass}`}
           style={{ height: `${Math.max((val / max) * 100, 5)}%` }}
-          title={val}
+          title={String(val)}
         />
       ))}
     </div>
   );
 }
+
+MiniBarGraph.propTypes = {
+  data: PropTypes.arrayOf(PropTypes.number).isRequired,
+  colorClass: PropTypes.string,
+};
 
 export default function UsageStats() {
   const router = useRouter();
@@ -52,7 +64,7 @@ export default function UsageStats() {
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const sortData = (dataMap, pendingMap = {}) => {
+  const sortData = useCallback((dataMap, pendingMap = {}) => {
     return Object.entries(dataMap || {})
       .map(([key, data]) => {
         const totalTokens =
@@ -91,11 +103,11 @@ export default function UsageStats() {
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
         return 0;
       });
-  };
+  }, [sortBy, sortOrder]);
 
   const sortedModels = useMemo(
     () => sortData(stats?.byModel, stats?.pending?.byModel),
-    [stats?.byModel, stats?.pending?.byModel, sortBy, sortOrder]
+    [stats?.byModel, stats?.pending?.byModel, sortData]
   );
   const sortedAccounts = useMemo(() => {
     // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
@@ -114,7 +126,7 @@ export default function UsageStats() {
       });
     }
     return sortData(stats?.byAccount, accountPendingMap);
-  }, [stats?.byAccount, stats?.pending?.byAccount, sortBy, sortOrder]);
+  }, [stats?.byAccount, stats?.pending?.byAccount, sortData]);
 
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -235,11 +247,15 @@ export default function UsageStats() {
           </div>
 
           {/* Auto Refresh Toggle */}
-          <label className="text-sm font-medium text-text-muted flex items-center gap-2 cursor-pointer">
+          <div className="text-sm font-medium text-text-muted flex items-center gap-2">
             <span>Auto Refresh ({refreshInterval / 1000}s)</span>
-            <div
+            <button
+              type="button"
               onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+              role="switch"
+              aria-checked={autoRefresh}
+              aria-label="Toggle auto refresh"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                 autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
               }`}
             >
@@ -248,8 +264,8 @@ export default function UsageStats() {
                   autoRefresh ? "translate-x-5" : "translate-x-1"
                 }`}
               />
-            </div>
-          </label>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -265,9 +281,9 @@ export default function UsageStats() {
               Active Requests
             </div>
             <div className="flex flex-wrap gap-3">
-              {stats.activeRequests.map((req, i) => (
+              {stats.activeRequests.map((req) => (
                 <div
-                  key={i}
+                  key={`${req.model}-${req.provider}-${req.account}`}
                   className="px-3 py-1.5 rounded-md bg-bg-subtle border border-primary/20 text-xs font-mono shadow-sm"
                 >
                   <span className="text-primary font-bold">{req.model}</span>

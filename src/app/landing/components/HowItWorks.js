@@ -13,7 +13,7 @@ export default function HowItWorks() {
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
           {/* Connection line */}
-          <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-[2px] bg-gradient-to-r from-gray-700 via-[#f97815] to-gray-700 -z-10"></div>
+          <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-[2px] bg-linear-to-r from-gray-700 via-[#f97815] to-gray-700 -z-10"></div>
           
           {/* Step 1: CLI & SDKs */}
           <div className="flex flex-col gap-6 relative group">

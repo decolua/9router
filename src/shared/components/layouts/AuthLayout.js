@@ -1,6 +1,7 @@
 "use client";
 
-import { ThemeToggle } from "@/shared/components";
+import PropTypes from "prop-types";
+import ThemeToggle from "../ThemeToggle";
 
 export default function AuthLayout({ children }) {
   return (
@@ -21,4 +22,8 @@ export default function AuthLayout({ children }) {
     </div>
   );
 }
+
+AuthLayout.propTypes = {
+  children: PropTypes.node.isRequired,
+};
 

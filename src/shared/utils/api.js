@@ -88,5 +88,6 @@ async function handleResponse(response) {
   return data;
 }
 
-export default { get, post, put, del };
+const api = { get, post, put, del };
+export default api;
 

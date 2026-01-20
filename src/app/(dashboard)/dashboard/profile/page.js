@@ -159,7 +159,7 @@ export default function ProfilePage() {
             )}
 
             <div className="pt-2">
-              <Button type="submit" variant="primary" isLoading={passLoading}>
+              <Button type="submit" variant="primary" loading={passLoading}>
                 Update Password
               </Button>
             </div>

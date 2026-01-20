@@ -1,30 +1,55 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
+import PropTypes from "prop-types";
 import { Card, CardSkeleton, Badge } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
+
+// Shared helper function to avoid code duplication between ProviderCard and ApiKeyProviderCard
+function getStatusDisplay(connected, error, errorCode) {
+  const parts = [];
+  if (connected > 0) {
+    parts.push(
+      <Badge key="connected" variant="success" size="sm" dot>
+        {connected} Connected
+      </Badge>
+    );
+  }
+  if (error > 0) {
+    const errText = errorCode ? `${error} Error (${errorCode})` : `${error} Error`;
+    parts.push(
+      <Badge key="error" variant="error" size="sm" dot>
+        {errText}
+      </Badge>
+    );
+  }
+  if (parts.length === 0) {
+    return <span className="text-text-muted">No connections</span>;
+  }
+  return parts;
+}
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch("/api/providers");
+        const data = await res.json();
+        if (res.ok) setConnections(data.connections || []);
+      } catch (error) {
+        console.log("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
-
-  const fetchData = async () => {
-    try {
-      const res = await fetch("/api/providers");
-      const data = await res.json();
-      if (res.ok) setConnections(data.connections || []);
-    } catch (error) {
-      console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getProviderStats = (providerId, authType) => {
     const providerConnections = connections.filter(
@@ -108,29 +133,6 @@ function ProviderCard({ providerId, provider, stats }) {
   const { connected, error, errorCode, errorTime } = stats;
   const [imgError, setImgError] = useState(false);
 
-  const getStatusDisplay = () => {
-    const parts = [];
-    if (connected > 0) {
-      parts.push(
-        <Badge key="connected" variant="success" size="sm" dot>
-          {connected} Connected
-        </Badge>
-      );
-    }
-    if (error > 0) {
-      const errText = errorCode ? `${error} Error (${errorCode})` : `${error} Error`;
-      parts.push(
-        <Badge key="error" variant="error" size="sm" dot>
-          {errText}
-        </Badge>
-      );
-    }
-    if (parts.length === 0) {
-      return <span className="text-text-muted">No connections</span>;
-    }
-    return parts;
-  };
-
   return (
     <Link href={`/dashboard/providers/${providerId}`}>
       <Card className="h-full hover:border-primary/50 transition-colors cursor-pointer">
@@ -140,26 +142,29 @@ function ProviderCard({ providerId, provider, stats }) {
               className="size-10 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: `${provider.color}15` }}
             >
-              {!imgError ? (
-                <img
-                  src={`/providers/${provider.id}.png`}
-                  alt={provider.name}
-                  className="size-10 object-contain rounded-lg"
-                  onError={() => setImgError(true)}
-                />
-              ) : (
+              {imgError ? (
                 <span
                   className="text-sm font-bold"
                   style={{ color: provider.color }}
                 >
                   {provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
                 </span>
+              ) : (
+                <Image
+                  src={`/providers/${provider.id}.png`}
+                  alt={provider.name}
+                  width={40}
+                  height={40}
+                  className="object-contain rounded-lg"
+                  style={{ width: "auto", height: "auto" }}
+                  onError={() => setImgError(true)}
+                />
               )}
             </div>
             <div>
               <h3 className="font-semibold">{provider.name}</h3>
               <div className="flex items-center gap-2 text-xs flex-wrap">
-                {getStatusDisplay()}
+                {getStatusDisplay(connected, error, errorCode)}
                 {errorTime && <span className="text-text-muted">• {errorTime}</span>}
               </div>
             </div>
@@ -173,32 +178,25 @@ function ProviderCard({ providerId, provider, stats }) {
   );
 }
 
+ProviderCard.propTypes = {
+  providerId: PropTypes.string.isRequired,
+  provider: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    color: PropTypes.string,
+    textIcon: PropTypes.string,
+  }).isRequired,
+  stats: PropTypes.shape({
+    connected: PropTypes.number,
+    error: PropTypes.number,
+    errorCode: PropTypes.string,
+    errorTime: PropTypes.string,
+  }).isRequired,
+};
+
 // API Key providers - only use textIcon, no image
 function ApiKeyProviderCard({ providerId, provider, stats }) {
   const { connected, error, errorCode, errorTime } = stats;
-
-  const getStatusDisplay = () => {
-    const parts = [];
-    if (connected > 0) {
-      parts.push(
-        <Badge key="connected" variant="success" size="sm" dot>
-          {connected} Connected
-        </Badge>
-      );
-    }
-    if (error > 0) {
-      const errText = errorCode ? `${error} Error (${errorCode})` : `${error} Error`;
-      parts.push(
-        <Badge key="error" variant="error" size="sm" dot>
-          {errText}
-        </Badge>
-      );
-    }
-    if (parts.length === 0) {
-      return <span className="text-text-muted">No connections</span>;
-    }
-    return parts;
-  };
 
   return (
     <Link href={`/dashboard/providers/${providerId}`}>
@@ -219,7 +217,7 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
             <div>
               <h3 className="font-semibold">{provider.name}</h3>
               <div className="flex items-center gap-2 text-xs flex-wrap">
-                {getStatusDisplay()}
+                {getStatusDisplay(connected, error, errorCode)}
                 {errorTime && <span className="text-text-muted">• {errorTime}</span>}
               </div>
             </div>
@@ -232,3 +230,19 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
     </Link>
   );
 }
+
+ApiKeyProviderCard.propTypes = {
+  providerId: PropTypes.string.isRequired,
+  provider: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    color: PropTypes.string,
+    textIcon: PropTypes.string,
+  }).isRequired,
+  stats: PropTypes.shape({
+    connected: PropTypes.number,
+    error: PropTypes.number,
+    errorCode: PropTypes.string,
+    errorTime: PropTypes.string,
+  }).isRequired,
+};

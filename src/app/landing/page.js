@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import Navigation from "./components/Navigation";
 import HeroSection from "./components/HeroSection";
 import FlowAnimation from "./components/FlowAnimation";
@@ -8,6 +9,7 @@ import GetStarted from "./components/GetStarted";
 import Footer from "./components/Footer";
 
 export default function LandingPage() {
+  const router = useRouter();
   return (
     <div className="relative text-white font-sans overflow-x-hidden antialiased selection:bg-[#f97815] selection:text-white">
       {/* Animated Background */}
@@ -47,7 +49,7 @@ export default function LandingPage() {
         
         {/* CTA Section */}
         <section className="py-32 px-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-t from-[#f97815]/5 to-transparent pointer-events-none"></div>
+          <div className="absolute inset-0 bg-linear-to-t from-[#f97815]/5 to-transparent pointer-events-none"></div>
           <div className="max-w-4xl mx-auto text-center relative z-10">
             <h2 className="text-4xl md:text-5xl font-black mb-6">Ready to Simplify Your AI Infrastructure?</h2>
             <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
@@ -55,7 +57,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <button 
-                onClick={() => window.location.href = "/dashboard"}
+                onClick={() => router.push("/dashboard")}
                 className="w-full sm:w-auto h-14 px-10 rounded-lg bg-[#f97815] hover:bg-[#e0650a] text-[#181411] text-lg font-bold transition-all shadow-[0_0_20px_rgba(249,120,21,0.5)]"
               >
                 Start Free

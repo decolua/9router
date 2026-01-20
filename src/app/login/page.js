@@ -106,7 +106,7 @@ export default function LoginPage() {
               type="submit"
               variant="primary"
               className="w-full"
-              isLoading={loading}
+              loading={loading}
             >
               Login
             </Button>
