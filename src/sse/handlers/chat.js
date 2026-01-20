@@ -1,3 +1,5 @@
+import "open-sse/index.js";
+
 import { getProviderCredentials, markAccountUnavailable, clearAccountError } from "../services/auth.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
