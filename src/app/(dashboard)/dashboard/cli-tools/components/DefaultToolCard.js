@@ -19,8 +19,14 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       ? selectedApiKey 
       : (!cloudEnabled ? "sk_9router" : "your-api-key");
     
+    // Add /v1 suffix only if not already present (DRY - avoid duplicate)
+    const normalizedBaseUrl = baseUrl || "http://localhost:3000";
+    const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
+      ? normalizedBaseUrl 
+      : `${normalizedBaseUrl}/v1`;
+    
     return text
-      .replace(/\{\{baseUrl\}\}/g, baseUrl || "http://localhost:3000")
+      .replace(/\{\{baseUrl\}\}/g, baseUrlWithV1)
       .replace(/\{\{apiKey\}\}/g, keyToUse)
       .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
   };

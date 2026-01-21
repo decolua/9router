@@ -16,6 +16,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -40,7 +41,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     }
   };
 
-  // Parse model from config content
+  // Parse model from config content (don't sync URL - always use baseUrl from props)
   useEffect(() => {
     if (codexStatus?.config) {
       const modelMatch = codexStatus.config.match(/^model\s*=\s*"([^"]+)"/m);
@@ -56,6 +57,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   };
 
   const configStatus = getConfigStatus();
+
+  const getEffectiveBaseUrl = () => {
+    const url = customBaseUrl || `${baseUrl}/v1`;
+    // Ensure URL ends with /v1
+    return url.endsWith("/v1") ? url : `${url}/v1`;
+  };
+  
+  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
   const checkCodexStatus = async () => {
     setCheckingCodex(true);
@@ -82,7 +91,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl, apiKey: keyToUse, model: selectedModel }),
+        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, model: selectedModel }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -134,7 +143,7 @@ model_provider = "9router"
 
 [model_providers.9router]
 name = "9Router"
-base_url = "${baseUrl}/v1"
+base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 `;
 
@@ -219,31 +228,48 @@ wire_api = "responses"
 
           {!checkingCodex && codexStatus?.installed && (
             <>
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-green-500 text-[16px]">check_circle</span>
-                <span className="text-xs text-text-muted shrink-0">URL:</span>
-                <code className="text-xs font-mono text-text-main truncate">{baseUrl}/v1</code>
-              </div>
+              <div className="flex flex-col gap-2">
+                {/* Base URL */}
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Base URL</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <input 
+                    type="text" 
+                    value={getDisplayUrl()} 
+                    onChange={(e) => setCustomBaseUrl(e.target.value)} 
+                    placeholder="https://.../v1" 
+                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
+                  />
+                  {customBaseUrl && customBaseUrl !== `${baseUrl}/v1` && (
+                    <button onClick={() => setCustomBaseUrl("")} className="p-1 text-text-muted hover:text-primary rounded transition-colors" title="Reset to default">
+                      <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                    </button>
+                  )}
+                </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted shrink-0">Key:</span>
-                {apiKeys.length > 0 ? (
-                  <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
-                    {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
-                  </select>
-                ) : (
-                  <span className="text-xs text-text-muted">
-                    {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router"}
-                  </span>
-                )}
-              </div>
+                {/* API Key */}
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  {apiKeys.length > 0 ? (
+                    <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
+                      {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
+                    </select>
+                  ) : (
+                    <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                    </span>
+                  )}
+                </div>
 
-              <div className="flex items-center gap-2">
-                <span className="w-16 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
-                <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
-                {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                {/* Model */}
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                  <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
+                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                </div>
               </div>
 
               {message && (

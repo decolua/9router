@@ -45,7 +45,7 @@ export const CLI_TOOLS = {
     guideSteps: [
       { step: 1, title: "Open Settings", desc: "Go to Settings → Models" },
       { step: 2, title: "Enable OpenAI API", desc: "Enable \"OpenAI API key\" option" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
       { step: 4, title: "API Key", type: "apiKeySelector" },
       { step: 5, title: "Add Custom Model", desc: "Click \"View All Model\" → \"Add Custom Model\"" },
       { step: 6, title: "Select Model", type: "modelSelector" },

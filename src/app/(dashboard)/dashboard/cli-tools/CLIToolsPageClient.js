@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { PROVIDER_MODELS, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
@@ -107,15 +107,21 @@ export default function CLIToolsPageClient({ machineId }) {
     return models;
   };
 
-  const handleModelMappingChange = (toolId, modelAlias, targetModel) => {
-    setModelMappings(prev => ({
-      ...prev,
-      [toolId]: {
-        ...prev[toolId],
-        [modelAlias]: targetModel,
-      },
-    }));
-  };
+  const handleModelMappingChange = useCallback((toolId, modelAlias, targetModel) => {
+    setModelMappings(prev => {
+      // Prevent unnecessary updates if value hasn't changed
+      if (prev[toolId]?.[modelAlias] === targetModel) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [toolId]: {
+          ...prev[toolId],
+          [modelAlias]: targetModel,
+        },
+      };
+    });
+  }, []);
 
   const getBaseUrl = () => {
     if (cloudEnabled && CLOUD_URL) {
