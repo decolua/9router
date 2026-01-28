@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
 
-const MAX_RETRY_AFTER_MS = 5000;
+const MAX_RETRY_AFTER_MS = 10000;
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
