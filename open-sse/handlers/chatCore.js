@@ -95,10 +95,10 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       }]
     };
 
-    // Add usage if available
+    // Add usage if available (match streaming translator: add thoughtsTokenCount to prompt_tokens)
     if (usage) {
       result.usage = {
-        prompt_tokens: usage.promptTokenCount || 0,
+        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
         completion_tokens: usage.candidatesTokenCount || 0,
         total_tokens: usage.totalTokenCount || 0
       };
@@ -119,11 +119,14 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     }
 
     let textContent = "";
+    let thinkingContent = "";
     const toolCalls = [];
 
     for (const block of responseBody.content) {
       if (block.type === "text") {
         textContent += block.text;
+      } else if (block.type === "thinking") {
+        thinkingContent += block.thinking || "";
       } else if (block.type === "tool_use") {
         toolCalls.push({
           id: block.id,
@@ -139,6 +142,9 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     const message = { role: "assistant" };
     if (textContent) {
       message.content = textContent;
+    }
+    if (thinkingContent) {
+      message.reasoning_content = thinkingContent;
     }
     if (toolCalls.length > 0) {
       message.tool_calls = toolCalls;
