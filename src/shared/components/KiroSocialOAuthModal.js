@@ -51,7 +51,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
   const handleManualSubmit = async () => {
     try {
       setError(null);
-      
+
       // Parse callback URL - can be either kiro:// or http://localhost format
       let url;
       try {
@@ -104,14 +104,10 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         {step === "loading" && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
-                progress_activity
-              </span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Initializing...</h3>
-            <p className="text-sm text-text-muted">
-              Setting up {providerName} authentication
-            </p>
+            <p className="text-sm text-text-muted">Setting up {providerName} authentication</p>
           </div>
         )}
 
@@ -123,9 +119,9 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
                 <p className="text-sm font-medium mb-2">Step 1: Open this URL in your browser</p>
                 <div className="flex gap-2">
                   <Input value={authUrl} readOnly className="flex-1 font-mono text-xs" />
-                  <Button 
-                    variant="secondary" 
-                    icon={copied === "auth_url" ? "check" : "content_copy"} 
+                  <Button
+                    variant="secondary"
+                    icon={copied === "auth_url" ? "check" : "content_copy"}
                     onClick={() => copy(authUrl, "auth_url")}
                   >
                     Copy
@@ -165,9 +161,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Your Kiro account via {providerName} has been connected.
-            </p>
+            <p className="text-sm text-text-muted mb-4">Your Kiro account via {providerName} has been connected.</p>
             <Button onClick={onClose} fullWidth>
               Done
             </Button>

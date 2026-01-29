@@ -21,7 +21,7 @@ export async function POST(request) {
     const connections = await getProviderConnections({ isActive: true });
 
     // Map connections
-    const mappedConnections = connections.map(conn => ({
+    const mappedConnections = connections.map((conn) => ({
       provider: conn.provider,
       authType: conn.authType,
       apiKey: conn.apiKey || null,
@@ -32,7 +32,7 @@ export async function POST(request) {
       priority: conn.priority,
       globalPriority: conn.globalPriority,
       defaultModel: conn.defaultModel,
-      isActive: conn.isActive
+      isActive: conn.isActive,
     }));
 
     // Get model aliases
@@ -40,9 +40,8 @@ export async function POST(request) {
 
     return NextResponse.json({
       connections: mappedConnections,
-      modelAliases
+      modelAliases,
     });
-
   } catch (error) {
     console.log("Cloud auth error:", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

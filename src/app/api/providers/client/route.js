@@ -5,9 +5,9 @@ import { getProviderConnections } from "@/lib/localDb";
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    
+
     // Include sensitive fields for sync to cloud (only accessible from same origin)
-    const clientConnections = connections.map(c => ({
+    const clientConnections = connections.map((c) => ({
       ...c,
       // Don't hide sensitive fields here since this is for internal sync
     }));

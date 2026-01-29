@@ -15,7 +15,9 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  selectionMutex = new Promise((resolve) => {
+    resolveMutex = resolve;
+  });
 
   try {
     await currentMutex;
@@ -28,7 +30,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     }
 
     // Filter out unavailable accounts and excluded connection
-    const availableConnections = connections.filter(c => {
+    const availableConnections = connections.filter((c) => {
       if (excludeConnectionId && c.id === excludeConnectionId) return false;
       if (isAccountUnavailable(c.rateLimitedUntil)) return false;
       return true;
@@ -63,7 +65,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
         // Update lastUsedAt and increment count (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1,
         });
       } else {
         // Pick the least recently used (excluding current if possible)
@@ -79,7 +81,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
         // Update lastUsedAt and reset count to 1 (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
+          consecutiveUseCount: 1,
         });
       }
     } else {
@@ -98,7 +100,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
-      rateLimitedUntil: connection.rateLimitedUntil
+      rateLimitedUntil: connection.rateLimitedUntil,
     };
   } finally {
     if (resolveMutex) resolveMutex();
@@ -108,17 +110,23 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
 /**
  * Mark account as unavailable with cooldown
  */
-export async function markAccountUnavailable(connectionId, cooldownMs, reason = "Provider error", errorCode = null, provider = null) {
+export async function markAccountUnavailable(
+  connectionId,
+  cooldownMs,
+  reason = "Provider error",
+  errorCode = null,
+  provider = null
+) {
   const rateLimitedUntil = getUnavailableUntil(cooldownMs);
   await updateProviderConnection(connectionId, {
     rateLimitedUntil,
     testStatus: "unavailable",
     lastError: reason,
     errorCode,
-    lastErrorAt: new Date().toISOString()
+    lastErrorAt: new Date().toISOString(),
   });
   // log.warn("AUTH", `Account ${connectionId.slice(0,8)} unavailable until ${rateLimitedUntil}`);
-  
+
   // Log to stderr for CLI to display
   if (provider && errorCode && reason) {
     console.error(`❌ ${provider} [${errorCode}]: ${reason}`);
@@ -131,19 +139,18 @@ export async function markAccountUnavailable(connectionId, cooldownMs, reason = 
  */
 export async function clearAccountError(connectionId, currentConnection) {
   // Only update if currently has error status
-  const hasError = currentConnection.testStatus === "unavailable" ||
-                   currentConnection.lastError ||
-                   currentConnection.rateLimitedUntil;
-  
+  const hasError =
+    currentConnection.testStatus === "unavailable" || currentConnection.lastError || currentConnection.rateLimitedUntil;
+
   if (!hasError) return; // Skip if already clean
-  
+
   await updateProviderConnection(connectionId, {
     testStatus: "active",
     lastError: null,
     lastErrorAt: null,
-    rateLimitedUntil: null
+    rateLimitedUntil: null,
   });
-  log.info("AUTH", `Account ${connectionId.slice(0,8)} error cleared`);
+  log.info("AUTH", `Account ${connectionId.slice(0, 8)} error cleared`);
 }
 
 /**

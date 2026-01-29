@@ -8,7 +8,7 @@ const ERROR_TYPES = {
   500: { type: "server_error", code: "internal_server_error" },
   502: { type: "server_error", code: "bad_gateway" },
   503: { type: "server_error", code: "service_unavailable" },
-  504: { type: "server_error", code: "gateway_timeout" }
+  504: { type: "server_error", code: "gateway_timeout" },
 };
 
 /**
@@ -18,8 +18,9 @@ const ERROR_TYPES = {
  * @returns {object} Error response object
  */
 export function buildErrorBody(statusCode, message) {
-  const errorInfo = ERROR_TYPES[statusCode] || 
-    (statusCode >= 500 
+  const errorInfo =
+    ERROR_TYPES[statusCode] ||
+    (statusCode >= 500
       ? { type: "server_error", code: "internal_server_error" }
       : { type: "invalid_request_error", code: "" });
 
@@ -27,8 +28,8 @@ export function buildErrorBody(statusCode, message) {
     error: {
       message: message || getDefaultMessage(statusCode),
       type: errorInfo.type,
-      code: errorInfo.code
-    }
+      code: errorInfo.code,
+    },
   };
 }
 
@@ -45,7 +46,7 @@ function getDefaultMessage(statusCode) {
     500: "Internal server error",
     502: "Bad gateway - upstream provider error",
     503: "Service temporarily unavailable",
-    504: "Gateway timeout"
+    504: "Gateway timeout",
   };
   return messages[statusCode] || "An error occurred";
 }
@@ -61,8 +62,8 @@ export function errorResponse(statusCode, message) {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*"
-    }
+      "Access-Control-Allow-Origin": "*",
+    },
   });
 }
 
@@ -86,31 +87,31 @@ export async function writeStreamError(writer, statusCode, message) {
  */
 export function parseAntigravityRetryTime(message) {
   if (typeof message !== "string") return null;
-  
+
   // Match patterns like: 2h7m23s, 5m30s, 45s, 1h20m, etc.
   const match = message.match(/reset after (\d+h)?(\d+m)?(\d+s)?/i);
   if (!match) return null;
-  
+
   let totalMs = 0;
-  
+
   // Extract hours
   if (match[1]) {
     const hours = parseInt(match[1]);
     totalMs += hours * 60 * 60 * 1000;
   }
-  
+
   // Extract minutes
   if (match[2]) {
     const minutes = parseInt(match[2]);
     totalMs += minutes * 60 * 1000;
   }
-  
+
   // Extract seconds
   if (match[3]) {
     const seconds = parseInt(match[3]);
     totalMs += seconds * 1000;
   }
-  
+
   return totalMs > 0 ? totalMs : null;
 }
 
@@ -123,10 +124,10 @@ export function parseAntigravityRetryTime(message) {
 export async function parseUpstreamError(response, provider = null) {
   let message = "";
   let retryAfterMs = null;
-  
+
   try {
     const text = await response.text();
-    
+
     // Try parse as JSON
     try {
       const json = JSON.parse(text);
@@ -139,7 +140,7 @@ export async function parseUpstreamError(response, provider = null) {
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  
+
   // Parse Antigravity-specific retry time from error message
   if (provider === "antigravity" && response.status === 429) {
     retryAfterMs = parseAntigravityRetryTime(messageStr);
@@ -148,7 +149,7 @@ export async function parseUpstreamError(response, provider = null) {
   return {
     statusCode: response.status,
     message: messageStr,
-    retryAfterMs
+    retryAfterMs,
   };
 }
 
@@ -164,14 +165,14 @@ export function createErrorResult(statusCode, message, retryAfterMs = null) {
     success: false,
     status: statusCode,
     error: message,
-    response: errorResponse(statusCode, message)
+    response: errorResponse(statusCode, message),
   };
-  
+
   // Add retryAfterMs if available (for Antigravity quota errors)
   if (retryAfterMs) {
     result.retryAfterMs = retryAfterMs;
   }
-  
+
   return result;
 }
 
@@ -184,7 +185,7 @@ export function createErrorResult(statusCode, message, retryAfterMs = null) {
  * @returns {string} Formatted error message
  */
 export function formatProviderError(error, provider, model, statusCode) {
-  const code = statusCode || error.code || 'FETCH_FAILED';
+  const code = statusCode || error.code || "FETCH_FAILED";
   const message = error.message || "Unknown error";
   return `[${code}]: ${message}`;
 }

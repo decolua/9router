@@ -23,15 +23,14 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+      "Access-Control-Allow-Headers": "*",
+    },
   });
 }
 
-export async function POST(request) {  
+export async function POST(request) {
   // Fallback to local handling
   await ensureInitialized();
-  
+
   return await handleChat(request);
 }
-

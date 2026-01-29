@@ -14,26 +14,17 @@ export async function POST(request) {
     const { code, codeVerifier, provider } = await request.json();
 
     if (!code || !codeVerifier) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
     if (!provider || !["google", "github"].includes(provider)) {
-      return NextResponse.json(
-        { error: "Invalid provider" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
 
     const kiroService = new KiroService();
 
     // Exchange code for tokens (redirect_uri handled internally)
-    const tokenData = await kiroService.exchangeSocialCode(
-      code,
-      codeVerifier
-    );
+    const tokenData = await kiroService.exchangeSocialCode(code, codeVerifier);
 
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);

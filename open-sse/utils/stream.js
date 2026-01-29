@@ -4,7 +4,12 @@ import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/u
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date().toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 // Extract usage from any format (Claude, OpenAI, Gemini, Responses API)
@@ -15,7 +20,7 @@ function extractUsage(chunk) {
       prompt_tokens: chunk.usage.input_tokens || 0,
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
     };
   }
   // OpenAI Responses API format (response.completed or response.done)
@@ -25,7 +30,7 @@ function extractUsage(chunk) {
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: usage.input_tokens_details?.cached_tokens,
-      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
     };
   }
   // OpenAI format
@@ -34,7 +39,7 @@ function extractUsage(chunk) {
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
     };
   }
   // Gemini format
@@ -42,7 +47,7 @@ function extractUsage(chunk) {
     return {
       prompt_tokens: chunk.usageMetadata.promptTokenCount || 0,
       completion_tokens: chunk.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: chunk.usageMetadata.thoughtsTokenCount
+      reasoning_tokens: chunk.usageMetadata.thoughtsTokenCount,
     };
   }
   return null;
@@ -55,7 +60,7 @@ export const COLORS = {
   green: "\x1b[32m",
   yellow: "\x1b[33m",
   blue: "\x1b[34m",
-  cyan: "\x1b[36m"
+  cyan: "\x1b[36m",
 };
 
 // Log usage with cache info (green color)
@@ -85,8 +90,8 @@ function logUsage(provider, usage, model = null, connectionId = null) {
     model: model || "unknown",
     tokens: usage,
     timestamp: new Date().toISOString(),
-    connectionId: connectionId || undefined
-  }).catch(err => {
+    connectionId: connectionId || undefined,
+  }).catch((err) => {
     console.error("Failed to save usage stats:", err.message);
   });
 }
@@ -120,7 +125,7 @@ export function formatSSE(data, sourceFormat) {
   if (data === null || data === undefined) {
     return "data: null\n\n";
   }
-  
+
   if (data && data.done) return "data: [DONE]\n\n";
 
   // OpenAI Responses API format: has event field
@@ -131,7 +136,7 @@ export function formatSSE(data, sourceFormat) {
   // Claude format: include event prefix
   if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
     // If perf_metrics is null, remove it to avoid serialization issues
-    if (data.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
+    if (data.usage && typeof data.usage === "object" && data.usage.perf_metrics === null) {
       const { perf_metrics, ...usageWithoutPerf } = data.usage;
       data = { ...data, usage: usageWithoutPerf };
     }
@@ -139,7 +144,7 @@ export function formatSSE(data, sourceFormat) {
   }
 
   // If perf_metrics is null, remove it to avoid serialization issues
-  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
+  if (data?.usage && typeof data.usage === "object" && data.usage.perf_metrics === null) {
     const { perf_metrics, ...usageWithoutPerf } = data.usage;
     data = { ...data, usage: usageWithoutPerf };
   }
@@ -151,8 +156,8 @@ export function formatSSE(data, sourceFormat) {
  * Stream modes
  */
 const STREAM_MODE = {
-  TRANSLATE: "translate",    // Full translation between formats
-  PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
+  TRANSLATE: "translate", // Full translation between formats
+  PASSTHROUGH: "passthrough", // No translation, normalize output, extract usage
 };
 
 /**
@@ -175,7 +180,7 @@ export function createSSEStream(options = {}) {
     reqLogger = null,
     toolNameMap = null,
     model = null,
-    connectionId = null
+    connectionId = null,
   } = options;
 
   const decoder = new TextDecoder();
@@ -238,7 +243,7 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
-        
+
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
           for (const item of translated._openaiIntermediate) {
@@ -246,7 +251,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
           }
         }
-        
+
         if (translated?.length > 0) {
           for (const item of translated) {
             const output = formatSSE(item, sourceFormat);
@@ -286,7 +291,7 @@ export function createSSEStream(options = {}) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
-            
+
             // Log OpenAI intermediate chunks
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -294,7 +299,7 @@ export function createSSEStream(options = {}) {
                 reqLogger?.appendOpenAIChunk?.(openaiOutput);
               }
             }
-            
+
             if (translated?.length > 0) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
@@ -307,7 +312,7 @@ export function createSSEStream(options = {}) {
 
         // Flush remaining events (only once at stream end)
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
-        
+
         // Log OpenAI intermediate chunks for flushed events
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
@@ -315,7 +320,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
           }
         }
-        
+
         if (flushed?.length > 0) {
           for (const item of flushed) {
             const output = formatSSE(item, sourceFormat);
@@ -338,12 +343,20 @@ export function createSSEStream(options = {}) {
       } catch (error) {
         console.log("Error in flush:", error);
       }
-    }
+    },
   });
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null) {
+export function createSSETransformStreamWithLogger(
+  targetFormat,
+  sourceFormat,
+  provider = null,
+  reqLogger = null,
+  toolNameMap = null,
+  model = null,
+  connectionId = null
+) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -352,16 +365,21 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     reqLogger,
     toolNameMap,
     model,
-    connectionId
+    connectionId,
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null) {
+export function createPassthroughStreamWithLogger(
+  provider = null,
+  reqLogger = null,
+  model = null,
+  connectionId = null
+) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
     model,
-    connectionId
+    connectionId,
   });
 }

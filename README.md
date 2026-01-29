@@ -17,6 +17,7 @@ A JavaScript port of CLIProxyAPI with web dashboard.
 **9Router** is a powerful AI API proxy server that provides unified access to multiple AI providers through a single endpoint. It features automatic format translation, intelligent fallback routing, OAuth authentication, and a modern web dashboard for easy management.
 
 **Key Highlights:**
+
 - **JavaScript Port**: Converted from CLIProxyAPI (Go) to JavaScript/Node.js.
 - **Universal CLI Support**: Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, AmpCode, Kilo, and other CLI tools
 - **Cross-Platform**: Runs on Windows, Linux, and macOS
@@ -25,6 +26,7 @@ A JavaScript port of CLIProxyAPI with web dashboard.
 ## Recent Updates
 
 ### v0.2.27
+
 - **OpenAI Responses API Support**: Full support for Codex CLI streaming via the Responses API format
 - **`/v1/models` Endpoint**: OpenAI-compatible models endpoint for client discovery
 - **Combo Support in Models**: Model combos now appear in the `/v1/models` endpoint
@@ -32,24 +34,26 @@ A JavaScript port of CLIProxyAPI with web dashboard.
 - **Kiro (AWS CodeWhisperer) Support**: New provider integration
 
 ### Provider Support
-| Provider | Alias | Auth Type | Format |
-|----------|-------|-----------|--------|
-| Claude (Anthropic) | `cc` | OAuth | Claude |
-| Codex (OpenAI) | `cx` | OAuth | Responses API |
-| Gemini CLI | `gc` | OAuth | Gemini CLI |
-| Antigravity (Google) | `ag` | OAuth | Antigravity |
-| GitHub Copilot | `gh` | OAuth | OpenAI |
-| Qwen | `qw` | OAuth | OpenAI |
-| iFlow | `if` | OAuth | OpenAI |
-| Kiro (AWS) | `kr` | OAuth | Kiro |
-| OpenAI | `openai` | API Key | OpenAI |
-| Anthropic | `anthropic` | API Key | Claude |
-| Gemini | `gemini` | API Key | Gemini |
-| OpenRouter | `openrouter` | API Key | OpenAI |
+
+| Provider             | Alias        | Auth Type | Format        |
+| -------------------- | ------------ | --------- | ------------- |
+| Claude (Anthropic)   | `cc`         | OAuth     | Claude        |
+| Codex (OpenAI)       | `cx`         | OAuth     | Responses API |
+| Gemini CLI           | `gc`         | OAuth     | Gemini CLI    |
+| Antigravity (Google) | `ag`         | OAuth     | Antigravity   |
+| GitHub Copilot       | `gh`         | OAuth     | OpenAI        |
+| Qwen                 | `qw`         | OAuth     | OpenAI        |
+| iFlow                | `if`         | OAuth     | OpenAI        |
+| Kiro (AWS)           | `kr`         | OAuth     | Kiro          |
+| OpenAI               | `openai`     | API Key   | OpenAI        |
+| Anthropic            | `anthropic`  | API Key   | Claude        |
+| Gemini               | `gemini`     | API Key   | Gemini        |
+| OpenRouter           | `openrouter` | API Key   | OpenAI        |
 
 ## Features
 
 ### Core Features
+
 - **Multi-Provider Support**: Unified endpoint for 15+ AI providers
 - **OAuth & API Key Authentication**: Supports both OAuth2 flow and API key authentication
 - **Format Translation**: Automatic request/response translation between OpenAI, Claude, Gemini, Codex, and Kiro formats
@@ -57,12 +61,14 @@ A JavaScript port of CLIProxyAPI with web dashboard.
 - **Usage Tracking**: Real-time monitoring and analytics for all API requests
 
 ### Advanced Features
+
 - **Combo System**: Create model combos with automatic fallback support
 - **Intelligent Fallback**: Automatic account rotation when rate limits or errors occur
 - **Response Caching**: Optimized caching for Claude Code
 - **Model Aliases**: Create custom model aliases for easier management
 
 ### Format Support
+
 - **OpenAI Format**: Standard OpenAI Chat Completions API
 - **OpenAI Responses API**: Codex CLI format with streaming
 - **Claude Format**: Anthropic Messages API
@@ -98,17 +104,17 @@ npx 9router
 
 Configure these environment variables for remote deployment:
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DATA_DIR` | No | `~/.9router` | Custom data directory path for database storage |
-| `JWT_SECRET` | **Yes** | `9router-default-secret-change-me` | Secret key for JWT authentication. **Change this in production!** |
-| `INITIAL_PASSWORD` | No | `123456` | Initial dashboard login password |
-| `API_KEY_SECRET` | No | Auto-generated | Secret for API key generation/validation |
-| `MACHINE_ID_SALT` | No | Auto-generated | Salt for machine ID hashing |
-| `NEXT_PUBLIC_BASE_URL` | No | `http://localhost:3000` | Public base URL of your deployment |
-| `NEXT_PUBLIC_CLOUD_URL` | No | `https://9router.com` | Cloud sync URL (for cloud features) |
-| `ENABLE_REQUEST_LOGS` | No | `false` | Enable detailed request/response logging to files |
-| `NODE_ENV` | No | `development` | Set to `production` for production deployments |
+| Variable                | Required | Default                            | Description                                                       |
+| ----------------------- | -------- | ---------------------------------- | ----------------------------------------------------------------- |
+| `DATA_DIR`              | No       | `~/.9router`                       | Custom data directory path for database storage                   |
+| `JWT_SECRET`            | **Yes**  | `9router-default-secret-change-me` | Secret key for JWT authentication. **Change this in production!** |
+| `INITIAL_PASSWORD`      | No       | `123456`                           | Initial dashboard login password                                  |
+| `API_KEY_SECRET`        | No       | Auto-generated                     | Secret for API key generation/validation                          |
+| `MACHINE_ID_SALT`       | No       | Auto-generated                     | Salt for machine ID hashing                                       |
+| `NEXT_PUBLIC_BASE_URL`  | No       | `http://localhost:3000`            | Public base URL of your deployment                                |
+| `NEXT_PUBLIC_CLOUD_URL` | No       | `https://9router.com`              | Cloud sync URL (for cloud features)                               |
+| `ENABLE_REQUEST_LOGS`   | No       | `false`                            | Enable detailed request/response logging to files                 |
+| `NODE_ENV`              | No       | `development`                      | Set to `production` for production deployments                    |
 
 ### Deploying to Dokploy
 
@@ -213,27 +219,34 @@ server {
 ## API Endpoints
 
 ### Chat Completions
+
 ```
 POST /v1/chat/completions
 ```
+
 OpenAI-compatible chat completions endpoint. Supports all providers with automatic format translation.
 
 ### Models List
+
 ```
 GET /v1/models
 ```
+
 Returns available models in OpenAI-compatible format, including combos.
 
 ### Responses API (Codex)
+
 ```
 POST /v1/responses
 POST /codex/responses
 ```
+
 OpenAI Responses API endpoint for Codex CLI compatibility.
 
 ## CLI Integration Examples
 
 ### Claude Code
+
 ```bash
 # Set your 9router endpoint
 export ANTHROPIC_BASE_URL="http://your-server:3000/v1"
@@ -243,6 +256,7 @@ claude
 ```
 
 ### Codex CLI
+
 ```bash
 # Configure Codex to use 9router
 export OPENAI_BASE_URL="http://your-server:3000"
@@ -252,7 +266,9 @@ codex
 ```
 
 ### Cursor IDE
+
 Configure in Cursor settings:
+
 - API Base URL: `http://your-server:3000/v1`
 - Use your generated API key from the dashboard
 
@@ -267,6 +283,7 @@ ENABLE_REQUEST_LOGS=true npm run start
 ```
 
 Logs are saved to the `logs/` directory with the format:
+
 ```
 logs/
 └── {sourceFormat}_{targetFormat}_{model}_{timestamp}/
@@ -285,6 +302,7 @@ The application includes debug logging for troubleshooting provider issues. Chec
 ## Data Location
 
 User data stored at:
+
 - **macOS/Linux**: `~/.9router/db.json`
 - **Windows**: `%APPDATA%/9router/db.json`
 - **Custom**: Set `DATA_DIR` environment variable
@@ -292,6 +310,7 @@ User data stored at:
 ## Development
 
 ### Setup
+
 ```bash
 # Clone repository
 git clone https://github.com/yourusername/9router.git
@@ -305,6 +324,7 @@ npm run dev
 ```
 
 ### Project Structure
+
 ```
 9router/
 ├── src/
@@ -326,19 +346,20 @@ npm run dev
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|------------|
-| **Runtime** | Node.js 20+ / Bun |
-| **Framework** | Next.js 15 |
-| **Dashboard** | React 19 + Tailwind CSS 4 |
-| **Database** | LowDB (JSON file-based) |
-| **CLI** | Node.js CLI with auto-update |
-| **Streaming** | Server-Sent Events (SSE) |
-| **Auth** | OAuth 2.0 (PKCE) + API Keys |
-| **Deployment** | Standalone / VPS / Docker |
-| **State Management** | Zustand |
+| Layer                | Technology                   |
+| -------------------- | ---------------------------- |
+| **Runtime**          | Node.js 20+ / Bun            |
+| **Framework**        | Next.js 15                   |
+| **Dashboard**        | React 19 + Tailwind CSS 4    |
+| **Database**         | LowDB (JSON file-based)      |
+| **CLI**              | Node.js CLI with auto-update |
+| **Streaming**        | Server-Sent Events (SSE)     |
+| **Auth**             | OAuth 2.0 (PKCE) + API Keys  |
+| **Deployment**       | Standalone / VPS / Docker    |
+| **State Management** | Zustand                      |
 
 ### Core Libraries
+
 - **lowdb**: Lightweight JSON database
 - **undici**: High-performance HTTP client
 - **uuid**: Unique identifier generation
@@ -350,6 +371,7 @@ npm run dev
 ### "The language model did not provide any assistant messages"
 
 This error typically means the upstream provider returned an empty or malformed response. Check:
+
 1. Your provider credentials are valid and not rate-limited
 2. The model name is correct (e.g., `ag/gemini-3-pro-high`)
 3. Enable debug logging to see the actual provider response
@@ -357,12 +379,14 @@ This error typically means the upstream provider returned an empty or malformed 
 ### OAuth Token Expired
 
 OAuth tokens are automatically refreshed. If you see authentication errors:
+
 1. Re-authenticate via the dashboard
 2. Check if the provider's OAuth credentials are still valid
 
 ### Rate Limiting
 
 9Router implements automatic fallback when rate limits are hit:
+
 1. Add multiple accounts for the same provider
 2. Configure account priorities in the dashboard
 3. Use combos to fallback between different providers

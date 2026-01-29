@@ -5,7 +5,17 @@ import PropTypes from "prop-types";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, Toggle } from "@/shared/components";
+import {
+  Card,
+  Button,
+  Badge,
+  Input,
+  Modal,
+  CardSkeleton,
+  OAuthModal,
+  KiroOAuthWrapper,
+  Toggle,
+} from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -45,7 +55,7 @@ export default function ProviderDetailPage() {
       const res = await fetch("/api/providers");
       const data = await res.json();
       if (res.ok) {
-        const filtered = (data.connections || []).filter(c => c.provider === providerId);
+        const filtered = (data.connections || []).filter((c) => c.provider === providerId);
         setConnections(filtered);
       }
     } catch (error) {
@@ -97,7 +107,7 @@ export default function ProviderDetailPage() {
     try {
       const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setConnections(connections.filter(c => c.id !== id));
+        setConnections(connections.filter((c) => c.id !== id));
       }
     } catch (error) {
       console.log("Error deleting connection:", error);
@@ -149,7 +159,7 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ isActive }),
       });
       if (res.ok) {
-        setConnections(prev => prev.map(c => c.id === id ? { ...c, isActive } : c));
+        setConnections((prev) => prev.map((c) => (c.id === id ? { ...c, isActive } : c)));
       }
     } catch (error) {
       console.log("Error updating connection status:", error);
@@ -277,7 +287,9 @@ export default function ProviderDetailPage() {
               height={48}
               className="object-contain rounded-lg max-w-[48px] max-h-[48px]"
               sizes="48px"
-              onError={(e) => { e.currentTarget.style.display = "none"; }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
             />
           </div>
           <div>
@@ -296,7 +308,7 @@ export default function ProviderDetailPage() {
           <Button
             size="sm"
             icon="add"
-            onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+            onClick={() => (isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true))}
           >
             Add
           </Button>
@@ -304,9 +316,7 @@ export default function ProviderDetailPage() {
 
         {connections.length === 0 ? (
           <div className="text-center py-8">
-            <span className="material-symbols-outlined text-4xl text-text-muted mb-2">
-              {isOAuth ? "lock" : "key"}
-            </span>
+            <span className="material-symbols-outlined text-4xl text-text-muted mb-2">{isOAuth ? "lock" : "key"}</span>
             <p className="text-sm text-text-muted">No connections yet</p>
           </div>
         ) : (
@@ -314,22 +324,22 @@ export default function ProviderDetailPage() {
             {connections
               .sort((a, b) => (a.priority || 0) - (b.priority || 0))
               .map((conn, index) => (
-              <ConnectionRow
-                key={conn.id}
-                connection={conn}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
-                onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-              />
-            ))}
+                <ConnectionRow
+                  key={conn.id}
+                  connection={conn}
+                  isOAuth={isOAuth}
+                  isFirst={index === 0}
+                  isLast={index === connections.length - 1}
+                  onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
+                  onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
+                  onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                  onEdit={() => {
+                    setSelectedConnection(conn);
+                    setShowEditModal(true);
+                  }}
+                  onDelete={() => handleDelete(conn.id)}
+                />
+              ))}
           </div>
         )}
       </Card>
@@ -340,7 +350,6 @@ export default function ProviderDetailPage() {
           {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
         </h2>
         {renderModelsSection()}
-
       </Card>
 
       {/* Modals */}
@@ -409,9 +418,7 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
   const [adding, setAdding] = useState(false);
 
   // Filter aliases for this provider - models are persisted via alias
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerAlias}/`)
-  );
+  const providerAliases = Object.entries(modelAliases).filter(([, model]) => model.startsWith(`${providerAlias}/`));
 
   const allModels = providerAliases.map(([alias, fullModel]) => ({
     modelId: fullModel.replace(`${providerAlias}/`, ""),
@@ -429,13 +436,13 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
     const defaultAlias = generateDefaultAlias(modelId);
-    
+
     // Check if alias already exists
     if (modelAliases[defaultAlias]) {
       alert(`Alias "${defaultAlias}" already exists. Please use a different model or edit existing alias.`);
       return;
     }
-    
+
     setAdding(true);
     try {
       await onSetAlias(modelId, defaultAlias);
@@ -456,7 +463,9 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
       {/* Add new model */}
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
+          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">
+            Model ID (from OpenRouter)
+          </label>
           <input
             id="new-model-input"
             type="text"
@@ -523,11 +532,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
       </div>
 
       {/* Delete button */}
-      <button
-        onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
-        title="Remove model"
-      >
+      <button onClick={onDeleteAlias} className="p-1 hover:bg-red-50 rounded text-red-500" title="Remove model">
         <span className="material-symbols-outlined text-sm">delete</span>
       </button>
     </div>
@@ -571,18 +576,24 @@ function CooldownTimer({ until }) {
 
   if (!remaining) return null;
 
-  return (
-    <span className="text-xs text-orange-500 font-mono">
-      ⏱ {remaining}
-    </span>
-  );
+  return <span className="text-xs text-orange-500 font-mono">⏱ {remaining}</span>;
 }
 
 CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({
+  connection,
+  isOAuth,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
+  onToggleActive,
+  onEdit,
+  onDelete,
+}) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -592,8 +603,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
 
   useEffect(() => {
     const checkCooldown = () => {
-      const cooldown = connection.rateLimitedUntil &&
-        new Date(connection.rateLimitedUntil).getTime() > Date.now();
+      const cooldown = connection.rateLimitedUntil && new Date(connection.rateLimitedUntil).getTime() > Date.now();
       setIsCooldown(cooldown);
     };
 
@@ -606,19 +616,23 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   }, [connection.rateLimitedUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired → treat as active
-    : connection.testStatus;
+  const effectiveStatus =
+    connection.testStatus === "unavailable" && !isCooldown
+      ? "active" // Cooldown expired → treat as active
+      : connection.testStatus;
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
     if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
+    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable")
+      return "error";
     return "default";
   };
 
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg border border-border hover:bg-sidebar/50 ${connection.isActive === false ? 'opacity-60' : ''}`}>
+    <div
+      className={`flex items-center justify-between p-3 rounded-lg border border-border hover:bg-sidebar/50 ${connection.isActive === false ? "opacity-60" : ""}`}
+    >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Priority arrows */}
         <div className="flex flex-col">
@@ -637,14 +651,12 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
           </button>
         </div>
-        <span className="material-symbols-outlined text-base text-text-muted">
-          {isOAuth ? "lock" : "key"}
-        </span>
+        <span className="material-symbols-outlined text-base text-text-muted">{isOAuth ? "lock" : "key"}</span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+              {connection.isActive === false ? "disabled" : effectiveStatus || "Unknown"}
             </Badge>
             {isCooldown && connection.isActive !== false && <CooldownTimer until={connection.rateLimitedUntil} />}
             {connection.lastError && connection.isActive !== false && (
@@ -843,12 +855,12 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   return (
     <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
       <div className="flex flex-col gap-4">
-          <Input
-            label="Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+        <Input
+          label="Name"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder={isOAuth ? "Account name" : "Production Key"}
-          />
+        />
         {isOAuth && connection.email && (
           <div className="bg-sidebar/50 p-3 rounded-lg">
             <p className="text-sm text-text-muted mb-1">Email</p>
@@ -875,8 +887,12 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         </div>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth>Save</Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+          <Button onClick={handleSubmit} fullWidth>
+            Save
+          </Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>
+            Cancel
+          </Button>
         </div>
       </div>
     </Modal>

@@ -111,12 +111,7 @@ export default function LoginPage() {
               {error && <p className="text-xs text-red-500">{error}</p>}
             </div>
 
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full"
-              loading={loading}
-            >
+            <Button type="submit" variant="primary" className="w-full" loading={loading}>
               Login
             </Button>
 

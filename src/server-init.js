@@ -3,7 +3,7 @@ import initializeCloudSync from "./shared/services/initializeCloudSync.js";
 
 async function startServer() {
   console.log("Starting server with cloud sync...");
-  
+
   try {
     // Initialize cloud sync
     await initializeCloudSync();

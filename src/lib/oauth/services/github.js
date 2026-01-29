@@ -40,11 +40,11 @@ export class GitHubService extends OAuthService {
    */
   async pollAccessToken(deviceCode, verificationUri, userCode, interval = 5000) {
     const spinner = createSpinner("Waiting for GitHub authentication...").start();
-    
+
     // Show user code and verification URL
     console.log(`\nPlease visit: ${verificationUri}`);
     console.log(`Enter code: ${userCode}\n`);
-    
+
     // Open browser automatically
     try {
       const open = (await import("open")).default;
@@ -55,7 +55,7 @@ export class GitHubService extends OAuthService {
 
     // Poll for access token
     while (true) {
-      await new Promise(resolve => setTimeout(resolve, interval));
+      await new Promise((resolve) => setTimeout(resolve, interval));
 
       const response = await fetch(`${GITHUB_CONFIG.tokenUrl}`, {
         method: "POST",
@@ -148,22 +148,22 @@ export class GitHubService extends OAuthService {
     try {
       // Get device code
       const deviceResponse = await this.getDeviceCode();
-      
+
       // Poll for access token
       const tokenResponse = await this.pollAccessToken(
-        deviceResponse.device_code, 
-        deviceResponse.verification_uri, 
+        deviceResponse.device_code,
+        deviceResponse.verification_uri,
         deviceResponse.user_code
       );
-      
+
       // Get Copilot token
       const copilotToken = await this.getCopilotToken(tokenResponse.access_token);
-      
+
       // Get user info
       const userInfo = await this.getUserInfo(tokenResponse.access_token);
-      
+
       console.log(`\n✅ Successfully authenticated as ${userInfo.login}`);
-      
+
       return {
         accessToken: tokenResponse.access_token,
         copilotToken: copilotToken.token,
@@ -189,11 +189,11 @@ export class GitHubService extends OAuthService {
     try {
       // Authenticate with GitHub
       const authResult = await this.authenticate();
-      
+
       // Send credentials to server
-      const { server, token, userId } = await import("../config/index.js").then(m => m.getServerCredentials());
+      const { server, token, userId } = await import("../config/index.js").then((m) => m.getServerCredentials());
       const spinner = (await import("../utils/ui.js")).spinner("Connecting to server...").start();
-      
+
       const response = await fetch(`${server}/api/cli/providers/github`, {
         method: "POST",
         headers: {
@@ -208,12 +208,12 @@ export class GitHubService extends OAuthService {
           copilotTokenInfo: authResult.copilotTokenInfo,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || "Failed to connect to server");
       }
-      
+
       spinner.succeed("GitHub Copilot connected successfully!");
       console.log(`\nConnected as: ${authResult.userInfo.login}`);
     } catch (error) {

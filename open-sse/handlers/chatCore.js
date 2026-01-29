@@ -54,8 +54,8 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
             type: "function",
             function: {
               name: part.functionCall.name,
-              arguments: JSON.stringify(part.functionCall.args || {})
-            }
+              arguments: JSON.stringify(part.functionCall.args || {}),
+            },
           });
         }
       }
@@ -88,11 +88,13 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       object: "chat.completion",
       created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
       model: response.modelVersion || "gemini",
-      choices: [{
-        index: 0,
-        message,
-        finish_reason: finishReason
-      }]
+      choices: [
+        {
+          index: 0,
+          message,
+          finish_reason: finishReason,
+        },
+      ],
     };
 
     // Add usage if available (match streaming translator: add thoughtsTokenCount to prompt_tokens)
@@ -100,11 +102,11 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       result.usage = {
         prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
         completion_tokens: usage.candidatesTokenCount || 0,
-        total_tokens: usage.totalTokenCount || 0
+        total_tokens: usage.totalTokenCount || 0,
       };
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = {
-          reasoning_tokens: usage.thoughtsTokenCount
+          reasoning_tokens: usage.thoughtsTokenCount,
         };
       }
     }
@@ -133,8 +135,8 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
           type: "function",
           function: {
             name: block.name,
-            arguments: JSON.stringify(block.input || {})
-          }
+            arguments: JSON.stringify(block.input || {}),
+          },
         });
       }
     }
@@ -162,18 +164,20 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
       model: responseBody.model || "claude",
-      choices: [{
-        index: 0,
-        message,
-        finish_reason: finishReason
-      }]
+      choices: [
+        {
+          index: 0,
+          message,
+          finish_reason: finishReason,
+        },
+      ],
     };
 
     if (responseBody.usage) {
       result.usage = {
         prompt_tokens: responseBody.usage.input_tokens || 0,
         completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
+        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0),
       };
     }
 
@@ -197,7 +201,7 @@ function extractUsageFromResponse(responseBody, provider) {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
     };
   }
 
@@ -207,7 +211,7 @@ function extractUsageFromResponse(responseBody, provider) {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
     };
   }
 
@@ -216,7 +220,7 @@ function extractUsageFromResponse(responseBody, provider) {
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
       completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
+      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount,
     };
   }
 
@@ -236,7 +240,18 @@ function extractUsageFromResponse(responseBody, provider) {
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
+export async function handleChatCore({
+  body,
+  modelInfo,
+  credentials,
+  log,
+  onCredentialsRefreshed,
+  onRequestSuccess,
+  onDisconnect,
+  clientRawRequest,
+  connectionId,
+  userAgent,
+}) {
   const { provider, model } = modelInfo;
 
   const sourceFormat = detectFormat(body);
@@ -257,16 +272,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Create request logger for this session: sourceFormat_targetFormat_model
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
-  
+
   // 0. Log client raw request (before any conversion)
   if (clientRawRequest) {
-    reqLogger.logClientRawRequest(
-      clientRawRequest.endpoint,
-      clientRawRequest.body,
-      clientRawRequest.headers
-    );
+    reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
   }
-  
+
   // 1. Log raw request from client
   reqLogger.logRawRequest(body);
 
@@ -275,7 +286,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Translate request (pass reqLogger for intermediate logging)
   let translatedBody = body;
   translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger);
-  
+
   // Extract toolNameMap for response translation (Claude OAuth)
   const toolNameMap = translatedBody._toolNameMap;
   delete translatedBody._toolNameMap;
@@ -292,10 +303,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Log start
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
 
-  const msgCount = translatedBody.messages?.length 
-    || translatedBody.contents?.length 
-    || translatedBody.request?.contents?.length 
-    || 0;
+  const msgCount =
+    translatedBody.messages?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
   // Create stream controller for disconnect detection
@@ -314,20 +323,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       stream,
       credentials,
       signal: streamController.signal,
-      log
+      log,
     });
-    
+
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
-    
+
     // Log target request (final request to provider)
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
-    
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => {});
+    appendRequestLog({
+      model,
+      provider,
+      connectionId,
+      status: `FAILED ${error.name === "AbortError" ? 499 : 502}`,
+    }).catch(() => {});
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -339,15 +352,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Handle 401/403 - try token refresh using executor
   if (providerResponse.status === 401 || providerResponse.status === 403) {
-    const newCredentials = await refreshWithRetry(
-      () => executor.refreshCredentials(credentials, log),
-      3,
-      log
-    );
+    const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
 
     if (newCredentials?.accessToken || newCredentials?.copilotToken) {
       log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
-      
+
       // Update credentials
       Object.assign(credentials, newCredentials);
 
@@ -364,7 +373,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           stream,
           credentials,
           signal: streamController.signal,
-          log
+          log,
         });
 
         if (retryResult.response.ok) {
@@ -386,13 +395,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    
+
     // Log Antigravity retry time if available
     if (retryAfterMs && provider === "antigravity") {
       const retrySeconds = Math.ceil(retryAfterMs / 1000);
       log?.debug?.("RETRY", `Antigravity quota reset in ${retrySeconds}s (${retryAfterMs}ms)`);
     }
-    
+
     // Log error with full request body for debugging
     reqLogger.logError(new Error(message), finalBody || translatedBody);
 
@@ -421,8 +430,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
-        connectionId: connectionId || undefined
-      }).catch(err => {
+        connectionId: connectionId || undefined,
+      }).catch((err) => {
         console.error("Failed to save usage stats:", err.message);
       });
     }
@@ -437,14 +446,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       response: new Response(JSON.stringify(translatedResponse), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      })
+          "Access-Control-Allow-Origin": "*",
+        },
+      }),
     };
   }
 
   // Streaming response
-  
+
   // Notify success - caller can clear error status if needed
   if (onRequestSuccess) {
     await onRequestSuccess();
@@ -453,14 +462,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const responseHeaders = {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-    "Access-Control-Allow-Origin": "*"
+    Connection: "keep-alive",
+    "Access-Control-Allow-Origin": "*",
   };
 
   // Create transform stream with logger for streaming response
   let transformStream;
   if (needsTranslation(targetFormat, sourceFormat)) {
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId);
+    transformStream = createSSETransformStreamWithLogger(
+      targetFormat,
+      sourceFormat,
+      provider,
+      reqLogger,
+      toolNameMap,
+      model,
+      connectionId
+    );
   } else {
     transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId);
   }
@@ -471,8 +488,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   return {
     success: true,
     response: new Response(transformedBody, {
-      headers: responseHeaders
-    })
+      headers: responseHeaders,
+    }),
   };
 }
 

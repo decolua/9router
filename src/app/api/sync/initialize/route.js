@@ -7,30 +7,33 @@ let syncInitialized = false;
 export async function POST(request) {
   try {
     if (syncInitialized) {
-      return NextResponse.json({ 
-        message: "Cloud sync already initialized" 
+      return NextResponse.json({
+        message: "Cloud sync already initialized",
       });
     }
 
     await initializeCloudSync();
     syncInitialized = true;
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: "Cloud sync initialized successfully" 
+
+    return NextResponse.json({
+      success: true,
+      message: "Cloud sync initialized successfully",
     });
   } catch (error) {
     console.log("Error initializing cloud sync:", error);
-    return NextResponse.json({ 
-      error: "Failed to initialize cloud sync" 
-    }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Failed to initialize cloud sync",
+      },
+      { status: 500 }
+    );
   }
 }
 
 // GET /api/sync/status - Check sync initialization status
 export async function GET(request) {
-  return NextResponse.json({ 
+  return NextResponse.json({
     initialized: syncInitialized,
-    message: syncInitialized ? "Cloud sync is running" : "Cloud sync not initialized"
+    message: syncInitialized ? "Cloud sync is running" : "Cloud sync not initialized",
   });
 }

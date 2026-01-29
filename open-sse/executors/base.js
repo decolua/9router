@@ -27,7 +27,7 @@ export class BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = {
       "Content-Type": "application/json",
-      ...this.config.headers
+      ...this.config.headers,
     };
 
     if (credentials.accessToken) {
@@ -82,7 +82,7 @@ export class BaseExecutor {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
-          signal
+          signal,
         });
 
         if (this.shouldRetry(response.status, urlIndex)) {

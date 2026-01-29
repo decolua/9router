@@ -52,22 +52,20 @@ export default function ProvidersPage() {
   }, []);
 
   const getProviderStats = (providerId, authType) => {
-    const providerConnections = connections.filter(
-      c => c.provider === providerId && c.authType === authType
-    );
+    const providerConnections = connections.filter((c) => c.provider === providerId && c.authType === authType);
 
     // Helper: check if connection is effectively active (cooldown expired)
     const getEffectiveStatus = (conn) => {
       const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
-      return (conn.testStatus === "unavailable" && !isCooldown) ? "active" : conn.testStatus;
+      return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
     };
 
-    const connected = providerConnections.filter(c => {
+    const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return status === "active" || status === "success";
     }).length;
 
-    const errorConns = providerConnections.filter(c => {
+    const errorConns = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return status === "error" || status === "expired" || status === "unavailable";
     });
@@ -76,9 +74,7 @@ export default function ProvidersPage() {
     const total = providerConnections.length;
 
     // Get latest error info
-    const latestError = errorConns.sort((a, b) =>
-      new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0)
-    )[0];
+    const latestError = errorConns.sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0];
     const errorCode = latestError ? getErrorCode(latestError.lastError) : null;
     const errorTime = latestError?.lastErrorAt ? getRelativeTime(latestError.lastErrorAt) : null;
 
@@ -101,12 +97,7 @@ export default function ProvidersPage() {
         <h2 className="text-xl font-semibold">OAuth Providers</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(OAUTH_PROVIDERS).map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-            />
+            <ProviderCard key={key} providerId={key} provider={info} stats={getProviderStats(key, "oauth")} />
           ))}
         </div>
       </div>
@@ -116,12 +107,7 @@ export default function ProvidersPage() {
         <h2 className="text-xl font-semibold">API Key Providers</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-            />
+            <ApiKeyProviderCard key={key} providerId={key} provider={info} stats={getProviderStats(key, "apikey")} />
           ))}
         </div>
       </div>
@@ -143,10 +129,7 @@ function ProviderCard({ providerId, provider, stats }) {
               style={{ backgroundColor: `${provider.color}15` }}
             >
               {imgError ? (
-                <span
-                  className="text-sm font-bold"
-                  style={{ color: provider.color }}
-                >
+                <span className="text-sm font-bold" style={{ color: provider.color }}>
                   {provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
                 </span>
               ) : (
@@ -169,9 +152,7 @@ function ProviderCard({ providerId, provider, stats }) {
               </div>
             </div>
           </div>
-          <span className="material-symbols-outlined text-text-muted">
-            chevron_right
-          </span>
+          <span className="material-symbols-outlined text-text-muted">chevron_right</span>
         </div>
       </Card>
     </Link>
@@ -207,10 +188,7 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
               className="size-10 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: `${provider.color}15` }}
             >
-              <span
-                className="text-sm font-bold"
-                style={{ color: provider.color }}
-              >
+              <span className="text-sm font-bold" style={{ color: provider.color }}>
                 {provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
               </span>
             </div>
@@ -222,9 +200,7 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
               </div>
             </div>
           </div>
-          <span className="material-symbols-outlined text-text-muted">
-            chevron_right
-          </span>
+          <span className="material-symbols-outlined text-text-muted">chevron_right</span>
         </div>
       </Card>
     </Link>

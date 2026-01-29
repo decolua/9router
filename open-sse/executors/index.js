@@ -10,7 +10,7 @@ const executors = {
   "gemini-cli": new GeminiCLIExecutor(),
   github: new GithubExecutor(),
   kiro: new KiroExecutor(),
-  codex: new CodexExecutor()
+  codex: new CodexExecutor(),
 };
 
 const defaultCache = new Map();

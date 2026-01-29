@@ -8,9 +8,9 @@ import { syncToCloud } from "@/app/api/sync/cloud/route";
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    
+
     // Hide sensitive fields
-    const safeConnections = connections.map(c => ({
+    const safeConnections = connections.map((c) => ({
       ...c,
       apiKey: undefined,
       accessToken: undefined,

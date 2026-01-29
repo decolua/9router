@@ -46,7 +46,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
       return {
         shouldFallback: true,
         cooldownMs: getQuotaCooldown(backoffLevel),
-        newBackoffLevel: newLevel
+        newBackoffLevel: newLevel,
       };
     }
   }
@@ -72,7 +72,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     return {
       shouldFallback: true,
       cooldownMs: getQuotaCooldown(backoffLevel),
-      newBackoffLevel: newLevel
+      newBackoffLevel: newLevel,
     };
   }
 
@@ -104,7 +104,7 @@ export function getUnavailableUntil(cooldownMs) {
  */
 export function filterAvailableAccounts(accounts, excludeId = null) {
   const now = Date.now();
-  return accounts.filter(acc => {
+  return accounts.filter((acc) => {
     if (excludeId && acc.id === excludeId) return false;
     if (acc.rateLimitedUntil) {
       const until = new Date(acc.rateLimitedUntil).getTime();
@@ -127,7 +127,7 @@ export function resetAccountState(account) {
     rateLimitedUntil: null,
     backoffLevel: 0,
     lastError: null,
-    status: "active"
+    status: "active",
   };
 }
 
@@ -149,6 +149,6 @@ export function applyErrorState(account, status, errorText) {
     rateLimitedUntil: cooldownMs > 0 ? getUnavailableUntil(cooldownMs) : null,
     backoffLevel: newBackoffLevel ?? backoffLevel,
     lastError: { status, message: errorText, timestamp: new Date().toISOString() },
-    status: "error"
+    status: "error",
   };
 }

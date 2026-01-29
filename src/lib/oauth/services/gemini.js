@@ -62,30 +62,27 @@ export class GeminiCLIService {
    * Fetch project ID from Google Cloud Code Assist
    */
   async fetchProjectId(accessToken) {
-    const response = await fetch(
-      "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-          "User-Agent": "google-api-nodejs-client/9.15.1",
-          "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-          "Client-Metadata": JSON.stringify({
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI"
-          })
+    const response = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "User-Agent": "google-api-nodejs-client/9.15.1",
+        "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+        "Client-Metadata": JSON.stringify({
+          ideType: "IDE_UNSPECIFIED",
+          platform: "PLATFORM_UNSPECIFIED",
+          pluginType: "GEMINI",
+        }),
+      },
+      body: JSON.stringify({
+        metadata: {
+          ideType: "IDE_UNSPECIFIED",
+          platform: "PLATFORM_UNSPECIFIED",
+          pluginType: "GEMINI",
         },
-        body: JSON.stringify({
-          metadata: {
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI"
-          }
-        })
-      }
-    );
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.text();
@@ -93,7 +90,7 @@ export class GeminiCLIService {
     }
 
     const data = await response.json();
-    
+
     // Extract project ID
     let projectId = "";
     if (typeof data.cloudaicompanionProject === "string") {
@@ -244,4 +241,3 @@ export class GeminiCLIService {
     }
   }
 }
-

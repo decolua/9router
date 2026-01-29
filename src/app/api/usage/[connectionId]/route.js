@@ -7,7 +7,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
-    
+
     // Get connection from database
     const connection = await getProviderConnectionById(connectionId);
     if (!connection) {
@@ -27,4 +27,3 @@ export async function GET(request, { params }) {
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
-

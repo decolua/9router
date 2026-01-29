@@ -2,7 +2,7 @@
 
 /**
  * Test sending request from converted file directly to provider
- * Usage: 
+ * Usage:
  *   node testFromFile.js <file-path>
  *   node testFromFile.js data/claude-to-kiro/3_converted_request.json
  */
@@ -25,9 +25,9 @@ if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
   console.log("");
   console.log("File format:");
   console.log("  {");
-  console.log("    \"url\": \"https://api.provider.com/...\",");
-  console.log("    \"headers\": { ... },");
-  console.log("    \"body\": { ... }");
+  console.log('    "url": "https://api.provider.com/...",');
+  console.log('    "headers": { ... },');
+  console.log('    "body": { ... }');
   console.log("  }");
   console.log("");
   process.exit(0);
@@ -85,39 +85,39 @@ console.log(`  Stream: ${body.stream || false}`);
 (async () => {
   try {
     console.log("\n🚀 Sending request...");
-    
+
     const response = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     });
-    
+
     console.log(`\n📥 Response: ${response.status} ${response.statusText}`);
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`\n❌ Error response:\n${errorText}`);
       process.exit(1);
     }
-    
+
     const isStreaming = body.stream || response.headers.get("content-type")?.includes("text/event-stream");
-    
+
     if (isStreaming) {
       console.log("\n📡 Streaming response...\n");
-      
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let chunkCount = 0;
       let buffer = "";
-      
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop(); // Keep incomplete line in buffer
-        
+
         for (const line of lines) {
           if (line.trim()) {
             process.stdout.write(line + "\n");
@@ -125,19 +125,18 @@ console.log(`  Stream: ${body.stream || false}`);
           }
         }
       }
-      
+
       // Process any remaining data
       if (buffer.trim()) {
         process.stdout.write(buffer + "\n");
       }
-      
+
       console.log(`\n\n✅ Received ${chunkCount} chunks`);
     } else {
       const responseData = await response.json();
       console.log("\n📦 Response:");
       console.log(JSON.stringify(responseData, null, 2));
     }
-    
   } catch (err) {
     console.error("\n❌ Request failed:", err.message);
     if (process.env.DEBUG) {

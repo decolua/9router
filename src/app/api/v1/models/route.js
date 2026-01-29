@@ -25,7 +25,7 @@ export async function GET() {
     try {
       connections = await getProviderConnections();
       // Filter to only active connections
-      connections = connections.filter(c => c.isActive !== false);
+      connections = connections.filter((c) => c.isActive !== false);
     } catch (e) {
       // If database not available, return all models
       console.log("Could not fetch providers, returning all models");
@@ -83,19 +83,19 @@ export async function GET() {
       }
     }
 
-    return Response.json({
-      object: "list",
-      data: models,
-    }, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
+    return Response.json(
+      {
+        object: "list",
+        data: models,
       },
-    });
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
   } catch (error) {
     console.log("Error fetching models:", error);
-    return Response.json(
-      { error: { message: error.message, type: "server_error" } },
-      { status: 500 }
-    );
+    return Response.json({ error: { message: error.message, type: "server_error" } }, { status: 500 });
   }
 }

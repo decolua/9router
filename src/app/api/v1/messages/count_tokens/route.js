@@ -1,7 +1,7 @@
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "*"
+  "Access-Control-Allow-Headers": "*",
 };
 
 /**
@@ -21,7 +21,7 @@ export async function POST(request) {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
-      headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
     });
   }
 
@@ -43,10 +43,12 @@ export async function POST(request) {
   // Rough estimate: ~4 chars per token
   const inputTokens = Math.ceil(totalChars / 4);
 
-  return new Response(JSON.stringify({
-    input_tokens: inputTokens
-  }), {
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
-  });
+  return new Response(
+    JSON.stringify({
+      input_tokens: inputTokens,
+    }),
+    {
+      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    }
+  );
 }
-

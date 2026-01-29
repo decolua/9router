@@ -47,7 +47,7 @@ export async function showSuccess(message) {
 export function showLoading(text) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let i = 0;
-  
+
   const interval = setInterval(() => {
     process.stdout.write(`\r${frames[i]} ${text}`);
     i = (i + 1) % frames.length;
@@ -60,4 +60,3 @@ export function showLoading(text) {
     },
   };
 }
-

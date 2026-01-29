@@ -7,7 +7,7 @@ export {
   findModelName,
   getModelTargetFormat,
   PROVIDER_ID_TO_ALIAS,
-  getModelsByProviderId
+  getModelsByProviderId,
 } from "open-sse/config/providerModels.js";
 
 import { AI_PROVIDERS } from "./providers.js";
@@ -25,10 +25,10 @@ export function isValidModel(aliasOrId, modelId) {
   if (PASSTHROUGH_PROVIDERS.has(aliasOrId)) return true;
   const models = MODELS[aliasOrId];
   if (!models) return false;
-  return models.some(m => m.id === modelId);
+  return models.some((m) => m.id === modelId);
 }
 
 // Legacy AI_MODELS for backward compatibility
 export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
-  models.map(m => ({ provider: alias, model: m.id, name: m.name }))
+  models.map((m) => ({ provider: alias, model: m.id, name: m.name }))
 );

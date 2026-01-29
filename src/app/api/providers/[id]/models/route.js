@@ -8,17 +8,17 @@ const PROVIDER_MODELS_CONFIG = {
     method: "GET",
     headers: {
       "Anthropic-Version": "2023-06-01",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     authHeader: "x-api-key",
-    parseResponse: (data) => data.data || []
+    parseResponse: (data) => data.data || [],
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
     method: "GET",
     headers: { "Content-Type": "application/json" },
     authQuery: "key", // Use query param for API key
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => data.models || [],
   },
   "gemini-cli": {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
@@ -26,7 +26,7 @@ const PROVIDER_MODELS_CONFIG = {
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => data.models || [],
   },
   qwen: {
     url: "https://portal.qwen.ai/v1/models",
@@ -34,7 +34,7 @@ const PROVIDER_MODELS_CONFIG = {
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || []
+    parseResponse: (data) => data.data || [],
   },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
@@ -43,7 +43,7 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: (data) => data.models || [],
   },
   openai: {
     url: "https://api.openai.com/v1/models",
@@ -51,7 +51,7 @@ const PROVIDER_MODELS_CONFIG = {
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || []
+    parseResponse: (data) => data.data || [],
   },
   openrouter: {
     url: "https://openrouter.ai/api/v1/models",
@@ -59,18 +59,18 @@ const PROVIDER_MODELS_CONFIG = {
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || []
+    parseResponse: (data) => data.data || [],
   },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
     headers: {
       "Anthropic-Version": "2023-06-01",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     authHeader: "x-api-key",
-    parseResponse: (data) => data.data || []
-  }
+    parseResponse: (data) => data.data || [],
+  },
 };
 
 /**
@@ -114,7 +114,7 @@ export async function GET(request, { params }) {
     // Make request
     const fetchOptions = {
       method: config.method,
-      headers
+      headers,
     };
 
     if (config.body && config.method === "POST") {
@@ -126,10 +126,7 @@ export async function GET(request, { params }) {
     if (!response.ok) {
       const errorText = await response.text();
       console.log(`Error fetching models from ${connection.provider}:`, errorText);
-      return NextResponse.json(
-        { error: `Failed to fetch models: ${response.status}` },
-        { status: response.status }
-      );
+      return NextResponse.json({ error: `Failed to fetch models: ${response.status}` }, { status: response.status });
     }
 
     const data = await response.json();
@@ -138,11 +135,10 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       provider: connection.provider,
       connectionId: connection.id,
-      models
+      models,
     });
   } catch (error) {
     console.log("Error fetching provider models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
   }
 }
-

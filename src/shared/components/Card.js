@@ -41,12 +41,8 @@ export default function Card({
               </div>
             )}
             <div>
-              {title && (
-                <h3 className="text-text-main font-semibold">{title}</h3>
-              )}
-              {subtitle && (
-                <p className="text-sm text-text-muted">{subtitle}</p>
-              )}
+              {title && <h3 className="text-text-main font-semibold">{title}</h3>}
+              {subtitle && <p className="text-sm text-text-muted">{subtitle}</p>}
             </div>
           </div>
           {action}
@@ -60,15 +56,7 @@ export default function Card({
 // Sub-component: Bordered section inside Card
 Card.Section = function CardSection({ children, className, ...props }) {
   return (
-    <div
-      className={cn(
-        "p-4 rounded-lg",
-        "bg-surface",
-        "border border-border",
-        className
-      )}
-      {...props}
-    >
+    <div className={cn("p-4 rounded-lg", "bg-surface", "border border-border", className)} {...props}>
       {children}
     </div>
   );
@@ -89,4 +77,3 @@ Card.Row = function CardRow({ children, className, ...props }) {
     </div>
   );
 };
-

@@ -7,7 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -34,6 +36,7 @@
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
+    "prettier": "^3.8.1",
     "tailwindcss": "^4"
   }
 }

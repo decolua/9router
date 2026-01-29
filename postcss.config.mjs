@@ -3,4 +3,3 @@ export default {
     "@tailwindcss/postcss": {},
   },
 };
-

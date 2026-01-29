@@ -20,7 +20,7 @@ export async function POST(request, { params }) {
         switch (connection.provider) {
           case "openai":
             const openaiRes = await fetch("https://api.openai.com/v1/models", {
-              headers: { "Authorization": `Bearer ${connection.apiKey}` },
+              headers: { Authorization: `Bearer ${connection.apiKey}` },
             });
             isValid = openaiRes.ok;
             break;
@@ -43,13 +43,15 @@ export async function POST(request, { params }) {
             break;
 
           case "gemini":
-            const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`);
+            const geminiRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`
+            );
             isValid = geminiRes.ok;
             break;
 
           case "openrouter":
             const openrouterRes = await fetch("https://openrouter.ai/api/v1/models", {
-              headers: { "Authorization": `Bearer ${connection.apiKey}` },
+              headers: { Authorization: `Bearer ${connection.apiKey}` },
             });
             isValid = openrouterRes.ok;
             break;
@@ -92,4 +94,3 @@ export async function POST(request, { params }) {
     return NextResponse.json({ error: "Test failed" }, { status: 500 });
   }
 }
-

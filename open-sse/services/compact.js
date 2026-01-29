@@ -11,11 +11,11 @@
 export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
-  const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
-  const combo = combos.find(c => c.name === modelStr);
+  const combos = Array.isArray(combosData) ? combosData : combosData?.combos || [];
+
+  const combo = combos.find((c) => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
@@ -39,7 +39,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
 
     const result = await handleSingleModel(body, modelStr);
-    
+
     // Success or client error - return response
     if (result.ok || result.status < 500) {
       return result;
@@ -51,14 +51,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
   }
 
   log.warn("COMBO", "All models failed");
-  
-  // Return 503 with last error
-  return new Response(
-    JSON.stringify({ error: lastError || "All combo models unavailable" }),
-    { 
-      status: 503, 
-      headers: { "Content-Type": "application/json" }
-    }
-  );
-}
 
+  // Return 503 with last error
+  return new Response(JSON.stringify({ error: lastError || "All combo models unavailable" }), {
+    status: 503,
+    headers: { "Content-Type": "application/json" },
+  });
+}

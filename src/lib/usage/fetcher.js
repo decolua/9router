@@ -70,7 +70,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       // Free/limited plan format
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -97,7 +97,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -199,4 +199,3 @@ async function getIflowUsage(accessToken) {
     return { message: "Unable to fetch iFlow usage." };
   }
 }
-

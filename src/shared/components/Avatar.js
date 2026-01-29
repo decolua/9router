@@ -2,13 +2,7 @@
 
 import { cn } from "@/shared/utils/cn";
 
-export default function Avatar({
-  src,
-  alt = "Avatar",
-  name,
-  size = "md",
-  className,
-}) {
+export default function Avatar({ src, alt = "Avatar", name, size = "md", className }) {
   const sizes = {
     xs: "size-6 text-xs",
     sm: "size-8 text-sm",
@@ -85,4 +79,3 @@ export default function Avatar({
     </div>
   );
 }
-

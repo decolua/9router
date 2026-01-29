@@ -24,5 +24,3 @@ export { default as KiroSocialOAuthModal } from "./KiroSocialOAuthModal";
 
 // Layouts
 export * from "./layouts";
-
-

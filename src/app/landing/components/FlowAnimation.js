@@ -38,13 +38,10 @@ export default function FlowAnimation() {
       {/* CLI Tools - Left side */}
       <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-7">
         {CLI_TOOLS.map((tool) => (
-          <div 
-            key={tool.id} 
-            className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group"
-          >
+          <div key={tool.id} className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group">
             <div className="w-16 h-16 rounded-2xl bg-[#23180f] border border-[#3a2f27] flex items-center justify-center overflow-hidden p-2 hover:border-[#f97815]/50 transition-all hover:scale-105">
-              <Image 
-                src={tool.image} 
+              <Image
+                src={tool.image}
                 alt={tool.name}
                 width={48}
                 height={48}
@@ -57,40 +54,67 @@ export default function FlowAnimation() {
       </div>
 
       {/* SVG Lines from CLI to 9Router */}
-      <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-yellow-700" xmlns="http://www.w3.org/2000/svg">
-        <path className="animate-[dash_2s_linear_infinite]" d="M 60 50 C 250 70, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
-        <path className="animate-[dash_2s_linear_infinite]" d="M 60 140 C 250 140, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
-        <path className="animate-[dash_2s_linear_infinite]" d="M 60 210 C 250 210, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
-        <path className="animate-[dash_2s_linear_infinite]" d="M 60 300 C 250 280, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
+      <svg
+        className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-yellow-700"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          className="animate-[dash_2s_linear_infinite]"
+          d="M 60 50 C 250 70, 250 180, 360 180"
+          fill="none"
+          strokeDasharray="5,5"
+          strokeWidth="2"
+        ></path>
+        <path
+          className="animate-[dash_2s_linear_infinite]"
+          d="M 60 140 C 250 140, 250 180, 360 180"
+          fill="none"
+          strokeDasharray="5,5"
+          strokeWidth="2"
+        ></path>
+        <path
+          className="animate-[dash_2s_linear_infinite]"
+          d="M 60 210 C 250 210, 250 180, 360 180"
+          fill="none"
+          strokeDasharray="5,5"
+          strokeWidth="2"
+        ></path>
+        <path
+          className="animate-[dash_2s_linear_infinite]"
+          d="M 60 300 C 250 280, 250 180, 360 180"
+          fill="none"
+          strokeDasharray="5,5"
+          strokeWidth="2"
+        ></path>
       </svg>
 
       {/* SVG Lines from 9Router to Providers */}
       <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-        <path 
-          d="M 440 180 C 550 180, 550 50, 740 50" 
-          fill="none" 
-          stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"} 
+        <path
+          d="M 440 180 C 550 180, 550 50, 740 50"
+          fill="none"
+          stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 0 ? "3" : "2"}
           className={activeFlow === 0 ? "animate-pulse" : ""}
         ></path>
-        <path 
-          d="M 440 180 C 550 180, 550 130, 740 130" 
-          fill="none" 
-          stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"} 
+        <path
+          d="M 440 180 C 550 180, 550 130, 740 130"
+          fill="none"
+          stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 1 ? "3" : "2"}
           className={activeFlow === 1 ? "animate-pulse" : ""}
         ></path>
-        <path 
-          d="M 440 180 C 550 180, 550 230, 740 230" 
-          fill="none" 
-          stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"} 
+        <path
+          d="M 440 180 C 550 180, 550 230, 740 230"
+          fill="none"
+          stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 2 ? "3" : "2"}
           className={activeFlow === 2 ? "animate-pulse" : ""}
         ></path>
-        <path 
-          d="M 440 180 C 550 180, 550 310, 740 310" 
-          fill="none" 
-          stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"} 
+        <path
+          d="M 440 180 C 550 180, 550 310, 740 310"
+          fill="none"
+          stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 3 ? "3" : "2"}
           className={activeFlow === 3 ? "animate-pulse" : ""}
         ></path>
@@ -99,7 +123,7 @@ export default function FlowAnimation() {
       {/* AI Providers - Right side */}
       <div className="absolute right-0 top-0 bottom-0 flex flex-col justify-between py-6">
         {PROVIDERS.map((provider, idx) => (
-          <div 
+          <div
             key={provider.id}
             className={`px-4 py-2 rounded-lg ${provider.color} ${provider.textColor} flex items-center justify-center font-bold text-xs shadow-lg hover:scale-110 transition-all cursor-help min-w-[140px] ${
               activeFlow === idx ? "ring-4 ring-[#f97815]/50 scale-110" : ""
@@ -118,4 +142,3 @@ export default function FlowAnimation() {
     </div>
   );
 }
-

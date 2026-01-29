@@ -16,7 +16,7 @@ export async function POST(request) {
       "2_req_source.json",
       "3_req_openai.json",
       "4_req_target.json",
-      "5_res_provider.txt"
+      "5_res_provider.txt",
     ];
 
     if (!allowedFiles.includes(file)) {
@@ -24,7 +24,7 @@ export async function POST(request) {
     }
 
     const logsDir = path.join(process.cwd(), "logs", "translator");
-    
+
     // Create directory if not exists
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });

@@ -7,14 +7,15 @@ export default function HowItWorks() {
         <div className="mb-16">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">How 9Router Works</h2>
           <p className="text-gray-400 max-w-xl text-lg">
-            Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.
+            Data flows seamlessly from your application through our intelligent routing layer to the best provider for
+            the job.
           </p>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
           {/* Connection line */}
           <div className="hidden md:block absolute top-12 left-[16%] right-[16%] h-[2px] bg-linear-to-r from-gray-700 via-[#f97815] to-gray-700 -z-10"></div>
-          
+
           {/* Step 1: CLI & SDKs */}
           <div className="flex flex-col gap-6 relative group">
             <div className="w-24 h-24 rounded-2xl bg-[#181411] border border-[#3a2f27] flex items-center justify-center shadow-xl group-hover:border-gray-500 transition-colors z-10 mx-auto md:mx-0">
@@ -63,4 +64,3 @@ export default function HowItWorks() {
     </section>
   );
 }
-

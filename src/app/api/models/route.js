@@ -6,7 +6,7 @@ import { AI_MODELS } from "@/shared/constants/config";
 export async function GET() {
   try {
     const modelAliases = await getModelAliases();
-    
+
     const models = AI_MODELS.map((m) => {
       const fullModel = `${m.provider}/${m.model}`;
       return {
@@ -36,9 +36,7 @@ export async function PUT(request) {
     const modelAliases = await getModelAliases();
 
     // Check if alias already exists for different model
-    const existingModel = Object.entries(modelAliases).find(
-      ([key, val]) => val === alias && key !== model
-    );
+    const existingModel = Object.entries(modelAliases).find(([key, val]) => val === alias && key !== model);
 
     if (existingModel) {
       return NextResponse.json({ error: "Alias already in use" }, { status: 400 });

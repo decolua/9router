@@ -4,9 +4,7 @@ import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+const SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "9router-default-secret-change-me");
 
 export async function POST(request) {
   try {

@@ -64,8 +64,8 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
   try {
     const response = await fetch("https://api.github.com/copilot_internal/user", {
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
         "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
         "User-Agent": GITHUB_CONFIG.userAgent,
       },
@@ -95,7 +95,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       // Free/limited plan format
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -122,7 +122,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -166,12 +166,12 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
   try {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
-    
+
     // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
       },
@@ -188,13 +188,13 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
 
     const data = await response.json();
     const quotas = {};
-    
+
     // Parse model quotas
     if (data.models) {
       for (const [name, info] of Object.entries(data.models)) {
         // Only include gemini and claude models
         if (!name.includes("gemini") && !name.includes("claude")) continue;
-        
+
         if (info.quotaInfo) {
           const percentage = (info.quotaInfo.remainingFraction || 0) * 100;
           quotas[name] = {
@@ -239,7 +239,7 @@ async function getAntigravitySubscriptionInfo(accessToken) {
     const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
       },
@@ -263,7 +263,7 @@ async function getClaudeUsage(accessToken) {
     const settingsResponse = await fetch("https://api.anthropic.com/v1/settings", {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
         "anthropic-version": "2023-06-01",
       },
@@ -271,7 +271,7 @@ async function getClaudeUsage(accessToken) {
 
     if (settingsResponse.ok) {
       const settings = await settingsResponse.json();
-      
+
       // Try usage endpoint if we have org info
       if (settings.organization_id) {
         const usageResponse = await fetch(
@@ -279,7 +279,7 @@ async function getClaudeUsage(accessToken) {
           {
             method: "GET",
             headers: {
-              "Authorization": `Bearer ${accessToken}`,
+              Authorization: `Bearer ${accessToken}`,
               "Content-Type": "application/json",
               "anthropic-version": "2023-06-01",
             },
@@ -318,8 +318,8 @@ async function getCodexUsage(accessToken) {
     const response = await fetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
       },
     });
 
@@ -328,19 +328,15 @@ async function getCodexUsage(accessToken) {
     }
 
     const data = await response.json();
-    
+
     // Parse rate limit info
     const rateLimit = data.rate_limit || {};
     const primaryWindow = rateLimit.primary_window || {};
     const secondaryWindow = rateLimit.secondary_window || {};
 
     // Calculate reset dates
-    const sessionResetAt = primaryWindow.reset_at 
-      ? new Date(primaryWindow.reset_at * 1000).toISOString() 
-      : null;
-    const weeklyResetAt = secondaryWindow.reset_at 
-      ? new Date(secondaryWindow.reset_at * 1000).toISOString() 
-      : null;
+    const sessionResetAt = primaryWindow.reset_at ? new Date(primaryWindow.reset_at * 1000).toISOString() : null;
+    const weeklyResetAt = secondaryWindow.reset_at ? new Date(secondaryWindow.reset_at * 1000).toISOString() : null;
 
     return {
       plan: data.plan_type || "unknown",
@@ -395,4 +391,3 @@ async function getIflowUsage(accessToken) {
     return { message: "Unable to fetch iFlow usage." };
   }
 }
-

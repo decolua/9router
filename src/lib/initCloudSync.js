@@ -19,4 +19,3 @@ export async function ensureCloudSyncInitialized() {
 ensureCloudSyncInitialized().catch(console.log);
 
 export default ensureCloudSyncInitialized;
-

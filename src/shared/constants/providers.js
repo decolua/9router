@@ -13,12 +13,34 @@ export const OAUTH_PROVIDERS = {
 };
 
 export const APIKEY_PROVIDERS = {
-  openrouter: { id: "openrouter", alias: "openrouter", name: "OpenRouter", icon: "router", color: "#6366F1", textIcon: "OR" , passthroughModels: true },
+  openrouter: {
+    id: "openrouter",
+    alias: "openrouter",
+    name: "OpenRouter",
+    icon: "router",
+    color: "#6366F1",
+    textIcon: "OR",
+    passthroughModels: true,
+  },
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL" },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi Coding", icon: "psychology", color: "#1E3A8A", textIcon: "KM" },
-  minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM" },
+  minimax: {
+    id: "minimax",
+    alias: "minimax",
+    name: "Minimax Coding",
+    icon: "memory",
+    color: "#7C3AED",
+    textIcon: "MM",
+  },
   openai: { id: "openai", alias: "openai", name: "OpenAI", icon: "auto_awesome", color: "#10A37F", textIcon: "OA" },
-  anthropic: { id: "anthropic", alias: "anthropic", name: "Anthropic", icon: "smart_toy", color: "#D97757", textIcon: "AN" },
+  anthropic: {
+    id: "anthropic",
+    alias: "anthropic",
+    name: "Anthropic",
+    icon: "smart_toy",
+    color: "#D97757",
+    textIcon: "AN",
+  },
   gemini: { id: "gemini", alias: "gemini", name: "Gemini", icon: "diamond", color: "#4285F4", textIcon: "GE" },
 };
 
