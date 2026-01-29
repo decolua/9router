@@ -86,11 +86,29 @@ npx 9router
 9router                    # Start server with default settings
 9router --port 8080        # Custom port
 9router --no-browser       # Don't open browser
+9router --proxy http://localhost:7897   # Use upstream proxy (Clash Mixed/HTTP)
 9router --skip-update      # Skip auto-update check
 9router --help             # Show help
 ```
 
 **Dashboard**: `http://localhost:20128/dashboard`
+
+## Outbound Proxy (Optional)
+
+If your network requires an upstream proxy (e.g. Clash), you can route 9Router's outbound requests (OAuth + provider API calls) via environment variables:
+
+```powershell
+$env:HTTP_PROXY="http://127.0.0.1:7897"
+$env:HTTPS_PROXY=$env:HTTP_PROXY
+$env:NO_PROXY="localhost,127.0.0.1"
+9router
+```
+
+Or use the CLI flag:
+
+```bash
+9router --proxy http://localhost:7897 --no-proxy "localhost,127.0.0.1"
+```
 
 ## Remote Deployment
 
