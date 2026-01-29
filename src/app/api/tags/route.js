@@ -3,7 +3,7 @@ import { ollamaModels } from "open-sse/config/ollamaModels.js";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "*"
+  "Access-Control-Allow-Headers": "*",
 };
 
 export async function OPTIONS() {
@@ -12,7 +12,6 @@ export async function OPTIONS() {
 
 export async function GET() {
   return new Response(JSON.stringify(ollamaModels), {
-    headers: { "Content-Type": "application/json", ...CORS_HEADERS }
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
   });
 }
-

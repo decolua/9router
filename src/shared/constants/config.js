@@ -39,15 +39,7 @@ export const PROVIDER_ENDPOINTS = {
 };
 
 // Re-export from providers.js for backward compatibility
-export {
-  OAUTH_PROVIDERS,
-  APIKEY_PROVIDERS,
-  AI_PROVIDERS,
-  AUTH_METHODS,
-} from "./providers.js";
+export { OAUTH_PROVIDERS, APIKEY_PROVIDERS, AI_PROVIDERS, AUTH_METHODS } from "./providers.js";
 
 // Re-export from models.js for backward compatibility
-export {
-  PROVIDER_MODELS,
-  AI_MODELS,
-} from "./models.js";
+export { PROVIDER_MODELS, AI_MODELS } from "./models.js";

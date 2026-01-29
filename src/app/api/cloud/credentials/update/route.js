@@ -45,11 +45,10 @@ export async function PUT(request) {
 
     await updateProviderConnection(connection.id, updateData);
 
-    return NextResponse.json({ 
-      success: true, 
-      message: `Credentials updated for provider: ${provider}` 
+    return NextResponse.json({
+      success: true,
+      message: `Credentials updated for provider: ${provider}`,
     });
-
   } catch (error) {
     console.log("Update credentials error:", error);
     return NextResponse.json({ error: "Failed to update credentials" }, { status: 500 });

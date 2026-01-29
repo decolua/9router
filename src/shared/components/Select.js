@@ -35,9 +35,7 @@ export default function Select({
             "focus:ring-2 focus:ring-primary/20 focus:border-primary focus:outline-none",
             "transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
             "text-[16px] sm:text-sm",
-            error
-              ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
-              : "border-border",
+            error ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : "border-border",
             selectClassName
           )}
           {...props}
@@ -61,10 +59,7 @@ export default function Select({
           {error}
         </p>
       )}
-      {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   );
 }
-

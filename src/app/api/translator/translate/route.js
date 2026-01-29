@@ -20,13 +20,13 @@ export async function POST(request) {
         // Return format: { timestamp, endpoint, headers, body }
         const actualBody = body.body || body;
         const sourceFormat = detectFormat(actualBody);
-        
+
         result = {
           timestamp: body.timestamp || new Date().toISOString(),
           endpoint: body.endpoint || "/v1/messages",
           headers: body.headers || {},
           body: actualBody,
-          _detectedFormat: sourceFormat
+          _detectedFormat: sourceFormat,
         };
         break;
       }
@@ -39,11 +39,11 @@ export async function POST(request) {
         const targetFormat = FORMATS.OPENAI;
         const model = actualBody.model || "test-model";
         const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
+
         result = {
           timestamp: new Date().toISOString(),
           headers: {},
-          body: translated
+          body: translated,
         };
         break;
       }
@@ -56,10 +56,10 @@ export async function POST(request) {
         const targetFormat = getTargetFormat(provider);
         const model = actualBody.model || "test-model";
         const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
+
         result = {
           timestamp: new Date().toISOString(),
-          body: translated
+          body: translated,
         };
         break;
       }
@@ -69,16 +69,19 @@ export async function POST(request) {
         // Return format: { timestamp, url, headers, body }
         const actualBody = body.body || body;
         const model = actualBody.model || "test-model";
-        
+
         // Get provider credentials
         const connections = await getProviderConnections({ provider });
-        const connection = connections.find(c => c.isActive !== false);
-        
+        const connection = connections.find((c) => c.isActive !== false);
+
         if (!connection) {
-          return NextResponse.json({ 
-            success: false, 
-            error: `No active connection found for provider: ${provider}` 
-          }, { status: 400 });
+          return NextResponse.json(
+            {
+              success: false,
+              error: `No active connection found for provider: ${provider}`,
+            },
+            { status: 400 }
+          );
         }
 
         const credentials = {
@@ -87,18 +90,18 @@ export async function POST(request) {
           refreshToken: connection.refreshToken,
           copilotToken: connection.copilotToken,
           projectId: connection.projectId,
-          providerSpecificData: connection.providerSpecificData
+          providerSpecificData: connection.providerSpecificData,
         };
 
         // Build URL and headers
         const url = buildProviderUrl(provider, model, true, { baseUrlIndex: 0 });
         const headers = buildProviderHeaders(provider, credentials, true, actualBody);
-        
+
         result = {
           timestamp: new Date().toISOString(),
           url: url,
           headers: headers,
-          body: actualBody
+          body: actualBody,
         };
         break;
       }

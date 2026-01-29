@@ -9,13 +9,13 @@ export async function initializeCloudSync() {
   try {
     // Cleanup null fields from existing data
     await cleanupProviderConnections();
-    
+
     // Create scheduler instance with default 15-minute interval
     const scheduler = await getCloudSyncScheduler(null, 15);
-    
+
     // Start the scheduler
     await scheduler.start();
-    
+
     return scheduler;
   } catch (error) {
     console.error("[CloudSync] Error initializing scheduler:", error);
@@ -29,4 +29,3 @@ if (typeof require !== "undefined" && require.main === module) {
 }
 
 export default initializeCloudSync;
-

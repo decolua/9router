@@ -8,25 +8,25 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
-  
-  body.messages = body.messages.map(msg => {
+
+  body.messages = body.messages.map((msg) => {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
-    
+
     // Keep assistant messages with tool_calls as-is
     if (msg.role === "assistant" && msg.tool_calls) return msg;
-    
+
     // Handle string content
     if (typeof msg.content === "string") return msg;
-    
+
     // Handle array content
     if (Array.isArray(msg.content)) {
       const filteredContent = [];
-      
+
       for (const block of msg.content) {
         // Skip thinking blocks
         if (block.type === "thinking" || block.type === "redacted_thinking") continue;
-        
+
         // Only keep valid OpenAI content types
         if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
           // Remove signature field if exists
@@ -41,31 +41,28 @@ export function filterToOpenAIFormat(body) {
           filteredContent.push(cleanBlock);
         }
       }
-      
+
       // If all content was filtered, add empty text
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
+
       return { ...msg, content: filteredContent };
     }
-    
+
     return msg;
   });
-  
+
   // Filter out messages with only empty text (but NEVER filter tool messages)
-  body.messages = body.messages.filter(msg => {
+  body.messages = body.messages.filter((msg) => {
     // Always keep tool messages
     if (msg.role === "tool") return true;
     // Always keep assistant messages with tool_calls
     if (msg.role === "assistant" && msg.tool_calls) return true;
-    
+
     if (typeof msg.content === "string") return msg.content.trim() !== "";
     if (Array.isArray(msg.content)) {
-      return msg.content.some(b => 
-        (b.type === "text" && b.text?.trim()) ||
-        b.type !== "text"
-      );
+      return msg.content.some((b) => (b.type === "text" && b.text?.trim()) || b.type !== "text");
     }
     return true;
   });
@@ -77,4 +74,3 @@ export function filterToOpenAIFormat(body) {
 
   return body;
 }
-

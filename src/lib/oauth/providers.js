@@ -174,19 +174,16 @@ const PROVIDERS = {
       // Fetch project ID
       let projectId = "";
       try {
-        const projectRes = await fetch(
-          "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${tokens.access_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              metadata: { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
-            }),
-          }
-        );
+        const projectRes = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tokens.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            metadata: { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
+          }),
+        });
         if (projectRes.ok) {
           const data = await projectRes.json();
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
@@ -302,13 +299,13 @@ const PROVIDERS = {
                 // Extract final project ID from response
                 if (result.response?.cloudaicompanionProject) {
                   const respProject = result.response.cloudaicompanionProject;
-                  projectId = typeof respProject === 'string' ? respProject.trim() : (respProject.id || projectId);
+                  projectId = typeof respProject === "string" ? respProject.trim() : respProject.id || projectId;
                 }
                 break;
               }
             }
             // Wait 5 seconds before retry
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            await new Promise((resolve) => setTimeout(resolve, 5000));
           }
         } catch (e) {
           console.log("Failed to onboard user:", e);
@@ -342,9 +339,7 @@ const PROVIDERS = {
     },
     exchangeToken: async (config, code, redirectUri) => {
       // Create Basic Auth header
-      const basicAuth = Buffer.from(
-        `${config.clientId}:${config.clientSecret}`
-      ).toString("base64");
+      const basicAuth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
 
       const response = await fetch(config.tokenUrl, {
         method: "POST",
@@ -710,9 +705,9 @@ export function generateAuthData(providerName, redirectUri) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state) {
   const provider = getProvider(providerName);
-  
+
   const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state);
-  
+
   let extra = null;
   if (provider.postExchange) {
     extra = await provider.postExchange(tokens);
@@ -744,9 +739,9 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  
+
   const result = await provider.pollToken(provider.config, deviceCode, codeVerifier, extraData);
-  
+
   if (result.ok) {
     // For device code flows, success is only when we have an access token
     if (result.data.access_token) {
@@ -758,25 +753,24 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       return { success: true, tokens: provider.mapTokens(result.data, extra) };
     } else {
       // Check if it's still pending authorization
-      if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {
+      if (result.data.error === "authorization_pending" || result.data.error === "slow_down") {
         // This is not a failure, just still waiting
-        return { 
-          success: false, 
-          error: result.data.error, 
+        return {
+          success: false,
+          error: result.data.error,
           errorDescription: result.data.error_description || result.data.message,
-          pending: result.data.error === 'authorization_pending'
+          pending: result.data.error === "authorization_pending",
         };
       } else {
         // Actual error
-        return { 
-          success: false, 
-          error: result.data.error || 'no_access_token', 
-          errorDescription: result.data.error_description || result.data.message || 'No access token received' 
+        return {
+          success: false,
+          error: result.data.error || "no_access_token",
+          errorDescription: result.data.error_description || result.data.message || "No access token received",
         };
       }
     }
   }
-  
+
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
-

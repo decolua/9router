@@ -13,10 +13,7 @@ export async function POST(request) {
     const { refreshToken } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
-      return NextResponse.json(
-        { error: "Refresh token is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Refresh token is required" }, { status: 400 });
     }
 
     const kiroService = new KiroService();

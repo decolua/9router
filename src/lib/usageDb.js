@@ -5,7 +5,7 @@ import os from "os";
 import fs from "fs";
 import { fileURLToPath } from "url";
 
-const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
+const isCloud = typeof caches !== "undefined" || typeof caches === "object";
 
 // Get app name from root package.json config
 function getAppName() {
@@ -50,7 +50,7 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 
 // Default data structure
 const defaultData = {
-  history: []
+  history: [],
 };
 
 // Singleton instance
@@ -59,7 +59,7 @@ let dbInstance = null;
 // Track in-flight requests in memory
 const pendingRequests = {
   byModel: {},
-  byAccount: {}
+  byAccount: {},
 };
 
 /**
@@ -81,7 +81,10 @@ export function trackPendingRequest(model, provider, connectionId, started) {
     const accountKey = connectionId; // We use connectionId as key here
     if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
     if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
-    pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
+    pendingRequests.byAccount[accountKey][modelKey] = Math.max(
+      0,
+      pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1)
+    );
   }
 }
 
@@ -107,7 +110,7 @@ export async function getUsageDb() {
       await dbInstance.read();
     } catch (error) {
       if (error instanceof SyntaxError) {
-        console.warn('[DB] Corrupt Usage JSON detected, resetting to defaults...');
+        console.warn("[DB] Corrupt Usage JSON detected, resetting to defaults...");
         dbInstance.data = defaultData;
         await dbInstance.write();
       } else {
@@ -165,21 +168,21 @@ export async function getUsageHistory(filter = {}) {
 
   // Apply filters
   if (filter.provider) {
-    history = history.filter(h => h.provider === filter.provider);
+    history = history.filter((h) => h.provider === filter.provider);
   }
 
   if (filter.model) {
-    history = history.filter(h => h.model === filter.model);
+    history = history.filter((h) => h.model === filter.model);
   }
 
   if (filter.startDate) {
     const start = new Date(filter.startDate).getTime();
-    history = history.filter(h => new Date(h.timestamp).getTime() >= start);
+    history = history.filter((h) => new Date(h.timestamp).getTime() >= start);
   }
 
   if (filter.endDate) {
     const end = new Date(filter.endDate).getTime();
-    history = history.filter(h => new Date(h.timestamp).getTime() <= end);
+    history = history.filter((h) => new Date(h.timestamp).getTime() <= end);
   }
 
   return history;
@@ -216,7 +219,7 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
     try {
       const { getProviderConnections } = await import("@/lib/localDb.js");
       const connections = await getProviderConnections();
-      const conn = connections.find(c => c.id === connectionId);
+      const conn = connections.find((c) => c.id === connectionId);
       if (conn) {
         account = conn.name || conn.email || account;
       }
@@ -279,30 +282,30 @@ async function calculateCost(provider, model, tokens) {
     const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
     const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
 
-    cost += (nonCachedInput * (pricing.input / 1000000));
+    cost += nonCachedInput * (pricing.input / 1000000);
 
     // Cached tokens
     if (cachedTokens > 0) {
       const cachedRate = pricing.cached || pricing.input; // Fallback to input rate
-      cost += (cachedTokens * (cachedRate / 1000000));
+      cost += cachedTokens * (cachedRate / 1000000);
     }
 
     // Output tokens
     const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-    cost += (outputTokens * (pricing.output / 1000000));
+    cost += outputTokens * (pricing.output / 1000000);
 
     // Reasoning tokens
     const reasoningTokens = tokens.reasoning_tokens || 0;
     if (reasoningTokens > 0) {
       const reasoningRate = pricing.reasoning || pricing.output; // Fallback to output rate
-      cost += (reasoningTokens * (reasoningRate / 1000000));
+      cost += reasoningTokens * (reasoningRate / 1000000);
     }
 
     // Cache creation tokens
     const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
     if (cacheCreationTokens > 0) {
       const cacheCreationRate = pricing.cache_creation || pricing.input; // Fallback to input rate
-      cost += (cacheCreationTokens * (cacheCreationRate / 1000000));
+      cost += cacheCreationTokens * (cacheCreationRate / 1000000);
     }
 
     return cost;
@@ -347,7 +350,7 @@ export async function getUsageStats() {
     byAccount: {},
     last10Minutes: [],
     pending: pendingRequests,
-    activeRequests: []
+    activeRequests: [],
   };
 
   // Build active requests list from pending counts
@@ -364,7 +367,7 @@ export async function getUsageStats() {
           model: modelName,
           provider: providerName,
           account: accountName,
-          count
+          count,
         });
       }
     }
@@ -385,7 +388,7 @@ export async function getUsageStats() {
       requests: 0,
       promptTokens: 0,
       completionTokens: 0,
-      cost: 0
+      cost: 0,
     };
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
@@ -419,7 +422,7 @@ export async function getUsageStats() {
         requests: 0,
         promptTokens: 0,
         completionTokens: 0,
-        cost: 0
+        cost: 0,
       };
     }
     stats.byProvider[entry.provider].requests++;
@@ -439,7 +442,7 @@ export async function getUsageStats() {
         cost: 0,
         rawModel: entry.model,
         provider: entry.provider,
-        lastUsed: entry.timestamp
+        lastUsed: entry.timestamp,
       };
     }
     stats.byModel[modelKey].requests++;
@@ -466,7 +469,7 @@ export async function getUsageStats() {
           provider: entry.provider,
           connectionId: entry.connectionId,
           accountName: accountName,
-          lastUsed: entry.timestamp
+          lastUsed: entry.timestamp,
         };
       }
       stats.byAccount[accountKey].requests++;

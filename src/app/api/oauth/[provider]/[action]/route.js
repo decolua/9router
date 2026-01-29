@@ -1,11 +1,5 @@
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
-} from "@/lib/oauth/providers";
+import { getProvider, generateAuthData, exchangeTokens, requestDeviceCode, pollForToken } from "@/lib/oauth/providers";
 import { createProviderConnection, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
@@ -35,7 +29,7 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
-      
+
       // For providers that don't use PKCE (like GitHub), don't pass codeChallenge
       let deviceData;
       if (provider === "github" || provider === "kiro") {
@@ -81,23 +75,21 @@ export async function POST(request, { params }) {
         provider,
         authType: "oauth",
         ...tokenData,
-        expiresAt: tokenData.expiresIn 
-          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
-          : null,
+        expiresAt: tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() : null,
         testStatus: "active",
       });
 
       // Auto sync to Cloud if enabled
       await syncToCloudIfEnabled();
 
-      return NextResponse.json({ 
-        success: true, 
+      return NextResponse.json({
+        success: true,
         connection: {
           id: connection.id,
           provider: connection.provider,
           email: connection.email,
           displayName: connection.displayName,
-        }
+        },
       });
     }
 
@@ -129,8 +121,8 @@ export async function POST(request, { params }) {
           provider,
           authType: "oauth",
           ...result.tokens,
-          expiresAt: result.tokens.expiresIn 
-            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
+          expiresAt: result.tokens.expiresIn
+            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString()
             : null,
           testStatus: "active",
         });
@@ -138,18 +130,18 @@ export async function POST(request, { params }) {
         // Auto sync to Cloud if enabled
         await syncToCloudIfEnabled();
 
-        return NextResponse.json({ 
-          success: true, 
+        return NextResponse.json({
+          success: true,
           connection: {
             id: connection.id,
             provider: connection.provider,
-          }
+          },
         });
       }
 
       // Still pending or error - don't create connection for pending states
       const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
-      
+
       return NextResponse.json({
         success: false,
         error: result.error,

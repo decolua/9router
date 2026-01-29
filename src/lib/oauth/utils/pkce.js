@@ -35,4 +35,3 @@ export function generatePKCE() {
     state,
   };
 }
-

@@ -37,9 +37,7 @@ function applyTheme(theme) {
   if (typeof window === "undefined") return;
 
   const root = document.documentElement;
-  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
+  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
@@ -51,4 +49,3 @@ function applyTheme(theme) {
 }
 
 export default useThemeStore;
-

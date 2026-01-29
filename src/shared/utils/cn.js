@@ -2,10 +2,5 @@
 // Handles conditional classes and removes duplicates
 
 export function cn(...classes) {
-  return classes
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return classes.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
-

@@ -19,24 +19,23 @@ export class AntigravityExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     return {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${credentials.accessToken}`,
+      Authorization: `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || "antigravity/1.104.0 darwin/arm64",
-      ...(stream && { "Accept": "text/event-stream" })
+      ...(stream && { Accept: "text/event-stream" }),
     };
   }
 
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
-    
+
     const transformedRequest = {
       ...body.request,
       sessionId: body.request?.sessionId || this.generateSessionId(),
       safetySettings: undefined,
-      toolConfig: body.request?.tools?.length > 0 
-        ? { functionCallingConfig: { mode: "VALIDATED" } }
-        : body.request?.toolConfig
+      toolConfig:
+        body.request?.tools?.length > 0 ? { functionCallingConfig: { mode: "VALIDATED" } } : body.request?.toolConfig,
     };
-    
+
     return {
       ...body,
       project: projectId,
@@ -44,7 +43,7 @@ export class AntigravityExecutor extends BaseExecutor {
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,
-      request: transformedRequest
+      request: transformedRequest,
     };
   }
 
@@ -54,13 +53,13 @@ export class AntigravityExecutor extends BaseExecutor {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.google.token, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
         body: new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: credentials.refreshToken,
           client_id: this.config.clientId,
-          client_secret: this.config.clientSecret
-        })
+          client_secret: this.config.clientSecret,
+        }),
       });
 
       if (!response.ok) return null;
@@ -72,7 +71,7 @@ export class AntigravityExecutor extends BaseExecutor {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || credentials.refreshToken,
         expiresIn: tokens.expires_in,
-        projectId: credentials.projectId
+        projectId: credentials.projectId,
       };
     } catch (error) {
       log?.error?.("TOKEN", `Antigravity refresh error: ${error.message}`);
@@ -93,11 +92,11 @@ export class AntigravityExecutor extends BaseExecutor {
   parseRetryHeaders(headers) {
     if (!headers?.get) return null;
 
-    const retryAfter = headers.get('retry-after');
+    const retryAfter = headers.get("retry-after");
     if (retryAfter) {
       const seconds = parseInt(retryAfter, 10);
       if (!isNaN(seconds) && seconds > 0) return seconds * 1000;
-      
+
       const date = new Date(retryAfter);
       if (!isNaN(date.getTime())) {
         const diff = date.getTime() - Date.now();
@@ -105,13 +104,13 @@ export class AntigravityExecutor extends BaseExecutor {
       }
     }
 
-    const resetAfter = headers.get('x-ratelimit-reset-after');
+    const resetAfter = headers.get("x-ratelimit-reset-after");
     if (resetAfter) {
       const seconds = parseInt(resetAfter, 10);
       if (!isNaN(seconds) && seconds > 0) return seconds * 1000;
     }
 
-    const resetTimestamp = headers.get('x-ratelimit-reset');
+    const resetTimestamp = headers.get("x-ratelimit-reset");
     if (resetTimestamp) {
       const ts = parseInt(resetTimestamp, 10) * 1000;
       const diff = ts - Date.now();
@@ -148,7 +147,7 @@ export class AntigravityExecutor extends BaseExecutor {
       const url = this.buildUrl(model, stream, urlIndex);
       const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      
+
       // Initialize retry counter for this URL
       if (!retryAttemptsByUrl[urlIndex]) {
         retryAttemptsByUrl[urlIndex] = 0;
@@ -159,7 +158,7 @@ export class AntigravityExecutor extends BaseExecutor {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
-          signal
+          signal,
         });
 
         if (response.status === 429 || response.status === 503) {
@@ -179,26 +178,36 @@ export class AntigravityExecutor extends BaseExecutor {
           }
 
           if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs/1000)}s, waiting...`);
-            await new Promise(resolve => setTimeout(resolve, retryMs));
+            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`);
+            await new Promise((resolve) => setTimeout(resolve, retryMs));
             urlIndex--;
             continue;
           }
 
           // Auto retry only for 429 when retryMs is 0 or undefined
-          if (response.status === 429 && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
+          if (
+            response.status === 429 &&
+            (!retryMs || retryMs === 0) &&
+            retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES
+          ) {
             retryAttemptsByUrl[urlIndex]++;
             // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
-            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs/1000}s`);
-            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            const backoffMs = Math.min(1000 * 2 ** retryAttemptsByUrl[urlIndex], MAX_RETRY_AFTER_MS);
+            log?.debug?.(
+              "RETRY",
+              `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`
+            );
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
             urlIndex--;
             continue;
           }
 
-          log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs/1000)}s)` : 'missing'}, trying fallback`);
+          log?.debug?.(
+            "RETRY",
+            `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs / 1000)}s)` : "missing"}, trying fallback`
+          );
           lastStatus = response.status;
-          
+
           if (urlIndex + 1 < fallbackCount) {
             continue;
           }

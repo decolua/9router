@@ -18,13 +18,9 @@ const navItems = [
 ];
 
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
-const debugItems = [
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
-];
+const debugItems = [{ href: "/dashboard/translator", label: "Translator", icon: "translate" }];
 
-const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
-];
+const systemItems = [{ href: "/dashboard/profile", label: "Settings", icon: "settings" }];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
@@ -36,8 +32,8 @@ export default function Sidebar({ onClose }) {
   // Check if debug mode is enabled
   useEffect(() => {
     fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => setShowDebug(data?.enableRequestLogs === true))
+      .then((res) => res.json())
+      .then((data) => setShowDebug(data?.enableRequestLogs === true))
       .catch(() => {});
   }, []);
 
@@ -69,9 +65,7 @@ export default function Sidebar({ onClose }) {
             <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <h1 className="text-lg font-semibold tracking-tight text-text-main">
-              {APP_CONFIG.name}
-            </h1>
+            <h1 className="text-lg font-semibold tracking-tight text-text-main">{APP_CONFIG.name}</h1>
           </Link>
         </div>
 
@@ -104,9 +98,7 @@ export default function Sidebar({ onClose }) {
           {/* Debug section (only show when ENABLE_REQUEST_LOGS=true) */}
           {showDebug && (
             <div className="pt-6 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">
-                Debug
-              </p>
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">Debug</p>
               {debugItems.map((item) => (
                 <Link
                   key={item.href}
@@ -135,9 +127,7 @@ export default function Sidebar({ onClose }) {
 
           {/* System section */}
           <div className="pt-6 mt-2">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">
-              System
-            </p>
+            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">System</p>
             {systemItems.map((item) => (
               <Link
                 key={item.href}

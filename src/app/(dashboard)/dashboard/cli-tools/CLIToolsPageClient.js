@@ -61,18 +61,18 @@ export default function CLIToolsPageClient({ machineId }) {
   };
 
   const getActiveProviders = () => {
-    return connections.filter(c => c.isActive !== false);
+    return connections.filter((c) => c.isActive !== false);
   };
 
   const getAllAvailableModels = () => {
     const activeProviders = getActiveProviders();
     const models = [];
     const seenModels = new Set();
-    
-    activeProviders.forEach(conn => {
+
+    activeProviders.forEach((conn) => {
       const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
       const providerModels = getModelsByProviderId(conn.provider);
-      providerModels.forEach(m => {
+      providerModels.forEach((m) => {
         const modelValue = `${alias}/${m.id}`;
         if (!seenModels.has(modelValue)) {
           seenModels.add(modelValue);
@@ -87,10 +87,10 @@ export default function CLIToolsPageClient({ machineId }) {
         }
       });
     });
-    
+
     if (models.length === 0) {
       Object.entries(PROVIDER_MODELS).forEach(([alias, providerModels]) => {
-        providerModels.forEach(m => {
+        providerModels.forEach((m) => {
           const modelValue = `${alias}/${m.id}`;
           models.push({
             value: modelValue,
@@ -103,12 +103,12 @@ export default function CLIToolsPageClient({ machineId }) {
         });
       });
     }
-    
+
     return models;
   };
 
   const handleModelMappingChange = useCallback((toolId, modelAlias, targetModel) => {
-    setModelMappings(prev => {
+    setModelMappings((prev) => {
       // Prevent unnecessary updates if value hasn't changed
       if (prev[toolId]?.[modelAlias] === targetModel) {
         return prev;
@@ -171,9 +171,24 @@ export default function CLIToolsPageClient({ machineId }) {
           />
         );
       case "codex":
-        return <CodexToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
+        return (
+          <CodexToolCard
+            key={toolId}
+            {...commonProps}
+            activeProviders={getActiveProviders()}
+            cloudEnabled={cloudEnabled}
+          />
+        );
       default:
-        return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
+        return (
+          <DefaultToolCard
+            key={toolId}
+            toolId={toolId}
+            {...commonProps}
+            activeProviders={getActiveProviders()}
+            cloudEnabled={cloudEnabled}
+          />
+        );
     }
   };
 

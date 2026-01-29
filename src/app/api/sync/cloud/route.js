@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, getModelAliases, getCombos, getApiKeys, createApiKey, updateProviderConnection, updateSettings } from "@/lib/localDb";
+import {
+  getProviderConnections,
+  getModelAliases,
+  getCombos,
+  getApiKeys,
+  createApiKey,
+  updateProviderConnection,
+  updateSettings,
+} from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import fs from "fs/promises";
 import path from "path";
@@ -15,7 +23,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { action } = body;
-    
+
     // Always get machineId from server, don't trust client
     const machineId = await getConsistentMachineId();
 
@@ -68,8 +76,8 @@ export async function syncToCloud(machineId, createdKey = null) {
       providers,
       modelAliases,
       combos,
-      apiKeys
-    })
+      apiKeys,
+    }),
   });
 
   if (!response.ok) {
@@ -88,7 +96,7 @@ export async function syncToCloud(machineId, createdKey = null) {
   const responseData = {
     success: true,
     message: "Synced successfully",
-    changes: result.changes
+    changes: result.changes,
   };
 
   if (createdKey) {
@@ -114,7 +122,7 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
     return NextResponse.json({
       ...syncResult,
       verified: false,
-      verifyError: "No API key available"
+      verifyError: "No API key available",
     });
   }
 
@@ -122,28 +130,28 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
     const pingResponse = await fetch(`${CLOUD_URL}/${machineId}/v1/verify`, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      }
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
     });
 
     if (pingResponse.ok) {
       return NextResponse.json({
         ...syncResult,
-        verified: true
+        verified: true,
       });
     } else {
       return NextResponse.json({
         ...syncResult,
         verified: false,
-        verifyError: `Ping failed: ${pingResponse.status}`
+        verifyError: `Ping failed: ${pingResponse.status}`,
       });
     }
   } catch (error) {
     return NextResponse.json({
       ...syncResult,
       verified: false,
-      verifyError: error.message
+      verifyError: error.message,
     });
   }
 }
@@ -153,7 +161,7 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
  */
 async function handleDisable(machineId, request) {
   const response = await fetch(`${CLOUD_URL}/sync/${machineId}`, {
-    method: "DELETE"
+    method: "DELETE",
   });
 
   if (!response.ok) {
@@ -168,7 +176,7 @@ async function handleDisable(machineId, request) {
 
   return NextResponse.json({
     success: true,
-    message: "Cloud disabled"
+    message: "Cloud disabled",
   });
 }
 
@@ -231,19 +239,19 @@ async function updateLocalTokens(cloudProviders) {
         refreshToken: cloudProvider.refreshToken,
         expiresAt: cloudProvider.expiresAt,
         expiresIn: cloudProvider.expiresIn,
-        
+
         // Provider specific data
         providerSpecificData: cloudProvider.providerSpecificData || localProvider.providerSpecificData,
-        
+
         // Status fields
         testStatus: cloudProvider.status || "active",
         lastError: cloudProvider.lastError,
         lastErrorAt: cloudProvider.lastErrorAt,
         errorCode: cloudProvider.errorCode,
         rateLimitedUntil: cloudProvider.rateLimitedUntil,
-        
+
         // Metadata
-        updatedAt: cloudProvider.updatedAt
+        updatedAt: cloudProvider.updatedAt,
       };
 
       await updateProviderConnection(localProvider.id, updates);

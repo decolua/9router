@@ -17,11 +17,11 @@ const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 const parseToml = (content) => {
   const result = { _root: {}, _sections: {} };
   let currentSection = "_root";
-  
+
   content.split("\n").forEach((line) => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) return;
-    
+
     // Section header like [model_providers.9router]
     const sectionMatch = trimmed.match(/^\[(.+)\]$/);
     if (sectionMatch) {
@@ -29,7 +29,7 @@ const parseToml = (content) => {
       result._sections[currentSection] = {};
       return;
     }
-    
+
     // Key = value
     const kvMatch = trimmed.match(/^([^=]+)\s*=\s*(.+)$/);
     if (kvMatch) {
@@ -46,19 +46,19 @@ const parseToml = (content) => {
       }
     }
   });
-  
+
   return result;
 };
 
 // Convert parsed object back to TOML string
 const toToml = (parsed) => {
   let lines = [];
-  
+
   // Root level keys
   Object.entries(parsed._root).forEach(([key, value]) => {
     lines.push(`${key} = "${value}"`);
   });
-  
+
   // Sections
   Object.entries(parsed._sections).forEach(([section, values]) => {
     lines.push("");
@@ -67,7 +67,7 @@ const toToml = (parsed) => {
       lines.push(`${key} = "${value}"`);
     });
   });
-  
+
   return lines.join("\n") + "\n";
 };
 
@@ -98,14 +98,14 @@ const readConfig = async () => {
 // Check if config has 9Router settings
 const has9RouterConfig = (config) => {
   if (!config) return false;
-  return config.includes("model_provider = \"9router\"") || config.includes("[model_providers.9router]");
+  return config.includes('model_provider = "9router"') || config.includes("[model_providers.9router]");
 };
 
 // GET - Check codex CLI and read current settings
 export async function GET() {
   try {
     const isInstalled = await checkCodexInstalled();
-    
+
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
@@ -132,7 +132,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model } = await request.json();
-    
+
     if (!baseUrl || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
     }
@@ -148,12 +148,14 @@ export async function POST(request) {
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
       parsed = parseToml(existingConfig);
-    } catch { /* No existing config */ }
+    } catch {
+      /* No existing config */
+    }
 
     // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
     parsed._root.model = model;
     parsed._root.model_provider = "9router";
-    
+
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     parsed._sections["model_providers.9router"] = {
       name: "9Router",
@@ -171,8 +173,10 @@ export async function POST(request) {
     try {
       const existingAuth = await fs.readFile(authPath, "utf-8");
       authData = JSON.parse(existingAuth);
-    } catch { /* No existing auth */ }
-    
+    } catch {
+      /* No existing auth */
+    }
+
     authData.OPENAI_API_KEY = apiKey;
     await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
 
@@ -212,7 +216,7 @@ export async function DELETE() {
       delete parsed._root.model;
       delete parsed._root.model_provider;
     }
-    
+
     // Remove 9router provider section
     delete parsed._sections["model_providers.9router"];
 
@@ -226,14 +230,16 @@ export async function DELETE() {
       const existingAuth = await fs.readFile(authPath, "utf-8");
       const authData = JSON.parse(existingAuth);
       delete authData.OPENAI_API_KEY;
-      
+
       // Write back or delete if empty
       if (Object.keys(authData).length === 0) {
         await fs.unlink(authPath);
       } else {
         await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
       }
-    } catch { /* No auth file */ }
+    } catch {
+      /* No auth file */
+    }
 
     return NextResponse.json({
       success: true,

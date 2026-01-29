@@ -20,21 +20,21 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(400, "Invalid JSON body");
   }
-  
+
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
     const url = new URL(request.url);
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: Object.fromEntries(request.headers.entries()),
     };
   }
 
   // Log request endpoint and model
   const url = new URL(request.url);
   const modelStr = body.model;
-  
+
   // Count messages (support both messages[] and input[] formats)
   const msgCount = body.messages?.length || body.input?.length || 0;
   const toolCount = body.tools?.length || 0;
@@ -62,7 +62,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request),
-      log
+      log,
     });
   }
 
@@ -104,10 +104,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return errorResponse(400, `No credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return new Response(
-        JSON.stringify({ error: lastError || "All accounts unavailable" }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: lastError || "All accounts unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // Log account selection
@@ -115,7 +115,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("AUTH", `Using ${provider} account: ${accountId}...`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-    
+
     // Use shared chatCore
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
@@ -130,24 +130,30 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
+          testStatus: "active",
         });
       },
       onRequestSuccess: async () => {
         // Clear error status only if currently has error (optimization)
         await clearAccountError(credentials.connectionId, credentials);
-      }
+      },
     });
-    
+
     if (result.success) return result.response;
 
     // Check if should fallback to next account
     const { shouldFallback, cooldownMs } = checkFallbackError(result.status, result.error);
-    
+
     if (shouldFallback) {
       const accountId = credentials.connectionId.slice(0, 8);
       log.warn("AUTH", `Account ${accountId}... unavailable (status: ${result.status}), trying fallback`);
-      await markAccountUnavailable(credentials.connectionId, cooldownMs, result.error?.slice(0, 100), result.status, provider);
+      await markAccountUnavailable(
+        credentials.connectionId,
+        cooldownMs,
+        result.error?.slice(0, 100),
+        result.status,
+        provider
+      );
       excludeConnectionId = credentials.connectionId;
       lastError = result.error;
       continue;

@@ -51,10 +51,7 @@ export default function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={closeOnOverlay ? onClose : undefined}
-      />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeOnOverlay ? onClose : undefined} />
 
       {/* Modal content */}
       <div
@@ -70,16 +67,9 @@ export default function Modal({
         {/* Header */}
         {(title || showCloseButton) && (
           <div className="flex items-center justify-between p-6 border-b border-border">
-            {title && (
-              <h2 className="text-lg font-semibold text-text-main">
-                {title}
-              </h2>
-            )}
+            {title && <h2 className="text-lg font-semibold text-text-main">{title}</h2>}
             {showCloseButton && (
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 transition-colors"
-              >
+              <button onClick={onClose} className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 transition-colors">
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             )}
@@ -90,11 +80,7 @@ export default function Modal({
         <div className="p-6 max-h-[calc(80vh-140px)] overflow-y-auto">{children}</div>
 
         {/* Footer */}
-        {footer && (
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-border">
-            {footer}
-          </div>
-        )}
+        {footer && <div className="flex items-center justify-end gap-3 p-6 border-t border-border">{footer}</div>}
       </div>
     </div>
   );
@@ -133,4 +119,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-

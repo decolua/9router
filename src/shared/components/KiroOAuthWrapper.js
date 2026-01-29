@@ -15,23 +15,26 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
   const [socialProvider, setSocialProvider] = useState(null); // "google" | "github"
   const [idcConfig, setIdcConfig] = useState(null);
 
-  const handleMethodSelect = useCallback((method, config) => {
-    if (method === "builder-id") {
-      // Use device code flow (AWS Builder ID)
-      setAuthMethod("builder-id");
-    } else if (method === "idc") {
-      // Use device code flow with IDC config
-      setAuthMethod("idc");
-      setIdcConfig(config);
-    } else if (method === "social") {
-      // Use social login with manual callback
-      setAuthMethod("social");
-      setSocialProvider(config.provider);
-    } else if (method === "import") {
-      // Import handled in KiroAuthModal, just close
-      onSuccess?.();
-    }
-  }, [onSuccess]);
+  const handleMethodSelect = useCallback(
+    (method, config) => {
+      if (method === "builder-id") {
+        // Use device code flow (AWS Builder ID)
+        setAuthMethod("builder-id");
+      } else if (method === "idc") {
+        // Use device code flow with IDC config
+        setAuthMethod("idc");
+        setIdcConfig(config);
+      } else if (method === "social") {
+        // Use social login with manual callback
+        setAuthMethod("social");
+        setSocialProvider(config.provider);
+      } else if (method === "import") {
+        // Import handled in KiroAuthModal, just close
+        onSuccess?.();
+      }
+    },
+    [onSuccess]
+  );
 
   const handleBack = () => {
     setAuthMethod(null);
@@ -53,13 +56,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
 
   // Show method selection first
   if (!authMethod) {
-    return (
-      <KiroAuthModal
-        isOpen={isOpen}
-        onMethodSelect={handleMethodSelect}
-        onClose={onClose}
-      />
-    );
+    return <KiroAuthModal isOpen={isOpen} onMethodSelect={handleMethodSelect} onClose={onClose} />;
   }
 
   // Show device code flow (Builder ID or IDC)

@@ -29,9 +29,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
+      setIsLocalhost(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
   }, []);
@@ -39,74 +37,80 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Define all useCallback hooks BEFORE the useEffects that reference them
 
   // Exchange tokens
-  const exchangeTokens = useCallback(async (code, state) => {
-    if (!authData) return;
-    try {
-      const res = await fetch(`/api/oauth/${provider}/exchange`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          redirectUri: authData.redirectUri,
-          codeVerifier: authData.codeVerifier,
-          state,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setStep("success");
-      onSuccess?.();
-    } catch (err) {
-      setError(err.message);
-      setStep("error");
-    }
-  }, [authData, provider, onSuccess]);
-
-  // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
-    setPolling(true);
-    const maxAttempts = 60;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, interval * 1000));
-
+  const exchangeTokens = useCallback(
+    async (code, state) => {
+      if (!authData) return;
       try {
-        const res = await fetch(`/api/oauth/${provider}/poll`, {
+        const res = await fetch(`/api/oauth/${provider}/exchange`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({
+            code,
+            redirectUri: authData.redirectUri,
+            codeVerifier: authData.codeVerifier,
+            state,
+          }),
         });
 
         const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
 
-        if (data.success) {
-          setStep("success");
-          setPolling(false);
-          onSuccess?.();
-          return;
-        }
-
-        if (data.error === "expired_token" || data.error === "access_denied") {
-          throw new Error(data.errorDescription || data.error);
-        }
-
-        if (data.error === "slow_down") {
-          interval = Math.min(interval + 5, 30);
-        }
+        setStep("success");
+        onSuccess?.();
       } catch (err) {
         setError(err.message);
         setStep("error");
-        setPolling(false);
-        return;
       }
-    }
+    },
+    [authData, provider, onSuccess]
+  );
 
-    setError("Authorization timeout");
-    setStep("error");
-    setPolling(false);
-  }, [provider, onSuccess]);
+  // Poll for device code token
+  const startPolling = useCallback(
+    async (deviceCode, codeVerifier, interval, extraData) => {
+      setPolling(true);
+      const maxAttempts = 60;
+
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, interval * 1000));
+
+        try {
+          const res = await fetch(`/api/oauth/${provider}/poll`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          });
+
+          const data = await res.json();
+
+          if (data.success) {
+            setStep("success");
+            setPolling(false);
+            onSuccess?.();
+            return;
+          }
+
+          if (data.error === "expired_token" || data.error === "access_denied") {
+            throw new Error(data.errorDescription || data.error);
+          }
+
+          if (data.error === "slow_down") {
+            interval = Math.min(interval + 5, 30);
+          }
+        } catch (err) {
+          setError(err.message);
+          setStep("error");
+          setPolling(false);
+          return;
+        }
+      }
+
+      setError("Authorization timeout");
+      setStep("error");
+      setPolling(false);
+    },
+    [provider, onSuccess]
+  );
 
   // Start OAuth flow
   const startOAuthFlow = useCallback(async () => {
@@ -297,14 +301,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "waiting" && !isDeviceCode && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
-                progress_activity
-              </span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Waiting for Authorization</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Complete the authorization in the popup window.
-            </p>
+            <p className="text-sm text-text-muted mb-4">Complete the authorization in the popup window.</p>
             <Button variant="ghost" onClick={() => setStep("input")}>
               Popup blocked? Enter URL manually
             </Button>
@@ -315,9 +315,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "waiting" && isDeviceCode && deviceData && (
           <>
             <div className="text-center py-4">
-              <p className="text-sm text-text-muted mb-4">
-                Visit the URL below and enter the code:
-              </p>
+              <p className="text-sm text-text-muted mb-4">Visit the URL below and enter the code:</p>
               <div className="bg-sidebar p-4 rounded-lg mb-4">
                 <p className="text-xs text-text-muted mb-1">Verification URL</p>
                 <div className="flex items-center gap-2">
@@ -360,7 +358,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 <p className="text-sm font-medium mb-2">Step 1: Open this URL in your browser</p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
-                  <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")}>
+                  <Button
+                    variant="secondary"
+                    icon={copied === "auth_url" ? "check" : "content_copy"}
+                    onClick={() => copy(authData?.authUrl, "auth_url")}
+                  >
                     Copy
                   </Button>
                 </div>
@@ -398,9 +400,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
-            <p className="text-sm text-text-muted mb-4">
-              Your {providerInfo.name} account has been connected.
-            </p>
+            <p className="text-sm text-text-muted mb-4">Your {providerInfo.name} account has been connected.</p>
             <Button onClick={onClose} fullWidth>
               Done
             </Button>

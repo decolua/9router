@@ -17,9 +17,27 @@ export const CLI_TOOLS = {
     modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-5-20251101" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-5-20250929" },
-      { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
+      {
+        id: "opus",
+        name: "Claude Opus",
+        alias: "opus",
+        envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        defaultValue: "cc/claude-opus-4-5-20251101",
+      },
+      {
+        id: "sonnet",
+        name: "Claude Sonnet",
+        alias: "sonnet",
+        envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        defaultValue: "cc/claude-sonnet-4-5-20250929",
+      },
+      {
+        id: "haiku",
+        name: "Claude Haiku",
+        alias: "haiku",
+        envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        defaultValue: "cc/claude-haiku-4-5-20251001",
+      },
     ],
   },
   codex: {
@@ -40,14 +58,17 @@ export const CLI_TOOLS = {
     requiresCloud: true,
     notes: [
       { type: "warning", text: "Requires Cursor Pro account to use this feature." },
-      { type: "cloudCheck", text: "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Cloud Endpoint in Settings." },
+      {
+        type: "cloudCheck",
+        text: "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Cloud Endpoint in Settings.",
+      },
     ],
     guideSteps: [
       { step: 1, title: "Open Settings", desc: "Go to Settings → Models" },
-      { step: 2, title: "Enable OpenAI API", desc: "Enable \"OpenAI API key\" option" },
+      { step: 2, title: "Enable OpenAI API", desc: 'Enable "OpenAI API key" option' },
       { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
       { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Add Custom Model", desc: "Click \"View All Model\" → \"Add Custom Model\"" },
+      { step: 5, title: "Add Custom Model", desc: 'Click "View All Model" → "Add Custom Model"' },
       { step: 6, title: "Select Model", type: "modelSelector" },
     ],
   },
@@ -127,7 +148,7 @@ export const CLI_TOOLS = {
 // Get all provider models for mapping dropdown
 export const getProviderModelsForMapping = (providers) => {
   const result = [];
-  providers.forEach(conn => {
+  providers.forEach((conn) => {
     if (conn.isActive && (conn.testStatus === "active" || conn.testStatus === "success")) {
       result.push({
         connectionId: conn.id,
@@ -139,4 +160,3 @@ export const getProviderModelsForMapping = (providers) => {
   });
   return result;
 };
-

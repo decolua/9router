@@ -21,17 +21,14 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
-      ]);
+      const [combosRes, providersRes] = await Promise.all([fetch("/api/combos"), fetch("/api/providers")]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
-      
+
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         const active = (providersData.connections || []).filter(
-          c => c.testStatus === "active" || c.testStatus === "success"
+          (c) => c.testStatus === "active" || c.testStatus === "success"
         );
         setActiveProviders(active);
       }
@@ -85,7 +82,7 @@ export default function CombosPage() {
     try {
       const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setCombos(combos.filter(c => c.id !== id));
+        setCombos(combos.filter((c) => c.id !== id));
       }
     } catch (error) {
       console.log("Error deleting combo:", error);
@@ -107,9 +104,7 @@ export default function CombosPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Combos</h1>
-          <p className="text-sm text-text-muted mt-1">
-            Create model combos with fallback support
-          </p>
+          <p className="text-sm text-text-muted mt-1">Create model combos with fallback support</p>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)}>
           Create Combo
@@ -120,9 +115,7 @@ export default function CombosPage() {
       {combos.length === 0 ? (
         <Card>
           <div className="text-center py-12">
-            <span className="material-symbols-outlined text-5xl text-text-muted mb-3 block">
-              layers
-            </span>
+            <span className="material-symbols-outlined text-5xl text-text-muted mb-3 block">layers</span>
             <p className="text-text-muted mb-4">No combos yet</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)}>
               Create your first combo
@@ -194,15 +187,9 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
               combo.models.map((model, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <span className="text-xs text-text-muted w-5">{index + 1}.</span>
-                  <code className="text-sm font-mono bg-sidebar px-2 py-0.5 rounded">
-                    {model}
-                  </code>
-                  {index === 0 && (
-                    <span className="text-xs text-primary font-medium">Primary</span>
-                  )}
-                  {index > 0 && (
-                    <span className="text-xs text-text-muted">Fallback</span>
-                  )}
+                  <code className="text-sm font-mono bg-sidebar px-2 py-0.5 rounded">{model}</code>
+                  {index === 0 && <span className="text-xs text-primary font-medium">Primary</span>}
+                  {index > 0 && <span className="text-xs text-text-muted">Fallback</span>}
                 </div>
               ))
             )}
@@ -218,11 +205,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
           >
             <span className="material-symbols-outlined text-lg">edit</span>
           </button>
-          <button
-            onClick={onDelete}
-            className="p-2 hover:bg-red-50 rounded text-red-500"
-            title="Delete"
-          >
+          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded text-red-500" title="Delete">
             <span className="material-symbols-outlined text-lg">delete</span>
           </button>
         </div>
@@ -317,12 +300,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
 
   return (
     <>
-      <Modal
-        isOpen={isOpen}
-        onClose={onClose}
-        title={isEdit ? "Edit Combo" : "Create Combo"}
-        size="md"
-      >
+      <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? "Edit Combo" : "Create Combo"} size="md">
         <div className="flex flex-col gap-4">
           {/* Name */}
           <div>
@@ -333,21 +311,14 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               placeholder="my-combo"
               error={nameError}
             />
-            <p className="text-xs text-text-muted mt-1">
-              Only letters, numbers, - and _ allowed
-            </p>
+            <p className="text-xs text-text-muted mt-1">Only letters, numbers, - and _ allowed</p>
           </div>
 
           {/* Models */}
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium">Models</label>
-              <Button
-                size="sm"
-                variant="secondary"
-                icon="add"
-                onClick={() => setShowModelSelect(true)}
-              >
+              <Button size="sm" variant="secondary" icon="add" onClick={() => setShowModelSelect(true)}>
                 Add Model
               </Button>
             </div>
@@ -360,10 +331,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             ) : (
               <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto">
                 {models.map((model, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2"
-                  >
+                  <div key={index} className="flex items-center gap-2">
                     {/* Priority arrows */}
                     <div className="flex flex-col gap-0">
                       <button
@@ -405,11 +373,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
 
           {/* Actions */}
           <div className="flex gap-2 pt-2">
-            <Button
-              onClick={handleSave}
-              fullWidth
-              disabled={!name.trim() || !!nameError || saving}
-            >
+            <Button onClick={handleSave} fullWidth disabled={!name.trim() || !!nameError || saving}>
               {saving ? "Saving..." : "Apply"}
             </Button>
             <Button onClick={onClose} variant="ghost" fullWidth>
@@ -431,4 +395,3 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     </>
   );
 }
-

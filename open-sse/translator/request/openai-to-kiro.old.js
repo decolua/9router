@@ -15,20 +15,26 @@ function convertMessages(messages, tools, model) {
   let systemPrompt = "";
 
   const toolResultsMap = new Map();
-  
+
   for (const msg of messages) {
     if (msg.role === "tool" && msg.tool_call_id) {
-      const content = typeof msg.content === "string" ? msg.content : 
-        (Array.isArray(msg.content) ? msg.content.map(c => c.text || "").join("\n") : "");
+      const content =
+        typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.map((c) => c.text || "").join("\n")
+            : "";
       toolResultsMap.set(msg.tool_call_id, content);
     }
-    
+
     if (msg.role === "user" && Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type === "tool_result" && block.tool_use_id) {
-          const content = Array.isArray(block.content) 
-            ? block.content.map(c => c.text || "").join("\n")
-            : (typeof block.content === "string" ? block.content : "");
+          const content = Array.isArray(block.content)
+            ? block.content.map((c) => c.text || "").join("\n")
+            : typeof block.content === "string"
+              ? block.content
+              : "";
           toolResultsMap.set(block.tool_use_id, content);
         }
       }
@@ -37,11 +43,15 @@ function convertMessages(messages, tools, model) {
 
   for (const msg of messages) {
     const role = msg.role;
-    
+
     if (role === "tool") continue;
-    
-    const content = typeof msg.content === "string" ? msg.content : 
-      (Array.isArray(msg.content) ? msg.content.map(c => c.text || "").join("\n") : "");
+
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map((c) => c.text || "").join("\n")
+          : "";
 
     if (role === "system") {
       systemPrompt += (systemPrompt ? "\n" : "") + content;
@@ -51,33 +61,35 @@ function convertMessages(messages, tools, model) {
     if (role === "user") {
       let finalContent = content;
       let toolResults = [];
-      
+
       // Check if this user message contains tool_result blocks
       if (Array.isArray(msg.content)) {
-        const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
+        const toolResultBlocks = msg.content.filter((c) => c.type === "tool_result");
         if (toolResultBlocks.length > 0) {
-          toolResults = toolResultBlocks.map(block => {
-            const text = Array.isArray(block.content) 
-              ? block.content.map(c => c.text || "").join("\n")
-              : (typeof block.content === "string" ? block.content : "");
-            
+          toolResults = toolResultBlocks.map((block) => {
+            const text = Array.isArray(block.content)
+              ? block.content.map((c) => c.text || "").join("\n")
+              : typeof block.content === "string"
+                ? block.content
+                : "";
+
             return {
               toolUseId: block.tool_use_id,
               status: "success",
-              content: [{ text: text }]
+              content: [{ text: text }],
             };
           });
-          
+
           // Set simple content when tool results exist
           finalContent = content || "Continue";
         }
       }
-      
+
       const userMsg = {
         userInputMessage: {
           content: finalContent,
           modelId: "",
-        }
+        },
       };
 
       // Add tool results to userInputMessageContext
@@ -93,22 +105,22 @@ function convertMessages(messages, tools, model) {
         if (!userMsg.userInputMessage.userInputMessageContext) {
           userMsg.userInputMessage.userInputMessageContext = {};
         }
-        userMsg.userInputMessage.userInputMessageContext.tools = tools.map(t => {
+        userMsg.userInputMessage.userInputMessageContext.tools = tools.map((t) => {
           const name = t.function?.name || t.name;
           let description = t.function?.description || t.description || "";
-          
+
           if (!description.trim()) {
             description = `Tool: ${name}`;
           }
-          
+
           return {
             toolSpecification: {
               name,
               description,
               inputSchema: {
-                json: t.function?.parameters || t.parameters || t.input_schema || {}
-              }
-            }
+                json: t.function?.parameters || t.parameters || t.input_schema || {},
+              },
+            },
           };
         });
       }
@@ -121,45 +133,49 @@ function convertMessages(messages, tools, model) {
       // Extract text content and tool uses separately from content array
       let textContent = "";
       let toolUses = [];
-      
+
       if (Array.isArray(msg.content)) {
-        const textBlocks = msg.content.filter(c => c.type === "text");
-        textContent = textBlocks.map(b => b.text).join("\n").trim();
-        
-        const toolUseBlocks = msg.content.filter(c => c.type === "tool_use");
+        const textBlocks = msg.content.filter((c) => c.type === "text");
+        textContent = textBlocks
+          .map((b) => b.text)
+          .join("\n")
+          .trim();
+
+        const toolUseBlocks = msg.content.filter((c) => c.type === "tool_use");
         toolUses = toolUseBlocks;
       } else if (typeof msg.content === "string") {
         textContent = msg.content.trim();
       }
-      
+
       // Fallback for OpenAI tool_calls format
       if (msg.tool_calls && msg.tool_calls.length > 0) {
         toolUses = msg.tool_calls;
       }
-      
+
       const assistantMsg = {
         assistantResponseMessage: {
-          content: textContent || "Call tools"
-        }
+          content: textContent || "Call tools",
+        },
       };
-      
+
       if (toolUses.length > 0) {
-        assistantMsg.assistantResponseMessage.toolUses = toolUses.map(tc => {
+        assistantMsg.assistantResponseMessage.toolUses = toolUses.map((tc) => {
           if (tc.function) {
             // OpenAI format
             return {
               toolUseId: tc.id || uuidv4(),
               name: tc.function.name,
-              input: typeof tc.function.arguments === "string" 
-                ? JSON.parse(tc.function.arguments) 
-                : (tc.function.arguments || {})
+              input:
+                typeof tc.function.arguments === "string"
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments || {},
             };
           } else {
             // Anthropic format
             return {
               toolUseId: tc.id || uuidv4(),
               name: tc.name,
-              input: tc.input || {}
+              input: tc.input || {},
             };
           }
         });
@@ -168,46 +184,52 @@ function convertMessages(messages, tools, model) {
       history.push(assistantMsg);
     }
   }
-  
+
   // If last message in history is userInputMessage, use it as currentMessage
   if (history.length > 0 && history[history.length - 1].userInputMessage) {
     currentMessage = history.pop();
   }
 
   const firstHistoryItem = history[0];
-  if (firstHistoryItem?.userInputMessage?.userInputMessageContext?.tools && 
-      !currentMessage?.userInputMessage?.userInputMessageContext?.tools) {
+  if (
+    firstHistoryItem?.userInputMessage?.userInputMessageContext?.tools &&
+    !currentMessage?.userInputMessage?.userInputMessageContext?.tools
+  ) {
     if (!currentMessage.userInputMessage.userInputMessageContext) {
       currentMessage.userInputMessage.userInputMessageContext = {};
     }
-    currentMessage.userInputMessage.userInputMessageContext.tools = 
+    currentMessage.userInputMessage.userInputMessageContext.tools =
       firstHistoryItem.userInputMessage.userInputMessageContext.tools;
   }
-    
+
   // Clean up history for Kiro API compatibility
-  history.forEach(item => {
+  history.forEach((item) => {
     if (item.userInputMessage?.userInputMessageContext?.tools) {
       delete item.userInputMessage.userInputMessageContext.tools;
     }
-    
-    if (item.userInputMessage?.userInputMessageContext && 
-        Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
+
+    if (
+      item.userInputMessage?.userInputMessageContext &&
+      Object.keys(item.userInputMessage.userInputMessageContext).length === 0
+    ) {
       delete item.userInputMessage.userInputMessageContext;
     }
-    
+
     if (item.userInputMessage && !item.userInputMessage.modelId) {
       item.userInputMessage.modelId = model;
     }
   });
-  
+
   // Merge consecutive user messages (Kiro requires alternating user/assistant)
   const mergedHistory = [];
   for (let i = 0; i < history.length; i++) {
     const current = history[i];
-    
-    if (current.userInputMessage && 
-        mergedHistory.length > 0 && 
-        mergedHistory[mergedHistory.length - 1].userInputMessage) {
+
+    if (
+      current.userInputMessage &&
+      mergedHistory.length > 0 &&
+      mergedHistory[mergedHistory.length - 1].userInputMessage
+    ) {
       const prev = mergedHistory[mergedHistory.length - 1];
       prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
     } else {
@@ -240,7 +262,7 @@ function buildKiroPayload(model, body, stream, credentials) {
 
   const timestamp = new Date().toISOString();
   finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
-  
+
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
@@ -251,12 +273,12 @@ function buildKiroPayload(model, body, stream, credentials) {
           modelId: model,
           origin: "AI_EDITOR",
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
-            userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
-          })
-        }
+            userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext,
+          }),
+        },
       },
-      history: history
-    }
+      history: history,
+    },
   };
 
   if (profileArn) {

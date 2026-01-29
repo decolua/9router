@@ -13,7 +13,7 @@ function openaiToClaudeRequest(model, body, stream) {
   const result = {
     model: model,
     max_tokens: adjustMaxTokens(body),
-    stream: stream
+    stream: stream,
   };
 
   // Temperature
@@ -34,7 +34,7 @@ function openaiToClaudeRequest(model, body, stream) {
     }
 
     // Filter out system messages for separate processing
-    const nonSystemMessages = body.messages.filter(m => m.role !== "system");
+    const nonSystemMessages = body.messages.filter((m) => m.role !== "system");
 
     // Process messages with merging logic
     // CRITICAL: tool_result must be in separate message immediately after tool_use
@@ -49,15 +49,15 @@ function openaiToClaudeRequest(model, body, stream) {
     };
 
     for (const msg of nonSystemMessages) {
-      const newRole = (msg.role === "user" || msg.role === "tool") ? "user" : "assistant";
+      const newRole = msg.role === "user" || msg.role === "tool" ? "user" : "assistant";
       const blocks = getContentBlocksFromMessage(msg, toolNameMap);
-      const hasToolUse = blocks.some(b => b.type === "tool_use");
-      const hasToolResult = blocks.some(b => b.type === "tool_result");
+      const hasToolUse = blocks.some((b) => b.type === "tool_use");
+      const hasToolResult = blocks.some((b) => b.type === "tool_result");
 
       // Separate tool_result from other content
       if (hasToolResult) {
-        const toolResultBlocks = blocks.filter(b => b.type === "tool_result");
-        const otherBlocks = blocks.filter(b => b.type !== "tool_result");
+        const toolResultBlocks = blocks.filter((b) => b.type === "tool_result");
+        const otherBlocks = blocks.filter((b) => b.type !== "tool_result");
 
         flushCurrentMessage();
 
@@ -106,7 +106,7 @@ function openaiToClaudeRequest(model, body, stream) {
     const systemText = systemParts.join("\n");
     result.system = [
       claudeCodePrompt,
-      { type: "text", text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }
+      { type: "text", text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } },
     ];
   } else {
     result.system = [claudeCodePrompt];
@@ -114,20 +114,20 @@ function openaiToClaudeRequest(model, body, stream) {
 
   // Tools - convert from OpenAI format to Claude format with prefix for OAuth
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => {
+    result.tools = body.tools.map((tool) => {
       const toolData = tool.type === "function" && tool.function ? tool.function : tool;
       const originalName = toolData.name;
-      
+
       // Claude OAuth requires prefixed tool names to avoid conflicts
       const toolName = CLAUDE_OAUTH_TOOL_PREFIX + originalName;
-      
+
       // Store mapping for response translation (prefixed → original)
       toolNameMap.set(toolName, originalName);
-      
+
       return {
         name: toolName,
         description: toolData.description || "",
-        input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
+        input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] },
       };
     });
 
@@ -157,7 +157,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
     blocks.push({
       type: "tool_result",
       tool_use_id: msg.tool_call_id,
-      content: msg.content
+      content: msg.content,
     });
   } else if (msg.role === "user") {
     if (typeof msg.content === "string") {
@@ -173,7 +173,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
             type: "tool_result",
             tool_use_id: part.tool_use_id,
             content: part.content,
-            ...(part.is_error && { is_error: part.is_error })
+            ...(part.is_error && { is_error: part.is_error }),
           });
         } else if (part.type === "image_url") {
           const url = part.image_url.url;
@@ -181,7 +181,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
           if (match) {
             blocks.push({
               type: "image",
-              source: { type: "base64", media_type: match[1], data: match[2] }
+              source: { type: "base64", media_type: match[1], data: match[2] },
             });
           }
         } else if (part.type === "image" && part.source) {
@@ -215,7 +215,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
             type: "tool_use",
             id: tc.id,
             name: toolName,
-            input: tryParseJSON(tc.function.arguments)
+            input: tryParseJSON(tc.function.arguments),
           });
         }
       }
@@ -241,7 +241,10 @@ function convertOpenAIToolChoice(choice) {
 function extractTextContent(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.filter(c => c.type === "text").map(c => c.text).join("\n");
+    return content
+      .filter((c) => c.type === "text")
+      .map((c) => c.text)
+      .join("\n");
   }
   return "";
 }
@@ -259,51 +262,49 @@ function tryParseJSON(str) {
 // OpenAI -> Claude format for Antigravity (without system prompt modifications)
 function openaiToClaudeRequestForAntigravity(model, body, stream) {
   const result = openaiToClaudeRequest(model, body, stream);
-  
+
   // Remove Claude Code system prompt, keep only user's system messages
   if (result.system && Array.isArray(result.system)) {
-    result.system = result.system.filter(block => 
-      !block.text || !block.text.includes("You are Claude Code")
-    );
+    result.system = result.system.filter((block) => !block.text || !block.text.includes("You are Claude Code"));
     if (result.system.length === 0) {
       delete result.system;
     }
   }
-  
+
   // Strip prefix from tool names for Antigravity (doesn't use Claude OAuth)
   if (result.tools && Array.isArray(result.tools)) {
-    result.tools = result.tools.map(tool => {
+    result.tools = result.tools.map((tool) => {
       if (tool.name && tool.name.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
         return {
           ...tool,
-          name: tool.name.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
+          name: tool.name.slice(CLAUDE_OAUTH_TOOL_PREFIX.length),
         };
       }
       return tool;
     });
   }
-  
+
   // Strip prefix from tool_use in messages
   if (result.messages && Array.isArray(result.messages)) {
-    result.messages = result.messages.map(msg => {
+    result.messages = result.messages.map((msg) => {
       if (!msg.content || !Array.isArray(msg.content)) {
         return msg;
       }
-      
-      const updatedContent = msg.content.map(block => {
+
+      const updatedContent = msg.content.map((block) => {
         if (block.type === "tool_use" && block.name && block.name.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           return {
             ...block,
-            name: block.name.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
+            name: block.name.slice(CLAUDE_OAUTH_TOOL_PREFIX.length),
           };
         }
         return block;
       });
-      
+
       return { ...msg, content: updatedContent };
     });
   }
-  
+
   return result;
 }
 
@@ -312,4 +313,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-

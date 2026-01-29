@@ -69,7 +69,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ fallbackStrategy: strategy }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, fallbackStrategy: strategy }));
+        setSettings((prev) => ({ ...prev, fallbackStrategy: strategy }));
       }
     } catch (err) {
       console.error("Failed to update settings:", err);
@@ -87,7 +87,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, stickyRoundRobinLimit: numLimit }));
+        setSettings((prev) => ({ ...prev, stickyRoundRobinLimit: numLimit }));
       }
     } catch (err) {
       console.error("Failed to update sticky limit:", err);
@@ -173,13 +173,13 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Round Robin</p>
-                <p className="text-sm text-text-muted">
-                  Cycle through accounts to distribute load
-                </p>
+                <p className="text-sm text-text-muted">Cycle through accounts to distribute load</p>
               </div>
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
-                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
+                onChange={() =>
+                  updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")
+                }
                 disabled={loading}
               />
             </div>
@@ -189,9 +189,7 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
                   <p className="font-medium">Sticky Limit</p>
-                  <p className="text-sm text-text-muted">
-                    Calls per account before switching
-                  </p>
+                  <p className="text-sm text-text-muted">Calls per account before switching</p>
                 </div>
                 <Input
                   type="number"
@@ -220,14 +218,9 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Dark Mode</p>
-                <p className="text-sm text-text-muted">
-                  Switch between light and dark themes
-                </p>
+                <p className="text-sm text-text-muted">Switch between light and dark themes</p>
               </div>
-              <Toggle
-                checked={isDark}
-                onChange={() => setTheme(isDark ? "light" : "dark")}
-              />
+              <Toggle checked={isDark} onChange={() => setTheme(isDark ? "light" : "dark")} />
             </div>
 
             {/* Theme Options */}
@@ -237,17 +230,11 @@ export default function ProfilePage() {
                   key={option}
                   onClick={() => setTheme(option)}
                   className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-lg border transition-all ${
-                    theme === option
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
+                    theme === option ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
                   }`}
                 >
                   <span className="material-symbols-outlined text-2xl">
-                    {option === "light"
-                      ? "light_mode"
-                      : option === "dark"
-                      ? "dark_mode"
-                      : "contrast"}
+                    {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
                   </span>
                   <span className="text-sm font-medium capitalize">{option}</span>
                 </button>
@@ -271,7 +258,9 @@ export default function ProfilePage() {
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
-          <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
+          <p>
+            {APP_CONFIG.name} v{APP_CONFIG.version}
+          </p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>

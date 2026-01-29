@@ -18,7 +18,7 @@ export async function POST(request) {
       switch (provider) {
         case "openai":
           const openaiRes = await fetch("https://api.openai.com/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
+            headers: { Authorization: `Bearer ${apiKey}` },
           });
           isValid = openaiRes.ok;
           break;
@@ -47,7 +47,7 @@ export async function POST(request) {
 
         case "openrouter":
           const openrouterRes = await fetch("https://openrouter.ai/api/v1/models", {
-            headers: { "Authorization": `Bearer ${apiKey}` },
+            headers: { Authorization: `Bearer ${apiKey}` },
           });
           isValid = openrouterRes.ok;
           break;
@@ -87,7 +87,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       valid: isValid,
-      error: isValid ? null : (error || "Invalid API key"),
+      error: isValid ? null : error || "Invalid API key",
     });
   } catch (error) {
     console.log("Error validating API key:", error);

@@ -127,7 +127,12 @@ export class CodexService extends OAuthService {
       spinner.start("Exchanging code for tokens...");
 
       // Exchange code for tokens (Codex uses form-urlencoded)
-      const tokens = await this.exchangeCode(callbackParams.code, redirectUri, codeVerifier, "application/x-www-form-urlencoded");
+      const tokens = await this.exchangeCode(
+        callbackParams.code,
+        redirectUri,
+        codeVerifier,
+        "application/x-www-form-urlencoded"
+      );
 
       spinner.text = "Saving tokens to server...";
 
@@ -142,4 +147,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-
