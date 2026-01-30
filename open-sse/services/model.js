@@ -15,6 +15,20 @@ const ALIAS_TO_PROVIDER_ID = {
   openrouter: "openrouter",
 };
 
+const PROVIDER_MODEL_ALIASES = {
+  github: {
+    "claude-4.5-opus": "claude-opus-4.5",
+    "claude-4.5-sonnet": "claude-sonnet-4.5",
+    "claude-4.5-haiku": "claude-haiku-4.5",
+  },
+};
+
+function resolveProviderModelAlias(provider, model) {
+  const providerAliases = PROVIDER_MODEL_ALIASES[provider];
+  if (!providerAliases) return model;
+  return providerAliases[model] || model;
+}
+
 /**
  * Resolve provider alias to provider ID
  */
@@ -86,7 +100,7 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   if (!parsed.isAlias) {
     return {
       provider: parsed.provider,
-      model: parsed.model,
+      model: resolveProviderModelAlias(parsed.provider, parsed.model),
     };
   }
 
