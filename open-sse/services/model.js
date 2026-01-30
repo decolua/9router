@@ -17,7 +17,7 @@ const ALIAS_TO_PROVIDER_ID = {
 
 const PROVIDER_MODEL_ALIASES = {
   github: {
-    "claude-4.5-opus": "claude-opus-4.5",
+    "claude-4.5-opus": "claude-opus-4-5-20251101",
     "claude-4.5-sonnet": "claude-sonnet-4.5",
     "claude-4.5-haiku": "claude-haiku-4.5",
   },
