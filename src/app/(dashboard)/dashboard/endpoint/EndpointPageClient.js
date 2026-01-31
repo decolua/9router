@@ -19,7 +19,7 @@ export default function APIPageClient({ machineId }) {
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
-  const [setCloudStatus] = useState(null);
+  const [cloudStatus, setCloudStatus] = useState(null);
   const [syncStep, setSyncStep] = useState(""); // "syncing" | "verifying" | "disabling" | ""
 
   const { copied, copy } = useCopyToClipboard();

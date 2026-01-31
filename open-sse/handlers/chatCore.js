@@ -253,11 +253,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
-  const stream = body.stream !== false;
+
+  // Force streaming for OpenAI/Codex models (they don't support non-streaming mode properly)
+  const stream = (provider === 'openai' || provider === 'codex') ? true : (body.stream !== false);
 
   // Create request logger for this session: sourceFormat_targetFormat_model
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
-  
+
   // 0. Log client raw request (before any conversion)
   if (clientRawRequest) {
     reqLogger.logClientRawRequest(
@@ -266,7 +268,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       clientRawRequest.headers
     );
   }
-  
+
   // 1. Log raw request from client
   reqLogger.logRawRequest(body);
 
@@ -275,7 +277,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Translate request (pass reqLogger for intermediate logging)
   let translatedBody = body;
   translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger);
-  
+
   // Extract toolNameMap for response translation (Claude OAuth)
   const toolNameMap = translatedBody._toolNameMap;
   delete translatedBody._toolNameMap;
@@ -290,11 +292,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   trackPendingRequest(model, provider, connectionId, true);
 
   // Log start
-  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
-  const msgCount = translatedBody.messages?.length 
-    || translatedBody.contents?.length 
-    || translatedBody.request?.contents?.length 
+  const msgCount = translatedBody.messages?.length
+    || translatedBody.contents?.length
+    || translatedBody.request?.contents?.length
     || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
@@ -316,18 +318,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       signal: streamController.signal,
       log
     });
-    
+
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
-    
+
     // Log target request (final request to provider)
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
-    
+
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => { });
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -347,7 +349,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     if (newCredentials?.accessToken || newCredentials?.copilotToken) {
       log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
-      
+
       // Update credentials
       Object.assign(credentials, newCredentials);
 
@@ -383,16 +385,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    
+
     // Log Antigravity retry time if available
     if (retryAfterMs && provider === "antigravity") {
       const retrySeconds = Math.ceil(retryAfterMs / 1000);
       log?.debug?.("RETRY", `Antigravity quota reset in ${retrySeconds}s (${retryAfterMs}ms)`);
     }
-    
+
     // Log error with full request body for debugging
     reqLogger.logError(new Error(message), finalBody || translatedBody);
 
@@ -411,7 +413,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
-    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
     if (usage) {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage.prompt_tokens || 0} | out=${usage.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
@@ -444,7 +446,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Streaming response
-  
+
   // Notify success - caller can clear error status if needed
   if (onRequestSuccess) {
     await onRequestSuccess();
@@ -459,8 +461,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Create transform stream with logger for streaming response
   let transformStream;
-  if (needsTranslation(targetFormat, sourceFormat)) {
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId);
+  // For Codex provider, always translate response from openai-responses to openai format
+  // This ensures clients like Cursor get the expected chat completions format
+  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses';
+  if (needsCodexTranslation || needsTranslation(targetFormat, sourceFormat)) {
+    // For Codex, translate FROM openai-responses TO openai (client's expected format)
+    const responseSourceFormat = needsCodexTranslation ? 'openai-responses' : targetFormat;
+    const responseTargetFormat = needsCodexTranslation ? 'openai' : sourceFormat;
+    transformStream = createSSETransformStreamWithLogger(responseSourceFormat, responseTargetFormat, provider, reqLogger, toolNameMap, model, connectionId);
   } else {
     transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId);
   }

@@ -5,7 +5,7 @@ const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
 );
 
-export async function middleware(request) {
+export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
   // Protect all dashboard routes
