@@ -411,7 +411,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       await onRequestSuccess();
     }
 
-// Log usage for non-streaming responses
+    // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
     appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
     if (usage && typeof usage === 'object') {
