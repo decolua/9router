@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections, createProviderConnection, getProviderNodeById, isCloudEnabled } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
 
@@ -33,7 +33,11 @@ export async function POST(request) {
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
 
     // Validation
-    if (!provider || (!APIKEY_PROVIDERS[provider] && !isOpenAICompatibleProvider(provider))) {
+    const isValidProvider = APIKEY_PROVIDERS[provider] || 
+                          isOpenAICompatibleProvider(provider) || 
+                          isAnthropicCompatibleProvider(provider);
+
+    if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
     if (!apiKey) {
@@ -59,6 +63,22 @@ export async function POST(request) {
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
+        baseUrl: node.baseUrl,
+        nodeName: node.name,
+      };
+    } else if (isAnthropicCompatibleProvider(provider)) {
+      const node = await getProviderNodeById(provider);
+      if (!node) {
+        return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+      }
+
+      const existingConnections = await getProviderConnections({ provider });
+      if (existingConnections.length > 0) {
+        return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
+      }
+
+      providerSpecificData = {
+        prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };

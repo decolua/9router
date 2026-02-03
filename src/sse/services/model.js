@@ -20,10 +20,18 @@ export async function getModelInfo(modelStr) {
 
   if (!parsed.isAlias) {
     if (parsed.provider === parsed.providerAlias) {
-      const providerNodes = await getProviderNodes({ type: "openai-compatible" });
-      const matchedNode = providerNodes.find((node) => node.prefix === parsed.providerAlias);
-      if (matchedNode) {
-        return { provider: matchedNode.id, model: parsed.model };
+      // Check OpenAI Compatible nodes
+      const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
+      const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedOpenAI) {
+        return { provider: matchedOpenAI.id, model: parsed.model };
+      }
+
+      // Check Anthropic Compatible nodes
+      const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
+      const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedAnthropic) {
+        return { provider: matchedAnthropic.id, model: parsed.model };
       }
     }
     return {

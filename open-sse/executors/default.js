@@ -13,6 +13,11 @@ export class DefaultExecutor extends BaseExecutor {
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
+      const normalized = baseUrl.replace(/\/$/, "");
+      return `${normalized}/messages`;
+    }
     switch (this.provider) {
       case "claude":
       case "glm":
@@ -42,7 +47,18 @@ export class DefaultExecutor extends BaseExecutor {
         headers["x-api-key"] = credentials.apiKey;
         break;
       default:
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        if (this.provider?.startsWith?.("anthropic-compatible-")) {
+          if (credentials.apiKey) {
+            headers["x-api-key"] = credentials.apiKey;
+          } else if (credentials.accessToken) {
+            headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+          }
+          if (!headers["anthropic-version"]) {
+            headers["anthropic-version"] = "2023-06-01";
+          }
+        } else {
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        }
     }
 
     if (stream) headers["Accept"] = "text/event-stream";

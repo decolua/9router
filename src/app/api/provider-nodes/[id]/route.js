@@ -21,7 +21,8 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
     }
 
-    if (!apiType || !["chat", "responses"].includes(apiType)) {
+    // Only validate apiType for OpenAI Compatible nodes
+    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses"].includes(apiType))) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 
@@ -29,12 +30,27 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
     }
 
-    const updated = await updateProviderNode(id, {
+    let sanitizedBaseUrl = baseUrl.trim();
+    
+    // Sanitize Base URL for Anthropic Compatible
+    if (node.type === "anthropic-compatible") {
+      sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");
+      if (sanitizedBaseUrl.endsWith("/messages")) {
+        sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -9); // remove /messages
+      }
+    }
+
+    const updates = {
       name: name.trim(),
       prefix: prefix.trim(),
-      apiType,
-      baseUrl: baseUrl.trim(),
-    });
+      baseUrl: sanitizedBaseUrl,
+    };
+
+    if (node.type === "openai-compatible") {
+      updates.apiType = apiType;
+    }
+
+    const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
     await Promise.all(connections.map((connection) => (
@@ -42,8 +58,8 @@ export async function PUT(request, { params }) {
         providerSpecificData: {
           ...(connection.providerSpecificData || {}),
           prefix: prefix.trim(),
-          apiType,
-          baseUrl: baseUrl.trim(),
+          apiType: node.type === "openai-compatible" ? apiType : undefined,
+          baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
         }
       })

@@ -5,8 +5,17 @@ const OPENAI_COMPATIBLE_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
 };
 
+const ANTHROPIC_COMPATIBLE_PREFIX = "anthropic-compatible-";
+const ANTHROPIC_COMPATIBLE_DEFAULTS = {
+  baseUrl: "https://api.anthropic.com/v1",
+};
+
 function isOpenAICompatible(provider) {
   return typeof provider === "string" && provider.startsWith(OPENAI_COMPATIBLE_PREFIX);
+}
+
+function isAnthropicCompatible(provider) {
+  return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
 function getOpenAICompatibleType(provider) {
@@ -18,6 +27,11 @@ function buildOpenAICompatibleUrl(baseUrl, apiType) {
   const normalized = baseUrl.replace(/\/$/, "");
   const path = apiType === "responses" ? "/responses" : "/chat/completions";
   return `${normalized}${path}`;
+}
+
+function buildAnthropicCompatibleUrl(baseUrl) {
+  const normalized = baseUrl.replace(/\/$/, "");
+  return `${normalized}/messages`;
 }
 
 // Detect request format from body structure
@@ -104,6 +118,13 @@ export function getProviderConfig(provider) {
       baseUrl: OPENAI_COMPATIBLE_DEFAULTS.baseUrl,
     };
   }
+  if (isAnthropicCompatible(provider)) {
+    return {
+      ...PROVIDERS.anthropic, // Use Anthropic defaults (header: x-api-key)
+      format: "claude",
+      baseUrl: ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl,
+    };
+  }
   return PROVIDERS[provider] || PROVIDERS.openai;
 }
 
@@ -119,6 +140,10 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
     const apiType = getOpenAICompatibleType(provider);
     const baseUrl = options?.baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl;
     return buildOpenAICompatibleUrl(baseUrl, apiType);
+  }
+  if (isAnthropicCompatible(provider)) {
+    const baseUrl = options?.baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl;
+    return buildAnthropicCompatibleUrl(baseUrl);
   }
   const config = getProviderConfig(provider);
 
@@ -170,72 +195,87 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
   };
 
   // Add auth header
-  switch (provider) {
-    case "gemini":
-      if (credentials.apiKey) {
-        headers["x-goog-api-key"] = credentials.apiKey;
-      } else if (credentials.accessToken) {
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-      }
-      break;
-
-    case "antigravity":
-    case "gemini-cli":
-      // Antigravity and Gemini CLI use OAuth access token
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-      break;
-
-    case "claude":
-      // Claude uses x-api-key header for API key, or Authorization for OAuth
-      if (credentials.apiKey) {
-        headers["x-api-key"] = credentials.apiKey;
-      } else if (credentials.accessToken) {
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-      }
-      break;
-
-    case "github":
-      // GitHub Copilot requires special headers to mimic VSCode
-      // Prioritize copilotToken from providerSpecificData, fallback to accessToken
-      const githubToken = credentials.copilotToken || credentials.accessToken;
-      // Add headers in exact same order as test endpoint
-      headers["Authorization"] = `Bearer ${githubToken}`;
-      headers["Content-Type"] = "application/json";
-      headers["copilot-integration-id"] = "vscode-chat";
-      headers["editor-version"] = "vscode/1.107.1";
-      headers["editor-plugin-version"] = "copilot-chat/0.26.7";
-      headers["user-agent"] = "GitHubCopilotChat/0.26.7";
-      headers["openai-intent"] = "conversation-panel";
-      headers["x-github-api-version"] = "2025-04-01";
-      // Generate a UUID for x-request-id (Cloudflare Workers compatible)
-      headers["x-request-id"] = crypto.randomUUID ? crypto.randomUUID() : 
-        'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c == 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      headers["x-vscode-user-agent-library-version"] = "electron-fetch";
-      headers["X-Initiator"] = "user";
-      headers["Accept"] = "application/json";
-      break;
-
-    case "codex":
-    case "qwen":
-    case "openai":
-    case "openrouter":
-      headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-      break;
-
-    case "glm":
-    case "kimi":
-    case "minimax":
-      // Claude-compatible API providers use x-api-key
+  // Specific override for Anthropic Compatible
+  if (isAnthropicCompatible(provider)) {
+    if (credentials.apiKey) {
       headers["x-api-key"] = credentials.apiKey;
-      break;
-
-    default:
-      headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-      break;
+      // Do NOT send Authorization header when apiKey is present for Anthropic Compatible
+      // as it causes issues with some providers (e.g. opencode.ai)
+    } else if (credentials.accessToken) {
+      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+    }
+    // Add default Anthropic version if not present (some proxies require it)
+    if (!headers["anthropic-version"]) {
+      headers["anthropic-version"] = "2023-06-01";
+    }
+  } else {
+    switch (provider) {
+      case "gemini":
+        if (credentials.apiKey) {
+          headers["x-goog-api-key"] = credentials.apiKey;
+        } else if (credentials.accessToken) {
+          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+        }
+        break;
+  
+      case "antigravity":
+      case "gemini-cli":
+        // Antigravity and Gemini CLI use OAuth access token
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+        break;
+  
+      case "claude":
+        // Claude uses x-api-key header for API key, or Authorization for OAuth
+        if (credentials.apiKey) {
+          headers["x-api-key"] = credentials.apiKey;
+        } else if (credentials.accessToken) {
+          headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+        }
+        break;
+  
+      case "github":
+        // GitHub Copilot requires special headers to mimic VSCode
+        // Prioritize copilotToken from providerSpecificData, fallback to accessToken
+        const githubToken = credentials.copilotToken || credentials.accessToken;
+        // Add headers in exact same order as test endpoint
+        headers["Authorization"] = `Bearer ${githubToken}`;
+        headers["Content-Type"] = "application/json";
+        headers["copilot-integration-id"] = "vscode-chat";
+        headers["editor-version"] = "vscode/1.107.1";
+        headers["editor-plugin-version"] = "copilot-chat/0.26.7";
+        headers["user-agent"] = "GitHubCopilotChat/0.26.7";
+        headers["openai-intent"] = "conversation-panel";
+        headers["x-github-api-version"] = "2025-04-01";
+        // Generate a UUID for x-request-id (Cloudflare Workers compatible)
+        headers["x-request-id"] = crypto.randomUUID ? crypto.randomUUID() : 
+          'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        headers["x-vscode-user-agent-library-version"] = "electron-fetch";
+        headers["X-Initiator"] = "user";
+        headers["Accept"] = "application/json";
+        break;
+  
+      case "codex":
+      case "qwen":
+      case "openai":
+      case "openrouter":
+        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        break;
+  
+      case "glm":
+      case "kimi":
+      case "minimax":
+        // Claude-compatible API providers use x-api-key
+        headers["x-api-key"] = credentials.apiKey;
+        break;
+  
+      default:
+        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        break;
+    }
   }
 
   // Stream accept header
@@ -250,6 +290,9 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
 export function getTargetFormat(provider) {
   if (isOpenAICompatible(provider)) {
     return getOpenAICompatibleType(provider) === "responses" ? "openai-responses" : "openai";
+  }
+  if (isAnthropicCompatible(provider)) {
+    return "claude";
   }
   const config = getProviderConfig(provider);
   return config.format || "openai";

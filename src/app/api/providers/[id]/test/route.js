@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
-import { isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -315,6 +315,32 @@ async function testApiKeyConnection(connection) {
       const modelsUrl = `${modelsBase.replace(/\/$/, "")}/models`;
       const res = await fetch(modelsUrl, {
         headers: { "Authorization": `Bearer ${connection.apiKey}` },
+      });
+      return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
+  }
+
+  // Anthropic Compatible providers - test via /models endpoint
+  if (isAnthropicCompatibleProvider(connection.provider)) {
+    let modelsBase = connection.providerSpecificData?.baseUrl;
+    if (!modelsBase) {
+      return { valid: false, error: "Missing base URL" };
+    }
+    try {
+      modelsBase = modelsBase.replace(/\/$/, "");
+      if (modelsBase.endsWith("/messages")) {
+        modelsBase = modelsBase.slice(0, -9);
+      }
+      
+      const modelsUrl = `${modelsBase}/models`;
+      const res = await fetch(modelsUrl, {
+        headers: { 
+          "x-api-key": connection.apiKey,
+          "anthropic-version": "2023-06-01",
+          "Authorization": `Bearer ${connection.apiKey}`
+        },
       });
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {

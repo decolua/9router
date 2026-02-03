@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
-import { isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
@@ -97,6 +97,47 @@ export async function GET(request, { params }) {
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${connection.apiKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`Error fetching models from ${connection.provider}:`, errorText);
+        return NextResponse.json(
+          { error: `Failed to fetch models: ${response.status}` },
+          { status: response.status }
+        );
+      }
+
+      const data = await response.json();
+      const models = data.data || data.models || [];
+
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models
+      });
+    }
+
+    if (isAnthropicCompatibleProvider(connection.provider)) {
+      let baseUrl = connection.providerSpecificData?.baseUrl;
+      if (!baseUrl) {
+        return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
+      }
+      
+      baseUrl = baseUrl.replace(/\/$/, "");
+      if (baseUrl.endsWith("/messages")) {
+        baseUrl = baseUrl.slice(0, -9);
+      }
+      
+      const url = `${baseUrl}/models`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": connection.apiKey,
+          "anthropic-version": "2023-06-01",
+          "Authorization": `Bearer ${connection.apiKey}`
         },
       });
 

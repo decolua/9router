@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -26,6 +26,34 @@ export async function POST(request) {
         const res = await fetch(modelsUrl, {
           headers: { "Authorization": `Bearer ${apiKey}` },
         });
+        isValid = res.ok;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API key",
+        });
+      }
+
+      if (isAnthropicCompatibleProvider(provider)) {
+        const node = await getProviderNodeById(provider);
+        if (!node) {
+          return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+        }
+        
+        let normalizedBase = node.baseUrl?.trim().replace(/\/$/, "") || "";
+        if (normalizedBase.endsWith("/messages")) {
+          normalizedBase = normalizedBase.slice(0, -9); // remove /messages
+        }
+        
+        const modelsUrl = `${normalizedBase}/models`;
+        
+        const res = await fetch(modelsUrl, {
+          headers: { 
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "Authorization": `Bearer ${apiKey}` 
+          },
+        });
+        
         isValid = res.ok;
         return NextResponse.json({
           valid: isValid,

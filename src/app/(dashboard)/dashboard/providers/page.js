@@ -5,7 +5,7 @@ import Image from "next/image";
 import PropTypes from "prop-types";
 import { Card, CardSkeleton, Badge, Button, Input, Modal, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { OPENAI_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
+import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 
@@ -38,6 +38,7 @@ export default function ProvidersPage() {
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
+  const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -103,9 +104,22 @@ export default function ProvidersPage() {
       apiType: node.apiType,
     }));
 
+  const anthropicCompatibleProviders = providerNodes
+    .filter((node) => node.type === "anthropic-compatible")
+    .map((node) => ({
+      id: node.id,
+      name: node.name || "Anthropic Compatible",
+      color: "#D97757",
+      textIcon: "AC",
+    }));
+
   const apiKeyProviders = {
     ...APIKEY_PROVIDERS,
     ...compatibleProviders.reduce((acc, provider) => {
+      acc[provider.id] = provider;
+      return acc;
+    }, {}),
+    ...anthropicCompatibleProviders.reduce((acc, provider) => {
       acc[provider.id] = provider;
       return acc;
     }, {}),
@@ -141,9 +155,20 @@ export default function ProvidersPage() {
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">API Key Providers</h2>
-          <Button size="sm" icon="add" onClick={() => setShowAddCompatibleModal(true)}>
-            Add OpenAI Compatible
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
+              Add Anthropic Compatible
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="add"
+              onClick={() => setShowAddCompatibleModal(true)}
+              className="!bg-white !text-black hover:!bg-gray-100"
+            >
+              Add OpenAI Compatible
+            </Button>
+          </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(apiKeyProviders).map(([key, info]) => (
@@ -162,6 +187,14 @@ export default function ProvidersPage() {
         onCreated={(node) => {
           setProviderNodes((prev) => [...prev, node]);
           setShowAddCompatibleModal(false);
+        }}
+      />
+      <AddAnthropicCompatibleModal
+        isOpen={showAddAnthropicCompatibleModal}
+        onClose={() => setShowAddAnthropicCompatibleModal(false)}
+        onCreated={(node) => {
+          setProviderNodes((prev) => [...prev, node]);
+          setShowAddAnthropicCompatibleModal(false);
         }}
       />
     </div>
@@ -237,12 +270,16 @@ ProviderCard.propTypes = {
 function ApiKeyProviderCard({ providerId, provider, stats }) {
   const { connected, error, errorCode, errorTime } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
+  const isAnthropicCompatible = providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
   const [imgError, setImgError] = useState(false);
 
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getIconPath = () => {
     if (isCompatible) {
       return provider.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+    }
+    if (isAnthropicCompatible) {
+      return "/providers/anthropic.png"; // Use Anthropic icon as base
     }
     return `/providers/${provider.id}.png`;
   };
@@ -282,6 +319,11 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
                 {isCompatible && (
                   <Badge variant="default" size="sm">
                     {provider.apiType === "responses" ? "Responses" : "Chat"}
+                  </Badge>
+                )}
+                {isAnthropicCompatible && (
+                  <Badge variant="default" size="sm">
+                    Messages
                   </Badge>
                 )}
                 {errorTime && <span className="text-text-muted">• {errorTime}</span>}
@@ -351,6 +393,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
           prefix: formData.prefix,
           apiType: formData.apiType,
           baseUrl: formData.baseUrl,
+          type: "openai-compatible",
         }),
       });
       const data = await res.json();
@@ -378,7 +421,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey }),
+        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey, type: "openai-compatible" }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -452,6 +495,140 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
 }
 
 AddOpenAICompatibleModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onCreated: PropTypes.func.isRequired,
+};
+
+function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
+  const [formData, setFormData] = useState({
+    name: "",
+    prefix: "",
+    baseUrl: "https://api.anthropic.com/v1",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [checkKey, setCheckKey] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState(null);
+
+  useEffect(() => {
+    // Reset validation when modal opens
+    if (isOpen) {
+      setValidationResult(null);
+      setCheckKey("");
+    }
+  }, [isOpen]);
+
+  const handleSubmit = async () => {
+    if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/provider-nodes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: formData.name,
+          prefix: formData.prefix,
+          baseUrl: formData.baseUrl,
+          type: "anthropic-compatible",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onCreated(data.node);
+        setFormData({
+          name: "",
+          prefix: "",
+          baseUrl: "https://api.anthropic.com/v1",
+        });
+        setCheckKey("");
+        setValidationResult(null);
+      }
+    } catch (error) {
+      console.log("Error creating Anthropic Compatible node:", error);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleValidate = async () => {
+    setValidating(true);
+    try {
+      const res = await fetch("/api/provider-nodes/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          baseUrl: formData.baseUrl, 
+          apiKey: checkKey, 
+          type: "anthropic-compatible" 
+        }),
+      });
+      const data = await res.json();
+      setValidationResult(data.valid ? "success" : "failed");
+    } catch {
+      setValidationResult("failed");
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} title="Add Anthropic Compatible" onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <Input
+          label="Name"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          placeholder="Anthropic Compatible (Prod)"
+          hint="Required. A friendly label for this node."
+        />
+        <Input
+          label="Prefix"
+          value={formData.prefix}
+          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+          placeholder="ac-prod"
+          hint="Required. Used as the provider prefix for model IDs."
+        />
+        <Input
+          label="Base URL"
+          value={formData.baseUrl}
+          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+          placeholder="https://api.anthropic.com/v1"
+          hint="Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
+        />
+        <div className="flex gap-2">
+          <Input
+            label="API Key (for Check)"
+            type="password"
+            value={checkKey}
+            onChange={(e) => setCheckKey(e.target.value)}
+            className="flex-1"
+          />
+          <div className="pt-6">
+            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+              {validating ? "Checking..." : "Check"}
+            </Button>
+          </div>
+        </div>
+        {validationResult && (
+          <Badge variant={validationResult === "success" ? "success" : "error"}>
+            {validationResult === "success" ? "Valid" : "Invalid"}
+          </Badge>
+        )}
+        <div className="flex gap-2">
+          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || submitting}>
+            {submitting ? "Creating..." : "Create"}
+          </Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+AddAnthropicCompatibleModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onCreated: PropTypes.func.isRequired,

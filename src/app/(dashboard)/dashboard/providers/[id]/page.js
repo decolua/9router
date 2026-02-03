@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -29,19 +29,24 @@ export default function ProviderDetailPage() {
   const providerInfo = providerNode
     ? {
         id: providerNode.id,
-        name: providerNode.name || "OpenAI Compatible",
-        color: "#10A37F",
-        textIcon: "OC",
+        name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
+        color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
+        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
         apiType: providerNode.apiType,
         baseUrl: providerNode.baseUrl,
+        type: providerNode.type,
       }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId];
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
+  
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
-  const providerStorageAlias = isOpenAICompatible ? providerId : providerAlias;
-  const providerDisplayAlias = isOpenAICompatible
+  const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
+  const isCompatible = isOpenAICompatible || isAnthropicCompatible;
+  
+  const providerStorageAlias = isCompatible ? providerId : providerAlias;
+  const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
 
@@ -238,9 +243,9 @@ export default function ProviderDetailPage() {
   };
 
   const renderModelsSection = () => {
-    if (isOpenAICompatible) {
+    if (isCompatible) {
       return (
-        <OpenAICompatibleModelsSection
+        <CompatibleModelsSection
           providerStorageAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           modelAliases={modelAliases}
@@ -249,6 +254,7 @@ export default function ProviderDetailPage() {
           onSetAlias={handleSetAlias}
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
+          isAnthropic={isAnthropicCompatible}
         />
       );
     }
@@ -317,6 +323,9 @@ export default function ProviderDetailPage() {
     if (isOpenAICompatible && providerInfo.apiType) {
       return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
     }
+    if (isAnthropicCompatible) {
+      return "/providers/anthropic.png";
+    }
     return `/providers/${providerInfo.id}.png`;
   };
 
@@ -361,14 +370,14 @@ export default function ProviderDetailPage() {
         </div>
       </div>
 
-      {isOpenAICompatible && providerNode && (
+      {isCompatible && providerNode && (
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold">OpenAI Compatible Details</h2>
+              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
               <p className="text-sm text-text-muted">
-                {providerNode.apiType === "responses" ? "Responses API" : "Chat Completions"} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {providerNode.apiType === "responses" ? "responses" : "chat/completions"}
+                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -393,7 +402,7 @@ export default function ProviderDetailPage() {
                 variant="secondary"
                 icon="delete"
                 onClick={async () => {
-                  if (!confirm("Delete this OpenAI Compatible node?")) return;
+                  if (!confirm(`Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`)) return;
                   try {
                     const res = await fetch(`/api/provider-nodes/${providerId}`, { method: "DELETE" });
                     if (res.ok) {
@@ -410,7 +419,7 @@ export default function ProviderDetailPage() {
           </div>
           {connections.length > 0 && (
             <p className="text-sm text-text-muted">
-              Only one connection is allowed per OpenAI Compatible node. Add another node if you need more connections.
+              Only one connection is allowed per compatible node. Add another node if you need more connections.
             </p>
           )}
         </Card>
@@ -420,7 +429,7 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
-          {!isOpenAICompatible && (
+          {!isCompatible && (
             <Button
               size="sm"
               icon="add"
@@ -438,7 +447,7 @@ export default function ProviderDetailPage() {
             </div>
             <p className="text-text-main font-medium mb-1">No connections yet</p>
             <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
-            {!isOpenAICompatible && (
+            {!isCompatible && (
               <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
                 Add Connection
               </Button>
@@ -499,7 +508,8 @@ export default function ProviderDetailPage() {
         isOpen={showAddApiKeyModal}
         provider={providerId}
         providerName={providerInfo.name}
-        isOpenAICompatible={isOpenAICompatible}
+        isCompatible={isCompatible}
+        isAnthropic={isAnthropicCompatible}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddApiKeyModal(false)}
       />
@@ -509,12 +519,15 @@ export default function ProviderDetailPage() {
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
       />
-      <EditOpenAICompatibleModal
-        isOpen={showEditNodeModal}
-        node={providerNode}
-        onSave={handleUpdateNode}
-        onClose={() => setShowEditNodeModal(false)}
-      />
+      {isCompatible && (
+        <EditCompatibleNodeModal
+          isOpen={showEditNodeModal}
+          node={providerNode}
+          onSave={handleUpdateNode}
+          onClose={() => setShowEditNodeModal(false)}
+          isAnthropic={isAnthropicCompatible}
+        />
+      )}
     </div>
   );
 }
@@ -685,7 +698,7 @@ PassthroughModelRow.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
 };
 
-function OpenAICompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections }) {
+function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -775,7 +788,7 @@ function OpenAICompatibleModelsSection({ providerStorageAlias, providerDisplayAl
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add OpenAI-compatible models manually or import them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -787,7 +800,7 @@ function OpenAICompatibleModelsSection({ providerStorageAlias, providerDisplayAl
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder="gpt-4o"
+            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
@@ -823,7 +836,7 @@ function OpenAICompatibleModelsSection({ providerStorageAlias, providerDisplayAl
   );
 }
 
-OpenAICompatibleModelsSection.propTypes = {
+CompatibleModelsSection.propTypes = {
   providerStorageAlias: PropTypes.string.isRequired,
   providerDisplayAlias: PropTypes.string.isRequired,
   modelAliases: PropTypes.object.isRequired,
@@ -835,6 +848,7 @@ OpenAICompatibleModelsSection.propTypes = {
     id: PropTypes.string,
     isActive: PropTypes.bool,
   })).isRequired,
+  isAnthropic: PropTypes.bool,
 };
 
 function CooldownTimer({ until }) {
@@ -997,7 +1011,7 @@ ConnectionRow.propTypes = {
   onDelete: PropTypes.func.isRequired,
 };
 
-function AddApiKeyModal({ isOpen, provider, providerName, isOpenAICompatible, onSave, onClose }) {
+function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
@@ -1062,9 +1076,12 @@ function AddApiKeyModal({ isOpen, provider, providerName, isOpenAICompatible, on
             {validationResult === "success" ? "Valid" : "Invalid"}
           </Badge>
         )}
-        {isOpenAICompatible && (
+        {isCompatible && (
           <p className="text-xs text-text-muted">
-            Validation checks {providerName || "OpenAI Compatible"} via /models on your base URL.
+            {isAnthropic 
+              ? `Validation checks ${providerName || "Anthropic Compatible"} by verifying the API key.`
+              : `Validation checks ${providerName || "OpenAI Compatible"} via /models on your base URL.`
+            }
           </p>
         )}
         <Input
@@ -1090,7 +1107,8 @@ AddApiKeyModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   provider: PropTypes.string,
   providerName: PropTypes.string,
-  isOpenAICompatible: PropTypes.bool,
+  isCompatible: PropTypes.bool,
+  isAnthropic: PropTypes.bool,
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
@@ -1168,7 +1186,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   if (!connection) return null;
 
   const isOAuth = connection.authType === "oauth";
-  const isCompatible = isOpenAICompatibleProvider(connection.provider);
+  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
 
   return (
     <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
@@ -1254,7 +1272,7 @@ EditConnectionModal.propTypes = {
   onClose: PropTypes.func.isRequired,
 };
 
-function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
+function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
     name: "",
     prefix: "",
@@ -1272,10 +1290,10 @@ function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
         name: node.name || "",
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
-        baseUrl: node.baseUrl || "https://api.openai.com/v1",
+        baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
       });
     }
-  }, [node]);
+  }, [node, isAnthropic]);
 
   const apiTypeOptions = [
     { value: "chat", label: "Chat Completions" },
@@ -1286,12 +1304,15 @@ function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
     setSaving(true);
     try {
-      await onSave({
+      const payload = {
         name: formData.name,
         prefix: formData.prefix,
-        apiType: formData.apiType,
         baseUrl: formData.baseUrl,
-      });
+      };
+      if (!isAnthropic) {
+        payload.apiType = formData.apiType;
+      }
+      await onSave(payload);
     } finally {
       setSaving(false);
     }
@@ -1303,7 +1324,11 @@ function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey }),
+        body: JSON.stringify({ 
+          baseUrl: formData.baseUrl, 
+          apiKey: checkKey, 
+          type: isAnthropic ? "anthropic-compatible" : "openai-compatible" 
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -1317,34 +1342,36 @@ function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
   if (!node) return null;
 
   return (
-    <Modal isOpen={isOpen} title="Edit OpenAI Compatible" onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="OpenAI Compatible (Prod)"
+          placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
           hint="Required. A friendly label for this node."
         />
         <Input
           label="Prefix"
           value={formData.prefix}
           onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-          placeholder="oc-prod"
+          placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
           hint="Required. Used as the provider prefix for model IDs."
         />
-        <Select
-          label="API Type"
-          options={apiTypeOptions}
-          value={formData.apiType}
-          onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
-        />
+        {!isAnthropic && (
+          <Select
+            label="API Type"
+            options={apiTypeOptions}
+            value={formData.apiType}
+            onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+          />
+        )}
         <Input
           label="Base URL"
           value={formData.baseUrl}
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-          placeholder="https://api.openai.com/v1"
-          hint="Use the base URL (ending in /v1) for your OpenAI-compatible API."
+          placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
+          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
         <div className="flex gap-2">
           <Input
@@ -1378,7 +1405,7 @@ function EditOpenAICompatibleModal({ isOpen, node, onSave, onClose }) {
   );
 }
 
-EditOpenAICompatibleModal.propTypes = {
+EditCompatibleNodeModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   node: PropTypes.shape({
     id: PropTypes.string,
@@ -1389,4 +1416,5 @@ EditOpenAICompatibleModal.propTypes = {
   }),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
+  isAnthropic: PropTypes.bool,
 };
