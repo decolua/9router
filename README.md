@@ -1,169 +1,262 @@
 <div align="center">
   <img src="./images/9router.png" alt="9Router Dashboard" width="800"/>
   
-  # 9Router - FREE AI Coding
+  # 9Router - Smart AI Router
   
-  **Use Claude, Codex, Gemini for FREE • Ultra-cheap alternatives from $0.20/1M tokens**
+  **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
-  [🚀 Quick Start](#-quick-start) • [💰 Pricing](#-pricing-strategy) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
 </div>
 
 ---
 
-## Why 9Router?
+## 🤔 Why 9Router?
 
-Stop wasting your AI subscriptions and paying full price:
+**Stop wasting money and hitting limits:**
 
-- ❌ **Subscription quota expires** unused every month
-- ❌ **Rate limits** stop you mid-coding
-- ❌ **Expensive APIs** ($20-50/month per provider)
-- ❌ **Manual switching** between providers
+- ❌ Subscription quota expires unused every month
+- ❌ Rate limits stop you mid-coding
+- ❌ Expensive APIs ($20-50/month per provider)
+- ❌ Manual switching between providers
 
-**9Router maximizes value:**
+**9Router solves this:**
 
-- ✅ **Maximize Subscriptions** - Claude Code, Codex, Gemini, Copilot quota tracking
-- ✅ **FREE Available** - iFlow, Qwen, Kiro when needed, via CLI
-- ✅ **Ultra-Cheap Backup** - GLM ($0.6/1M), MiniMax M2.1 ($0.20/1M)
-- ✅ **Smart Fallback** - Subscription → Cheap → Free, automatic switching
+- ✅ **Maximize subscriptions** - Track quota, use every bit before reset
+- ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
+- ✅ **Multi-account** - Round-robin between accounts per provider
+- ✅ **Universal** - Works with Cursor, Cline, Claude Desktop, any CLI tool
 
 ---
 
-## 🔧 How It Works
+## 🔄 How It Works
 
 ```
-1. Install & Start
-   npm install -g 9router → Dashboard opens
+┌─────────────┐
+│  Your CLI   │  (Cursor, Cline, Claude Desktop...)
+│   Tool      │
+└──────┬──────┘
+       │ http://localhost:20128/v1
+       ↓
+┌─────────────────────────────────────────┐
+│           9Router (Smart Router)        │
+│  • Format translation (OpenAI ↔ Claude) │
+│  • Quota tracking                       │
+│  • Auto token refresh                   │
+└──────┬──────────────────────────────────┘
+       │
+       ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, Gemini CLI
+       │   ↓ quota exhausted
+       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       │   ↓ budget limit
+       └─→ [Tier 3: FREE] iFlow, Qwen, Kiro (unlimited)
 
-2. Connect Providers  
-   Dashboard → OAuth login (Claude, Gemini...)
-            OR → For free providers (iFlow, Qwen, Kiro...)
-            OR → Add API keys (GLM, iFlow...)
-
-3. Point Your CLI (Cursor/Cline/Any tool..)
-   Cursor/Cline → http://localhost:20128/v1
-   
-   Your Tool  →  9Router  →  Providers
-                 (Auto route + fallback)
+Result: Never stop coding, minimal cost
 ```
 
 ---
 
 ## ⚡ Quick Start
 
-**Install globally:**
+**1. Install globally:**
 
 ```bash
 npm install -g 9router
 9router
 ```
 
-🎉 Dashboard opens → Connect Free Providers  → Start coding!
+🎉 Dashboard opens at `http://localhost:20128`
 
-**Use in Claude Code/Codex/Cursor/Cline/.....:**
+**2. Connect a FREE provider (no signup needed):**
+
+Dashboard → Providers → Connect **iFlow** or **Qwen** → OAuth login → Done!
+
+**3. Use in your CLI tool:**
 
 ```
-Endpoint: http://localhost:20128/v1
-API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
+Cursor/Cline Settings:
+  Endpoint: http://localhost:20128/v1
+  API Key: [copy from dashboard]
+  Model: if/kimi-k2-thinking
 ```
+
+**That's it!** Start coding with FREE AI models.
 
 ---
 
-## 💰 Pricing Strategy
+## 💡 Key Features
 
-### 📅 MAXIMIZE SUBSCRIPTIONS (Primary)
+| Feature | What It Does | Why It Matters |
+|---------|--------------|----------------|
+| 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
+| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
+| 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini seamless | Works with any CLI tool |
+| 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
+| 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
+| 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
+| 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
+| 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
+| 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
+| 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
 
-Already paying? Get full value with quota tracking:
+<details>
+<summary><b>📖 Feature Details</b></summary>
 
-| Provider | What You Get | Quota Reset | Monthly Cost |
-|----------|--------------|-------------|--------------|
-| **Claude Code** (Pro/Max) | Claude 4.5 Opus/Sonnet/Haiku | 5-hour + Weekly | $20-100 |
-| **OpenAI Codex** (Plus/Pro) | GPT 5.2 Codex, GPT 5.1 Codex Max | 5-hour + Weekly | $20-200 |
-| **Gemini CLI** (FREE tier!) | 180K completions/month, 1K/day | Daily/Monthly | **$0** |
-| **GitHub Copilot** | GPT-5, Claude 4.5, Gemini 3 | Monthly (1st) | $10-19 |
-| **Antigravity** (Google) | Gemini 3 Pro, Claude Sonnet 4.5 | Similar to Gemini | **$0** |
+### 🎯 Smart 3-Tier Fallback
 
-**Value:** Use every bit of your subscription quota before it resets!
-
-### 💰 ULTRA CHEAP (Backup)
-
-When subscription quota runs out, pay pennies:
-
-| Provider | Pricing (per 1M tokens) | Quota Reset | Cost for 10M |
-|----------|------------------------|-------------|--------------|
-| **GLM-4.7** | $0.60 input / $2.20 output | Daily 10:00 AM | ~$6-22 |
-| **MiniMax M2.1** | $0.20 input / $1.00 output | 5-hour rolling | ~$2-10 |
-| **Kimi K2** | $9/month (10M tokens) | Monthly | **$9 flat** |
-
-**Value:** ~90% cheaper than ChatGPT API ($20/1M)!
-
-### 🆓 FREE FOREVER (Fallback)
-
-
-| Provider | Top Models | Notes |
-|----------|-----------|-------|
-| **iFlow** | Kimi K2, Qwen3 Coder Plus, GLM 4.7, MiniMax M2 | 8 models via OAuth |
-| **Qwen** | Qwen3 Coder Plus/Flash, Vision | 3 models via OAuth |
-| **Kiro** | Claude Sonnet 4.5, Haiku 4.5 | AWS Builder ID |
-
-**Value:** Emergency backup when everything else is quota-limited!
-
----
-
-## ✨ Key Features
-
-### 🔄 Smart 3-Tier Fallback
+Create combos with automatic fallback:
 
 ```
-Setup once, never stop coding:
+Combo: "my-coding-stack"
+  1. cc/claude-opus-4-5        (your subscription)
+  2. glm/glm-4.7               (cheap backup, $0.6/1M)
+  3. if/kimi-k2-thinking       (free fallback)
 
-Tier 1 (SUBSCRIPTION): Claude Code → Codex → Gemini
-  ↓ quota exhausted
-Tier 2 (CHEAP): GLM-4.7 → MiniMax M2.1 → Kimi
-  ↓ budget limit
-Tier 3 (FREE): iFlow → Qwen → Kiro
-
-→ Automatic switching, zero downtime!
+→ Auto switches when quota runs out or errors occur
 ```
 
-### 📊 Quota Tracking
+### 📊 Real-Time Quota Tracking
 
-- Real-time token consumption
-- Reset countdown per provider
-- Cost estimation (paid tiers)
+- Token consumption per provider
+- Reset countdown (5-hour, daily, weekly)
+- Cost estimation for paid tiers
 - Monthly spending reports
 
-### 🎯 Universal CLI Support
+### 🔄 Format Translation
 
-✅ **Cursor** • **Cline** • **Claude Desktop** • **Codex** • **RooCode** • **Continue** • **Any tool with custom OpenAI endpoint**
+Seamless translation between formats:
+- **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
+- Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
+- Works with any tool that supports custom OpenAI endpoints
 
-### 🌐 Deploy Options
+### 👥 Multi-Account Support
 
-💻 **Localhost** • ☁️ **VPS/Cloud** • 🐳 **Docker** • 🚀 **Cloudflare Workers**
+- Add multiple accounts per provider
+- Auto round-robin or priority-based routing
+- Fallback to next account when one hits quota
+
+### 🔄 Auto Token Refresh
+
+- OAuth tokens automatically refresh before expiration
+- No manual re-authentication needed
+- Seamless experience across all providers
+
+### 🎨 Custom Combos
+
+- Create unlimited model combinations
+- Mix subscription, cheap, and free tiers
+- Name your combos for easy access
+- Share combos across devices with Cloud Sync
+
+### 📝 Request Logging
+
+- Enable debug mode for full request/response logs
+- Track API calls, headers, and payloads
+- Troubleshoot integration issues
+- Export logs for analysis
+
+### 💾 Cloud Sync
+
+- Sync providers, combos, and settings across devices
+- Automatic background sync
+- Secure encrypted storage
+- Access your setup from anywhere
+
+### 📊 Usage Analytics
+
+- Track token usage per provider and model
+- Cost estimation and spending trends
+- Monthly reports and insights
+- Optimize your AI spending
+
+### 🌐 Deploy Anywhere
+
+- 💻 **Localhost** - Default, works offline
+- ☁️ **VPS/Cloud** - Share across devices
+- 🐳 **Docker** - One-command deployment
+- 🚀 **Cloudflare Workers** - Global edge network
+
+</details>
 
 ---
 
-## ☁️ Cloud Deployment
+## 💰 Pricing at a Glance
 
-### Why Cloud?
+| Tier | Provider | Cost | Quota Reset | Best For |
+|------|----------|------|-------------|----------|
+| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo | 5h + weekly | Already subscribed |
+| | Codex (Plus/Pro) | $20-200/mo | 5h + weekly | OpenAI users |
+| | Gemini CLI | **FREE** | 180K/mo + 1K/day | Everyone! |
+| | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
+| **💰 CHEAP** | GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
+| | MiniMax M2.1 | $0.2/1M | 5-hour rolling | Cheapest option |
+| | Kimi K2 | $9/mo flat | 10M tokens/mo | Predictable cost |
+| **🆓 FREE** | iFlow | $0 | Unlimited | 8 models free |
+| | Qwen | $0 | Unlimited | 3 models free |
+| | Kiro | $0 | Unlimited | Claude free |
 
-Use `https://9router.com` when localhost doesn't work:
+**💡 Pro Tip:** Start with Gemini CLI (180K free/month) + iFlow (unlimited free) combo = $0 cost!
 
-- ✅ **Cursor IDE** - doesn't support localhost
-- ✅ **Mobile coding** - iPad, phone access
-- ✅ **No install needed** - use from anywhere
-- ✅ **Global fast** - Cloudflare edge network (300+ locations)
+---
+
+## 🎯 Use Cases
+
+### Case 1: "I have Claude Pro subscription"
+
+**Problem:** Quota expires unused, rate limits during heavy coding
+
+**Solution:**
+```
+Combo: "maximize-claude"
+  1. cc/claude-opus-4-5        (use subscription fully)
+  2. glm/glm-4.7               (cheap backup when quota out)
+  3. if/kimi-k2                (free emergency fallback)
+
+Monthly cost: $20 (subscription) + ~$5 (backup) = $25 total
+vs. $20 + hitting limits = frustration
+```
+
+### Case 2: "I want zero cost"
+
+**Problem:** Can't afford subscriptions, need reliable AI coding
+
+**Solution:**
+```
+Combo: "free-forever"
+  1. gc/gemini-3-flash         (180K free/month)
+  2. if/kimi-k2-thinking       (unlimited free)
+  3. qw/qwen3-coder-plus       (unlimited free)
+
+Monthly cost: $0
+Quality: Production-ready models
+```
+
+### Case 3: "I need 24/7 coding, no interruptions"
+
+**Problem:** Deadlines, can't afford downtime
+
+**Solution:**
+```
+Combo: "always-on"
+  1. cc/claude-opus-4-5        (best quality)
+  2. cx/gpt-5.2-codex          (second subscription)
+  3. glm/glm-4.7               (cheap, resets daily)
+  4. minimax/MiniMax-M2.1      (cheapest, 5h reset)
+  5. if/kimi-k2-thinking       (free unlimited)
+
+Result: 5 layers of fallback = zero downtime
+Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
+```
 
 ---
 
 ## 📖 Setup Guide
 
 <details>
-<summary><b>Subscription Providers (Maximize Value)</b></summary>
+<summary><b>🔐 Subscription Providers (Maximize Value)</b></summary>
 
 ### Claude Code (Pro/Max)
 
@@ -172,8 +265,10 @@ Dashboard → Providers → Connect Claude Code
 → OAuth login → Auto token refresh
 → 5-hour + weekly quota tracking
 
-Use: cc/claude-opus-4-5-20251101
-     cc/claude-sonnet-4-5-20250929
+Models:
+  cc/claude-opus-4-5-20251101
+  cc/claude-sonnet-4-5-20250929
+  cc/claude-haiku-4-5-20251001
 ```
 
 **Pro Tip:** Use Opus for complex tasks, Sonnet for speed. 9Router tracks quota per model!
@@ -185,8 +280,9 @@ Dashboard → Providers → Connect Codex
 → OAuth login (port 1455)
 → 5-hour + weekly reset
 
-Use: cx/gpt-5.2-codex
-     cx/gpt-5.1-codex-max
+Models:
+  cx/gpt-5.2-codex
+  cx/gpt-5.1-codex-max
 ```
 
 ### Gemini CLI (FREE 180K/month!)
@@ -196,8 +292,9 @@ Dashboard → Providers → Connect Gemini CLI
 → Google OAuth
 → 180K completions/month + 1K/day
 
-Use: gc/gemini-3-flash-preview
-     gc/gemini-2.5-pro
+Models:
+  gc/gemini-3-flash-preview
+  gc/gemini-2.5-pro
 ```
 
 **Best Value:** Huge free tier! Use this before paid tiers.
@@ -209,14 +306,16 @@ Dashboard → Providers → Connect GitHub
 → OAuth via GitHub
 → Monthly reset (1st of month)
 
-Use: gh/gpt-5
-     gh/claude-4.5-sonnet
+Models:
+  gh/gpt-5
+  gh/claude-4.5-sonnet
+  gh/gemini-3-pro
 ```
 
 </details>
 
 <details>
-<summary><b>Cheap Providers (Backup)</b></summary>
+<summary><b>💰 Cheap Providers (Backup)</b></summary>
 
 ### GLM-4.7 (Daily reset, $0.6/1M)
 
@@ -234,21 +333,17 @@ Use: gh/gpt-5
 
 1. Sign up: [MiniMax](https://www.minimax.io/)
 2. Get API key
-3. Dashboard → Add API Key:
-   - Provider: `minimax`
-   - API Key: `your-key`
+3. Dashboard → Add API Key
 
 **Use:** `minimax/MiniMax-M2.1`
 
-**Pro Tip:** 5-hour rolling window. Cheapest option for long context (1M tokens)!
+**Pro Tip:** Cheapest option for long context (1M tokens)!
 
 ### Kimi K2 ($9/month flat)
 
 1. Subscribe: [Moonshot AI](https://platform.moonshot.ai/)
 2. Get API key
-3. Dashboard → Add API Key:
-   - Provider: `kimi`
-   - API Key: `your-key`
+3. Dashboard → Add API Key
 
 **Use:** `kimi/kimi-latest`
 
@@ -257,7 +352,7 @@ Use: gh/gpt-5
 </details>
 
 <details>
-<summary><b>FREE Providers (Emergency Backup)</b></summary>
+<summary><b>🆓 FREE Providers (Emergency Backup)</b></summary>
 
 ### iFlow (8 FREE models)
 
@@ -266,10 +361,12 @@ Dashboard → Connect iFlow
 → iFlow OAuth login
 → Unlimited usage
 
-Use: if/kimi-k2-thinking
-     if/qwen3-coder-plus
-     if/glm-4.7
-     if/minimax-m2
+Models:
+  if/kimi-k2-thinking
+  if/qwen3-coder-plus
+  if/glm-4.7
+  if/minimax-m2
+  if/deepseek-r1
 ```
 
 ### Qwen (3 FREE models)
@@ -279,8 +376,9 @@ Dashboard → Connect Qwen
 → Device code authorization
 → Unlimited usage
 
-Use: qw/qwen3-coder-plus
-     qw/qwen3-coder-flash
+Models:
+  qw/qwen3-coder-plus
+  qw/qwen3-coder-flash
 ```
 
 ### Kiro (Claude FREE)
@@ -290,14 +388,15 @@ Dashboard → Connect Kiro
 → AWS Builder ID or Google/GitHub
 → Unlimited usage
 
-Use: kr/claude-sonnet-4.5
-     kr/claude-haiku-4.5
+Models:
+  kr/claude-sonnet-4.5
+  kr/claude-haiku-4.5
 ```
 
 </details>
 
 <details>
-<summary><b>Combo Examples</b></summary>
+<summary><b>🎨 Create Combos</b></summary>
 
 ### Example 1: Maximize Subscription → Cheap Backup
 
@@ -319,30 +418,14 @@ Monthly cost example (100M tokens):
   Total: $10 + your subscription
 ```
 
-### Example 2: Budget-First with Free Fallback
-
-```
-Name: budget-combo
-Models:
-  1. glm/glm-4.7 (Daily quota, cheap)
-  2. minimax/MiniMax-M2.1 (5h quota, cheapest)
-  3. if/kimi-k2-thinking (FREE unlimited)
-
-Monthly cost (100M tokens):
-  70M via GLM: $42
-  20M via MiniMax: $4
-  10M via iFlow: $0
-  Total: ~$46 vs $2000 on ChatGPT API!
-```
-
-### Example 3: Free-Only (Zero Cost)
+### Example 2: Free-Only (Zero Cost)
 
 ```
 Name: free-combo
 Models:
-  1. if/kimi-k2-thinking
-  2. qw/qwen3-coder-plus
-  3. kr/claude-sonnet-4.5
+  1. gc/gemini-3-flash-preview (180K free/month)
+  2. if/kimi-k2-thinking (unlimited)
+  3. qw/qwen3-coder-plus (unlimited)
 
 Cost: $0 forever!
 ```
@@ -350,7 +433,7 @@ Cost: $0 forever!
 </details>
 
 <details>
-<summary><b>CLI Integration</b></summary>
+<summary><b>🔧 CLI Integration</b></summary>
 
 ### Cursor IDE
 
@@ -374,8 +457,6 @@ Edit `~/.claude/config.json`:
 }
 ```
 
-**Models:** `cc/claude-opus-4-5`, `glm/glm-4.7`, or combo name
-
 ### Codex CLI
 
 ```bash
@@ -384,8 +465,6 @@ export OPENAI_API_KEY="your-9router-api-key"
 
 codex "your prompt"
 ```
-
-**Models:** `cx/gpt-5.2-codex`, `glm/glm-4.7`, or combo
 
 ### Cline / Continue / RooCode
 
@@ -399,7 +478,7 @@ Model: cc/claude-opus-4-5-20251101
 </details>
 
 <details>
-<summary><b>Deployment</b></summary>
+<summary><b>🚀 Deployment</b></summary>
 
 ### VPS Deployment
 
@@ -446,140 +525,51 @@ docker run -d \
 | `DATA_DIR` | `~/.9router` | Database storage path |
 | `INITIAL_PASSWORD` | `123456` | Dashboard login password |
 | `NODE_ENV` | `development` | Set to `production` for deploy |
-| `ENABLE_REQUEST_LOGS` | `false` | Debug request/response logs |
-
-### Reverse Proxy (Nginx)
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        
-        # SSE support
-        proxy_buffering off;
-        proxy_read_timeout 86400;
-    }
-}
-```
 
 </details>
 
 ---
 
-## 💡 Cost Optimization Tips
-
-### Monthly Budget: $10-20/month
-
-```
-Strategy:
-1. Use Gemini CLI free tier (180K/month) for quick tasks
-2. Use Claude Code subscription quota fully (you already pay)
-3. Fallback to GLM ($0.6/1M) when quota out
-4. Emergency: MiniMax M2.1 ($0.20/1M) or iFlow (free)
-
-Real example (100M tokens/month):
-  60M via Gemini CLI: $0 (free tier)
-  30M via Claude Code: $0 (subscription you already have)
-  8M via GLM: $4.80
-  2M via MiniMax: $0.40
-  Total: $5.20/month + existing subscriptions
-```
-
-### Quota Reset Strategy
-
-```
-Daily routine:
-1. Morning: Fresh Claude Code quota (5h reset)
-2. Afternoon: Switch to Gemini CLI (1K/day)
-3. Evening: GLM daily quota (reset 10AM next day)
-4. Late night: MiniMax (5h rolling) or iFlow (free)
-
-→ Code 24/7 with minimal extra cost!
-```
-
-
 ## 📊 Available Models
 
 <details>
-<summary><b>Subscription Models (Maximize First)</b></summary>
+<summary><b>View all available models</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
-- `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
+- `cc/claude-opus-4-5-20251101`
+- `cc/claude-sonnet-4-5-20250929`
+- `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.2` - GPT 5.2
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
-- `cx/gpt-5.1-codex` - GPT 5.1 Codex
+- `cx/gpt-5.2-codex`
+- `cx/gpt-5.1-codex-max`
 
-**Gemini CLI (`gc/`)** - FREE 180K/month:
-- `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
-- `gc/gemini-3-pro-preview` - Gemini 3 Pro Preview
-- `gc/gemini-2.5-pro` - Gemini 2.5 Pro
-- `gc/gemini-2.5-flash` - Gemini 2.5 Flash
+**Gemini CLI (`gc/`)** - FREE:
+- `gc/gemini-3-flash-preview`
+- `gc/gemini-2.5-pro`
 
-**GitHub Copilot (`gh/`)** - Subscription:
-- `gh/gpt-5` - GPT-5
-- `gh/gpt-5.1-codex-max` - GPT-5.1 Codex Max
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
-- `gh/gemini-3-pro` - Gemini 3 Pro
+**GitHub Copilot (`gh/`)**:
+- `gh/gpt-5`
+- `gh/claude-4.5-sonnet`
 
-**Antigravity (`ag/`)** - Google account:
-- `ag/gemini-3-pro-high` - Gemini 3 Pro High
-- `ag/claude-sonnet-4-5` - Claude Sonnet 4.5
-- `ag/claude-opus-4-5-thinking` - Claude Opus 4.5
+**GLM (`glm/`)** - $0.6/1M:
+- `glm/glm-4.7`
 
-</details>
+**MiniMax (`minimax/`)** - $0.2/1M:
+- `minimax/MiniMax-M2.1`
 
-<details>
-<summary><b>Cheap Models (Backup)</b></summary>
+**iFlow (`if/`)** - FREE:
+- `if/kimi-k2-thinking`
+- `if/qwen3-coder-plus`
+- `if/deepseek-r1`
 
-**GLM (`glm/`)** - $0.6/$2.2 per 1M:
-- `glm/glm-4.7` - GLM 4.7 (daily reset 10AM)
-- `glm/glm-4.6v` - GLM 4.6V Vision
+**Qwen (`qw/`)** - FREE:
+- `qw/qwen3-coder-plus`
+- `qw/qwen3-coder-flash`
 
-**MiniMax (`minimax/`)** - $0.20/$1.00 per 1M:
-- `minimax/MiniMax-M2.1` - MiniMax M2.1 (5h reset)
-
-**Kimi (`kimi/`)** - $9/month (10M tokens):
-- `kimi/kimi-latest` - Kimi Latest
-
-**OpenRouter (`openrouter/`)** - Passthrough pricing:
-- `openrouter/auto` - Auto (Best Available)
-- Any OpenRouter model ID supported
-
-</details>
-
-<details>
-<summary><b>FREE Models (Emergency)</b></summary>
-
-**iFlow (`if/`)** - 8 models FREE:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
-- `if/kimi-k2` - Kimi K2
-- `if/qwen3-coder-plus` - Qwen3 Coder Plus
-- `if/glm-4.7` - GLM 4.7
-- `if/minimax-m2` - MiniMax M2
-- `if/deepseek-r1` - DeepSeek R1
-- `if/deepseek-v3.2-chat` - DeepSeek V3.2 Chat
-- `if/deepseek-v3.2-reasoner` - DeepSeek V3.2 Reasoner
-
-**Qwen (`qw/`)** - 3 models FREE:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-- `qw/vision-model` - Qwen3 Vision
-
-**Kiro (`kr/`)** - 2 models FREE:
-- `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
-- `kr/claude-haiku-4.5` - Claude Haiku 4.5
+**Kiro (`kr/`)** - FREE:
+- `kr/claude-sonnet-4.5`
+- `kr/claude-haiku-4.5`
 
 </details>
 
@@ -593,7 +583,7 @@ Daily routine:
 
 **Rate limiting**
 - Subscription quota out → Fallback to GLM/MiniMax
-- Add combo: `cc/claude-opus → glm/glm-4.7 → minimax/MiniMax-M2.1`
+- Add combo: `cc/claude-opus → glm/glm-4.7 → if/kimi-k2`
 
 **OAuth token expired**
 - Auto-refreshed by 9Router
@@ -644,20 +634,6 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
-### Responses API (Codex)
-
-```bash
-POST http://localhost:20128/v1/responses
-POST http://localhost:20128/codex/responses
-```
-
----
-
-## 🤝 Contributing
-
-1. Fork → Branch → Commit → Push → PR
-2. See [CONTRIBUTING.md](CONTRIBUTING.md)
-
 ---
 
 ## 📧 Support
@@ -665,6 +641,30 @@ POST http://localhost:20128/codex/responses
 - **Website**: [9router.com](https://9router.com)
 - **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
 - **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+
+---
+
+## 🌟 Stargazers
+
+[![Stargazers over time](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+
+---
+
+## 👥 Contributors
+
+Thanks to all contributors who helped make 9Router better!
+
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router)](https://github.com/decolua/9router/graphs/contributors)
+
+### How to Contribute
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
@@ -681,5 +681,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ---
 
 <div align="center">
-  <sub>Built with ❤️ for developers maximizing AI value</sub>
+  <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
