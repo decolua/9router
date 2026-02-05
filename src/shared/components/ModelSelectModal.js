@@ -101,14 +101,17 @@ export default function ModelSelectModal({
             value: fullModel,
           }));
         
-        groups[providerId] = {
-          name: displayName,
-          alias: matchedNode?.prefix || providerId,
-          color: providerInfo.color,
-          models: nodeModels,
-          isCustom: true,
-          hasModels: nodeModels.length > 0,
-        };
+        // Only add to groups if there are models (consistent with other provider types)
+        if (nodeModels.length > 0) {
+          groups[providerId] = {
+            name: displayName,
+            alias: matchedNode?.prefix || providerId,
+            color: providerInfo.color,
+            models: nodeModels,
+            isCustom: true,
+            hasModels: true,
+          };
+        }
       } else {
         const models = getModelsByProviderId(providerId);
         if (models.length > 0) {
@@ -246,32 +249,26 @@ export default function ModelSelectModal({
               </span>
             </div>
 
-            {group.isCustom && !group.hasModels ? (
-              <div className="text-xs text-text-muted px-2 py-1">
-                No models configured. Add models in provider settings.
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {group.models.map((model) => {
-                  const isSelected = selectedModel === model.value;
-                  return (
-                    <button
-                      key={model.id}
-                      onClick={() => handleSelect(model)}
-                      className={`
-                        px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                        ${isSelected 
-                          ? "bg-primary text-white border-primary" 
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                        }
-                      `}
-                    >
-                      {model.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-1.5">
+              {group.models.map((model) => {
+                const isSelected = selectedModel === model.value;
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => handleSelect(model)}
+                    className={`
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
+                      ${isSelected 
+                        ? "bg-primary text-white border-primary" 
+                        : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      }
+                    `}
+                  >
+                    {model.name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ))}
 
