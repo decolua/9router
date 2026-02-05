@@ -43,16 +43,16 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    { id: "gemini-3-pro-low", name: "Gemini 3 Pro Low" },
+    { id: "claude-opus-4-5-thinking", name: "Claude Opus 4.5 Thinking" },
+    { id: "claude-opus-4-5", name: "Claude Opus 4.5" },
+    { id: "claude-sonnet-4-5-thinking", name: "Claude Sonnet 4.5 Thinking" },
+    { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
     { id: "gemini-3-pro-high", name: "Gemini 3 Pro High" },
+    { id: "gemini-3-pro-low", name: "Gemini 3 Pro Low" },
     { id: "gemini-3-flash", name: "Gemini 3 Flash" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
-    { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 " },
-    { id: "claude-sonnet-4-5-thinking", name: "Claude Sonnet 4.5 Thinking" },
-    { id: "claude-opus-4-5-thinking", name: "Claude Opus 4.5" },
   ],
-  gh: [  // GitHub Copilot
-    { id: "gpt-5", name: "GPT-5" },
+  gh: [  // GitHub Copilot - always uses OpenAI format (Copilot API is OpenAI-compatible)
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
     // { id: "gpt-5.1", name: "GPT-5.1" },
     // { id: "gpt-5.2", name: "GPT-5.2" },
@@ -147,9 +147,12 @@ export function findModelName(aliasOrId, modelId) {
 
 export function getModelTargetFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  if (!models) return null;
-  const found = models.find(m => m.id === modelId);
-  return found?.targetFormat || null;
+  if (models) {
+    const found = models.find(m => m.id === modelId);
+    if (found?.targetFormat) return found.targetFormat;
+  }
+  
+  return null;
 }
 
 // Provider ID to alias mapping

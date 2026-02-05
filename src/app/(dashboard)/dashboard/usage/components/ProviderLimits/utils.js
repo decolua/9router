@@ -1,7 +1,9 @@
+import { getModelsByProviderId } from "open-sse/config/providerModels.js";
+
 /**
- * Format ISO date string to countdown format
+ * Format ISO date string to countdown format (inspired by vscode-antigravity-cockpit)
  * @param {string|Date} date - ISO date string or Date object
- * @returns {string} Formatted countdown (e.g., "5d 12h", "2h 30m", "15m") or "-"
+ * @returns {string} Formatted countdown (e.g., "2d 5h 30m", "4h 40m", "15m") or "-"
  */
 export function formatResetTime(date) {
   if (!date) return "-";
@@ -13,23 +15,25 @@ export function formatResetTime(date) {
 
     if (diffMs <= 0) return "-";
 
-    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+    const totalMinutes = Math.ceil(diffMs / (1000 * 60));
+    
+    // < 60 minutes: show only minutes
+    if (totalMinutes < 60) {
+      return `${totalMinutes}m`;
+    }
+    
     const totalHours = Math.floor(totalMinutes / 60);
-    const totalDays = Math.floor(totalHours / 24);
-
-    const days = totalDays;
-    const hours = totalHours % 24;
-    const minutes = totalMinutes % 60;
-
-    if (days > 0) {
-      return `${days}d ${hours}h`;
+    const remainingMinutes = totalMinutes % 60;
+    
+    // < 24 hours: show hours and minutes
+    if (totalHours < 24) {
+      return `${totalHours}h ${remainingMinutes}m`;
     }
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-
-    return `${minutes}m`;
+    
+    // >= 24 hours: show days, hours, and minutes
+    const days = Math.floor(totalHours / 24);
+    const remainingHours = totalHours % 24;
+    return `${days}d ${remainingHours}h ${remainingMinutes}m`;
   } catch (error) {
     return "-";
   }
@@ -107,12 +111,14 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
-          Object.entries(data.quotas).forEach(([modelName, quota]) => {
+          Object.entries(data.quotas).forEach(([modelKey, quota]) => {
             normalizedQuotas.push({
-              name: modelName,
+              name: quota.displayName || modelKey,
+              modelKey: modelKey, // Keep modelKey for sorting
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
             });
           });
         }
@@ -182,6 +188,21 @@ export function parseQuotaData(provider, data) {
   } catch (error) {
     console.error(`Error parsing quota data for ${provider}:`, error);
     return [];
+  }
+
+  // Sort quotas according to PROVIDER_MODELS order
+  const modelOrder = getModelsByProviderId(provider);
+  if (modelOrder.length > 0) {
+    const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
+    
+    normalizedQuotas.sort((a, b) => {
+      // Use modelKey for antigravity, otherwise use name
+      const keyA = a.modelKey || a.name;
+      const keyB = b.modelKey || b.name;
+      const orderA = orderMap.get(keyA) ?? 999;
+      const orderB = orderMap.get(keyB) ?? 999;
+      return orderA - orderB;
+    });
   }
 
   return normalizedQuotas;

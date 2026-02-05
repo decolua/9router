@@ -13,7 +13,7 @@ export default function UsagePage() {
         options={[
           { value: "overview", label: "Overview" },
           { value: "logs", label: "Logger" },
-          // { value: "limits", label: "Limits" },
+          { value: "limits", label: "Limits" },
         ]}
         value={activeTab}
         onChange={setActiveTab}

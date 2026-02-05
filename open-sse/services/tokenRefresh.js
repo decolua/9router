@@ -424,9 +424,11 @@ export async function refreshCopilotToken(githubAccessToken, log) {
   try {
     const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
       headers: {
-        "Authorization": `Bearer ${githubAccessToken}`,
-        "User-Agent": "GitHub-Copilot/1.0",
-        "Accept": "*/*"
+        "Authorization": `token ${githubAccessToken}`,
+        "User-Agent": "GithubCopilot/1.0",
+        "Editor-Version": "vscode/1.100.0",
+        "Editor-Plugin-Version": "copilot/1.300.0",
+        "Accept": "application/json"
       }
     });
 

@@ -53,9 +53,17 @@ const FIELD = {
   MSG_CONTENT: 1,
   MSG_ROLE: 2,
   MSG_ID: 13,
+  MSG_TOOL_RESULTS: 18,
   MSG_IS_AGENTIC: 29,
   MSG_UNIFIED_MODE: 47,
   MSG_SUPPORTED_TOOLS: 51,
+
+  // ConversationMessage.ToolResult
+  TOOL_RESULT_CALL_ID: 1,
+  TOOL_RESULT_NAME: 2,
+  TOOL_RESULT_INDEX: 3,
+  TOOL_RESULT_RAW_ARGS: 5,
+  TOOL_RESULT_RESULT: 8,
 
   // Model
   MODEL_NAME: 1,
@@ -101,6 +109,7 @@ const FIELD = {
   TOOL_ID: 3,
   TOOL_NAME: 9,
   TOOL_RAW_ARGS: 10,
+  TOOL_IS_LAST: 11,
   TOOL_MCP_PARAMS: 27,
 
   // MCPParams
@@ -166,11 +175,28 @@ function concatArrays(...arrays) {
 
 // ==================== MESSAGE ENCODING ====================
 
-export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false) {
+export function encodeToolResult(toolResult) {
+  const toolCallId = toolResult.tool_call_id || "";
+  const toolName = toolResult.name || "";
+  const toolIndex = toolResult.index || 0;
+  const rawArgs = toolResult.raw_args || "{}";
+  
+  return concatArrays(
+    encodeField(FIELD.TOOL_RESULT_CALL_ID, WIRE_TYPE.LEN, toolCallId),
+    encodeField(FIELD.TOOL_RESULT_NAME, WIRE_TYPE.LEN, toolName),
+    encodeField(FIELD.TOOL_RESULT_INDEX, WIRE_TYPE.VARINT, toolIndex),
+    encodeField(FIELD.TOOL_RESULT_RAW_ARGS, WIRE_TYPE.LEN, rawArgs)
+  );
+}
+
+export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = []) {
   return concatArrays(
     encodeField(FIELD.MSG_CONTENT, WIRE_TYPE.LEN, content),
     encodeField(FIELD.MSG_ROLE, WIRE_TYPE.VARINT, role),
     encodeField(FIELD.MSG_ID, WIRE_TYPE.LEN, messageId),
+    ...(toolResults.length > 0 ? toolResults.map(tr => 
+      encodeField(FIELD.MSG_TOOL_RESULTS, WIRE_TYPE.LEN, encodeToolResult(tr))
+    ) : []),
     encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
     encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
     ...(isLast && hasTools ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : [])
@@ -254,7 +280,8 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
       role,
       messageId: msgId,
       isLast,
-      hasTools
+      hasTools,
+      toolResults: msg.tool_results || []
     });
 
     messageIds.push({ messageId: msgId, role });
@@ -270,7 +297,7 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     // Messages
     ...formattedMessages.map(fm => 
       encodeField(FIELD.MESSAGES, WIRE_TYPE.LEN, 
-        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools)
+        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools, fm.toolResults)
       )
     ),
     
@@ -439,6 +466,7 @@ function extractToolCall(toolCallData) {
   let toolCallId = "";
   let toolName = "";
   let rawArgs = "";
+  let isLast = false;
 
   // Extract tool call ID
   if (toolCall.has(FIELD.TOOL_ID)) {
@@ -449,6 +477,11 @@ function extractToolCall(toolCallData) {
   // Extract tool name
   if (toolCall.has(FIELD.TOOL_NAME)) {
     toolName = new TextDecoder().decode(toolCall.get(FIELD.TOOL_NAME)[0].value);
+  }
+
+  // Extract is_last flag
+  if (toolCall.has(FIELD.TOOL_IS_LAST)) {
+    isLast = toolCall.get(FIELD.TOOL_IS_LAST)[0].value !== 0;
   }
 
   // Extract MCP params - nested real tool info
@@ -484,7 +517,8 @@ function extractToolCall(toolCallData) {
       function: {
         name: toolName,
         arguments: rawArgs || "{}"
-      }
+      },
+      isLast
     };
   }
 

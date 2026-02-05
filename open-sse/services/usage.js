@@ -61,15 +61,23 @@ export async function getUsageForProvider(connection) {
 
 /**
  * GitHub Copilot Usage
+ * Uses GitHub accessToken (not copilotToken) to call copilot_internal/user API
  */
 async function getGitHubUsage(accessToken, providerSpecificData) {
   try {
+    if (!accessToken) {
+      throw new Error("No GitHub access token available. Please re-authorize the connection.");
+    }
+    
+    // copilot_internal/user API requires GitHub OAuth token, not copilotToken
     const response = await fetch("https://api.github.com/copilot_internal/user", {
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        "Authorization": `token ${accessToken}`,
         "Accept": "application/json",
         "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
         "User-Agent": GITHUB_CONFIG.userAgent,
+        "Editor-Version": "vscode/1.100.0",
+        "Editor-Plugin-Version": "copilot-chat/0.26.7",
       },
     });
 
@@ -191,20 +199,48 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     const data = await response.json();
     const quotas = {};
     
-    // Parse model quotas
+    // Parse model quotas (inspired by vscode-antigravity-cockpit)
     if (data.models) {
-      for (const [name, info] of Object.entries(data.models)) {
-        // Only include gemini and claude models
-        if (!name.includes("gemini") && !name.includes("claude")) continue;
-        
-        if (info.quotaInfo) {
-          const percentage = (info.quotaInfo.remainingFraction || 0) * 100;
-          quotas[name] = {
-            remaining: percentage,
-            resetTime: info.quotaInfo.resetTime || "",
-            unlimited: false,
-          };
+      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
+      const importantModels = [
+        'claude-opus-4-5-thinking',
+        'claude-opus-4-5',
+        'claude-sonnet-4-5-thinking',
+        'claude-sonnet-4-5',
+        'gemini-3-pro-high',
+        'gemini-3-pro-low',
+        'gemini-3-flash',
+        'gemini-2.5-flash',
+      ];
+      
+      for (const [modelKey, info] of Object.entries(data.models)) {
+        // Skip models without quota info
+        if (!info.quotaInfo) {
+          continue;
         }
+        
+        // Skip internal models and non-important models
+        if (info.isInternal || !importantModels.includes(modelKey)) {
+          continue;
+        }
+        
+        const remainingFraction = info.quotaInfo.remainingFraction || 0;
+        const remainingPercentage = remainingFraction * 100;
+        
+        // Convert percentage to used/total for UI compatibility
+        const total = 1000; // Normalized base
+        const remaining = Math.round(total * remainingFraction);
+        const used = total - remaining;
+        
+        // Use modelKey as key (matches PROVIDER_MODELS id)
+        quotas[modelKey] = {
+          used,
+          total,
+          resetAt: info.quotaInfo.resetTime || null,
+          remainingPercentage,
+          unlimited: false,
+          displayName: info.displayName || modelKey,
+        };
       }
     }
 
