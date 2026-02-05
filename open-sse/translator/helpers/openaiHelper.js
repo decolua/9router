@@ -75,6 +75,53 @@ export function filterToOpenAIFormat(body) {
     delete body.tools;
   }
 
+  // Normalize tools to OpenAI format (from Claude, Gemini, etc.)
+  if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
+    body.tools = body.tools.map(tool => {
+      // Already OpenAI format
+      if (tool.type === "function" && tool.function) return tool;
+      
+      // Claude format: {name, description, input_schema}
+      if (tool.name && (tool.input_schema || tool.description)) {
+        return {
+          type: "function",
+          function: {
+            name: tool.name,
+            description: tool.description || "",
+            parameters: tool.input_schema || { type: "object", properties: {} }
+          }
+        };
+      }
+      
+      // Gemini format: {functionDeclarations: [{name, description, parameters}]}
+      if (tool.functionDeclarations && Array.isArray(tool.functionDeclarations)) {
+        return tool.functionDeclarations.map(fn => ({
+          type: "function",
+          function: {
+            name: fn.name,
+            description: fn.description || "",
+            parameters: fn.parameters || { type: "object", properties: {} }
+          }
+        }));
+      }
+      
+      return tool;
+    }).flat();
+  }
+
+  // Normalize tool_choice to OpenAI format
+  if (body.tool_choice && typeof body.tool_choice === "object") {
+    const choice = body.tool_choice;
+    // Claude format: {type: "auto|any|tool", name?: "..."}
+    if (choice.type === "auto") {
+      body.tool_choice = "auto";
+    } else if (choice.type === "any") {
+      body.tool_choice = "required";
+    } else if (choice.type === "tool" && choice.name) {
+      body.tool_choice = { type: "function", function: { name: choice.name } };
+    }
+  }
+
   return body;
 }
 

@@ -37,9 +37,15 @@ export async function getUsageForProvider(connection) {
  */
 async function getGitHubUsage(accessToken, providerSpecificData) {
   try {
+    // Use copilotToken for copilot_internal API, not GitHub OAuth accessToken
+    const copilotToken = providerSpecificData?.copilotToken;
+    if (!copilotToken) {
+      throw new Error("Copilot token not found. Please refresh token first.");
+    }
+
     const response = await fetch("https://api.github.com/copilot_internal/user", {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${copilotToken}`,
         Accept: "application/json",
         "X-GitHub-Api-Version": GITHUB_CONFIG.apiVersion,
         "User-Agent": GITHUB_CONFIG.userAgent,

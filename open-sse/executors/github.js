@@ -31,7 +31,13 @@ export class GithubExecutor extends BaseExecutor {
   async refreshCopilotToken(githubAccessToken, log) {
     try {
       const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
-        headers: { "Authorization": `Bearer ${githubAccessToken}`, "User-Agent": "GitHub-Copilot/1.0", "Accept": "*/*" }
+        headers: {
+          "Authorization": `token ${githubAccessToken}`,
+          "User-Agent": "GithubCopilot/1.0",
+          "Editor-Version": "vscode/1.100.0",
+          "Editor-Plugin-Version": "copilot/1.300.0",
+          "Accept": "application/json"
+        }
       });
       if (!response.ok) return null;
       const data = await response.json();
@@ -87,8 +93,18 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   needsRefresh(credentials) {
+    // Always refresh if no copilotToken
+    if (!credentials.copilotToken) return true;
+    
     if (credentials.copilotTokenExpiresAt) {
-      if (new Date(credentials.copilotTokenExpiresAt).getTime() - Date.now() < 5 * 60 * 1000) return true;
+      // Handle both Unix timestamp (seconds) and ISO string
+      let expiresAtMs = credentials.copilotTokenExpiresAt;
+      if (typeof expiresAtMs === "number" && expiresAtMs < 1e12) {
+        expiresAtMs = expiresAtMs * 1000; // Convert seconds to ms
+      } else if (typeof expiresAtMs === "string") {
+        expiresAtMs = new Date(expiresAtMs).getTime();
+      }
+      if (expiresAtMs - Date.now() < 5 * 60 * 1000) return true;
     }
     return super.needsRefresh(credentials);
   }

@@ -2,69 +2,12 @@ import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 
-// Re-export COLORS for backward compatibility
-export { COLORS };
+export { COLORS, formatSSE };
 
-// Singleton TextEncoder/Decoder for performance (reuse across all streams)
 const sharedDecoder = new TextDecoder();
 const sharedEncoder = new TextEncoder();
-
-// Parse SSE data line (optimized - reduce string operations)
-function parseSSELine(line) {
-  if (!line || line.charCodeAt(0) !== 100) return null; // 'd' = 100
-
-  const data = line.slice(5).trim();
-  if (data === "[DONE]") return { done: true };
-
-  try {
-    return JSON.parse(data);
-  } catch (error) {
-    // Log parse errors for debugging incomplete chunks
-    if (data.length > 0 && data.length < 1000) {
-      console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
-    }
-    return null;
-  }
-}
-
-/**
- * Format output as SSE
- * @param {object} data - Data to format
- * @param {string} sourceFormat - Target format for client
- * @returns {string} SSE formatted string
- */
-export function formatSSE(data, sourceFormat) {
-  // Handle null/undefined
-  if (data === null || data === undefined) {
-    return "data: null\n\n";
-  }
-
-  if (data && data.done) return "data: [DONE]\n\n";
-
-  // OpenAI Responses API format: has event field
-  if (data && data.event && data.data) {
-    return `event: ${data.event}\ndata: ${JSON.stringify(data.data)}\n\n`;
-  }
-
-  // Claude format: include event prefix
-  if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
-    // If perf_metrics is null, remove it to avoid serialization issues
-    if (data.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-      const { perf_metrics, ...usageWithoutPerf } = data.usage;
-      data = { ...data, usage: usageWithoutPerf };
-    }
-    return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
-  }
-
-  // If perf_metrics is null, remove it to avoid serialization issues
-  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-    const { perf_metrics, ...usageWithoutPerf } = data.usage;
-    data = { ...data, usage: usageWithoutPerf };
-  }
-
-  return `data: ${JSON.stringify(data)}\n\n`;
-}
 
 /**
  * Stream modes
@@ -129,37 +72,42 @@ export function createSSEStream(options = {}) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
-              // Track content length for estimation
-              const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning_content;
+              const idFixed = fixInvalidId(parsed);
+
+              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+                continue;
+              }
+
+              const delta = parsed.choices?.[0]?.delta;
+              const content = delta?.content || delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
               }
 
-              // Extract usage from chunk
               const extracted = extractUsage(parsed);
               if (extracted) {
-                usage = extracted; // Keep original usage for logging
+                usage = extracted;
               }
 
-              // Inject estimated usage into final chunk (has finish_reason but no valid usage)
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI); // Filter + already has buffer
+                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
-                // Add buffer and filter usage for client (but keep original for logging)
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
+                output = `data: ${JSON.stringify(parsed)}\n`;
+                injectedUsage = true;
+              } else if (idFixed) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
             } catch { }
           }
 
-          // Normalize if not already injected
           if (!injectedUsage) {
             if (line.startsWith("data:") && !line.startsWith("data: ")) {
               output = "data: " + line.slice(5) + "\n";
@@ -231,6 +179,11 @@ export function createSSEStream(options = {}) {
 
         if (translated?.length > 0) {
           for (const item of translated) {
+            // Filter empty chunks
+            if (!hasValuableContent(item, sourceFormat)) {
+              continue; // Skip this empty chunk
+            }
+
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {

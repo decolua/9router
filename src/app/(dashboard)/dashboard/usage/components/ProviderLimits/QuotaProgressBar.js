@@ -1,59 +1,74 @@
 "use client";
 
 import { cn } from "@/shared/utils/cn";
-
-// Helper function to calculate time until reset
-const getResetTimeText = (resetTime) => {
-  if (!resetTime) return null;
-  
-  const now = new Date();
-  const reset = new Date(resetTime);
-  const diffMs = reset - now;
-  
-  if (diffMs <= 0) return "Reset now";
-  
-  const hours = Math.floor(diffMs / (1000 * 60 * 60));
-  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  
-  if (hours > 0) {
-    return `Reset in ${hours}h`;
-  }
-  return `Reset in ${minutes}m`;
-};
+import { formatResetTime } from "./utils";
 
 // Calculate color based on remaining percentage
-const getColorClasses = (percentage) => {
-  if (percentage === 0) {
+const getColorClasses = (remainingPercentage) => {
+  if (remainingPercentage === 0) {
     return {
       text: "text-gray-400",
       bg: "bg-gray-400",
-      bgLight: "bg-gray-400/10"
+      bgLight: "bg-gray-400/10",
+      emoji: "⚫"
     };
   }
   
-  const remaining = 100 - percentage;
-  
-  if (remaining > 70) {
+  if (remainingPercentage > 70) {
     return {
       text: "text-green-500",
       bg: "bg-green-500",
-      bgLight: "bg-green-500/10"
+      bgLight: "bg-green-500/10",
+      emoji: "🟢"
     };
   }
   
-  if (remaining >= 30) {
+  if (remainingPercentage >= 30) {
     return {
       text: "text-yellow-500",
       bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10"
+      bgLight: "bg-yellow-500/10",
+      emoji: "🟡"
     };
   }
   
   return {
     text: "text-red-500",
     bg: "bg-red-500",
-    bgLight: "bg-red-500/10"
+    bgLight: "bg-red-500/10",
+    emoji: "🔴"
   };
+};
+
+// Format reset time display
+const formatResetTimeDisplay = (resetTime) => {
+  if (!resetTime) return null;
+  
+  try {
+    const resetDate = new Date(resetTime);
+    const now = new Date();
+    const isToday = resetDate.toDateString() === now.toDateString();
+    const isTomorrow = resetDate.toDateString() === new Date(now.getTime() + 86400000).toDateString();
+    
+    const timeStr = resetDate.toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+    
+    if (isToday) return `Today, ${timeStr}`;
+    if (isTomorrow) return `Tomorrow, ${timeStr}`;
+    
+    return resetDate.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } catch {
+    return null;
+  }
 };
 
 export default function QuotaProgressBar({
@@ -65,29 +80,24 @@ export default function QuotaProgressBar({
   resetTime = null
 }) {
   const colors = getColorClasses(percentage);
-  const resetText = getResetTimeText(resetTime);
+  const countdown = formatResetTime(resetTime);
+  const resetDisplay = formatResetTimeDisplay(resetTime);
+  
+  // percentage is already remaining percentage (from ProviderLimitCard)
+  const remaining = percentage;
   
   return (
     <div className="space-y-2">
-      {/* Label and usage info */}
+      {/* Label and percentage */}
       <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-text-primary dark:text-white">
+        <span className="font-semibold text-text-primary">
           {label}
         </span>
-        <div className="flex items-center gap-2 text-text-muted">
-          {unlimited ? (
-            <span>Unlimited</span>
-          ) : (
-            <span>
-              {used.toLocaleString()}/{total.toLocaleString()} ({percentage}%)
-            </span>
-          )}
-          {resetText && (
-            <>
-              <span>•</span>
-              <span className="text-xs">{resetText}</span>
-            </>
-          )}
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs">{colors.emoji}</span>
+          <span className={cn("font-medium", colors.text)}>
+            {remaining}%
+          </span>
         </div>
       </div>
 
@@ -96,8 +106,28 @@ export default function QuotaProgressBar({
         <div className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}>
           <div
             className={cn("h-full transition-all duration-300", colors.bg)}
-            style={{ width: `${Math.min(percentage, 100)}%` }}
+            style={{ width: `${Math.min(remaining, 100)}%` }}
           />
+        </div>
+      )}
+
+      {/* Usage details and countdown */}
+      <div className="flex items-center justify-between text-xs text-text-muted">
+        <span>
+          {used.toLocaleString()} / {total.toLocaleString()} requests
+        </span>
+        {countdown !== "-" && (
+          <div className="flex items-center gap-1">
+            <span>•</span>
+            <span className="font-medium">Reset in {countdown}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Reset time display */}
+      {resetDisplay && (
+        <div className="text-xs text-text-muted/70">
+          Reset at {resetDisplay}
         </div>
       )}
     </div>

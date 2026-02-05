@@ -6,15 +6,18 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 
 /**
- * Convert OpenAI messages to Cursor simple format
+ * Convert OpenAI messages to Cursor format with native tool_results support
  * - system → user with [System Instructions] prefix
- * - tool → user with [Tool Result: name] prefix
- * - assistant with tool_calls → append [Calling tool: name with args: {...}] to content
+ * - tool → accumulate into tool_results array for next user/assistant message
+ * - assistant with tool_calls → keep tool_calls structure (Cursor supports it natively)
  */
 function convertMessages(messages) {
   const result = [];
+  let pendingToolResults = [];
 
-  for (const msg of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
     if (msg.role === "system") {
       result.push({
         role: "user",
@@ -36,9 +39,14 @@ function convertMessages(messages) {
       }
       
       const toolName = msg.name || "tool";
-      result.push({
-        role: "user",
-        content: `[Tool Result: ${toolName}]\n${toolContent}`
+      const toolCallId = msg.tool_call_id || "";
+      
+      // Accumulate tool result
+      pendingToolResults.push({
+        tool_call_id: toolCallId,
+        name: toolName,
+        index: pendingToolResults.length,
+        raw_args: toolContent
       });
       continue;
     }
@@ -56,23 +64,34 @@ function convertMessages(messages) {
         }
       }
 
+      // Keep tool_calls structure for assistant messages
       if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+        const assistantMsg = { role: "assistant" };
         if (content) {
-          result.push({ role: "assistant", content });
+          assistantMsg.content = content;
+        }
+        assistantMsg.tool_calls = msg.tool_calls;
+        
+        // Attach pending tool results to assistant message with tool_calls
+        if (pendingToolResults.length > 0) {
+          assistantMsg.tool_results = pendingToolResults;
+          pendingToolResults = [];
         }
         
-        const toolCallsText = msg.tool_calls.map(tc => {
-          const funcName = tc.function?.name || "unknown";
-          const funcArgs = tc.function?.arguments || "{}";
-          return `[Calling tool: ${funcName} with args: ${funcArgs}]`;
-        }).join("\n");
+        result.push(assistantMsg);
+      } else if (content || pendingToolResults.length > 0) {
+        const msgObj = { 
+          role: msg.role, 
+          content: content || ""
+        };
         
-        result.push({
-          role: "assistant",
-          content: toolCallsText
-        });
-      } else if (content) {
-        result.push({ role: msg.role, content });
+        // Attach pending tool results to this message
+        if (pendingToolResults.length > 0) {
+          msgObj.tool_results = pendingToolResults;
+          pendingToolResults = [];
+        }
+        
+        result.push(msgObj);
       }
     }
   }
