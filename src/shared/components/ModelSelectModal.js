@@ -87,23 +87,23 @@ export default function ModelSelectModal({
           };
         }
       } else if (isCustomProvider) {
-        // Match provider node to get custom name and prefix
+        // Match provider node to get custom name
         const matchedNode = providerNodes.find(node => node.id === providerId);
-        const nodePrefix = matchedNode?.prefix || providerId;
         const displayName = matchedNode?.name || providerInfo.name;
         
-        // Get models from modelAliases using the node's prefix
+        // Get models from modelAliases using providerId (not prefix)
+        // modelAliases format: { alias: "providerId/modelId" }
         const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${nodePrefix}/`))
+          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${nodePrefix}/`, ""),
+            id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: fullModel,
           }));
         
         groups[providerId] = {
           name: displayName,
-          alias: nodePrefix,
+          alias: matchedNode?.prefix || providerId,
           color: providerInfo.color,
           models: nodeModels,
           isCustom: true,
