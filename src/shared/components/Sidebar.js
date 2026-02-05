@@ -18,13 +18,9 @@ const navItems = [
 ];
 
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
-const debugItems = [
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
-];
+const debugItems = [{ href: "/dashboard/translator", label: "Translator", icon: "translate" }];
 
-const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
-];
+const systemItems = [{ href: "/dashboard/profile", label: "Settings", icon: "settings" }];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
@@ -36,8 +32,8 @@ export default function Sidebar({ onClose }) {
   // Check if debug mode is enabled
   useEffect(() => {
     fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => setShowDebug(data?.enableRequestLogs === true))
+      .then((res) => res.json())
+      .then((data) => setShowDebug(data?.enableRequestLogs === true))
       .catch(() => {});
   }, []);
 
@@ -180,7 +176,8 @@ export default function Sidebar({ onClose }) {
             </div>
             <div className="flex flex-col">
               <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
+                Service is running in terminal. You can close this web page. Shutdown will stop the
+                service.
               </span>
             </div>
           </div>

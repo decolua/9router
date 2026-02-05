@@ -28,7 +28,7 @@ export default function ProviderLimits() {
     try {
       const response = await fetch("/api/providers/client");
       if (!response.ok) throw new Error("Failed to fetch connections");
-      
+
       const data = await response.json();
       const connectionList = data.connections || [];
       setConnections(connectionList);
@@ -54,10 +54,10 @@ export default function ProviderLimits() {
 
       const data = await response.json();
       console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
-      
+
       // Parse quota data using provider-specific parser
       const parsedQuotas = parseQuotaData(provider, data);
-      
+
       setQuotaData((prev) => ({
         ...prev,
         [connectionId]: {
@@ -68,7 +68,10 @@ export default function ProviderLimits() {
         },
       }));
     } catch (error) {
-      console.error(`[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`, error);
+      console.error(
+        `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
+        error
+      );
       setErrors((prev) => ({
         ...prev,
         [connectionId]: error.message || "Failed to fetch quota",
@@ -96,11 +99,9 @@ export default function ProviderLimits() {
 
     try {
       const conns = await fetchConnections();
-      
+
       // Fetch quota for all connections (filter by provider support in parseQuotaData)
-      await Promise.all(
-        conns.map((conn) => fetchQuota(conn.id, conn.provider))
-      );
+      await Promise.all(conns.map((conn) => fetchQuota(conn.id, conn.provider)));
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -119,7 +120,7 @@ export default function ProviderLimits() {
     };
 
     initializeData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -208,16 +209,16 @@ export default function ProviderLimits() {
   const activeWithLimits = Object.values(quotaData).filter(
     (data) => data?.quotas?.length > 0
   ).length;
-  
+
   // Count low quotas (remaining < 30%)
   const lowQuotasCount = Object.values(quotaData).reduce((count, data) => {
     if (!data?.quotas) return count;
-    
+
     const hasLowQuota = data.quotas.some((quota) => {
       const percentage = calculatePercentage(quota.used, quota.total);
       return percentage < 30 && quota.total > 0;
     });
-    
+
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
@@ -243,9 +244,7 @@ export default function ProviderLimits() {
           <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
             cloud_off
           </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
-            No Providers Connected
-          </h3>
+          <h3 className="mt-4 text-lg font-semibold text-text-primary">No Providers Connected</h3>
           <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
             Connect to providers with OAuth to track your API quota limits and usage.
           </p>
@@ -259,12 +258,8 @@ export default function ProviderLimits() {
       {/* Header Controls */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">
-            Provider Limits
-          </h2>
-          <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
-          </span>
+          <h2 className="text-xl font-semibold text-text-primary">Provider Limits</h2>
+          <span className="text-sm text-text-muted">Last updated: {formatLastUpdated()}</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -282,9 +277,7 @@ export default function ProviderLimits() {
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
             <span className="text-sm text-text-primary">Auto-refresh</span>
-            {autoRefresh && (
-              <span className="text-xs text-text-muted">({countdown}s)</span>
-            )}
+            {autoRefresh && <span className="text-xs text-text-muted">({countdown}s)</span>}
           </button>
 
           {/* Refresh all button */}

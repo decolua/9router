@@ -2,7 +2,13 @@
 
 // Valid OpenAI content block types
 export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
-export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_calls", "tool_result"];
+export const VALID_OPENAI_MESSAGE_TYPES = [
+  "text",
+  "image_url",
+  "image",
+  "tool_calls",
+  "tool_result",
+];
 
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks

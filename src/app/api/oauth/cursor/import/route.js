@@ -17,26 +17,17 @@ export async function POST(request) {
     const { accessToken, machineId } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
-      return NextResponse.json(
-        { error: "Access token is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Access token is required" }, { status: 400 });
     }
 
     if (!machineId || typeof machineId !== "string") {
-      return NextResponse.json(
-        { error: "Machine ID is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Machine ID is required" }, { status: 400 });
     }
 
     const cursorService = new CursorService();
 
     // Validate token by making API call
-    const tokenData = await cursorService.validateImportToken(
-      accessToken.trim(),
-      machineId.trim()
-    );
+    const tokenData = await cursorService.validateImportToken(accessToken.trim(), machineId.trim());
 
     // Try to extract user info from token
     const userInfo = cursorService.extractUserInfo(tokenData.accessToken);

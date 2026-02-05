@@ -14,7 +14,8 @@ export default function Footer() {
               <h3 className="text-white text-lg font-bold">9Router</h3>
             </div>
             <p className="text-gray-500 text-sm max-w-xs mb-6">
-              The unified endpoint for AI generation. Connect, route, and manage your AI providers with ease.
+              The unified endpoint for AI generation. Connect, route, and manage your AI providers
+              with ease.
             </p>
             <div className="flex gap-4">
               <a
@@ -31,10 +32,16 @@ export default function Footer() {
           {/* Product */}
           <div className="flex flex-col gap-4">
             <h4 className="font-bold text-white">Product</h4>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="#features">
+            <a
+              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
+              href="#features"
+            >
               Features
             </a>
-            <a className="text-gray-400 hover:text-[#f97815] text-sm transition-colors" href="/dashboard">
+            <a
+              className="text-gray-400 hover:text-[#f97815] text-sm transition-colors"
+              href="/dashboard"
+            >
               Dashboard
             </a>
             <a

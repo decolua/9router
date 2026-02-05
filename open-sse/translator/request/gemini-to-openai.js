@@ -108,7 +108,9 @@ function convertGeminiContent(content) {
       return {
         role: "tool",
         tool_call_id: part.functionResponse.id || part.functionResponse.name,
-        content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {}),
+        content: JSON.stringify(
+          part.functionResponse.response?.result || part.functionResponse.response || {}
+        ),
       };
     }
   }

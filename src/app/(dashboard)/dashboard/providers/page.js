@@ -5,7 +5,10 @@ import Image from "next/image";
 import PropTypes from "prop-types";
 import { Card, CardSkeleton, Badge, Button, Input, Modal, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
+import {
+  OPENAI_COMPATIBLE_PREFIX,
+  ANTHROPIC_COMPATIBLE_PREFIX,
+} from "@/shared/constants/providers";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 
@@ -62,21 +65,22 @@ export default function ProvidersPage() {
 
   const getProviderStats = (providerId, authType) => {
     const providerConnections = connections.filter(
-      c => c.provider === providerId && c.authType === authType
+      (c) => c.provider === providerId && c.authType === authType
     );
 
     // Helper: check if connection is effectively active (cooldown expired)
     const getEffectiveStatus = (conn) => {
-      const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
-      return (conn.testStatus === "unavailable" && !isCooldown) ? "active" : conn.testStatus;
+      const isCooldown =
+        conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
+      return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
     };
 
-    const connected = providerConnections.filter(c => {
+    const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return status === "active" || status === "success";
     }).length;
 
-    const errorConns = providerConnections.filter(c => {
+    const errorConns = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return status === "error" || status === "expired" || status === "unavailable";
     });
@@ -85,8 +89,8 @@ export default function ProvidersPage() {
     const total = providerConnections.length;
 
     // Get latest error info
-    const latestError = errorConns.sort((a, b) =>
-      new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0)
+    const latestError = errorConns.sort(
+      (a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0)
     )[0];
     const errorCode = latestError ? getErrorCode(latestError.lastError) : null;
     const errorTime = latestError?.lastErrorAt ? getRelativeTime(latestError.lastErrorAt) : null;
@@ -207,7 +211,10 @@ function ProviderCard({ providerId, provider, stats }) {
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group">
-      <Card padding="sm" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
+      <Card
+        padding="sm"
+        className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -215,10 +222,7 @@ function ProviderCard({ providerId, provider, stats }) {
               style={{ backgroundColor: `${provider.color}15` }}
             >
               {imgError ? (
-                <span
-                  className="text-xs font-bold"
-                  style={{ color: provider.color }}
-                >
+                <span className="text-xs font-bold" style={{ color: provider.color }}>
                   {provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
                 </span>
               ) : (
@@ -286,7 +290,10 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group">
-      <Card padding="sm" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
+      <Card
+        padding="sm"
+        className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer"
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -294,10 +301,7 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
               style={{ backgroundColor: `${provider.color}15` }}
             >
               {imgError ? (
-                <span
-                  className="text-xs font-bold"
-                  style={{ color: provider.color }}
-                >
+                <span className="text-xs font-bold" style={{ color: provider.color }}>
                   {provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
                 </span>
               ) : (
@@ -421,7 +425,11 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey, type: "openai-compatible" }),
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: "openai-compatible",
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -471,7 +479,11 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            <Button
+              onClick={handleValidate}
+              disabled={!checkKey || validating || !formData.baseUrl.trim()}
+              variant="secondary"
+            >
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -482,7 +494,16 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
           </Badge>
         )}
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || submitting}>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={
+              !formData.name.trim() ||
+              !formData.prefix.trim() ||
+              !formData.baseUrl.trim() ||
+              submitting
+            }
+          >
             {submitting ? "Creating..." : "Create"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
@@ -557,10 +578,10 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          baseUrl: formData.baseUrl, 
-          apiKey: checkKey, 
-          type: "anthropic-compatible" 
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: "anthropic-compatible",
         }),
       });
       const data = await res.json();
@@ -605,7 +626,11 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            <Button
+              onClick={handleValidate}
+              disabled={!checkKey || validating || !formData.baseUrl.trim()}
+              variant="secondary"
+            >
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -616,7 +641,16 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
           </Badge>
         )}
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || submitting}>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={
+              !formData.name.trim() ||
+              !formData.prefix.trim() ||
+              !formData.baseUrl.trim() ||
+              submitting
+            }
+          >
             {submitting ? "Creating..." : "Create"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

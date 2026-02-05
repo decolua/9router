@@ -28,7 +28,10 @@ export async function PUT(request) {
     const connection = connections[0];
 
     if (!connection) {
-      return NextResponse.json({ error: `No active connection found for provider: ${provider}` }, { status: 404 });
+      return NextResponse.json(
+        { error: `No active connection found for provider: ${provider}` },
+        { status: 404 }
+      );
     }
 
     // Update credentials

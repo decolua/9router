@@ -56,7 +56,9 @@ export default function PricingSettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Pricing Settings</h1>
-          <p className="text-text-muted mt-1">Configure pricing rates for cost tracking and calculations</p>
+          <p className="text-text-muted mt-1">
+            Configure pricing rates for cost tracking and calculations
+          </p>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -87,13 +89,14 @@ export default function PricingSettingsPage() {
         <h2 className="text-xl font-semibold mb-4">How Pricing Works</h2>
         <div className="space-y-3 text-sm text-text-muted">
           <p>
-            <strong>Cost Calculation:</strong> Costs are calculated based on token usage and pricing rates. Each
-            request&apos;s cost is determined by: (input_tokens × input_rate) + (output_tokens × output_rate) +
-            (cached_tokens × cached_rate)
+            <strong>Cost Calculation:</strong> Costs are calculated based on token usage and pricing
+            rates. Each request&apos;s cost is determined by: (input_tokens × input_rate) +
+            (output_tokens × output_rate) + (cached_tokens × cached_rate)
           </p>
           <p>
-            <strong>Pricing Format:</strong> All rates are in <strong>dollars per million tokens</strong> ($/1M tokens).
-            Example: An input rate of 2.50 means $2.50 per 1,000,000 input tokens.
+            <strong>Pricing Format:</strong> All rates are in{" "}
+            <strong>dollars per million tokens</strong> ($/1M tokens). Example: An input rate of
+            2.50 means $2.50 per 1,000,000 input tokens.
           </p>
           <p>
             <strong>Token Types:</strong>
@@ -109,15 +112,17 @@ export default function PricingSettingsPage() {
               <strong>Cached:</strong> Cached input tokens (typically 50% of input rate)
             </li>
             <li>
-              <strong>Reasoning:</strong> Special reasoning/thinking tokens (fallback to output rate)
+              <strong>Reasoning:</strong> Special reasoning/thinking tokens (fallback to output
+              rate)
             </li>
             <li>
-              <strong>Cache Creation:</strong> Tokens used to create cache entries (fallback to input rate)
+              <strong>Cache Creation:</strong> Tokens used to create cache entries (fallback to
+              input rate)
             </li>
           </ul>
           <p>
-            <strong>Custom Pricing:</strong> You can override default pricing for specific models. Reset to defaults
-            anytime to restore standard rates.
+            <strong>Custom Pricing:</strong> You can override default pricing for specific models.
+            Reset to defaults anytime to restore standard rates.
           </p>
         </div>
       </Card>
@@ -126,7 +131,10 @@ export default function PricingSettingsPage() {
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold">Current Pricing Overview</h2>
-          <button onClick={() => setShowModal(true)} className="text-primary hover:underline text-sm">
+          <button
+            onClick={() => setShowModal(true)}
+            className="text-primary hover:underline text-sm"
+          >
             View Full Details
           </button>
         </div>
@@ -140,11 +148,15 @@ export default function PricingSettingsPage() {
               .map((provider) => (
                 <div key={provider} className="text-sm">
                   <span className="font-semibold">{provider.toUpperCase()}:</span>{" "}
-                  <span className="text-text-muted">{Object.keys(currentPricing[provider]).length} models</span>
+                  <span className="text-text-muted">
+                    {Object.keys(currentPricing[provider]).length} models
+                  </span>
                 </div>
               ))}
             {Object.keys(currentPricing).length > 5 && (
-              <div className="text-sm text-text-muted">+ {Object.keys(currentPricing).length - 5} more providers</div>
+              <div className="text-sm text-text-muted">
+                + {Object.keys(currentPricing).length - 5} more providers
+              </div>
             )}
           </div>
         ) : (
@@ -154,7 +166,11 @@ export default function PricingSettingsPage() {
 
       {/* Pricing Modal */}
       {showModal && (
-        <PricingModal isOpen={showModal} onClose={() => setShowModal(false)} onSave={handlePricingUpdated} />
+        <PricingModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          onSave={handlePricingUpdated}
+        />
       )}
     </div>
   );

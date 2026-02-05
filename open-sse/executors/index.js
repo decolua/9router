@@ -13,7 +13,7 @@ const executors = {
   kiro: new KiroExecutor(),
   codex: new CodexExecutor(),
   cursor: new CursorExecutor(),
-  cu: new CursorExecutor() // Alias for cursor
+  cu: new CursorExecutor(), // Alias for cursor
 };
 
 const defaultCache = new Map();

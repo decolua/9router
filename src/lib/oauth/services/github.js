@@ -191,7 +191,9 @@ export class GitHubService extends OAuthService {
       const authResult = await this.authenticate();
 
       // Send credentials to server
-      const { server, token, userId } = await import("../config/index.js").then((m) => m.getServerCredentials());
+      const { server, token, userId } = await import("../config/index.js").then((m) =>
+        m.getServerCredentials()
+      );
       const spinner = (await import("../utils/ui.js")).spinner("Connecting to server...").start();
 
       const response = await fetch(`${server}/api/cli/providers/github`, {

@@ -62,7 +62,9 @@ export function handleBypassRequest(body, model, userAgent = "") {
   const sourceFormat = detectFormat(body);
   const stream = body.stream !== false;
 
-  return stream ? createStreamingResponse(sourceFormat, model) : createNonStreamingResponse(sourceFormat, model);
+  return stream
+    ? createStreamingResponse(sourceFormat, model)
+    : createNonStreamingResponse(sourceFormat, model);
 }
 
 /**

@@ -84,7 +84,12 @@ export class OAuthService {
   /**
    * Exchange authorization code for tokens
    */
-  async exchangeCode(code, redirectUri, codeVerifier, contentType = "application/x-www-form-urlencoded") {
+  async exchangeCode(
+    code,
+    redirectUri,
+    codeVerifier,
+    contentType = "application/x-www-form-urlencoded"
+  ) {
     const body =
       contentType === "application/json"
         ? JSON.stringify({

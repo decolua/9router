@@ -1,7 +1,5 @@
 node_modules
 .next
 out
-build
-coverage
-*.min.js
+.vercel
 package-lock.json

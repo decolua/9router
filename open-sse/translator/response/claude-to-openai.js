@@ -8,11 +8,13 @@ function createChunk(state, delta, finishReason = null) {
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
     model: state.model,
-    choices: [{
-      index: 0,
-      delta,
-      finish_reason: finishReason
-    }]
+    choices: [
+      {
+        index: 0,
+        delta,
+        finish_reason: finishReason,
+      },
+    ],
   };
 }
 
@@ -50,8 +52,8 @@ export function claudeToOpenAIResponse(chunk, state) {
           type: "function",
           function: {
             name: toolName,
-            arguments: ""
-          }
+            arguments: "",
+          },
         };
         state.toolCalls.set(chunk.index, toolCall);
         results.push(createChunk(state, { tool_calls: [toolCall] }));
@@ -69,13 +71,17 @@ export function claudeToOpenAIResponse(chunk, state) {
         const toolCall = state.toolCalls.get(chunk.index);
         if (toolCall) {
           toolCall.function.arguments += delta.partial_json;
-          results.push(createChunk(state, {
-            tool_calls: [{
-              index: toolCall.index,
-              id: toolCall.id,
-              function: { arguments: delta.partial_json }
-            }]
-          }));
+          results.push(
+            createChunk(state, {
+              tool_calls: [
+                {
+                  index: toolCall.index,
+                  id: toolCall.id,
+                  function: { arguments: delta.partial_json },
+                },
+              ],
+            })
+          );
         }
       }
       break;
@@ -95,19 +101,27 @@ export function claudeToOpenAIResponse(chunk, state) {
       // Extract usage from message_delta event (Claude native format)
       // Normalize to OpenAI format (prompt_tokens/completion_tokens) for consistent logging
       if (chunk.usage && typeof chunk.usage === "object") {
-        const inputTokens = typeof chunk.usage.input_tokens === "number" ? chunk.usage.input_tokens : 0;
-        const outputTokens = typeof chunk.usage.output_tokens === "number" ? chunk.usage.output_tokens : 0;
-        const cacheReadTokens = typeof chunk.usage.cache_read_input_tokens === "number" ? chunk.usage.cache_read_input_tokens : 0;
-        const cacheCreationTokens = typeof chunk.usage.cache_creation_input_tokens === "number" ? chunk.usage.cache_creation_input_tokens : 0;
-        
+        const inputTokens =
+          typeof chunk.usage.input_tokens === "number" ? chunk.usage.input_tokens : 0;
+        const outputTokens =
+          typeof chunk.usage.output_tokens === "number" ? chunk.usage.output_tokens : 0;
+        const cacheReadTokens =
+          typeof chunk.usage.cache_read_input_tokens === "number"
+            ? chunk.usage.cache_read_input_tokens
+            : 0;
+        const cacheCreationTokens =
+          typeof chunk.usage.cache_creation_input_tokens === "number"
+            ? chunk.usage.cache_creation_input_tokens
+            : 0;
+
         // Use OpenAI format keys for consistent logging in stream.js
         state.usage = {
           prompt_tokens: inputTokens,
           completion_tokens: outputTokens,
           input_tokens: inputTokens,
-          output_tokens: outputTokens
+          output_tokens: outputTokens,
         };
-        
+
         // Store cache tokens if present
         if (cacheReadTokens > 0) {
           state.usage.cache_read_input_tokens = cacheReadTokens;
@@ -116,7 +130,7 @@ export function claudeToOpenAIResponse(chunk, state) {
           state.usage.cache_creation_input_tokens = cacheCreationTokens;
         }
       }
-      
+
       if (chunk.delta?.stop_reason) {
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
         const finalChunk = {
@@ -124,33 +138,35 @@ export function claudeToOpenAIResponse(chunk, state) {
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
           model: state.model,
-          choices: [{
-            index: 0,
-            delta: {},
-            finish_reason: state.finishReason
-          }]
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: state.finishReason,
+            },
+          ],
         };
-        
+
         // Include usage in final chunk if available
         if (state.usage && typeof state.usage === "object") {
           const inputTokens = state.usage.input_tokens || 0;
           const outputTokens = state.usage.output_tokens || 0;
           const cachedTokens = state.usage.cache_read_input_tokens || 0;
           const cacheCreationTokens = state.usage.cache_creation_input_tokens || 0;
-          
+
           // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
           // completion_tokens = output_tokens
           // total_tokens = prompt_tokens + completion_tokens
           const promptTokens = inputTokens + cachedTokens + cacheCreationTokens;
           const completionTokens = outputTokens;
           const totalTokens = promptTokens + completionTokens;
-          
+
           finalChunk.usage = {
             prompt_tokens: promptTokens,
             completion_tokens: completionTokens,
-            total_tokens: totalTokens
+            total_tokens: totalTokens,
           };
-          
+
           // Add prompt_tokens_details if cached tokens exist
           if (cachedTokens > 0 || cacheCreationTokens > 0) {
             finalChunk.usage.prompt_tokens_details = {};
@@ -162,7 +178,7 @@ export function claudeToOpenAIResponse(chunk, state) {
             }
           }
         }
-        
+
         results.push(finalChunk);
         state.finishReasonSent = true;
       }
@@ -171,25 +187,31 @@ export function claudeToOpenAIResponse(chunk, state) {
 
     case "message_stop": {
       if (!state.finishReasonSent) {
-        const finishReason = state.finishReason || (state.toolCalls?.size > 0 ? "tool_calls" : "stop");
-        const usageObj = (state.usage && typeof state.usage === 'object') ? {
-          usage: {
-            prompt_tokens: state.usage.input_tokens || 0,
-            completion_tokens: state.usage.output_tokens || 0,
-            total_tokens: (state.usage.input_tokens || 0) + (state.usage.output_tokens || 0)
-          }
-        } : {};
+        const finishReason =
+          state.finishReason || (state.toolCalls?.size > 0 ? "tool_calls" : "stop");
+        const usageObj =
+          state.usage && typeof state.usage === "object"
+            ? {
+                usage: {
+                  prompt_tokens: state.usage.input_tokens || 0,
+                  completion_tokens: state.usage.output_tokens || 0,
+                  total_tokens: (state.usage.input_tokens || 0) + (state.usage.output_tokens || 0),
+                },
+              }
+            : {};
         results.push({
           id: `chatcmpl-${state.messageId}`,
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
           model: state.model,
-          choices: [{
-            index: 0,
-            delta: {},
-            finish_reason: finishReason
-          }],
-          ...usageObj
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: finishReason,
+            },
+          ],
+          ...usageObj,
         });
         state.finishReasonSent = true;
       }
@@ -203,14 +225,18 @@ export function claudeToOpenAIResponse(chunk, state) {
 // Convert Claude stop_reason to OpenAI finish_reason
 function convertStopReason(reason) {
   switch (reason) {
-    case "end_turn": return "stop";
-    case "max_tokens": return "length";
-    case "tool_use": return "tool_calls";
-    case "stop_sequence": return "stop";
-    default: return "stop";
+    case "end_turn":
+      return "stop";
+    case "max_tokens":
+      return "length";
+    case "tool_use":
+      return "tool_calls";
+    case "stop_sequence":
+      return "stop";
+    default:
+      return "stop";
   }
 }
 
 // Register
 register(FORMATS.CLAUDE, FORMATS.OPENAI, null, claudeToOpenAIResponse);
-

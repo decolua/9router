@@ -97,7 +97,9 @@ function convertMessages(messages, tools, model) {
       if (typeof msg.content === "string") {
         content = msg.content;
       } else if (Array.isArray(msg.content)) {
-        const textParts = msg.content.filter((c) => c.type === "text" || c.text).map((c) => c.text || "");
+        const textParts = msg.content
+          .filter((c) => c.type === "text" || c.text)
+          .map((c) => c.text || "");
         content = textParts.join("\n");
 
         // Check for tool_result blocks

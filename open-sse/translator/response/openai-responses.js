@@ -493,16 +493,16 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
       const cacheReadTokens = responseUsage.cache_read_input_tokens || 0;
       const cacheCreationTokens = responseUsage.cache_creation_input_tokens || 0;
-      
+
       // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
       const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
-      
+
       state.usage = {
         prompt_tokens: promptTokens,
         completion_tokens: outputTokens,
-        total_tokens: promptTokens + outputTokens
+        total_tokens: promptTokens + outputTokens,
       };
-      
+
       // Add prompt_tokens_details if cache tokens exist
       if (cacheReadTokens > 0 || cacheCreationTokens > 0) {
         state.usage.prompt_tokens_details = {};
@@ -514,11 +514,11 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         }
       }
     }
-    
+
     if (!state.finishReasonSent) {
       state.finishReasonSent = true;
       state.finishReason = "stop"; // Mark for usage injection in stream.js
-      
+
       const finalChunk = {
         id: state.chatId,
         object: "chat.completion.chunk",
@@ -532,12 +532,12 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
           },
         ],
       };
-      
+
       // Include usage in final chunk if available
       if (state.usage && typeof state.usage === "object") {
         finalChunk.usage = state.usage;
       }
-      
+
       return finalChunk;
     }
     return null;

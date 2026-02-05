@@ -16,7 +16,8 @@ function getProxyUrl(targetUrl) {
 
     const shouldBypass = patterns.some((pattern) => {
       if (pattern === "*") return true;
-      if (pattern.startsWith(".")) return hostname.endsWith(pattern) || hostname === pattern.slice(1);
+      if (pattern.startsWith("."))
+        return hostname.endsWith(pattern) || hostname === pattern.slice(1);
       return hostname === pattern || hostname.endsWith(`.${pattern}`);
     });
 
@@ -26,10 +27,20 @@ function getProxyUrl(targetUrl) {
   const protocol = new URL(targetUrl).protocol;
 
   if (protocol === "https:") {
-    return process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+    return (
+      process.env.HTTPS_PROXY ||
+      process.env.https_proxy ||
+      process.env.ALL_PROXY ||
+      process.env.all_proxy
+    );
   }
 
-  return process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy;
+  return (
+    process.env.HTTP_PROXY ||
+    process.env.http_proxy ||
+    process.env.ALL_PROXY ||
+    process.env.all_proxy
+  );
 }
 
 /**

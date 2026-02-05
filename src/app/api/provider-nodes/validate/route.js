@@ -17,17 +17,17 @@ export async function POST(request) {
       if (normalizedBase.endsWith("/messages")) {
         normalizedBase = normalizedBase.slice(0, -9); // remove /messages
       }
-      
+
       // Use /models endpoint for validation as many compatible providers support it (like OpenAI)
       const modelsUrl = `${normalizedBase}/models`;
-      
+
       const res = await fetch(modelsUrl, {
         method: "GET",
-        headers: { 
+        headers: {
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${apiKey}` // Add Bearer token for hybrid proxies
-        }
+          Authorization: `Bearer ${apiKey}`, // Add Bearer token for hybrid proxies
+        },
       });
 
       return NextResponse.json({ valid: res.ok, error: res.ok ? null : "Invalid API key" });
@@ -36,7 +36,7 @@ export async function POST(request) {
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
     const res = await fetch(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     return NextResponse.json({ valid: res.ok, error: res.ok ? null : "Invalid API key" });

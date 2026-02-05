@@ -18,7 +18,7 @@ function convertMessages(messages) {
     if (msg.role === "system") {
       result.push({
         role: "user",
-        content: `[System Instructions]\n${msg.content}`
+        content: `[System Instructions]\n${msg.content}`,
       });
       continue;
     }
@@ -34,11 +34,11 @@ function convertMessages(messages) {
           }
         }
       }
-      
+
       const toolName = msg.name || "tool";
       result.push({
         role: "user",
-        content: `[Tool Result: ${toolName}]\n${toolContent}`
+        content: `[Tool Result: ${toolName}]\n${toolContent}`,
       });
       continue;
     }
@@ -60,16 +60,18 @@ function convertMessages(messages) {
         if (content) {
           result.push({ role: "assistant", content });
         }
-        
-        const toolCallsText = msg.tool_calls.map(tc => {
-          const funcName = tc.function?.name || "unknown";
-          const funcArgs = tc.function?.arguments || "{}";
-          return `[Calling tool: ${funcName} with args: ${funcArgs}]`;
-        }).join("\n");
-        
+
+        const toolCallsText = msg.tool_calls
+          .map((tc) => {
+            const funcName = tc.function?.name || "unknown";
+            const funcArgs = tc.function?.arguments || "{}";
+            return `[Calling tool: ${funcName} with args: ${funcArgs}]`;
+          })
+          .join("\n");
+
         result.push({
           role: "assistant",
-          content: toolCallsText
+          content: toolCallsText,
         });
       } else if (content) {
         result.push({ role: msg.role, content });
@@ -86,10 +88,10 @@ function convertMessages(messages) {
  */
 export function buildCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
-  
+
   return {
     ...body,
-    messages
+    messages,
   };
 }
 

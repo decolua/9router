@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import { PROVIDER_MODELS, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import {
+  PROVIDER_MODELS,
+  getModelsByProviderId,
+  PROVIDER_ID_TO_ALIAS,
+} from "@/shared/constants/models";
 import { ClaudeToolCard, CodexToolCard, DefaultToolCard } from "./components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -165,7 +169,9 @@ export default function CLIToolsPageClient({ machineId }) {
             {...commonProps}
             activeProviders={getActiveProviders()}
             modelMappings={modelMappings[toolId] || {}}
-            onModelMappingChange={(alias, target) => handleModelMappingChange(toolId, alias, target)}
+            onModelMappingChange={(alias, target) =>
+              handleModelMappingChange(toolId, alias, target)
+            }
             hasActiveProviders={hasActiveProviders}
             cloudEnabled={cloudEnabled}
           />
@@ -199,8 +205,12 @@ export default function CLIToolsPageClient({ machineId }) {
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-yellow-500">warning</span>
             <div>
-              <p className="font-medium text-yellow-600 dark:text-yellow-400">No active providers</p>
-              <p className="text-sm text-text-muted">Please add and connect providers first to configure CLI tools.</p>
+              <p className="font-medium text-yellow-600 dark:text-yellow-400">
+                No active providers
+              </p>
+              <p className="text-sm text-text-muted">
+                Please add and connect providers first to configure CLI tools.
+              </p>
             </div>
           </div>
         </Card>

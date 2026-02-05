@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { detectFormat, getTargetFormat, buildProviderUrl, buildProviderHeaders } from "open-sse/services/provider.js";
+import {
+  detectFormat,
+  getTargetFormat,
+  buildProviderUrl,
+  buildProviderHeaders,
+} from "open-sse/services/provider.js";
 import { translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
 import { getProviderConnections } from "@/lib/localDb.js";
@@ -9,7 +14,10 @@ export async function POST(request) {
     const { step, provider, body } = await request.json();
 
     if (!step || !provider || !body) {
-      return NextResponse.json({ success: false, error: "Step, provider, and body required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Step, provider, and body required" },
+        { status: 400 }
+      );
     }
 
     let result;
@@ -38,7 +46,15 @@ export async function POST(request) {
         const sourceFormat = detectFormat(actualBody);
         const targetFormat = FORMATS.OPENAI;
         const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
+        const translated = translateRequest(
+          sourceFormat,
+          targetFormat,
+          model,
+          actualBody,
+          true,
+          null,
+          provider
+        );
 
         result = {
           timestamp: new Date().toISOString(),
@@ -55,7 +71,15 @@ export async function POST(request) {
         const sourceFormat = FORMATS.OPENAI;
         const targetFormat = getTargetFormat(provider);
         const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
+        const translated = translateRequest(
+          sourceFormat,
+          targetFormat,
+          model,
+          actualBody,
+          true,
+          null,
+          provider
+        );
 
         result = {
           timestamp: new Date().toISOString(),
@@ -96,7 +120,7 @@ export async function POST(request) {
         // Build URL and headers
         const url = buildProviderUrl(provider, model, true, {
           baseUrlIndex: 0,
-          baseUrl: connection.providerSpecificData?.baseUrl
+          baseUrl: connection.providerSpecificData?.baseUrl,
         });
         const headers = buildProviderHeaders(provider, credentials, true, actualBody);
 

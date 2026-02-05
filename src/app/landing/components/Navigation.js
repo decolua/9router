@@ -24,10 +24,16 @@ export default function Navigation() {
 
         {/* Desktop menu */}
         <div className="hidden md:flex items-center gap-8">
-          <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#features">
+          <a
+            className="text-gray-300 hover:text-white text-sm font-medium transition-colors"
+            href="#features"
+          >
             Features
           </a>
-          <a className="text-gray-300 hover:text-white text-sm font-medium transition-colors" href="#how-it-works">
+          <a
+            className="text-gray-300 hover:text-white text-sm font-medium transition-colors"
+            href="#how-it-works"
+          >
             How it Works
           </a>
           <a
@@ -56,7 +62,10 @@ export default function Navigation() {
           >
             Get Started
           </button>
-          <button className="md:hidden text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+          <button
+            className="md:hidden text-white"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          >
             <span className="material-symbols-outlined">{mobileMenuOpen ? "close" : "menu"}</span>
           </button>
         </div>

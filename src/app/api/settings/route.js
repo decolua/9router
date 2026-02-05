@@ -6,13 +6,13 @@ export async function GET() {
   try {
     const settings = await getSettings();
     const { password, ...safeSettings } = settings;
-    
+
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
-    
-    return NextResponse.json({ 
-      ...safeSettings, 
+
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
-      hasPassword: !!password
+      hasPassword: !!password,
     });
   } catch (error) {
     console.log("Error getting settings:", error);
@@ -42,7 +42,7 @@ export async function PATCH(request) {
         // First time setting password, no current password needed
         // Allow empty currentPassword or default "123456"
         if (body.currentPassword && body.currentPassword !== "123456") {
-           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
+          return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       }
 

@@ -32,7 +32,10 @@ export class GeminiCLIExecutor extends BaseExecutor {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.google.token, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
         body: new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: credentials.refreshToken,

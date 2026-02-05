@@ -29,7 +29,10 @@ export async function POST(request) {
 
     // Validate name format
     if (!VALID_NAME_REGEX.test(name)) {
-      return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Name can only contain letters, numbers, - and _" },
+        { status: 400 }
+      );
     }
 
     // Check if name already exists

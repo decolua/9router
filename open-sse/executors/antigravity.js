@@ -12,7 +12,9 @@ export class AntigravityExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0) {
     const baseUrls = this.getBaseUrls();
     const baseUrl = baseUrls[urlIndex] || baseUrls[0];
-    const path = stream ? "/v1internal:streamGenerateContent?alt=sse" : "/v1internal:generateContent";
+    const path = stream
+      ? "/v1internal:streamGenerateContent?alt=sse"
+      : "/v1internal:generateContent";
     return `${baseUrl}${path}`;
   }
 
@@ -33,7 +35,9 @@ export class AntigravityExecutor extends BaseExecutor {
       sessionId: body.request?.sessionId || this.generateSessionId(),
       safetySettings: undefined,
       toolConfig:
-        body.request?.tools?.length > 0 ? { functionCallingConfig: { mode: "VALIDATED" } } : body.request?.toolConfig,
+        body.request?.tools?.length > 0
+          ? { functionCallingConfig: { mode: "VALIDATED" } }
+          : body.request?.toolConfig,
     };
 
     return {
@@ -53,7 +57,10 @@ export class AntigravityExecutor extends BaseExecutor {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.google.token, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
         body: new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: credentials.refreshToken,
@@ -178,7 +185,10 @@ export class AntigravityExecutor extends BaseExecutor {
           }
 
           if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`);
+            log?.debug?.(
+              "RETRY",
+              `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`
+            );
             await new Promise((resolve) => setTimeout(resolve, retryMs));
             urlIndex--;
             continue;
@@ -192,7 +202,10 @@ export class AntigravityExecutor extends BaseExecutor {
           ) {
             retryAttemptsByUrl[urlIndex]++;
             // Exponential backoff: 2s, 4s, 8s...
-            const backoffMs = Math.min(1000 * 2 ** retryAttemptsByUrl[urlIndex], MAX_RETRY_AFTER_MS);
+            const backoffMs = Math.min(
+              1000 * 2 ** retryAttemptsByUrl[urlIndex],
+              MAX_RETRY_AFTER_MS
+            );
             log?.debug?.(
               "RETRY",
               `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`

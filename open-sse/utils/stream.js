@@ -1,7 +1,15 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import {
+  extractUsage,
+  hasValidUsage,
+  estimateUsage,
+  logUsage,
+  addBufferToUsage,
+  filterUsageForFormat,
+  COLORS,
+} from "./usageTracking.js";
 
 // Re-export COLORS for backward compatibility
 export { COLORS };
@@ -22,7 +30,9 @@ function parseSSELine(line) {
   } catch (error) {
     // Log parse errors for debugging incomplete chunks
     if (data.length > 0 && data.length < 1000) {
-      console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
+      console.log(
+        `[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`
+      );
     }
     return null;
   }
@@ -50,7 +60,7 @@ export function formatSSE(data, sourceFormat) {
   // Claude format: include event prefix
   if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
     // If perf_metrics is null, remove it to avoid serialization issues
-    if (data.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
+    if (data.usage && typeof data.usage === "object" && data.usage.perf_metrics === null) {
       const { perf_metrics, ...usageWithoutPerf } = data.usage;
       data = { ...data, usage: usageWithoutPerf };
     }
@@ -58,7 +68,7 @@ export function formatSSE(data, sourceFormat) {
   }
 
   // If perf_metrics is null, remove it to avoid serialization issues
-  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
+  if (data?.usage && typeof data.usage === "object" && data.usage.perf_metrics === null) {
     const { perf_metrics, ...usageWithoutPerf } = data.usage;
     data = { ...data, usage: usageWithoutPerf };
   }
@@ -70,8 +80,8 @@ export function formatSSE(data, sourceFormat) {
  * Stream modes
  */
 const STREAM_MODE = {
-  TRANSLATE: "translate",    // Full translation between formats
-  PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
+  TRANSLATE: "translate", // Full translation between formats
+  PASSTHROUGH: "passthrough", // No translation, normalize output, extract usage
 };
 
 /**
@@ -96,14 +106,15 @@ export function createSSEStream(options = {}) {
     toolNameMap = null,
     model = null,
     connectionId = null,
-    body = null
+    body = null,
   } = options;
 
   let buffer = "";
   let usage = null;
 
   // State for translate mode
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
+  const state =
+    mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
 
   // Track content length for usage estimation (both modes)
   let totalContentLength = 0;
@@ -130,7 +141,9 @@ export function createSSEStream(options = {}) {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
               // Track content length for estimation
-              const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning_content;
+              const content =
+                parsed.choices?.[0]?.delta?.content ||
+                parsed.choices?.[0]?.delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
               }
@@ -156,7 +169,7 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
-            } catch { }
+            } catch {}
           }
 
           // Normalize if not already injected
@@ -188,7 +201,7 @@ export function createSSEStream(options = {}) {
 
         // Track content length for estimation (from various formats)
         // Include both regular content and reasoning/thinking content
-        
+
         // Claude format
         if (parsed.delta?.text) {
           totalContentLength += parsed.delta.text.length;
@@ -196,7 +209,7 @@ export function createSSEStream(options = {}) {
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
         }
-        
+
         // OpenAI format
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
@@ -204,7 +217,7 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
         }
-        
+
         // Gemini format - may have multiple parts
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
@@ -233,7 +246,12 @@ export function createSSEStream(options = {}) {
           for (const item of translated) {
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
+            if (
+              state.finishReason &&
+              isFinishChunk &&
+              !hasValidUsage(item.usage) &&
+              totalContentLength > 0
+            ) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
@@ -275,7 +293,13 @@ export function createSSEStream(options = {}) {
           if (hasValidUsage(usage)) {
             logUsage(provider, usage, model, connectionId);
           } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+            appendRequestLog({
+              model,
+              provider,
+              connectionId,
+              tokens: null,
+              status: "200 OK",
+            }).catch(() => {});
           }
           return;
         }
@@ -336,17 +360,28 @@ export function createSSEStream(options = {}) {
         if (hasValidUsage(state?.usage)) {
           logUsage(state.provider || targetFormat, state.usage, model, connectionId);
         } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(
+            () => {}
+          );
         }
       } catch (error) {
         console.log("Error in flush:", error);
       }
-    }
+    },
   });
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null) {
+export function createSSETransformStreamWithLogger(
+  targetFormat,
+  sourceFormat,
+  provider = null,
+  reqLogger = null,
+  toolNameMap = null,
+  model = null,
+  connectionId = null,
+  body = null
+) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -356,17 +391,23 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     toolNameMap,
     model,
     connectionId,
-    body
+    body,
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null) {
+export function createPassthroughStreamWithLogger(
+  provider = null,
+  reqLogger = null,
+  model = null,
+  connectionId = null,
+  body = null
+) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
     model,
     connectionId,
-    body
+    body,
   });
 }

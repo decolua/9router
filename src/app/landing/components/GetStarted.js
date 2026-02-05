@@ -18,7 +18,8 @@ export default function GetStarted() {
           <div className="flex-1">
             <h2 className="text-3xl md:text-4xl font-bold mb-6">Get Started in 30 Seconds</h2>
             <p className="text-gray-400 text-lg mb-8">
-              Install 9Router, configure your providers via web dashboard, and start routing AI requests.
+              Install 9Router, configure your providers via web dashboard, and start routing AI
+              requests.
             </p>
 
             <div className="flex flex-col gap-6">
@@ -28,7 +29,9 @@ export default function GetStarted() {
                 </div>
                 <div>
                   <h4 className="font-bold text-lg">Install 9Router</h4>
-                  <p className="text-sm text-gray-500 mt-1">Run npx command to start the server instantly</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Run npx command to start the server instantly
+                  </p>
                 </div>
               </div>
 
@@ -38,7 +41,9 @@ export default function GetStarted() {
                 </div>
                 <div>
                   <h4 className="font-bold text-lg">Open Dashboard</h4>
-                  <p className="text-sm text-gray-500 mt-1">Configure providers and API keys via web interface</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Configure providers and API keys via web interface
+                  </p>
                 </div>
               </div>
 
@@ -48,7 +53,9 @@ export default function GetStarted() {
                 </div>
                 <div>
                   <h4 className="font-bold text-lg">Route Requests</h4>
-                  <p className="text-sm text-gray-500 mt-1">Point your CLI tools to http://localhost:20128</p>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Point your CLI tools to http://localhost:20128
+                  </p>
                 </div>
               </div>
             </div>

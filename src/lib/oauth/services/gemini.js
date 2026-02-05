@@ -233,7 +233,9 @@ export class GeminiCLIService {
       // Save tokens to server
       await this.saveTokens(tokens, userInfo, projectId);
 
-      spinner.succeed(`Gemini CLI connected successfully! (${userInfo.email}, Project: ${projectId})`);
+      spinner.succeed(
+        `Gemini CLI connected successfully! (${userInfo.email}, Project: ${projectId})`
+      );
       return true;
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);

@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName, isCloudEnabled } from "@/lib/localDb";
+import {
+  getComboById,
+  updateCombo,
+  deleteCombo,
+  getComboByName,
+  isCloudEnabled,
+} from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
 
@@ -32,7 +38,10 @@ export async function PUT(request, { params }) {
     // Validate name format if provided
     if (body.name) {
       if (!VALID_NAME_REGEX.test(body.name)) {
-        return NextResponse.json({ error: "Name can only contain letters, numbers, - and _" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Name can only contain letters, numbers, - and _" },
+          { status: 400 }
+        );
       }
 
       // Check if name already exists (exclude current combo)

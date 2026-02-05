@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import {
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+} from "@/shared/constants/providers";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -42,7 +45,7 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
+    extraHeaders: { "User-Agent": "9Router", Accept: "application/vnd.github+json" },
   },
   iflow: {
     url: "https://iflow.cn/api/oauth/getUserInfo",
@@ -314,7 +317,7 @@ async function testApiKeyConnection(connection) {
     try {
       const modelsUrl = `${modelsBase.replace(/\/$/, "")}/models`;
       const res = await fetch(modelsUrl, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
+        headers: { Authorization: `Bearer ${connection.apiKey}` },
       });
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
@@ -333,13 +336,13 @@ async function testApiKeyConnection(connection) {
       if (modelsBase.endsWith("/messages")) {
         modelsBase = modelsBase.slice(0, -9);
       }
-      
+
       const modelsUrl = `${modelsBase}/models`;
       const res = await fetch(modelsUrl, {
-        headers: { 
+        headers: {
           "x-api-key": connection.apiKey,
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
+          Authorization: `Bearer ${connection.apiKey}`,
         },
       });
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
@@ -376,7 +379,9 @@ async function testApiKeyConnection(connection) {
       }
 
       case "gemini": {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`);
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`
+        );
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
 
@@ -512,7 +517,9 @@ export async function POST(request, { params }) {
         updateData.refreshToken = result.newTokens.refreshToken;
       }
       if (result.newTokens.expiresIn) {
-        updateData.expiresAt = new Date(Date.now() + result.newTokens.expiresIn * 1000).toISOString();
+        updateData.expiresAt = new Date(
+          Date.now() + result.newTokens.expiresIn * 1000
+        ).toISOString();
       }
     }
 

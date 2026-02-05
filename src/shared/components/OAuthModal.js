@@ -29,7 +29,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+      setIsLocalhost(
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      );
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
   }, []);
@@ -134,7 +136,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
         // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        const extraData =
+          provider === "kiro"
+            ? { _clientId: data._clientId, _clientSecret: data._clientSecret }
+            : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
@@ -150,7 +155,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         redirectUri = `http://localhost:${port}/callback`;
       }
 
-      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const res = await fetch(
+        `/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -301,10 +308,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "waiting" && !isDeviceCode && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                progress_activity
+              </span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Waiting for Authorization</h3>
-            <p className="text-sm text-text-muted mb-4">Complete the authorization in the popup window.</p>
+            <p className="text-sm text-text-muted mb-4">
+              Complete the authorization in the popup window.
+            </p>
             <Button variant="ghost" onClick={() => setStep("input")}>
               Popup blocked? Enter URL manually
             </Button>
@@ -315,7 +326,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "waiting" && isDeviceCode && deviceData && (
           <>
             <div className="text-center py-4">
-              <p className="text-sm text-text-muted mb-4">Visit the URL below and enter the code:</p>
+              <p className="text-sm text-text-muted mb-4">
+                Visit the URL below and enter the code:
+              </p>
               <div className="bg-sidebar p-4 rounded-lg mb-4">
                 <p className="text-xs text-text-muted mb-1">Verification URL</p>
                 <div className="flex items-center gap-2">
@@ -331,7 +344,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <div className="bg-primary/10 p-4 rounded-lg">
                 <p className="text-xs text-text-muted mb-1">Your Code</p>
                 <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
+                  <p className="text-2xl font-mono font-bold text-primary">
+                    {deviceData.user_code}
+                  </p>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -357,7 +372,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <div>
                 <p className="text-sm font-medium mb-2">Step 1: Open this URL in your browser</p>
                 <div className="flex gap-2">
-                  <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
+                  <Input
+                    value={authData?.authUrl || ""}
+                    readOnly
+                    className="flex-1 font-mono text-xs"
+                  />
                   <Button
                     variant="secondary"
                     icon={copied === "auth_url" ? "check" : "content_copy"}
@@ -397,10 +416,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {step === "success" && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
+              <span className="material-symbols-outlined text-3xl text-green-600">
+                check_circle
+              </span>
             </div>
             <h3 className="text-lg font-semibold mb-2">Connected Successfully!</h3>
-            <p className="text-sm text-text-muted mb-4">Your {providerInfo.name} account has been connected.</p>
+            <p className="text-sm text-text-muted mb-4">
+              Your {providerInfo.name} account has been connected.
+            </p>
             <Button onClick={onClose} fullWidth>
               Done
             </Button>

@@ -13,7 +13,10 @@ export async function GET(request) {
     const provider = searchParams.get("provider"); // "google" or "github"
 
     if (!provider || !["google", "github"].includes(provider)) {
-      return NextResponse.json({ error: "Invalid provider. Use 'google' or 'github'" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid provider. Use 'google' or 'github'" },
+        { status: 400 }
+      );
     }
 
     // Generate PKCE for social auth

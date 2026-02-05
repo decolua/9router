@@ -1,8 +1,10 @@
 // Check if running in Node.js environment (has fs module)
-const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
+const isNode =
+  typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
 // Check if logging is enabled via environment variable (default: false)
-const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === "true";
+const LOGGING_ENABLED =
+  typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === "true";
 
 let fs = null;
 let path = null;
@@ -14,7 +16,10 @@ async function ensureNodeModules() {
   try {
     fs = await import("fs");
     path = await import("path");
-    LOGS_DIR = path.join(typeof process !== "undefined" && process.cwd ? process.cwd() : ".", "logs");
+    LOGS_DIR = path.join(
+      typeof process !== "undefined" && process.cwd ? process.cwd() : ".",
+      "logs"
+    );
   } catch {
     // Running in non-Node environment (Worker, Browser, etc.)
   }

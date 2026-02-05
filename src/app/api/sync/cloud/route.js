@@ -241,7 +241,8 @@ async function updateLocalTokens(cloudProviders) {
         expiresIn: cloudProvider.expiresIn,
 
         // Provider specific data
-        providerSpecificData: cloudProvider.providerSpecificData || localProvider.providerSpecificData,
+        providerSpecificData:
+          cloudProvider.providerSpecificData || localProvider.providerSpecificData,
 
         // Status fields
         testStatus: cloudProvider.status || "active",

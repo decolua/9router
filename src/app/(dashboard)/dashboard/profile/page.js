@@ -70,7 +70,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ fallbackStrategy: strategy }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, fallbackStrategy: strategy }));
+        setSettings((prev) => ({ ...prev, fallbackStrategy: strategy }));
       }
     } catch (err) {
       console.error("Failed to update settings:", err);
@@ -88,7 +88,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, stickyRoundRobinLimit: numLimit }));
+        setSettings((prev) => ({ ...prev, stickyRoundRobinLimit: numLimit }));
       }
     } catch (err) {
       console.error("Failed to update sticky limit:", err);
@@ -103,7 +103,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ requireLogin }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, requireLogin }));
+        setSettings((prev) => ({ ...prev, requireLogin }));
       }
     } catch (err) {
       console.error("Failed to update require login:", err);
@@ -126,7 +126,8 @@ export default function ProfilePage() {
           </div>
           <div className="pt-4 border-t border-border">
             <p className="text-sm text-text-muted">
-              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
+              All data is stored locally in the{" "}
+              <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
             </p>
           </div>
         </Card>
@@ -154,7 +155,10 @@ export default function ProfilePage() {
               />
             </div>
             {settings.requireLogin === true && (
-              <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
+              <form
+                onSubmit={handlePasswordChange}
+                className="flex flex-col gap-4 pt-4 border-t border-border/50"
+              >
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Current Password</label>
@@ -198,7 +202,9 @@ export default function ProfilePage() {
                 </div>
 
                 {passStatus.message && (
-                  <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                  <p
+                    className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}
+                  >
                     {passStatus.message}
                   </p>
                 )}
@@ -225,13 +231,15 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Round Robin</p>
-                <p className="text-sm text-text-muted">
-                  Cycle through accounts to distribute load
-                </p>
+                <p className="text-sm text-text-muted">Cycle through accounts to distribute load</p>
               </div>
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
-                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
+                onChange={() =>
+                  updateFallbackStrategy(
+                    settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin"
+                  )
+                }
                 disabled={loading}
               />
             </div>
@@ -241,9 +249,7 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
                   <p className="font-medium">Sticky Limit</p>
-                  <p className="text-sm text-text-muted">
-                    Calls per account before switching
-                  </p>
+                  <p className="text-sm text-text-muted">Calls per account before switching</p>
                 </div>
                 <Input
                   type="number"
@@ -277,14 +283,9 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Dark Mode</p>
-                <p className="text-sm text-text-muted">
-                  Switch between light and dark themes
-                </p>
+                <p className="text-sm text-text-muted">Switch between light and dark themes</p>
               </div>
-              <Toggle
-                checked={isDark}
-                onChange={() => setTheme(isDark ? "light" : "dark")}
-              />
+              <Toggle checked={isDark} onChange={() => setTheme(isDark ? "light" : "dark")} />
             </div>
 
             {/* Theme Options */}
@@ -302,7 +303,11 @@ export default function ProfilePage() {
                     )}
                   >
                     <span className="material-symbols-outlined text-[20px]">
-                      {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
+                      {option === "light"
+                        ? "light_mode"
+                        : option === "dark"
+                          ? "dark_mode"
+                          : "contrast"}
                     </span>
                     <span className="capitalize">{option}</span>
                   </button>
@@ -332,7 +337,9 @@ export default function ProfilePage() {
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
-          <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
+          <p>
+            {APP_CONFIG.name} v{APP_CONFIG.version}
+          </p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>

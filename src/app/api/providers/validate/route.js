@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import {
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+} from "@/shared/constants/providers";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -24,7 +27,7 @@ export async function POST(request) {
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: { Authorization: `Bearer ${apiKey}` },
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -36,24 +39,27 @@ export async function POST(request) {
       if (isAnthropicCompatibleProvider(provider)) {
         const node = await getProviderNodeById(provider);
         if (!node) {
-          return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+          return NextResponse.json(
+            { error: "Anthropic Compatible node not found" },
+            { status: 404 }
+          );
         }
-        
+
         let normalizedBase = node.baseUrl?.trim().replace(/\/$/, "") || "";
         if (normalizedBase.endsWith("/messages")) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
-        
+
         const modelsUrl = `${normalizedBase}/models`;
-        
+
         const res = await fetch(modelsUrl, {
-          headers: { 
+          headers: {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}` 
+            Authorization: `Bearer ${apiKey}`,
           },
         });
-        
+
         isValid = res.ok;
         return NextResponse.json({
           valid: isValid,
@@ -87,7 +93,9 @@ export async function POST(request) {
           break;
 
         case "gemini":
-          const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+          const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`
+          );
           isValid = geminiRes.ok;
           break;
 
@@ -123,8 +131,8 @@ export async function POST(request) {
           break;
         }
 
-          default:
-            return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
+        default:
+          return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }
     } catch (err) {
       error = err.message;

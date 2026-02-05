@@ -121,7 +121,9 @@ export default function Features() {
               >
                 <span className="material-symbols-outlined">{feature.icon}</span>
               </div>
-              <h3 className={`text-lg font-bold mb-2 ${feature.colors.titleHover} transition-colors`}>
+              <h3
+                className={`text-lg font-bold mb-2 ${feature.colors.titleHover} transition-colors`}
+              >
                 {feature.title}
               </h3>
               <p className="text-sm text-gray-400 leading-relaxed">{feature.desc}</p>

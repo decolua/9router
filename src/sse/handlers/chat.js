@@ -1,4 +1,8 @@
-import { getProviderCredentials, markAccountUnavailable, clearAccountError } from "../services/auth.js";
+import {
+  getProviderCredentials,
+  markAccountUnavailable,
+  clearAccountError,
+} from "../services/auth.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse } from "open-sse/utils/error.js";
@@ -38,7 +42,10 @@ export async function handleChat(request, clientRawRequest = null) {
   // Count messages (support both messages[] and input[] formats)
   const msgCount = body.messages?.length || body.input?.length || 0;
   const toolCount = body.tools?.length || 0;
-  log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}`);
+  log.request(
+    "POST",
+    `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}`
+  );
 
   // Log API key (masked)
   const apiKey = request.headers.get("Authorization");
@@ -146,7 +153,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (shouldFallback) {
       const accountId = credentials.connectionId.slice(0, 8);
-      log.warn("AUTH", `Account ${accountId}... unavailable (status: ${result.status}), trying fallback`);
+      log.warn(
+        "AUTH",
+        `Account ${accountId}... unavailable (status: ${result.status}), trying fallback`
+      );
       await markAccountUnavailable(
         credentials.connectionId,
         cooldownMs,

@@ -113,7 +113,11 @@ export const CLI_TOOLS = {
       { step: 1, title: "Open Config", desc: "Open Continue configuration file" },
       { step: 2, title: "API Key", type: "apiKeySelector" },
       { step: 3, title: "Select Model", type: "modelSelector" },
-      { step: 4, title: "Add Model Config", desc: "Add the following configuration to your models array:" },
+      {
+        step: 4,
+        title: "Add Model Config",
+        desc: "Add the following configuration to your models array:",
+      },
     ],
     codeBlock: {
       language: "json",

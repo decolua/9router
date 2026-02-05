@@ -46,9 +46,7 @@ export default function Input({
             // iOS zoom fix
             "text-[16px] sm:text-sm",
             icon && "pl-10",
-            error
-              ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
-              : "",
+            error ? "border-red-500 focus:border-red-500 focus:ring-red-500/20" : "",
             inputClassName
           )}
           {...props}
@@ -60,10 +58,7 @@ export default function Input({
           {error}
         </p>
       )}
-      {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   );
 }
-

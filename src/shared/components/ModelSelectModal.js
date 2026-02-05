@@ -38,7 +38,8 @@ export default function ModelSelectModal({
     const groups = {};
 
     // Get active provider IDs
-    const activeProviderIds = activeProviders.length > 0 ? activeProviders.map((p) => p.provider) : PROVIDER_ORDER;
+    const activeProviderIds =
+      activeProviders.length > 0 ? activeProviders.map((p) => p.provider) : PROVIDER_ORDER;
 
     // Sort by PROVIDER_ORDER
     const sortedProviderIds = [...activeProviderIds].sort((a, b) => {
@@ -171,7 +172,9 @@ export default function ModelSelectModal({
                 return (
                   <button
                     key={combo.id}
-                    onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
+                    onClick={() =>
+                      handleSelect({ id: combo.name, name: combo.name, value: combo.name })
+                    }
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
                       ${

@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import {
+  deleteProviderConnectionsByProvider,
+  deleteProviderNode,
+  getProviderConnections,
+  getProviderNodeById,
+  updateProviderConnection,
+  updateProviderNode,
+} from "@/models";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -22,7 +29,10 @@ export async function PUT(request, { params }) {
     }
 
     // Only validate apiType for OpenAI Compatible nodes
-    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses"].includes(apiType))) {
+    if (
+      node.type === "openai-compatible" &&
+      (!apiType || !["chat", "responses"].includes(apiType))
+    ) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 
@@ -31,7 +41,7 @@ export async function PUT(request, { params }) {
     }
 
     let sanitizedBaseUrl = baseUrl.trim();
-    
+
     // Sanitize Base URL for Anthropic Compatible
     if (node.type === "anthropic-compatible") {
       sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");
@@ -53,17 +63,19 @@ export async function PUT(request, { params }) {
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
-    await Promise.all(connections.map((connection) => (
-      updateProviderConnection(connection.id, {
-        providerSpecificData: {
-          ...(connection.providerSpecificData || {}),
-          prefix: prefix.trim(),
-          apiType: node.type === "openai-compatible" ? apiType : undefined,
-          baseUrl: sanitizedBaseUrl,
-          nodeName: updated.name,
-        }
-      })
-    )));
+    await Promise.all(
+      connections.map((connection) =>
+        updateProviderConnection(connection.id, {
+          providerSpecificData: {
+            ...(connection.providerSpecificData || {}),
+            prefix: prefix.trim(),
+            apiType: node.type === "openai-compatible" ? apiType : undefined,
+            baseUrl: sanitizedBaseUrl,
+            nodeName: updated.name,
+          },
+        })
+      )
+    );
 
     return NextResponse.json({ node: updated });
   } catch (error) {

@@ -22,7 +22,9 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // System message
   if (body.system) {
-    const systemContent = Array.isArray(body.system) ? body.system.map((s) => s.text || "").join("\n") : body.system;
+    const systemContent = Array.isArray(body.system)
+      ? body.system.map((s) => s.text || "").join("\n")
+      : body.system;
 
     if (systemContent) {
       result.messages.push({

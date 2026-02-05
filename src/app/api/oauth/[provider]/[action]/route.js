@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getProvider, generateAuthData, exchangeTokens, requestDeviceCode, pollForToken } from "@/lib/oauth/providers";
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken,
+} from "@/lib/oauth/providers";
 import { createProviderConnection, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
@@ -25,7 +31,10 @@ export async function GET(request, { params }) {
     if (action === "device-code") {
       const providerData = getProvider(provider);
       if (providerData.flowType !== "device_code") {
-        return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Provider does not support device code flow" },
+          { status: 400 }
+        );
       }
 
       const authData = generateAuthData(provider, null);
@@ -75,7 +84,9 @@ export async function POST(request, { params }) {
         provider,
         authType: "oauth",
         ...tokenData,
-        expiresAt: tokenData.expiresIn ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() : null,
+        expiresAt: tokenData.expiresIn
+          ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+          : null,
         testStatus: "active",
       });
 
@@ -140,7 +151,8 @@ export async function POST(request, { params }) {
       }
 
       // Still pending or error - don't create connection for pending states
-      const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
+      const isPending =
+        result.pending || result.error === "authorization_pending" || result.error === "slow_down";
 
       return NextResponse.json({
         success: false,

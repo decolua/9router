@@ -175,16 +175,23 @@ const PROVIDERS = {
       // Fetch project ID
       let projectId = "";
       try {
-        const projectRes = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${tokens.access_token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            metadata: { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
-          }),
-        });
+        const projectRes = await fetch(
+          "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tokens.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              metadata: {
+                ideType: "IDE_UNSPECIFIED",
+                platform: "PLATFORM_UNSPECIFIED",
+                pluginType: "GEMINI",
+              },
+            }),
+          }
+        );
         if (projectRes.ok) {
           const data = await projectRes.json();
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
@@ -251,7 +258,11 @@ const PROVIDERS = {
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
       };
-      const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
+      const metadata = {
+        ideType: "IDE_UNSPECIFIED",
+        platform: "PLATFORM_UNSPECIFIED",
+        pluginType: "GEMINI",
+      };
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
@@ -300,7 +311,10 @@ const PROVIDERS = {
                 // Extract final project ID from response
                 if (result.response?.cloudaicompanionProject) {
                   const respProject = result.response.cloudaicompanionProject;
-                  projectId = typeof respProject === "string" ? respProject.trim() : respProject.id || projectId;
+                  projectId =
+                    typeof respProject === "string"
+                      ? respProject.trim()
+                      : respProject.id || projectId;
                 }
                 break;
               }
@@ -723,7 +737,13 @@ export function generateAuthData(providerName, redirectUri) {
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state) {
   const provider = getProvider(providerName);
 
-  const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state);
+  const tokens = await provider.exchangeToken(
+    provider.config,
+    code,
+    redirectUri,
+    codeVerifier,
+    state
+  );
 
   let extra = null;
   if (provider.postExchange) {
@@ -783,11 +803,16 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
         return {
           success: false,
           error: result.data.error || "no_access_token",
-          errorDescription: result.data.error_description || result.data.message || "No access token received",
+          errorDescription:
+            result.data.error_description || result.data.message || "No access token received",
         };
       }
     }
   }
 
-  return { success: false, error: result.data.error, errorDescription: result.data.error_description };
+  return {
+    success: false,
+    error: result.data.error,
+    errorDescription: result.data.error_description,
+  };
 }

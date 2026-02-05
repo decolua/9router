@@ -63,7 +63,11 @@ console.log(`📁 File: ${filePath}`);
 console.log(`🌐 URL: ${url}`);
 console.log(`📋 Headers:`);
 Object.entries(headers).forEach(([k, v]) => {
-  if (k.toLowerCase().includes("auth") || k.toLowerCase().includes("key") || k.toLowerCase().includes("bearer")) {
+  if (
+    k.toLowerCase().includes("auth") ||
+    k.toLowerCase().includes("key") ||
+    k.toLowerCase().includes("bearer")
+  ) {
     const str = String(v);
     if (str.length > 20) {
       console.log(`  ${k}: ${str.slice(0, 20)}...`);
@@ -100,7 +104,8 @@ console.log(`  Stream: ${body.stream || false}`);
       process.exit(1);
     }
 
-    const isStreaming = body.stream || response.headers.get("content-type")?.includes("text/event-stream");
+    const isStreaming =
+      body.stream || response.headers.get("content-type")?.includes("text/event-stream");
 
     if (isStreaming) {
       console.log("\n📡 Streaming response...\n");

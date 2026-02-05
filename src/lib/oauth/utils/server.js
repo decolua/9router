@@ -77,7 +77,11 @@ export function startLocalServer(onCallback, fixedPort = null) {
 
     server.on("error", (err) => {
       if (err.code === "EADDRINUSE" && fixedPort) {
-        reject(new Error(`Port ${fixedPort} is already in use. Please close other applications using this port.`));
+        reject(
+          new Error(
+            `Port ${fixedPort} is already in use. Please close other applications using this port.`
+          )
+        );
       } else {
         reject(err);
       }

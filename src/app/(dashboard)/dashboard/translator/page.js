@@ -302,7 +302,11 @@ export default function TranslatorPage() {
         <div className="p-4 flex items-center gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-text-main mb-2">Provider</label>
-            <Select value={provider} onChange={(e) => setProvider(e.target.value)} options={PROVIDERS} />
+            <Select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              options={PROVIDERS}
+            />
           </div>
 
           <div className="pt-6">
@@ -319,7 +323,10 @@ export default function TranslatorPage() {
           <div className="p-4 space-y-3">
             {/* Header with expand/collapse */}
             <div className="flex items-center justify-between">
-              <button onClick={() => toggleExpand(step.id)} className="flex items-center gap-2 flex-1 text-left group">
+              <button
+                onClick={() => toggleExpand(step.id)}
+                className="flex items-center gap-2 flex-1 text-left group"
+              >
                 <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
                   {expanded[step.id] ? "expand_more" : "chevron_right"}
                 </span>
@@ -327,7 +334,11 @@ export default function TranslatorPage() {
                   {step.id}. {step.name}
                 </h3>
                 <span className="text-xs text-text-muted ml-2">{step.file}</span>
-                {steps[step.id] && <span className="text-xs text-green-500 ml-2">({steps[step.id].length} chars)</span>}
+                {steps[step.id] && (
+                  <span className="text-xs text-green-500 ml-2">
+                    ({steps[step.id].length} chars)
+                  </span>
+                )}
               </button>
 
               {/* Quick actions when collapsed */}
@@ -386,10 +397,20 @@ export default function TranslatorPage() {
                   >
                     Load
                   </Button>
-                  <Button size="sm" variant="outline" icon="compress" onClick={() => handleLean(step.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon="compress"
+                    onClick={() => handleLean(step.id)}
+                  >
                     Lean
                   </Button>
-                  <Button size="sm" variant="outline" icon="content_copy" onClick={() => handleCopy(step.id)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon="content_copy"
+                    onClick={() => handleCopy(step.id)}
+                  >
                     Copy
                   </Button>
                   <Button

@@ -43,7 +43,9 @@ export async function POST(request, { params }) {
       // Format: /v1beta/models/provider/model:generateContent
       const provider = path[0];
       const modelAction = path[1];
-      const modelName = modelAction.replace(":generateContent", "").replace(":streamGenerateContent", "");
+      const modelName = modelAction
+        .replace(":generateContent", "")
+        .replace(":streamGenerateContent", "");
       model = `${provider}/${modelName}`;
     } else {
       // Format: /v1beta/models/model:generateContent

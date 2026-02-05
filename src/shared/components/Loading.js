@@ -12,7 +12,9 @@ export function Spinner({ size = "md", className }) {
   };
 
   return (
-    <span className={cn("material-symbols-outlined animate-spin text-primary", sizes[size], className)}>
+    <span
+      className={cn("material-symbols-outlined animate-spin text-primary", sizes[size], className)}
+    >
       progress_activity
     </span>
   );

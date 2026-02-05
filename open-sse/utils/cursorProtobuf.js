@@ -115,7 +115,7 @@ const FIELD = {
   THINKING: 25,
 
   // Thinking
-  THINKING_TEXT: 1
+  THINKING_TEXT: 1,
 };
 
 // ==================== PRIMITIVE ENCODING ====================
@@ -123,10 +123,10 @@ const FIELD = {
 export function encodeVarint(value) {
   const bytes = [];
   while (value >= 0x80) {
-    bytes.push((value & 0x7F) | 0x80);
+    bytes.push((value & 0x7f) | 0x80);
     value >>>= 7;
   }
-  bytes.push(value & 0x7F);
+  bytes.push(value & 0x7f);
   return new Uint8Array(bytes);
 }
 
@@ -140,12 +140,15 @@ export function encodeField(fieldNum, wireType, value) {
   }
 
   if (wireType === WIRE_TYPE.LEN) {
-    const dataBytes = typeof value === "string" 
-      ? new TextEncoder().encode(value)
-      : value instanceof Uint8Array ? value
-      : Buffer.isBuffer(value) ? new Uint8Array(value)
-      : new Uint8Array(0);
-    
+    const dataBytes =
+      typeof value === "string"
+        ? new TextEncoder().encode(value)
+        : value instanceof Uint8Array
+          ? value
+          : Buffer.isBuffer(value)
+            ? new Uint8Array(value)
+            : new Uint8Array(0);
+
     const lengthBytes = encodeVarint(dataBytes.length);
     return concatArrays(tagBytes, lengthBytes, dataBytes);
   }
@@ -166,14 +169,27 @@ function concatArrays(...arrays) {
 
 // ==================== MESSAGE ENCODING ====================
 
-export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false) {
+export function encodeMessage(
+  content,
+  role,
+  messageId,
+  chatModeEnum = null,
+  isLast = false,
+  hasTools = false
+) {
   return concatArrays(
     encodeField(FIELD.MSG_CONTENT, WIRE_TYPE.LEN, content),
     encodeField(FIELD.MSG_ROLE, WIRE_TYPE.VARINT, role),
     encodeField(FIELD.MSG_ID, WIRE_TYPE.LEN, messageId),
     encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
-    encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
-    ...(isLast && hasTools ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : [])
+    encodeField(
+      FIELD.MSG_UNIFIED_MODE,
+      WIRE_TYPE.VARINT,
+      hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT
+    ),
+    ...(isLast && hasTools
+      ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))]
+      : [])
   );
 }
 
@@ -229,7 +245,9 @@ export function encodeMcpTool(tool) {
   return concatArrays(
     ...(toolName ? [encodeField(FIELD.MCP_TOOL_NAME, WIRE_TYPE.LEN, toolName)] : []),
     ...(toolDesc ? [encodeField(FIELD.MCP_TOOL_DESC, WIRE_TYPE.LEN, toolDesc)] : []),
-    ...(Object.keys(inputSchema).length > 0 ? [encodeField(FIELD.MCP_TOOL_PARAMS, WIRE_TYPE.LEN, JSON.stringify(inputSchema))] : []),
+    ...(Object.keys(inputSchema).length > 0
+      ? [encodeField(FIELD.MCP_TOOL_PARAMS, WIRE_TYPE.LEN, JSON.stringify(inputSchema))]
+      : []),
     encodeField(FIELD.MCP_TOOL_SERVER, WIRE_TYPE.LEN, "custom")
   );
 }
@@ -254,7 +272,7 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
       role,
       messageId: msgId,
       isLast,
-      hasTools
+      hasTools,
     });
 
     messageIds.push({ messageId: msgId, role });
@@ -268,12 +286,14 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   // Build request
   return concatArrays(
     // Messages
-    ...formattedMessages.map(fm => 
-      encodeField(FIELD.MESSAGES, WIRE_TYPE.LEN, 
+    ...formattedMessages.map((fm) =>
+      encodeField(
+        FIELD.MESSAGES,
+        WIRE_TYPE.LEN,
         encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools)
       )
     ),
-    
+
     // Static fields
     encodeField(FIELD.UNKNOWN_2, WIRE_TYPE.VARINT, 1),
     encodeField(FIELD.INSTRUCTION, WIRE_TYPE.LEN, encodeInstruction("")),
@@ -289,21 +309,25 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     // Tool-related fields
     encodeField(FIELD.IS_AGENTIC, WIRE_TYPE.VARINT, isAgentic ? 1 : 0),
     ...(isAgentic ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : []),
-    
+
     // Message IDs
-    ...messageIds.map(mid => 
+    ...messageIds.map((mid) =>
       encodeField(FIELD.MESSAGE_IDS, WIRE_TYPE.LEN, encodeMessageId(mid.messageId, mid.role))
     ),
 
     // MCP Tools
-    ...(tools?.length > 0 ? tools.map(tool => 
-      encodeField(FIELD.MCP_TOOLS, WIRE_TYPE.LEN, encodeMcpTool(tool))
-    ) : []),
+    ...(tools?.length > 0
+      ? tools.map((tool) => encodeField(FIELD.MCP_TOOLS, WIRE_TYPE.LEN, encodeMcpTool(tool)))
+      : []),
 
     // Mode fields
     encodeField(FIELD.LARGE_CONTEXT, WIRE_TYPE.VARINT, 0),
     encodeField(FIELD.UNKNOWN_38, WIRE_TYPE.VARINT, 0),
-    encodeField(FIELD.UNIFIED_MODE, WIRE_TYPE.VARINT, isAgentic ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
+    encodeField(
+      FIELD.UNIFIED_MODE,
+      WIRE_TYPE.VARINT,
+      isAgentic ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT
+    ),
     encodeField(FIELD.UNKNOWN_47, WIRE_TYPE.LEN, ""),
     encodeField(FIELD.SHOULD_DISABLE_TOOLS, WIRE_TYPE.VARINT, isAgentic ? 0 : 1),
     encodeField(FIELD.THINKING_LEVEL, WIRE_TYPE.VARINT, thinkingLevel),
@@ -314,7 +338,11 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
 }
 
 export function buildChatRequest(messages, modelName, tools = [], reasoningEffort = null) {
-  return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort));
+  return encodeField(
+    FIELD.REQUEST,
+    WIRE_TYPE.LEN,
+    encodeRequest(messages, modelName, tools, reasoningEffort)
+  );
 }
 
 export function wrapConnectRPCFrame(payload, compress = false) {
@@ -328,21 +356,24 @@ export function wrapConnectRPCFrame(payload, compress = false) {
 
   const frame = new Uint8Array(5 + finalPayload.length);
   frame[0] = flags;
-  frame[1] = (finalPayload.length >> 24) & 0xFF;
-  frame[2] = (finalPayload.length >> 16) & 0xFF;
-  frame[3] = (finalPayload.length >> 8) & 0xFF;
-  frame[4] = finalPayload.length & 0xFF;
+  frame[1] = (finalPayload.length >> 24) & 0xff;
+  frame[2] = (finalPayload.length >> 16) & 0xff;
+  frame[3] = (finalPayload.length >> 8) & 0xff;
+  frame[4] = finalPayload.length & 0xff;
   frame.set(finalPayload, 5);
 
   return frame;
 }
 
 export function generateCursorBody(messages, modelName, tools = [], reasoningEffort = null) {
-  log("BODY", `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}`);
-  
+  log(
+    "BODY",
+    `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}`
+  );
+
   const protobuf = buildChatRequest(messages, modelName, tools, reasoningEffort);
   const framed = wrapConnectRPCFrame(protobuf, false); // Cursor doesn't support compressed requests
-  
+
   log("BODY", `Protobuf=${protobuf.length}B, Framed=${framed.length}B`);
   return framed;
 }
@@ -356,7 +387,7 @@ export function decodeVarint(buffer, offset) {
 
   while (pos < buffer.length) {
     const b = buffer[pos];
-    result |= (b & 0x7F) << shift;
+    result |= (b & 0x7f) << shift;
     pos++;
     if (!(b & 0x80)) break;
     shift += 7;
@@ -455,14 +486,14 @@ function extractToolCall(toolCallData) {
   if (toolCall.has(FIELD.TOOL_MCP_PARAMS)) {
     try {
       const mcpParams = decodeMessage(toolCall.get(FIELD.TOOL_MCP_PARAMS)[0].value);
-      
+
       if (mcpParams.has(FIELD.MCP_TOOLS_LIST)) {
         const tool = decodeMessage(mcpParams.get(FIELD.MCP_TOOLS_LIST)[0].value);
-        
+
         if (tool.has(FIELD.MCP_NESTED_NAME)) {
           toolName = new TextDecoder().decode(tool.get(FIELD.MCP_NESTED_NAME)[0].value);
         }
-        
+
         if (tool.has(FIELD.MCP_NESTED_PARAMS)) {
           rawArgs = new TextDecoder().decode(tool.get(FIELD.MCP_NESTED_PARAMS)[0].value);
         }
@@ -483,8 +514,8 @@ function extractToolCall(toolCallData) {
       type: "function",
       function: {
         name: toolName,
-        arguments: rawArgs || "{}"
-      }
+        arguments: rawArgs || "{}",
+      },
     };
   }
 
@@ -532,7 +563,7 @@ export function extractTextFromResponse(payload) {
     // Field 2: StreamUnifiedChatResponse
     if (fields.has(FIELD.RESPONSE)) {
       const { text, thinking } = extractTextAndThinking(fields.get(FIELD.RESPONSE)[0].value);
-      
+
       if (text || thinking) {
         return { text, error: null, toolCall: null, thinking };
       }
@@ -558,5 +589,5 @@ export default {
   decodeField,
   decodeMessage,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
 };

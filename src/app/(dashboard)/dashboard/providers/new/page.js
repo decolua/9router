@@ -84,7 +84,9 @@ export default function NewProviderPage() {
           Back to Providers
         </Link>
         <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
-        <p className="text-text-muted mt-2">Configure a new AI provider to use with your applications.</p>
+        <p className="text-text-muted mt-2">
+          Configure a new AI provider to use with your applications.
+        </p>
       </div>
 
       {/* Form */}
@@ -105,7 +107,10 @@ export default function NewProviderPage() {
           {selectedProvider && (
             <Card.Section className="flex items-center gap-3">
               <div className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border">
-                <span className="material-symbols-outlined text-xl" style={{ color: selectedProvider.color }}>
+                <span
+                  className="material-symbols-outlined text-xl"
+                  style={{ color: selectedProvider.color }}
+                >
                   {selectedProvider.icon}
                 </span>
               </div>
@@ -133,7 +138,9 @@ export default function NewProviderPage() {
                       : "border-border hover:border-primary/50"
                   }`}
                 >
-                  <span className="material-symbols-outlined">{method.value === "api_key" ? "key" : "lock"}</span>
+                  <span className="material-symbols-outlined">
+                    {method.value === "api_key" ? "key" : "lock"}
+                  </span>
                   <span className="font-medium">{method.label}</span>
                 </button>
               ))}
@@ -157,7 +164,9 @@ export default function NewProviderPage() {
           {/* OAuth2 Button */}
           {formData.authMethod === "oauth2" && (
             <Card.Section>
-              <p className="text-sm text-text-muted mb-4">Connect your account using OAuth2 authentication.</p>
+              <p className="text-sm text-text-muted mb-4">
+                Connect your account using OAuth2 authentication.
+              </p>
               <Button type="button" variant="secondary" icon="link">
                 Connect with OAuth2
               </Button>

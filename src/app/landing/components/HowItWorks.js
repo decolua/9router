@@ -7,8 +7,8 @@ export default function HowItWorks() {
         <div className="mb-16">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">How 9Router Works</h2>
           <p className="text-gray-400 max-w-xl text-lg">
-            Data flows seamlessly from your application through our intelligent routing layer to the best provider for
-            the job.
+            Data flows seamlessly from your application through our intelligent routing layer to the
+            best provider for the job.
           </p>
         </div>
 
@@ -24,7 +24,8 @@ export default function HowItWorks() {
             <div>
               <h3 className="text-xl font-bold mb-2">1. CLI &amp; SDKs</h3>
               <p className="text-sm text-gray-400">
-                Your requests start from your favorite tools or our unified SDK. Just change the base URL.
+                Your requests start from your favorite tools or our unified SDK. Just change the
+                base URL.
               </p>
             </div>
           </div>
@@ -32,12 +33,15 @@ export default function HowItWorks() {
           {/* Step 2: 9Router Hub */}
           <div className="flex flex-col gap-6 relative group md:items-center md:text-center">
             <div className="w-24 h-24 rounded-2xl bg-[#181411] border-2 border-[#f97815] flex items-center justify-center shadow-[0_0_30px_rgba(249,120,21,0.2)] z-10 mx-auto">
-              <span className="material-symbols-outlined text-4xl text-[#f97815] animate-pulse">hub</span>
+              <span className="material-symbols-outlined text-4xl text-[#f97815] animate-pulse">
+                hub
+              </span>
             </div>
             <div>
               <h3 className="text-xl font-bold mb-2 text-[#f97815]">2. 9Router Hub</h3>
               <p className="text-sm text-gray-400">
-                Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost.
+                Our engine analyzes the prompt, checks provider health, and routes for lowest
+                latency or cost.
               </p>
             </div>
           </div>

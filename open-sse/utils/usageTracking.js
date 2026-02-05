@@ -12,7 +12,7 @@ export const COLORS = {
   green: "\x1b[32m",
   yellow: "\x1b[33m",
   blue: "\x1b[34m",
-  cyan: "\x1b[36m"
+  cyan: "\x1b[36m",
 };
 
 // Buffer tokens to prevent context errors
@@ -20,7 +20,12 @@ const BUFFER_TOKENS = 2000;
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
-  return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date().toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 /**
@@ -71,32 +76,43 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 
-      'cache_read_input_tokens', 'cache_creation_input_tokens',
-      'estimated'
+      "input_tokens",
+      "output_tokens",
+      "cache_read_input_tokens",
+      "cache_creation_input_tokens",
+      "estimated",
     ],
     [FORMATS.GEMINI]: [
-      'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',
-      'cachedContentTokenCount', 'thoughtsTokenCount',
-      'estimated'
+      "promptTokenCount",
+      "candidatesTokenCount",
+      "totalTokenCount",
+      "cachedContentTokenCount",
+      "thoughtsTokenCount",
+      "estimated",
     ],
     [FORMATS.OPENAI_RESPONSES]: [
-      'input_tokens', 'output_tokens',
-      'input_tokens_details', 'output_tokens_details',
-      'estimated'
+      "input_tokens",
+      "output_tokens",
+      "input_tokens_details",
+      "output_tokens_details",
+      "estimated",
     ],
     // OpenAI format (default for OPENAI, CODEX, KIRO, etc.)
     default: [
-      'prompt_tokens', 'completion_tokens', 'total_tokens',
-      'cached_tokens', 'reasoning_tokens',
-      'prompt_tokens_details', 'completion_tokens_details',
-      'estimated'
-    ]
+      "prompt_tokens",
+      "completion_tokens",
+      "total_tokens",
+      "cached_tokens",
+      "reasoning_tokens",
+      "prompt_tokens_details",
+      "completion_tokens_details",
+      "estimated",
+    ],
   };
 
   // Get fields for target format
   let fields = formatFields[targetFormat];
-  
+
   // Use same fields for similar formats
   if (targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.ANTIGRAVITY) {
     fields = formatFields[FORMATS.GEMINI];
@@ -144,9 +160,13 @@ export function hasValidUsage(usage) {
 
   // Check for any known token field with value > 0
   const tokenFields = [
-    "prompt_tokens", "completion_tokens", "total_tokens",  // OpenAI
-    "input_tokens", "output_tokens",                        // Claude
-    "promptTokenCount", "candidatesTokenCount"              // Gemini
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens", // OpenAI
+    "input_tokens",
+    "output_tokens", // Claude
+    "promptTokenCount",
+    "candidatesTokenCount", // Gemini
   ];
 
   for (const field of tokenFields) {
@@ -170,18 +190,22 @@ export function extractUsage(chunk) {
       prompt_tokens: chunk.usage.input_tokens || 0,
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
     });
   }
 
   // OpenAI Responses API format (response.completed or response.done)
-  if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
+  if (
+    (chunk.type === "response.completed" || chunk.type === "response.done") &&
+    chunk.response?.usage &&
+    typeof chunk.response.usage === "object"
+  ) {
     const usage = chunk.response.usage;
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: usage.input_tokens_details?.cached_tokens,
-      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
     });
   }
 
@@ -191,7 +215,7 @@ export function extractUsage(chunk) {
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
     });
   }
 
@@ -202,7 +226,7 @@ export function extractUsage(chunk) {
       completion_tokens: chunk.usageMetadata?.candidatesTokenCount || 0,
       total_tokens: chunk.usageMetadata?.totalTokenCount,
       cached_tokens: chunk.usageMetadata?.cachedContentTokenCount,
-      reasoning_tokens: chunk.usageMetadata?.thoughtsTokenCount
+      reasoning_tokens: chunk.usageMetadata?.thoughtsTokenCount,
     });
   }
 
@@ -246,10 +270,10 @@ export function estimateOutputTokens(contentLength) {
 export function formatUsage(inputTokens, outputTokens, targetFormat) {
   // Claude format uses input_tokens/output_tokens
   if (targetFormat === FORMATS.CLAUDE) {
-    return addBufferToUsage({ 
-      input_tokens: inputTokens, 
-      output_tokens: outputTokens, 
-      estimated: true 
+    return addBufferToUsage({
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated: true,
     });
   }
 
@@ -258,7 +282,7 @@ export function formatUsage(inputTokens, outputTokens, targetFormat) {
     prompt_tokens: inputTokens,
     completion_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
-    estimated: true
+    estimated: true,
   });
 }
 
@@ -269,11 +293,7 @@ export function formatUsage(inputTokens, outputTokens, targetFormat) {
  * @param {string} targetFormat - Target format from FORMATS constant
  */
 export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI) {
-  return formatUsage(
-    estimateInputTokens(body),
-    estimateOutputTokens(contentLength),
-    targetFormat
-  );
+  return formatUsage(estimateInputTokens(body), estimateOutputTokens(contentLength), targetFormat);
 }
 
 /**
@@ -316,8 +336,8 @@ export function logUsage(provider, usage, model = null, connectionId = null) {
     output: outTokens,
     cacheRead: cacheRead || 0,
     cacheCreation: cacheCreation || 0,
-    reasoning: reasoning || 0
+    reasoning: reasoning || 0,
   };
-  saveRequestUsage({ model, provider, connectionId, tokens }).catch(() => { });
-  appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
+  saveRequestUsage({ model, provider, connectionId, tokens }).catch(() => {});
+  appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => {});
 }

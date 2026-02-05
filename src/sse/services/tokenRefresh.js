@@ -23,7 +23,8 @@ export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 export const refreshAccessToken = (provider, refreshToken, credentials) =>
   _refreshAccessToken(provider, refreshToken, credentials, log);
 
-export const refreshClaudeOAuthToken = (refreshToken) => _refreshClaudeOAuthToken(refreshToken, log);
+export const refreshClaudeOAuthToken = (refreshToken) =>
+  _refreshClaudeOAuthToken(refreshToken, log);
 
 export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
   _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
@@ -36,11 +37,14 @@ export const refreshIflowToken = (refreshToken) => _refreshIflowToken(refreshTok
 
 export const refreshGitHubToken = (refreshToken) => _refreshGitHubToken(refreshToken, log);
 
-export const refreshCopilotToken = (githubAccessToken) => _refreshCopilotToken(githubAccessToken, log);
+export const refreshCopilotToken = (githubAccessToken) =>
+  _refreshCopilotToken(githubAccessToken, log);
 
-export const getAccessToken = (provider, credentials) => _getAccessToken(provider, credentials, log);
+export const getAccessToken = (provider, credentials) =>
+  _getAccessToken(provider, credentials, log);
 
-export const refreshTokenByProvider = (provider, credentials) => _refreshTokenByProvider(provider, credentials, log);
+export const refreshTokenByProvider = (provider, credentials) =>
+  _refreshTokenByProvider(provider, credentials, log);
 
 export const formatProviderCredentials = (provider, credentials) =>
   _formatProviderCredentials(provider, credentials, log);

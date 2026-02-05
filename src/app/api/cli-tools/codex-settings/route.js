@@ -36,7 +36,10 @@ const parseToml = (content) => {
       const key = kvMatch[1].trim();
       let value = kvMatch[2].trim();
       // Remove quotes
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1);
       }
       if (currentSection === "_root") {
@@ -98,7 +101,9 @@ const readConfig = async () => {
 // Check if config has 9Router settings
 const has9RouterConfig = (config) => {
   if (!config) return false;
-  return config.includes('model_provider = "9router"') || config.includes("[model_providers.9router]");
+  return (
+    config.includes('model_provider = "9router"') || config.includes("[model_providers.9router]")
+  );
 };
 
 // GET - Check codex CLI and read current settings
@@ -134,7 +139,10 @@ export async function POST(request) {
     const { baseUrl, apiKey, model } = await request.json();
 
     if (!baseUrl || !apiKey || !model) {
-      return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "baseUrl, apiKey and model are required" },
+        { status: 400 }
+      );
     }
 
     const codexDir = getCodexDir();

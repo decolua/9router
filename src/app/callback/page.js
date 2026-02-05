@@ -54,7 +54,10 @@ function CallbackContent() {
 
     // Method 3: localStorage event (fallback)
     try {
-      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
+      localStorage.setItem(
+        "oauth_callback",
+        JSON.stringify({ ...callbackData, timestamp: Date.now() })
+      );
       sent = true;
     } catch (e) {
       console.log("localStorage failed:", e);
@@ -82,7 +85,9 @@ function CallbackContent() {
         {status === "processing" && (
           <>
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                progress_activity
+              </span>
             </div>
             <h1 className="text-xl font-semibold mb-2">Processing...</h1>
             <p className="text-text-muted">Please wait while we complete the authorization.</p>
@@ -92,11 +97,15 @@ function CallbackContent() {
         {(status === "success" || status === "done") && (
           <>
             <div className="size-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-green-600">check_circle</span>
+              <span className="material-symbols-outlined text-3xl text-green-600">
+                check_circle
+              </span>
             </div>
             <h1 className="text-xl font-semibold mb-2">Authorization Successful!</h1>
             <p className="text-text-muted">
-              {status === "success" ? "This window will close automatically..." : "You can close this tab now."}
+              {status === "success"
+                ? "This window will close automatically..."
+                : "You can close this tab now."}
             </p>
           </>
         )}
@@ -111,7 +120,9 @@ function CallbackContent() {
               Please copy the URL from the address bar and paste it in the application.
             </p>
             <div className="bg-surface border border-border rounded-lg p-3 text-left">
-              <code className="text-xs break-all">{typeof window !== "undefined" ? window.location.href : ""}</code>
+              <code className="text-xs break-all">
+                {typeof window !== "undefined" ? window.location.href : ""}
+              </code>
             </div>
           </>
         )}
@@ -131,7 +142,9 @@ export default function CallbackPage() {
         <div className="min-h-screen flex items-center justify-center bg-bg">
           <div className="text-center p-8">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="material-symbols-outlined text-3xl text-primary animate-spin">progress_activity</span>
+              <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                progress_activity
+              </span>
             </div>
             <p className="text-text-muted">Loading...</p>
           </div>

@@ -41,12 +41,8 @@ export default function Card({
               </div>
             )}
             <div>
-              {title && (
-                <h3 className="text-text-main font-semibold">{title}</h3>
-              )}
-              {subtitle && (
-                <p className="text-sm text-text-muted">{subtitle}</p>
-              )}
+              {title && <h3 className="text-text-main font-semibold">{title}</h3>}
+              {subtitle && <p className="text-sm text-text-muted">{subtitle}</p>}
             </div>
           </div>
           {action}
@@ -92,12 +88,7 @@ Card.Row = function CardRow({ children, className, ...props }) {
 };
 
 // Sub-component: List item with hover actions (macOS style)
-Card.ListItem = function CardListItem({ 
-  children, 
-  actions,
-  className, 
-  ...props 
-}) {
+Card.ListItem = function CardListItem({ children, actions, className, ...props }) {
   return (
     <div
       className={cn(
@@ -118,4 +109,3 @@ Card.ListItem = function CardListItem({
     </div>
   );
 };
-

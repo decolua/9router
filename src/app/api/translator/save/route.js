@@ -7,7 +7,10 @@ export async function POST(request) {
     const { file, content } = await request.json();
 
     if (!file || content === undefined) {
-      return NextResponse.json({ success: false, error: "File and content required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "File and content required" },
+        { status: 400 }
+      );
     }
 
     // Security: only allow specific filenames

@@ -125,7 +125,9 @@ async function getGeminiUsage(accessToken) {
 
     if (!response.ok) {
       // Quota API may not be accessible, return generic message
-      return { message: "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details." };
+      return {
+        message: "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details.",
+      };
     }
 
     return { message: "Gemini CLI connected. Usage tracked via Google Cloud Console." };

@@ -21,7 +21,8 @@ export class GithubExecutor extends BaseExecutor {
       "user-agent": "GitHubCopilotChat/0.26.7",
       "openai-intent": "conversation-panel",
       "x-github-api-version": "2025-04-01",
-      "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      "x-request-id":
+        crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
       Accept: stream ? "text/event-stream" : "application/json",
@@ -31,7 +32,11 @@ export class GithubExecutor extends BaseExecutor {
   async refreshCopilotToken(githubAccessToken, log) {
     try {
       const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
-        headers: { Authorization: `Bearer ${githubAccessToken}`, "User-Agent": "GitHub-Copilot/1.0", Accept: "*/*" },
+        headers: {
+          Authorization: `Bearer ${githubAccessToken}`,
+          "User-Agent": "GitHub-Copilot/1.0",
+          Accept: "*/*",
+        },
       });
       if (!response.ok) return null;
       const data = await response.json();
@@ -47,7 +52,10 @@ export class GithubExecutor extends BaseExecutor {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
         body: new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: refreshToken,
@@ -77,7 +85,11 @@ export class GithubExecutor extends BaseExecutor {
       if (githubTokens?.accessToken) {
         copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log);
         if (copilotResult) {
-          return { ...githubTokens, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
+          return {
+            ...githubTokens,
+            copilotToken: copilotResult.token,
+            copilotTokenExpiresAt: copilotResult.expiresAt,
+          };
         }
         return githubTokens;
       }
@@ -97,7 +109,8 @@ export class GithubExecutor extends BaseExecutor {
 
   needsRefresh(credentials) {
     if (credentials.copilotTokenExpiresAt) {
-      if (new Date(credentials.copilotTokenExpiresAt).getTime() - Date.now() < 5 * 60 * 1000) return true;
+      if (new Date(credentials.copilotTokenExpiresAt).getTime() - Date.now() < 5 * 60 * 1000)
+        return true;
     }
     return super.needsRefresh(credentials);
   }

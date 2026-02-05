@@ -38,7 +38,10 @@ export default function FlowAnimation() {
       {/* CLI Tools - Left side */}
       <div className="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col gap-7">
         {CLI_TOOLS.map((tool) => (
-          <div key={tool.id} className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group">
+          <div
+            key={tool.id}
+            className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group"
+          >
             <div className="w-16 h-16 rounded-2xl bg-[#23180f] border border-[#3a2f27] flex items-center justify-center overflow-hidden p-2 hover:border-[#f97815]/50 transition-all hover:scale-105">
               <Image
                 src={tool.image}
@@ -89,7 +92,10 @@ export default function FlowAnimation() {
       </svg>
 
       {/* SVG Lines from 9Router to Providers */}
-      <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+      <svg
+        className="absolute inset-0 w-full h-full z-10 pointer-events-none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
         <path
           d="M 440 180 C 550 180, 550 50, 740 50"
           fill="none"

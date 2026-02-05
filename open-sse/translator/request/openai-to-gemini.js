@@ -321,7 +321,9 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
           } else if (block.type === "tool_result") {
             let content = block.content;
             if (Array.isArray(content)) {
-              content = content.map((c) => (c.type === "text" ? c.text : JSON.stringify(c))).join("\n");
+              content = content
+                .map((c) => (c.type === "text" ? c.text : JSON.stringify(c)))
+                .join("\n");
             }
             parts.push({
               functionResponse: {

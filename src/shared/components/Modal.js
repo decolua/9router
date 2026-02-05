@@ -76,11 +76,7 @@ export default function Modal({
                 <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
                 <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
               </div>
-              {title && (
-                <h2 className="text-lg font-semibold text-text-main">
-                  {title}
-                </h2>
-              )}
+              {title && <h2 className="text-lg font-semibold text-text-main">{title}</h2>}
             </div>
             {showCloseButton && (
               <button
@@ -140,4 +136,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-

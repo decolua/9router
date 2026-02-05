@@ -152,7 +152,9 @@ async function getGeminiUsage(accessToken) {
 
     if (!response.ok) {
       // Quota API may not be accessible, return generic message
-      return { message: "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details." };
+      return {
+        message: "Gemini CLI uses Google Cloud quotas. Check Google Cloud Console for details.",
+      };
     }
 
     return { message: "Gemini CLI connected. Usage tracked via Google Cloud Console." };
@@ -337,8 +339,12 @@ async function getCodexUsage(accessToken) {
     const secondaryWindow = rateLimit.secondary_window || {};
 
     // Calculate reset dates
-    const sessionResetAt = primaryWindow.reset_at ? new Date(primaryWindow.reset_at * 1000).toISOString() : null;
-    const weeklyResetAt = secondaryWindow.reset_at ? new Date(secondaryWindow.reset_at * 1000).toISOString() : null;
+    const sessionResetAt = primaryWindow.reset_at
+      ? new Date(primaryWindow.reset_at * 1000).toISOString()
+      : null;
+    const weeklyResetAt = secondaryWindow.reset_at
+      ? new Date(secondaryWindow.reset_at * 1000).toISOString()
+      : null;
 
     return {
       plan: data.plan_type || "unknown",
@@ -385,10 +391,10 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/x-amz-json-1.0",
         "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
-        "Accept": "application/json",
+        Accept: "application/json",
       },
       body: JSON.stringify(payload),
     });
@@ -408,7 +414,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
       const used = breakdown.currentUsageWithPrecision || 0;
       const total = breakdown.usageLimitWithPrecision || 0;
-      
+
       quotaInfo[resourceType] = {
         used,
         total,
@@ -421,7 +427,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       if (breakdown.freeTrialInfo) {
         const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
         const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-        
+
         quotaInfo[`${resourceType}_freetrial`] = {
           used: freeUsed,
           total: freeTotal,

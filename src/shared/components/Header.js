@@ -28,7 +28,11 @@ const getPageInfo = (pathname) => {
   }
 
   if (pathname.includes("/providers"))
-    return { title: "Providers", description: "Manage your AI provider connections", breadcrumbs: [] };
+    return {
+      title: "Providers",
+      description: "Manage your AI provider connections",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/combos"))
     return { title: "Combos", description: "Model combos with fallback", breadcrumbs: [] };
   if (pathname.includes("/usage"))
@@ -70,7 +74,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden">
         {showMenuButton && (
-          <button onClick={onMenuClick} className="text-text-main hover:text-primary transition-colors">
+          <button
+            onClick={onMenuClick}
+            className="text-text-main hover:text-primary transition-colors"
+          >
             <span className="material-symbols-outlined">menu</span>
           </button>
         )}
@@ -81,12 +88,20 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
-              <div key={`${crumb.label}-${crumb.href || "current"}`} className="flex items-center gap-2">
+              <div
+                key={`${crumb.label}-${crumb.href || "current"}`}
+                className="flex items-center gap-2"
+              >
                 {index > 0 && (
-                  <span className="material-symbols-outlined text-text-muted text-base">chevron_right</span>
+                  <span className="material-symbols-outlined text-text-muted text-base">
+                    chevron_right
+                  </span>
                 )}
                 {crumb.href ? (
-                  <Link href={crumb.href} className="text-text-muted hover:text-primary transition-colors">
+                  <Link
+                    href={crumb.href}
+                    className="text-text-muted hover:text-primary transition-colors"
+                  >
                     {crumb.label}
                   </Link>
                 ) : (
@@ -104,7 +119,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                         }}
                       />
                     )}
-                    <h1 className="text-2xl font-semibold text-text-main tracking-tight">{crumb.label}</h1>
+                    <h1 className="text-2xl font-semibold text-text-main tracking-tight">
+                      {crumb.label}
+                    </h1>
                   </div>
                 )}
               </div>

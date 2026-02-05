@@ -20,10 +20,7 @@ export async function GET() {
     } else if (platform === "win32") {
       dbPath = join(process.env.APPDATA || "", "Cursor/User/globalStorage/state.vscdb");
     } else {
-      return NextResponse.json(
-        { error: "Unsupported platform", found: false },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Unsupported platform", found: false }, { status: 400 });
     }
 
     // Try to open database
@@ -33,15 +30,16 @@ export async function GET() {
     } catch (error) {
       return NextResponse.json({
         found: false,
-        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
+        error:
+          "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
       });
     }
 
     try {
       // Extract tokens from database
-      const rows = db.prepare(
-        "SELECT key, value FROM itemTable WHERE key IN (?, ?)"
-      ).all("cursorAuth/accessToken", "storage.serviceMachineId");
+      const rows = db
+        .prepare("SELECT key, value FROM itemTable WHERE key IN (?, ?)")
+        .all("cursorAuth/accessToken", "storage.serviceMachineId");
 
       const tokens = {};
       for (const row of rows) {
@@ -76,9 +74,6 @@ export async function GET() {
     }
   } catch (error) {
     console.log("Cursor auto-import error:", error);
-    return NextResponse.json(
-      { found: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ found: false, error: error.message }, { status: 500 });
   }
 }

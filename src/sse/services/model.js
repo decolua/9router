@@ -36,7 +36,7 @@ export async function getModelInfo(modelStr) {
     }
     return {
       provider: parsed.provider,
-      model: parsed.model
+      model: parsed.model,
     };
   }
 

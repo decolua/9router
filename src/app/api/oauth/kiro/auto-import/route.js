@@ -77,9 +77,6 @@ export async function GET() {
     });
   } catch (error) {
     console.log("Kiro auto-import error:", error);
-    return NextResponse.json(
-      { found: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ found: false, error: error.message }, { status: 500 });
   }
 }

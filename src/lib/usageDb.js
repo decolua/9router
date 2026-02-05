@@ -87,13 +87,17 @@ export function trackPendingRequest(model, provider, connectionId, started) {
 
   // Track by model
   if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
-  pendingRequests.byModel[modelKey] = Math.max(0, pendingRequests.byModel[modelKey] + (started ? 1 : -1));
+  pendingRequests.byModel[modelKey] = Math.max(
+    0,
+    pendingRequests.byModel[modelKey] + (started ? 1 : -1)
+  );
 
   // Track by account
   if (connectionId) {
     const accountKey = connectionId; // We use connectionId as key here
     if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
-    if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
+    if (!pendingRequests.byAccount[accountKey][modelKey])
+      pendingRequests.byAccount[accountKey][modelKey] = 0;
     pendingRequests.byAccount[accountKey][modelKey] = Math.max(
       0,
       pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1)
@@ -261,23 +265,23 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
  */
 export async function getRecentLogs(limit = 200) {
   if (isCloud) return []; // Skip in Workers
-  
+
   // Runtime check: ensure fs module is available
   if (!fs || typeof fs.existsSync !== "function") {
     console.error("[usageDb] fs module not available in this environment");
     return [];
   }
-  
+
   if (!LOG_FILE) {
     console.error("[usageDb] LOG_FILE path not defined");
     return [];
   }
-  
+
   if (!fs.existsSync(LOG_FILE)) {
     console.log(`[usageDb] Log file does not exist: ${LOG_FILE}`);
     return [];
   }
-  
+
   try {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const lines = content.trim().split("\n");
@@ -486,7 +490,8 @@ export async function getUsageStats() {
     // By Account (model + oauth account)
     // Use connectionId if available, otherwise fallback to provider name
     if (entry.connectionId) {
-      const accountName = connectionMap[entry.connectionId] || `Account ${entry.connectionId.slice(0, 8)}...`;
+      const accountName =
+        connectionMap[entry.connectionId] || `Account ${entry.connectionId.slice(0, 8)}...`;
       const accountKey = `${entry.model} (${entry.provider} - ${accountName})`;
 
       if (!stats.byAccount[accountKey]) {

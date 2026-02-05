@@ -148,7 +148,11 @@ export class QwenService {
       spinner.start("Waiting for authorization...");
 
       // Poll for token
-      const tokens = await this.pollForToken(deviceData.device_code, codeVerifier, deviceData.interval || 5);
+      const tokens = await this.pollForToken(
+        deviceData.device_code,
+        codeVerifier,
+        deviceData.interval || 5
+      );
 
       spinner.text = "Saving tokens to server...";
 

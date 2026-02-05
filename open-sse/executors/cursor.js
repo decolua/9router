@@ -3,7 +3,7 @@ import { PROVIDERS } from "../config/constants.js";
 import {
   generateCursorBody,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
 } from "../utils/cursorProtobuf.js";
 import crypto from "crypto";
 import { v5 as uuidv5 } from "uuid";
@@ -30,11 +30,15 @@ const COMPRESS_FLAG = {
   NONE: 0x00,
   GZIP: 0x01,
   GZIP_ALT: 0x02,
-  GZIP_BOTH: 0x03
+  GZIP_BOTH: 0x03,
 };
 
 function decompressPayload(payload, flags) {
-  if (flags === COMPRESS_FLAG.GZIP || flags === COMPRESS_FLAG.GZIP_ALT || flags === COMPRESS_FLAG.GZIP_BOTH) {
+  if (
+    flags === COMPRESS_FLAG.GZIP ||
+    flags === COMPRESS_FLAG.GZIP_ALT ||
+    flags === COMPRESS_FLAG.GZIP_BOTH
+  ) {
     try {
       return zlib.gunzipSync(payload);
     } catch {
@@ -45,23 +49,27 @@ function decompressPayload(payload, flags) {
 }
 
 function createErrorResponse(jsonError) {
-  const errorMsg = jsonError?.error?.details?.[0]?.debug?.details?.title
-    || jsonError?.error?.details?.[0]?.debug?.details?.detail
-    || jsonError?.error?.message
-    || "API Error";
-  
+  const errorMsg =
+    jsonError?.error?.details?.[0]?.debug?.details?.title ||
+    jsonError?.error?.details?.[0]?.debug?.details?.detail ||
+    jsonError?.error?.message ||
+    "API Error";
+
   const isRateLimit = jsonError?.error?.code === "resource_exhausted";
-  
-  return new Response(JSON.stringify({
-    error: {
-      message: errorMsg,
-      type: isRateLimit ? "rate_limit_error" : "api_error",
-      code: jsonError?.error?.details?.[0]?.debug?.error || "unknown"
+
+  return new Response(
+    JSON.stringify({
+      error: {
+        message: errorMsg,
+        type: isRateLimit ? "rate_limit_error" : "api_error",
+        code: jsonError?.error?.details?.[0]?.debug?.error || "unknown",
+      },
+    }),
+    {
+      status: isRateLimit ? 429 : 400,
+      headers: { "Content-Type": "application/json" },
     }
-  }), {
-    status: isRateLimit ? 429 : 400,
-    headers: { "Content-Type": "application/json" }
-  });
+  );
 }
 
 export class CursorExecutor extends BaseExecutor {
@@ -77,17 +85,17 @@ export class CursorExecutor extends BaseExecutor {
   generateChecksum(machineId) {
     const timestamp = Math.floor(Date.now() / 1000000);
     const byteArray = new Uint8Array([
-      (timestamp >> 40) & 0xFF,
-      (timestamp >> 32) & 0xFF,
-      (timestamp >> 24) & 0xFF,
-      (timestamp >> 16) & 0xFF,
-      (timestamp >> 8) & 0xFF,
-      timestamp & 0xFF
+      (timestamp >> 40) & 0xff,
+      (timestamp >> 32) & 0xff,
+      (timestamp >> 24) & 0xff,
+      (timestamp >> 16) & 0xff,
+      (timestamp >> 8) & 0xff,
+      timestamp & 0xff,
     ]);
 
     let t = 165;
     for (let i = 0; i < byteArray.length; i++) {
-      byteArray[i] = ((byteArray[i] ^ t) + (i % 256)) & 0xFF;
+      byteArray[i] = ((byteArray[i] ^ t) + (i % 256)) & 0xff;
       t = byteArray[i];
     }
 
@@ -125,7 +133,7 @@ export class CursorExecutor extends BaseExecutor {
     const cleanToken = accessToken.includes("::") ? accessToken.split("::")[1] : accessToken;
 
     return {
-      "authorization": `Bearer ${cleanToken}`,
+      authorization: `Bearer ${cleanToken}`,
       "connect-accept-encoding": "gzip",
       "connect-protocol-version": "1",
       "content-type": "application/connect+proto",
@@ -135,7 +143,12 @@ export class CursorExecutor extends BaseExecutor {
       "x-cursor-checksum": this.generateChecksum(machineId),
       "x-cursor-client-version": "2.3.41",
       "x-cursor-client-type": "ide",
-      "x-cursor-client-os": process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux",
+      "x-cursor-client-os":
+        process.platform === "win32"
+          ? "windows"
+          : process.platform === "darwin"
+            ? "macos"
+            : "linux",
       "x-cursor-client-arch": process.arch === "arm64" ? "aarch64" : "x64",
       "x-cursor-client-device-type": "desktop",
       "x-cursor-config-version": crypto.randomUUID(),
@@ -158,13 +171,13 @@ export class CursorExecutor extends BaseExecutor {
       method: "POST",
       headers,
       body,
-      signal
+      signal,
     });
 
     return {
       status: response.status,
       headers: Object.fromEntries(response.headers.entries()),
-      body: Buffer.from(await response.arrayBuffer())
+      body: Buffer.from(await response.arrayBuffer()),
     };
   }
 
@@ -186,17 +199,21 @@ export class CursorExecutor extends BaseExecutor {
         ":path": urlObj.pathname,
         ":authority": urlObj.host,
         ":scheme": "https",
-        ...headers
+        ...headers,
       });
 
-      req.on("response", (hdrs) => { responseHeaders = hdrs; });
-      req.on("data", (chunk) => { chunks.push(chunk); });
+      req.on("response", (hdrs) => {
+        responseHeaders = hdrs;
+      });
+      req.on("data", (chunk) => {
+        chunks.push(chunk);
+      });
       req.on("end", () => {
         client.close();
         resolve({
           status: responseHeaders[":status"],
           headers: responseHeaders,
-          body: Buffer.concat(chunks)
+          body: Buffer.concat(chunks),
         });
       });
       req.on("error", (err) => {
@@ -223,41 +240,48 @@ export class CursorExecutor extends BaseExecutor {
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     try {
-      const response = http2 
+      const response = http2
         ? await this.makeHttp2Request(url, headers, transformedBody, signal)
         : await this.makeFetchRequest(url, headers, transformedBody, signal);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
-        const errorResponse = new Response(JSON.stringify({
-          error: {
-            message: `[${response.status}]: ${errorText}`,
-            type: "invalid_request_error",
-            code: ""
+        const errorResponse = new Response(
+          JSON.stringify({
+            error: {
+              message: `[${response.status}]: ${errorText}`,
+              type: "invalid_request_error",
+              code: "",
+            },
+          }),
+          {
+            status: response.status,
+            headers: { "Content-Type": "application/json" },
           }
-        }), {
-          status: response.status,
-          headers: { "Content-Type": "application/json" }
-        });
+        );
         return { response: errorResponse, url, headers, transformedBody: body };
       }
 
-      const transformedResponse = stream !== false
-        ? this.transformProtobufToSSE(response.body, model)
-        : this.transformProtobufToJSON(response.body, model);
+      const transformedResponse =
+        stream !== false
+          ? this.transformProtobufToSSE(response.body, model)
+          : this.transformProtobufToJSON(response.body, model);
 
       return { response: transformedResponse, url, headers, transformedBody: body };
     } catch (error) {
-      const errorResponse = new Response(JSON.stringify({
-        error: {
-          message: error.message,
-          type: "connection_error",
-          code: ""
+      const errorResponse = new Response(
+        JSON.stringify({
+          error: {
+            message: error.message,
+            type: "connection_error",
+            code: "",
+          },
+        }),
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
         }
-      }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+      );
       return { response: errorResponse, url, headers, transformedBody: body };
     }
   }
@@ -294,16 +318,19 @@ export class CursorExecutor extends BaseExecutor {
       const result = extractTextFromResponse(new Uint8Array(payload));
 
       if (result.error) {
-        return new Response(JSON.stringify({
-          error: {
-            message: result.error,
-            type: "rate_limit_error",
-            code: "rate_limited"
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: result.error,
+              type: "rate_limit_error",
+              code: "rate_limited",
+            },
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
           }
-        }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" }
-        });
+        );
       }
 
       if (result.toolCall) toolCalls.push(result.toolCall);
@@ -312,7 +339,7 @@ export class CursorExecutor extends BaseExecutor {
 
     const message = {
       role: "assistant",
-      content: totalContent || null
+      content: totalContent || null,
     };
 
     if (toolCalls.length > 0) {
@@ -324,21 +351,23 @@ export class CursorExecutor extends BaseExecutor {
       object: "chat.completion",
       created,
       model,
-      choices: [{
-        index: 0,
-        message,
-        finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
-      }],
+      choices: [
+        {
+          index: 0,
+          message,
+          finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
+        },
+      ],
       usage: {
         prompt_tokens: 10,
         completion_tokens: Math.max(1, Math.floor(totalContent.length / 4)),
-        total_tokens: 10 + Math.max(1, Math.floor(totalContent.length / 4))
-      }
+        total_tokens: 10 + Math.max(1, Math.floor(totalContent.length / 4)),
+      },
     };
 
     return new Response(JSON.stringify(completion), {
       status: 200,
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
     });
   }
 
@@ -375,96 +404,120 @@ export class CursorExecutor extends BaseExecutor {
       const result = extractTextFromResponse(new Uint8Array(payload));
 
       if (result.error) {
-        return new Response(JSON.stringify({
-          error: {
-            message: result.error,
-            type: "rate_limit_error",
-            code: "rate_limited"
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: result.error,
+              type: "rate_limit_error",
+              code: "rate_limited",
+            },
+          }),
+          {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
           }
-        }), {
-          status: 429,
-          headers: { "Content-Type": "application/json" }
-        });
+        );
       }
 
       if (result.toolCall) {
         toolCalls.push(result.toolCall);
-        
+
         if (chunks.length === 0) {
-          chunks.push(`data: ${JSON.stringify({
+          chunks.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: "assistant", content: "" },
+                  finish_reason: null,
+                },
+              ],
+            })}\n\n`
+          );
+        }
+
+        chunks.push(
+          `data: ${JSON.stringify({
             id: responseId,
             object: "chat.completion.chunk",
             created,
             model,
-            choices: [{
-              index: 0,
-              delta: { role: "assistant", content: "" },
-              finish_reason: null
-            }]
-          })}\n\n`);
-        }
-        
-        chunks.push(`data: ${JSON.stringify({
-          id: responseId,
-          object: "chat.completion.chunk",
-          created,
-          model,
-          choices: [{
-            index: 0,
-            delta: { tool_calls: [{ index: toolCalls.length - 1, ...result.toolCall }] },
-            finish_reason: null
-          }]
-        })}\n\n`);
+            choices: [
+              {
+                index: 0,
+                delta: { tool_calls: [{ index: toolCalls.length - 1, ...result.toolCall }] },
+                finish_reason: null,
+              },
+            ],
+          })}\n\n`
+        );
       }
 
       if (result.text) {
         totalContent += result.text;
-        chunks.push(`data: ${JSON.stringify({
-          id: responseId,
-          object: "chat.completion.chunk",
-          created,
-          model,
-          choices: [{
-            index: 0,
-            delta: chunks.length === 0 && toolCalls.length === 0
-              ? { role: "assistant", content: result.text }
-              : { content: result.text },
-            finish_reason: null
-          }]
-        })}\n\n`);
+        chunks.push(
+          `data: ${JSON.stringify({
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta:
+                  chunks.length === 0 && toolCalls.length === 0
+                    ? { role: "assistant", content: result.text }
+                    : { content: result.text },
+                finish_reason: null,
+              },
+            ],
+          })}\n\n`
+        );
       }
     }
 
     if (chunks.length === 0 && toolCalls.length === 0) {
-      chunks.push(`data: ${JSON.stringify({
+      chunks.push(
+        `data: ${JSON.stringify({
+          id: responseId,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", content: "" },
+              finish_reason: null,
+            },
+          ],
+        })}\n\n`
+      );
+    }
+
+    chunks.push(
+      `data: ${JSON.stringify({
         id: responseId,
         object: "chat.completion.chunk",
         created,
         model,
-        choices: [{
-          index: 0,
-          delta: { role: "assistant", content: "" },
-          finish_reason: null
-        }]
-      })}\n\n`);
-    }
-
-    chunks.push(`data: ${JSON.stringify({
-      id: responseId,
-      object: "chat.completion.chunk",
-      created,
-      model,
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
-      }],
-      usage: {
-        prompt_tokens: 0,
-        completion_tokens: Math.max(1, Math.floor(totalContent.length / 4)),
-        total_tokens: Math.max(1, Math.floor(totalContent.length / 4))
-      }
-    })}\n\n`);
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: 0,
+          completion_tokens: Math.max(1, Math.floor(totalContent.length / 4)),
+          total_tokens: Math.max(1, Math.floor(totalContent.length / 4)),
+        },
+      })}\n\n`
+    );
     chunks.push("data: [DONE]\n\n");
 
     return new Response(chunks.join(""), {
@@ -472,8 +525,8 @@ export class CursorExecutor extends BaseExecutor {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+        Connection: "keep-alive",
+      },
     });
   }
 

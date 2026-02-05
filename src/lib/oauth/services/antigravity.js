@@ -319,7 +319,9 @@ export class AntigravityService {
       // Save tokens to server
       await this.saveTokens(tokens, userInfo, finalProjectId);
 
-      spinner.succeed(`Antigravity connected successfully! (${userInfo.email}, Project: ${finalProjectId})`);
+      spinner.succeed(
+        `Antigravity connected successfully! (${userInfo.email}, Project: ${finalProjectId})`
+      );
       return true;
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);

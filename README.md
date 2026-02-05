@@ -89,18 +89,18 @@ Cursor/Cline Settings:
 
 ## 💡 Key Features
 
-| Feature | What It Does | Why It Matters |
-|---------|--------------|----------------|
-| 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
-| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
-| 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini seamless | Works with any CLI tool |
-| 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
-| 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
-| 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
-| 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
-| 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
-| 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
-| 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
+| Feature                         | What It Does                               | Why It Matters                   |
+| ------------------------------- | ------------------------------------------ | -------------------------------- |
+| 🎯 **Smart 3-Tier Fallback**    | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime |
+| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown         | Maximize subscription value      |
+| 🔄 **Format Translation**       | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool          |
+| 👥 **Multi-Account Support**    | Multiple accounts per provider             | Load balancing + redundancy      |
+| 🔄 **Auto Token Refresh**       | OAuth tokens refresh automatically         | No manual re-login needed        |
+| 🎨 **Custom Combos**            | Create unlimited model combinations        | Tailor fallback to your needs    |
+| 📝 **Request Logging**          | Debug mode with full request/response logs | Troubleshoot issues easily       |
+| 💾 **Cloud Sync**               | Sync config across devices                 | Same setup everywhere            |
+| 📊 **Usage Analytics**          | Track tokens, cost, trends over time       | Optimize spending                |
+| 🌐 **Deploy Anywhere**          | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options      |
 
 <details>
 <summary><b>📖 Feature Details</b></summary>
@@ -128,6 +128,7 @@ Combo: "my-coding-stack"
 ### 🔄 Format Translation
 
 Seamless translation between formats:
+
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
 - Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
 - Works with any tool that supports custom OpenAI endpoints
@@ -185,18 +186,18 @@ Seamless translation between formats:
 
 ## 💰 Pricing at a Glance
 
-| Tier | Provider | Cost | Quota Reset | Best For |
-|------|----------|------|-------------|----------|
-| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo | 5h + weekly | Already subscribed |
-| | Codex (Plus/Pro) | $20-200/mo | 5h + weekly | OpenAI users |
-| | Gemini CLI | **FREE** | 180K/mo + 1K/day | Everyone! |
-| | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
-| **💰 CHEAP** | GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
-| | MiniMax M2.1 | $0.2/1M | 5-hour rolling | Cheapest option |
-| | Kimi K2 | $9/mo flat | 10M tokens/mo | Predictable cost |
-| **🆓 FREE** | iFlow | $0 | Unlimited | 8 models free |
-| | Qwen | $0 | Unlimited | 3 models free |
-| | Kiro | $0 | Unlimited | Claude free |
+| Tier                | Provider          | Cost       | Quota Reset      | Best For           |
+| ------------------- | ----------------- | ---------- | ---------------- | ------------------ |
+| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo     | 5h + weekly      | Already subscribed |
+|                     | Codex (Plus/Pro)  | $20-200/mo | 5h + weekly      | OpenAI users       |
+|                     | Gemini CLI        | **FREE**   | 180K/mo + 1K/day | Everyone!          |
+|                     | GitHub Copilot    | $10-19/mo  | Monthly          | GitHub users       |
+| **💰 CHEAP**        | GLM-4.7           | $0.6/1M    | Daily 10AM       | Budget backup      |
+|                     | MiniMax M2.1      | $0.2/1M    | 5-hour rolling   | Cheapest option    |
+|                     | Kimi K2           | $9/mo flat | 10M tokens/mo    | Predictable cost   |
+| **🆓 FREE**         | iFlow             | $0         | Unlimited        | 8 models free      |
+|                     | Qwen              | $0         | Unlimited        | 3 models free      |
+|                     | Kiro              | $0         | Unlimited        | Claude free        |
 
 **💡 Pro Tip:** Start with Gemini CLI (180K free/month) + iFlow (unlimited free) combo = $0 cost!
 
@@ -209,6 +210,7 @@ Seamless translation between formats:
 **Problem:** Quota expires unused, rate limits during heavy coding
 
 **Solution:**
+
 ```
 Combo: "maximize-claude"
   1. cc/claude-opus-4-5        (use subscription fully)
@@ -224,6 +226,7 @@ vs. $20 + hitting limits = frustration
 **Problem:** Can't afford subscriptions, need reliable AI coding
 
 **Solution:**
+
 ```
 Combo: "free-forever"
   1. gc/gemini-3-flash         (180K free/month)
@@ -239,6 +242,7 @@ Quality: Production-ready models
 **Problem:** Deadlines, can't afford downtime
 
 **Solution:**
+
 ```
 Combo: "always-on"
   1. cc/claude-opus-4-5        (best quality)
@@ -519,12 +523,12 @@ docker run -d \
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated | **MUST change in production!** |
-| `DATA_DIR` | `~/.9router` | Database storage path |
-| `INITIAL_PASSWORD` | `123456` | Dashboard login password |
-| `NODE_ENV` | `development` | Set to `production` for deploy |
+| Variable           | Default        | Description                    |
+| ------------------ | -------------- | ------------------------------ |
+| `JWT_SECRET`       | Auto-generated | **MUST change in production!** |
+| `DATA_DIR`         | `~/.9router`   | Database storage path          |
+| `INITIAL_PASSWORD` | `123456`       | Dashboard login password       |
+| `NODE_ENV`         | `development`  | Set to `production` for deploy |
 
 </details>
 
@@ -536,38 +540,47 @@ docker run -d \
 <summary><b>View all available models</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
+
 - `cc/claude-opus-4-5-20251101`
 - `cc/claude-sonnet-4-5-20250929`
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
+
 - `cx/gpt-5.2-codex`
 - `cx/gpt-5.1-codex-max`
 
 **Gemini CLI (`gc/`)** - FREE:
+
 - `gc/gemini-3-flash-preview`
 - `gc/gemini-2.5-pro`
 
 **GitHub Copilot (`gh/`)**:
+
 - `gh/gpt-5`
 - `gh/claude-4.5-sonnet`
 
 **GLM (`glm/`)** - $0.6/1M:
+
 - `glm/glm-4.7`
 
 **MiniMax (`minimax/`)** - $0.2/1M:
+
 - `minimax/MiniMax-M2.1`
 
 **iFlow (`if/`)** - FREE:
+
 - `if/kimi-k2-thinking`
 - `if/qwen3-coder-plus`
 - `if/deepseek-r1`
 
 **Qwen (`qw/`)** - FREE:
+
 - `qw/qwen3-coder-plus`
 - `qw/qwen3-coder-flash`
 
 **Kiro (`kr/`)** - FREE:
+
 - `kr/claude-sonnet-4.5`
 - `kr/claude-haiku-4.5`
 
@@ -578,18 +591,22 @@ docker run -d \
 ## 🐛 Troubleshooting
 
 **"Language model did not provide messages"**
+
 - Provider quota exhausted → Check dashboard quota tracker
 - Solution: Use combo fallback or switch to cheaper tier
 
 **Rate limiting**
+
 - Subscription quota out → Fallback to GLM/MiniMax
 - Add combo: `cc/claude-opus → glm/glm-4.7 → if/kimi-k2`
 
 **OAuth token expired**
+
 - Auto-refreshed by 9Router
 - If issues persist: Dashboard → Provider → Reconnect
 
 **High costs**
+
 - Check usage stats in Dashboard
 - Switch primary model to GLM/MiniMax
 - Use free tier (Gemini CLI, iFlow) for non-critical tasks

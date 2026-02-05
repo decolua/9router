@@ -188,7 +188,11 @@ export class DefaultExecutor extends BaseExecutor {
   async refreshKiro(refreshToken) {
     const response = await fetch(PROVIDERS.kiro.tokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "kiro-cli/1.0.0" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "kiro-cli/1.0.0",
+      },
       body: JSON.stringify({ refreshToken }),
     });
     if (!response.ok) return null;

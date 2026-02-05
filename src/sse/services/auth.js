@@ -1,4 +1,9 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import {
+  getProviderConnections,
+  validateApiKey,
+  updateProviderConnection,
+  getSettings,
+} from "@/lib/localDb";
 import { isAccountUnavailable, getUnavailableUntil } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
 
@@ -140,7 +145,9 @@ export async function markAccountUnavailable(
 export async function clearAccountError(connectionId, currentConnection) {
   // Only update if currently has error status
   const hasError =
-    currentConnection.testStatus === "unavailable" || currentConnection.lastError || currentConnection.rateLimitedUntil;
+    currentConnection.testStatus === "unavailable" ||
+    currentConnection.lastError ||
+    currentConnection.rateLimitedUntil;
 
   if (!hasError) return; // Skip if already clean
 
