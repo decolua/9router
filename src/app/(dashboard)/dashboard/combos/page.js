@@ -289,12 +289,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     setModels(models.filter((_, i) => i !== index));
   };
 
-  const handleModelChange = (index, value) => {
-    const newModels = [...models];
-    newModels[index] = value;
-    setModels(newModels);
-  };
-
   // Format model display name with readable provider name
   const formatModelDisplay = (modelValue) => {
     const parts = modelValue.split('/');
@@ -374,18 +368,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                     {/* Index badge */}
                     <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
-                    {/* Model Input - show formatted display, edit raw value */}
-                    <div className="flex-1 min-w-0">
-                      <input
-                        type="text"
-                        value={model}
-                        onChange={(e) => handleModelChange(index, e.target.value)}
-                        placeholder="provider/model"
-                        className="w-full px-1.5 py-0.5 text-xs font-mono bg-transparent border-0 focus:outline-none text-text-main placeholder:text-text-muted/50"
-                      />
-                      <div className="text-[10px] text-text-muted truncate">
-                        {formatModelDisplay(model)}
-                      </div>
+                    {/* Model display - show readable name only */}
+                    <div className="flex-1 min-w-0 px-1.5 py-0.5 text-xs text-text-main truncate">
+                      {formatModelDisplay(model)}
                     </div>
 
                     {/* Priority arrows - horizontal, always visible */}
