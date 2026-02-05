@@ -10,12 +10,17 @@ const GITHUB_CONFIG = {
 
 // Antigravity API config (from Quotio)
 const ANTIGRAVITY_CONFIG = {
-  quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
-  loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  // Try multiple endpoints with fallback (like proxypal)
+  quotaApiUrls: [
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
+    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+  ],
+  loadProjectApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   tokenUrl: "https://oauth2.googleapis.com/token",
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
   clientSecret: "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",
-  userAgent: "antigravity/1.11.3 Darwin/arm64",
+  userAgent: "antigravity/1.104.0 darwin/arm64",
 };
 
 // Codex (OpenAI) API config
@@ -97,7 +102,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       // Free/limited plan format
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -124,7 +129,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -168,37 +173,62 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
   try {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
-    
-    // Fetch quota data
-    const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(projectId ? { project: projectId } : {}),
-    });
 
-    if (response.status === 403) {
-      return { message: "Antigravity access forbidden. Check subscription." };
+    // Try multiple endpoints with fallback (like proxypal)
+    let lastError = null;
+    let data = null;
+
+    for (const apiUrl of ANTIGRAVITY_CONFIG.quotaApiUrls) {
+      try {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(projectId ? { project: projectId } : {}),
+        });
+
+        if (response.status === 403) {
+          return { message: "Antigravity access forbidden (possibly banned or token expired)." };
+        }
+
+        if (response.status === 404) {
+          lastError = `API ${response.status} from ${apiUrl}`;
+          continue; // Try next endpoint
+        }
+
+        if (!response.ok) {
+          lastError = `API ${response.status} from ${apiUrl}`;
+          continue; // Try next endpoint
+        }
+
+        data = await response.json();
+        break; // Success, stop trying
+      } catch (fetchError) {
+        lastError = `Network error: ${fetchError.message}`;
+        continue; // Try next endpoint
+      }
     }
 
-    if (!response.ok) {
-      throw new Error(`Antigravity API error: ${response.status}`);
+    if (!data) {
+      return { message: `Antigravity error: ${lastError || "All endpoints failed"}` };
     }
 
-    const data = await response.json();
     const quotas = {};
-    
+
     // Parse model quotas
     if (data.models) {
       for (const [name, info] of Object.entries(data.models)) {
         // Only include gemini and claude models
         if (!name.includes("gemini") && !name.includes("claude")) continue;
-        
+
         if (info.quotaInfo) {
-          const percentage = (info.quotaInfo.remainingFraction || 0) * 100;
+          // Default to 0% if remainingFraction is missing (like proxypal)
+          const percentage = info.quotaInfo.remainingFraction != null
+            ? info.quotaInfo.remainingFraction * 100
+            : 0;
           quotas[name] = {
             remaining: percentage,
             resetTime: info.quotaInfo.resetTime || "",
@@ -273,7 +303,7 @@ async function getClaudeUsage(accessToken) {
 
     if (settingsResponse.ok) {
       const settings = await settingsResponse.json();
-      
+
       // Try usage endpoint if we have org info
       if (settings.organization_id) {
         const usageResponse = await fetch(
@@ -330,18 +360,18 @@ async function getCodexUsage(accessToken) {
     }
 
     const data = await response.json();
-    
+
     // Parse rate limit info
     const rateLimit = data.rate_limit || {};
     const primaryWindow = rateLimit.primary_window || {};
     const secondaryWindow = rateLimit.secondary_window || {};
 
     // Calculate reset dates
-    const sessionResetAt = primaryWindow.reset_at 
-      ? new Date(primaryWindow.reset_at * 1000).toISOString() 
+    const sessionResetAt = primaryWindow.reset_at
+      ? new Date(primaryWindow.reset_at * 1000).toISOString()
       : null;
-    const weeklyResetAt = secondaryWindow.reset_at 
-      ? new Date(secondaryWindow.reset_at * 1000).toISOString() 
+    const weeklyResetAt = secondaryWindow.reset_at
+      ? new Date(secondaryWindow.reset_at * 1000).toISOString()
       : null;
 
     return {
@@ -412,7 +442,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
       const used = breakdown.currentUsageWithPrecision || 0;
       const total = breakdown.usageLimitWithPrecision || 0;
-      
+
       quotaInfo[resourceType] = {
         used,
         total,
@@ -425,7 +455,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       if (breakdown.freeTrialInfo) {
         const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
         const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-        
+
         quotaInfo[`${resourceType}_freetrial`] = {
           used: freeUsed,
           total: freeTotal,

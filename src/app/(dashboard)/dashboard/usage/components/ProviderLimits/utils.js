@@ -108,11 +108,20 @@ export function parseQuotaData(provider, data) {
       case "antigravity":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([modelName, quota]) => {
+            // Antigravity returns { remaining: percentage(0-100), resetTime, unlimited }
+            // Convert to normalized format with used/total for percentage display
+            const remainingPercent = quota.remaining ?? 100;
+            const isUnlimited = quota.unlimited === true || quota.remaining === undefined || quota.remaining === null;
+
             normalizedQuotas.push({
               name: modelName,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
+              // For percentage display, we use remaining directly
+              // If unlimited=true, show as unlimited
+              used: isUnlimited ? 0 : (100 - remainingPercent),
+              total: isUnlimited ? 0 : 100,
+              remaining: remainingPercent,
+              resetAt: quota.resetTime || null,
+              unlimited: isUnlimited,
             });
           });
         }
