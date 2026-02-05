@@ -52,13 +52,19 @@ export default function ModelSelectModal({
   const groupedModels = useMemo(() => {
     const groups = {};
     
-    // Get active provider IDs
-    const activeProviderIds = activeProviders.length > 0 
-      ? activeProviders.map(p => p.provider)
-      : PROVIDER_ORDER;
+    // Get all active provider IDs from connections
+    const activeConnectionIds = activeProviders.map(p => p.provider);
+    
+    // Combine standard providers with active custom providers
+    // Standard providers should always be shown (they have hardcoded models)
+    // Custom providers (OpenAI/Anthropic Compatible) only shown if active
+    const providerIdsToShow = new Set([
+      ...PROVIDER_ORDER,  // All standard providers
+      ...activeConnectionIds,  // Active custom providers from connections
+    ]);
 
     // Sort by PROVIDER_ORDER
-    const sortedProviderIds = [...activeProviderIds].sort((a, b) => {
+    const sortedProviderIds = [...providerIdsToShow].sort((a, b) => {
       const indexA = PROVIDER_ORDER.indexOf(a);
       const indexB = PROVIDER_ORDER.indexOf(b);
       return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
