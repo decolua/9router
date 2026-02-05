@@ -52,22 +52,31 @@ export const PROVIDER_MODELS = {
     { id: "gemini-3-flash", name: "Gemini 3 Flash" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
-  gh: [  // GitHub Copilot - always uses OpenAI format (Copilot API is OpenAI-compatible)
+  gh: [  // GitHub Copilot - OpenAI models
+    { id: "gpt-4.1", name: "GPT-4.1" },
+    { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
-    // { id: "gpt-5.1", name: "GPT-5.1" },
-    // { id: "gpt-5.2", name: "GPT-5.2" },
-    // { id: "gpt-5-codex", name: "GPT-5 Codex" },
+    { id: "gpt-5-codex", name: "GPT-5 Codex" },
+    { id: "gpt-5.1", name: "GPT-5.1" },
     { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
-    // { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
+    { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
     { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
-    // { id: "gpt-4.1", name: "GPT-4.1" },
-    { id: "claude-4.5-sonnet", name: "Claude 4.5 Sonnet" },
-    { id: "claude-4.5-opus", name: "Claude 4.5 Opus" },
-    { id: "claude-4.5-haiku", name: "Claude 4.5 Haiku" },
-    { id: "gemini-3-pro", name: "Gemini 3 Pro" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash" },
+    { id: "gpt-5.2", name: "GPT-5.2" },
+    { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
+    // GitHub Copilot - Anthropic models
+    { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+    { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
+    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
+    { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+    { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    // GitHub Copilot - Google models
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    { id: "gemini-3-flash", name: "Gemini 3 Flash" },
+    { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+    // GitHub Copilot - Other models
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
+    { id: "raptor-mini", name: "Raptor Mini" },
   ],
   kr: [  // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
@@ -147,12 +156,9 @@ export function findModelName(aliasOrId, modelId) {
 
 export function getModelTargetFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
-  if (models) {
-    const found = models.find(m => m.id === modelId);
-    if (found?.targetFormat) return found.targetFormat;
-  }
-  
-  return null;
+  if (!models) return null;
+  const found = models.find(m => m.id === modelId);
+  return found?.targetFormat || null;
 }
 
 // Provider ID to alias mapping

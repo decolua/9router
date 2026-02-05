@@ -88,7 +88,7 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   if (!parsed.isAlias) {
     return {
       provider: parsed.provider,
-      model: parsed.model
+      model: parsed.model,
     };
   }
 
