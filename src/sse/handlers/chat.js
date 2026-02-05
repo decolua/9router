@@ -38,7 +38,8 @@ export async function handleChat(request, clientRawRequest = null) {
   // Count messages (support both messages[] and input[] formats)
   const msgCount = body.messages?.length || body.input?.length || 0;
   const toolCount = body.tools?.length || 0;
-  log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}`);
+  const effort = body.reasoning_effort || body.reasoning?.effort || null;
+  log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
   // Log API key (masked)
   const apiKey = request.headers.get("Authorization");

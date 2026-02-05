@@ -10,11 +10,20 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
   ],
   cx: [  // OpenAI Codex
+    // GPT 5.3 Codex - all thinking levels
+    { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
+    { id: "gpt-5.3-codex-xhigh", name: "GPT 5.3 Codex (xHigh)" },
+    { id: "gpt-5.3-codex-high", name: "GPT 5.3 Codex (High)" },
+    { id: "gpt-5.3-codex-low", name: "GPT 5.3 Codex (Low)" },
+    { id: "gpt-5.3-codex-none", name: "GPT 5.3 Codex (None)" },
+    // Mini - medium and high only
+    { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini" },
+    { id: "gpt-5.1-codex-mini-high", name: "GPT 5.1 Codex Mini (High)" },
+    // Other models
     { id: "gpt-5.2-codex", name: "GPT 5.2 Codex" },
     { id: "gpt-5.2", name: "GPT 5.2" },
     { id: "gpt-5.1-codex-max", name: "GPT 5.1 Codex Max" },
     { id: "gpt-5.1-codex", name: "GPT 5.1 Codex" },
-    { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini" },
     { id: "gpt-5.1", name: "GPT 5.1" },
     { id: "gpt-5-codex", name: "GPT 5 Codex" },
     { id: "gpt-5-codex-mini", name: "GPT 5 Codex Mini" },

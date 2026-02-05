@@ -23,6 +23,26 @@ export class CodexExecutor extends BaseExecutor {
     // Ensure store is false (Codex requirement)
     body.store = false;
 
+    // Extract thinking level from model name suffix
+    // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
+    const effortLevels = ['none', 'low', 'medium', 'high', 'xhigh'];
+    let modelEffort = null;
+    for (const level of effortLevels) {
+      if (model.endsWith(`-${level}`)) {
+        modelEffort = level;
+        // Strip suffix from model name for actual API call
+        body.model = body.model.replace(`-${level}`, '');
+        break;
+      }
+    }
+
+    // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
+    if (!body.reasoning) {
+      const effort = body.reasoning_effort || modelEffort || 'medium';
+      body.reasoning = { effort };
+    }
+    delete body.reasoning_effort;
+
     // Remove unsupported parameters for Codex API
     delete body.temperature;
     delete body.top_p;

@@ -468,16 +468,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Create transform stream with logger for streaming response
   let transformStream;
-  // For Codex provider, always translate response from openai-responses to openai format
-  // This ensures clients like Cursor get the expected chat completions format
-  // BUT: skip translation if client already sent in openai-responses format (like Droid CLI)
-  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses' && sourceFormat !== 'openai-responses';
-  if (needsCodexTranslation || needsTranslation(targetFormat, sourceFormat)) {
-    // For Codex, translate FROM openai-responses TO openai (client's expected format)
-    const responseSourceFormat = needsCodexTranslation ? 'openai-responses' : targetFormat;
-    const responseTargetFormat = needsCodexTranslation ? 'openai' : sourceFormat;
-    transformStream = createSSETransformStreamWithLogger(responseSourceFormat, responseTargetFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
+  // For Codex provider, always translate response from openai-responses to openai (Chat Completions) format
+  // Cursor sends openai-responses format requests BUT expects Chat Completions format responses
+  const needsCodexTranslation = provider === 'codex' && targetFormat === 'openai-responses';
+
+  if (needsCodexTranslation) {
+    // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
+    log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+  } else if (needsTranslation(targetFormat, sourceFormat)) {
+    // Standard translation for other providers
+    log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
   } else {
+    log?.debug?.("STREAM", `Standard passthrough mode`);
     transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
   }
 
