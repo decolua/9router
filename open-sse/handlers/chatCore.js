@@ -470,7 +470,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let transformStream;
   // For Codex provider, always translate response from openai-responses to openai format
   // This ensures clients like Cursor get the expected chat completions format
-  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses';
+  // BUT: skip translation if client already sent in openai-responses format (like Droid CLI)
+  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses' && sourceFormat !== 'openai-responses';
   if (needsCodexTranslation || needsTranslation(targetFormat, sourceFormat)) {
     // For Codex, translate FROM openai-responses TO openai (client's expected format)
     const responseSourceFormat = needsCodexTranslation ? 'openai-responses' : targetFormat;

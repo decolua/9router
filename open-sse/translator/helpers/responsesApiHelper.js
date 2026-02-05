@@ -20,7 +20,11 @@ export function convertResponsesApiFormat(body) {
   let pendingToolResults = [];
 
   for (const item of body.input) {
-    if (item.type === "message") {
+    // Determine item type - Droid may send items without 'type' field
+    // If no type but has role, treat as message
+    const itemType = item.type || (item.role ? "message" : null);
+
+    if (itemType === "message") {
       // Flush any pending assistant message with tool calls
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -37,14 +41,14 @@ export function convertResponsesApiFormat(body) {
       // Convert content: input_text → text, output_text → text
       const content = Array.isArray(item.content)
         ? item.content.map(c => {
-            if (c.type === "input_text") return { type: "text", text: c.text };
-            if (c.type === "output_text") return { type: "text", text: c.text };
-            return c;
-          })
+          if (c.type === "input_text") return { type: "text", text: c.text };
+          if (c.type === "output_text") return { type: "text", text: c.text };
+          return c;
+        })
         : item.content;
       result.messages.push({ role: item.role, content });
-    } 
-    else if (item.type === "function_call") {
+    }
+    else if (itemType === "function_call") {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -62,7 +66,7 @@ export function convertResponsesApiFormat(body) {
         }
       });
     }
-    else if (item.type === "function_call_output") {
+    else if (itemType === "function_call_output") {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -75,7 +79,7 @@ export function convertResponsesApiFormat(body) {
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
-    else if (item.type === "reasoning") {
+    else if (itemType === "reasoning") {
       // Skip reasoning items - they are for display only
       continue;
     }

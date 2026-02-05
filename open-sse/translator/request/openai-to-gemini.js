@@ -116,7 +116,7 @@ function openaiToGeminiBase(model, body, stream) {
 
           // Check if there are actual tool responses in the next messages
           const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
-          
+
           if (hasActualResponses) {
             const toolParts = [];
             for (const fid of toolCallIds) {
@@ -305,7 +305,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
     for (const msg of claudeRequest.messages) {
       const parts = [];
-      
+
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === "text") {
@@ -369,7 +369,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   // Add system instruction (Antigravity default)
   const defaultPart = { text: ANTIGRAVITY_DEFAULT_SYSTEM };
   const systemParts = [defaultPart];
-  
+
   if (claudeRequest.system) {
     if (Array.isArray(claudeRequest.system)) {
       for (const block of claudeRequest.system) {
@@ -379,7 +379,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       systemParts.push({ text: claudeRequest.system });
     }
   }
-  
+
   envelope.request.systemInstruction = { role: "user", parts: systemParts };
 
   return envelope;
@@ -388,12 +388,12 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
 // OpenAI -> Antigravity (Sandbox Cloud Code with wrapper)
 export function openaiToAntigravityRequest(model, body, stream, credentials = null) {
   const isClaude = model.toLowerCase().includes("claude");
-  
+
   if (isClaude) {
     const claudeRequest = openaiToClaudeRequestForAntigravity(model, body, stream);
     return wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials);
   }
-  
+
   const geminiCLI = openaiToGeminiCLIRequest(model, body, stream);
   return wrapInCloudCodeEnvelope(model, geminiCLI, credentials, true);
 }

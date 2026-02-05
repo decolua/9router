@@ -23,7 +23,7 @@ import { createResponsesApiTransformStream } from "../transformer/responsesTrans
 export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
-  
+
   // Ensure stream is enabled
   convertedBody.stream = true;
 
