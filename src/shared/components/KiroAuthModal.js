@@ -1,18 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 /**
  * Kiro Auth Method Selection Modal
- * Allows user to choose between multiple Kiro authentication methods:
- * 1. AWS Builder ID (Device Code)
- * 2. AWS IAM Identity Center/IDC (Device Code with custom startUrl/region)
- * 3. Google Social Login (Manual callback)
- * 4. GitHub Social Login (Manual callback)
- * 5. Import Token (Paste refresh token)
+ * Auto-detects token from AWS SSO cache or allows manual import
  */
 export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
@@ -21,7 +15,37 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [refreshToken, setRefreshToken] = useState("");
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
-  const { copied, copy } = useCopyToClipboard();
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(false);
+
+  // Auto-detect token when import method is selected
+  useEffect(() => {
+    if (selectedMethod !== "import" || !isOpen) return;
+
+    const autoDetect = async () => {
+      setAutoDetecting(true);
+      setError(null);
+      setAutoDetected(false);
+
+      try {
+        const res = await fetch("/api/oauth/kiro/auto-import");
+        const data = await res.json();
+
+        if (data.found) {
+          setRefreshToken(data.refreshToken);
+          setAutoDetected(true);
+        } else {
+          setError(data.error || "Could not auto-detect token");
+        }
+      } catch (err) {
+        setError("Failed to auto-detect token");
+      } finally {
+        setAutoDetecting(false);
+      }
+    };
+
+    autoDetect();
+  }, [selectedMethod, isOpen]);
 
   const handleMethodSelect = (method) => {
     setSelectedMethod(method);
@@ -275,42 +299,76 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Import Token */}
         {selectedMethod === "import" && (
           <div className="space-y-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800 mb-4">
-              <p className="text-sm text-blue-800 dark:text-blue-200">
-                💡 Please login to Kiro IDE first.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Refresh Token <span className="text-red-500">*</span>
-              </label>
-              <Input
-                value={refreshToken}
-                onChange={(e) => setRefreshToken(e.target.value)}
-                placeholder="aorAAAAAG..."
-                className="font-mono text-sm"
-                type="password"
-              />
-              <p className="text-xs text-text-muted mt-1">
-                Find it in Kiro IDE at: <code className="bg-sidebar px-1 rounded">~/.aws/sso/cache/kiro-auth-token.json</code>
-              </p>
-            </div>
-
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            {/* Auto-detecting state */}
+            {autoDetecting && (
+              <div className="text-center py-6">
+                <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                    progress_activity
+                  </span>
+                </div>
+                <h3 className="text-lg font-semibold mb-2">Auto-detecting token...</h3>
+                <p className="text-sm text-text-muted">
+                  Reading from AWS SSO cache
+                </p>
               </div>
             )}
 
-            <div className="flex gap-2">
-              <Button onClick={handleImportToken} fullWidth disabled={importing}>
-                {importing ? "Importing..." : "Import Token"}
-              </Button>
-              <Button onClick={handleBack} variant="ghost" fullWidth>
-                Back
-              </Button>
-            </div>
+            {/* Form (shown after auto-detect completes) */}
+            {!autoDetecting && (
+              <>
+                {/* Success message if auto-detected */}
+                {autoDetected && (
+                  <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex gap-2">
+                      <span className="material-symbols-outlined text-green-600 dark:text-green-400">check_circle</span>
+                      <p className="text-sm text-green-800 dark:text-green-200">
+                        Token auto-detected from Kiro IDE successfully!
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Info message if not auto-detected */}
+                {!autoDetected && !error && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex gap-2">
+                      <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
+                      <p className="text-sm text-blue-800 dark:text-blue-200">
+                        Kiro IDE not detected. Please paste your refresh token manually.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Refresh Token <span className="text-red-500">*</span>
+                  </label>
+                  <Input
+                    value={refreshToken}
+                    onChange={(e) => setRefreshToken(e.target.value)}
+                    placeholder="Token will be auto-filled..."
+                    className="font-mono text-sm"
+                  />
+                </div>
+
+                {error && (
+                  <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button onClick={handleImportToken} fullWidth disabled={importing || !refreshToken.trim()}>
+                    {importing ? "Importing..." : "Import Token"}
+                  </Button>
+                  <Button onClick={handleBack} variant="ghost" fullWidth>
+                    Back
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

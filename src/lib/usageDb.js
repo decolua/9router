@@ -26,15 +26,21 @@ function getAppName() {
 function getUserDataDir() {
   if (isCloud) return "/tmp"; // Fallback for Workers
 
-  const platform = process.platform;
-  const homeDir = os.homedir();
-  const appName = getAppName();
+  try {
+    const platform = process.platform;
+    const homeDir = os.homedir();
+    const appName = getAppName();
 
-  if (platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-  } else {
-    // macOS & Linux: ~/.{appName}
-    return path.join(homeDir, `.${appName}`);
+    if (platform === "win32") {
+      return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
+    } else {
+      // macOS & Linux: ~/.{appName}
+      return path.join(homeDir, `.${appName}`);
+    }
+  } catch (error) {
+    console.error("[usageDb] Failed to get user data directory:", error.message);
+    // Fallback to cwd if homedir fails
+    return path.join(process.cwd(), ".9router");
   }
 }
 
@@ -44,8 +50,15 @@ const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
 
 // Ensure data directory exists
-if (!isCloud && !fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!isCloud && fs && typeof fs.existsSync === "function") {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      console.log(`[usageDb] Created data directory: ${DATA_DIR}`);
+    }
+  } catch (error) {
+    console.error("[usageDb] Failed to create data directory:", error.message);
+  }
 }
 
 // Default data structure
@@ -245,13 +258,30 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
  */
 export async function getRecentLogs(limit = 200) {
   if (isCloud) return []; // Skip in Workers
-  if (!fs.existsSync(LOG_FILE)) return [];
+  
+  // Runtime check: ensure fs module is available
+  if (!fs || typeof fs.existsSync !== "function") {
+    console.error("[usageDb] fs module not available in this environment");
+    return [];
+  }
+  
+  if (!LOG_FILE) {
+    console.error("[usageDb] LOG_FILE path not defined");
+    return [];
+  }
+  
+  if (!fs.existsSync(LOG_FILE)) {
+    console.log(`[usageDb] Log file does not exist: ${LOG_FILE}`);
+    return [];
+  }
+  
   try {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const lines = content.trim().split("\n");
     return lines.slice(-limit).reverse();
   } catch (error) {
-    console.error("Failed to read log.txt:", error.message);
+    console.error("[usageDb] Failed to read log.txt:", error.message);
+    console.error("[usageDb] LOG_FILE path:", LOG_FILE);
     return [];
   }
 }
