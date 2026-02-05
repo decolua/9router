@@ -152,7 +152,7 @@ export default function ModelSelectModal({
 
       const providerNameMatches = group.name.toLowerCase().includes(query);
       
-      if (matchedModels.length > 0 || providerNameMatches || group.isCustom) {
+      if (matchedModels.length > 0 || providerNameMatches) {
         filtered[providerId] = {
           ...group,
           models: matchedModels,
