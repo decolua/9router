@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
@@ -17,7 +18,7 @@ export default function CombosPage() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async () => {
     try {
@@ -235,21 +236,32 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [providerNodes, setProviderNodes] = useState([]);
 
-  // Fetch model aliases when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const fetchModelAliases = async () => {
-        try {
-          const res = await fetch("/api/models/alias");
-          const data = await res.json();
-          if (res.ok) setModelAliases(data.aliases || {});
-        } catch (error) {
-          console.log("Error fetching model aliases:", error);
-        }
-      };
-      fetchModelAliases();
+  const fetchModalData = async () => {
+    try {
+      const [aliasesRes, nodesRes] = await Promise.all([
+        fetch("/api/models/alias"),
+        fetch("/api/provider-nodes"),
+      ]);
+
+      if (!aliasesRes.ok || !nodesRes.ok) {
+        throw new Error(`Failed to fetch data: aliases=${aliasesRes.status}, nodes=${nodesRes.status}`);
+      }
+
+      const [aliasesData, nodesData] = await Promise.all([
+        aliasesRes.json(),
+        nodesRes.json(),
+      ]);
+      setModelAliases(aliasesData.aliases || {});
+      setProviderNodes(nodesData.nodes || []);
+    } catch (error) {
+      console.error("Error fetching modal data:", error);
     }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchModalData();
   }, [isOpen]);
 
   const validateName = (value) => {
@@ -282,11 +294,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     setModels(models.filter((_, i) => i !== index));
   };
 
-  const handleModelChange = (index, value) => {
-    const newModels = [...models];
-    newModels[index] = value;
-    setModels(newModels);
-  };
+  // Format model display name with readable provider name
+  const formatModelDisplay = useCallback((modelValue) => {
+    const parts = modelValue.split('/');
+    if (parts.length !== 2) return modelValue;
+    
+    const [providerId, modelId] = parts;
+    const matchedNode = providerNodes.find(node => node.id === providerId);
+    
+    if (matchedNode) {
+      return `${matchedNode.name}/${modelId}`;
+    }
+    
+    return modelValue;
+  }, [providerNodes]);
 
   const handleMoveUp = (index) => {
     if (index === 0) return;
@@ -352,14 +373,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                     {/* Index badge */}
                     <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
-                    {/* Model Input */}
-                    <input
-                      type="text"
-                      value={model}
-                      onChange={(e) => handleModelChange(index, e.target.value)}
-                      placeholder="provider/model"
-                      className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono bg-transparent border-0 focus:outline-none text-text-main placeholder:text-text-muted/50"
-                    />
+                    {/* Model display - show readable name only */}
+                    <div className="flex-1 min-w-0 px-1.5 py-0.5 text-xs text-text-main truncate">
+                      {formatModelDisplay(model)}
+                    </div>
 
                     {/* Priority arrows - horizontal, always visible */}
                     <div className="flex items-center gap-0.5">
