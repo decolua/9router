@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
@@ -235,20 +236,26 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [providerNodes, setProviderNodes] = useState([]);
 
-  // Fetch model aliases when modal opens
+  // Fetch model aliases and provider nodes when modal opens
   useEffect(() => {
     if (isOpen) {
-      const fetchModelAliases = async () => {
+      const fetchData = async () => {
         try {
-          const res = await fetch("/api/models/alias");
-          const data = await res.json();
-          if (res.ok) setModelAliases(data.aliases || {});
+          const [aliasesRes, nodesRes] = await Promise.all([
+            fetch("/api/models/alias"),
+            fetch("/api/provider-nodes"),
+          ]);
+          const aliasesData = await aliasesRes.json();
+          const nodesData = await nodesRes.json();
+          if (aliasesRes.ok) setModelAliases(aliasesData.aliases || {});
+          if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
         } catch (error) {
-          console.log("Error fetching model aliases:", error);
+          console.log("Error fetching data:", error);
         }
       };
-      fetchModelAliases();
+      fetchData();
     }
   }, [isOpen]);
 
@@ -286,6 +293,21 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     const newModels = [...models];
     newModels[index] = value;
     setModels(newModels);
+  };
+
+  // Format model display name with readable provider name
+  const formatModelDisplay = (modelValue) => {
+    const parts = modelValue.split('/');
+    if (parts.length !== 2) return modelValue;
+    
+    const [providerId, modelId] = parts;
+    const matchedNode = providerNodes.find(node => node.id === providerId);
+    
+    if (matchedNode) {
+      return `${matchedNode.name}/${modelId}`;
+    }
+    
+    return modelValue;
   };
 
   const handleMoveUp = (index) => {
@@ -352,14 +374,19 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                     {/* Index badge */}
                     <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
-                    {/* Model Input */}
-                    <input
-                      type="text"
-                      value={model}
-                      onChange={(e) => handleModelChange(index, e.target.value)}
-                      placeholder="provider/model"
-                      className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono bg-transparent border-0 focus:outline-none text-text-main placeholder:text-text-muted/50"
-                    />
+                    {/* Model Input - show formatted display, edit raw value */}
+                    <div className="flex-1 min-w-0">
+                      <input
+                        type="text"
+                        value={model}
+                        onChange={(e) => handleModelChange(index, e.target.value)}
+                        placeholder="provider/model"
+                        className="w-full px-1.5 py-0.5 text-xs font-mono bg-transparent border-0 focus:outline-none text-text-main placeholder:text-text-muted/50"
+                      />
+                      <div className="text-[10px] text-text-muted truncate">
+                        {formatModelDisplay(model)}
+                      </div>
+                    </div>
 
                     {/* Priority arrows - horizontal, always visible */}
                     <div className="flex items-center gap-0.5">
