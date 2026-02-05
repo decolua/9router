@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
+import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 
 export default function ProfilePage() {
@@ -69,7 +70,7 @@ export default function ProfilePage() {
         body: JSON.stringify({ fallbackStrategy: strategy }),
       });
       if (res.ok) {
-        setSettings((prev) => ({ ...prev, fallbackStrategy: strategy }));
+        setSettings(prev => ({ ...prev, fallbackStrategy: strategy }));
       }
     } catch (err) {
       console.error("Failed to update settings:", err);
@@ -87,10 +88,25 @@ export default function ProfilePage() {
         body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
       });
       if (res.ok) {
-        setSettings((prev) => ({ ...prev, stickyRoundRobinLimit: numLimit }));
+        setSettings(prev => ({ ...prev, stickyRoundRobinLimit: numLimit }));
       }
     } catch (err) {
       console.error("Failed to update sticky limit:", err);
+    }
+  };
+
+  const updateRequireLogin = async (requireLogin) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireLogin }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, requireLogin }));
+      }
+    } catch (err) {
+      console.error("Failed to update require login:", err);
     }
   };
 
@@ -110,76 +126,112 @@ export default function ProfilePage() {
           </div>
           <div className="pt-4 border-t border-border">
             <p className="text-sm text-text-muted">
-              All data is stored locally in the <code className="bg-sidebar px-1 rounded">data/db.json</code> file.
+              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
             </p>
+          </div>
+        </Card>
+
+        {/* Security */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <span className="material-symbols-outlined text-[20px]">shield</span>
+            </div>
+            <h3 className="text-lg font-semibold">Security</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Require login</p>
+                <p className="text-sm text-text-muted">
+                  When ON, dashboard requires password. When OFF, access without login.
+                </p>
+              </div>
+              <Toggle
+                checked={settings.requireLogin === true}
+                onChange={() => updateRequireLogin(!settings.requireLogin)}
+                disabled={loading}
+              />
+            </div>
+            {settings.requireLogin === true && (
+              <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
+                {settings.hasPassword && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Current Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter current password"
+                      value={passwords.current}
+                      onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+                {/* {!settings.hasPassword && (
+                  <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-sm text-blue-600 dark:text-blue-400">
+                      Setting password for the first time. Leave current password empty or use default: <code className="bg-blue-500/20 px-1 rounded">123456</code>
+                    </p>
+                  </div>
+                )} */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">New Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter new password"
+                      value={passwords.new}
+                      onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Confirm New Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Confirm new password"
+                      value={passwords.confirm}
+                      onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {passStatus.message && (
+                  <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                    {passStatus.message}
+                  </p>
+                )}
+
+                <div className="pt-2">
+                  <Button type="submit" variant="primary" loading={passLoading}>
+                    {settings.hasPassword ? "Update Password" : "Set Password"}
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         </Card>
 
         {/* Routing Preferences */}
         <Card>
-          <h3 className="text-lg font-semibold mb-4">Security</h3>
-          <form onSubmit={handlePasswordChange} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Current Password</label>
-              <Input
-                type="password"
-                placeholder="Enter current password"
-                value={passwords.current}
-                onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
-                required
-              />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
+              <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">New Password</label>
-                <Input
-                  type="password"
-                  placeholder="Enter new password"
-                  value={passwords.new}
-                  onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-medium">Confirm New Password</label>
-                <Input
-                  type="password"
-                  placeholder="Confirm new password"
-                  value={passwords.confirm}
-                  onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            {passStatus.message && (
-              <p className={`text-sm ${passStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
-                {passStatus.message}
-              </p>
-            )}
-
-            <div className="pt-2">
-              <Button type="submit" variant="primary" loading={passLoading}>
-                Update Password
-              </Button>
-            </div>
-          </form>
-        </Card>
-
-        {/* Routing Preferences */}
-        <Card>
-          <h3 className="text-lg font-semibold mb-4">Routing Strategy</h3>
+            <h3 className="text-lg font-semibold">Routing Strategy</h3>
+          </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Round Robin</p>
-                <p className="text-sm text-text-muted">Cycle through accounts to distribute load</p>
+                <p className="text-sm text-text-muted">
+                  Cycle through accounts to distribute load
+                </p>
               </div>
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
-                onChange={() =>
-                  updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")
-                }
+                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
                 disabled={loading}
               />
             </div>
@@ -189,7 +241,9 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
                   <p className="font-medium">Sticky Limit</p>
-                  <p className="text-sm text-text-muted">Calls per account before switching</p>
+                  <p className="text-sm text-text-muted">
+                    Calls per account before switching
+                  </p>
                 </div>
                 <Input
                   type="number"
@@ -213,44 +267,64 @@ export default function ProfilePage() {
 
         {/* Theme Preferences */}
         <Card>
-          <h3 className="text-lg font-semibold mb-4">Appearance</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
+              <span className="material-symbols-outlined text-[20px]">palette</span>
+            </div>
+            <h3 className="text-lg font-semibold">Appearance</h3>
+          </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Dark Mode</p>
-                <p className="text-sm text-text-muted">Switch between light and dark themes</p>
+                <p className="text-sm text-text-muted">
+                  Switch between light and dark themes
+                </p>
               </div>
-              <Toggle checked={isDark} onChange={() => setTheme(isDark ? "light" : "dark")} />
+              <Toggle
+                checked={isDark}
+                onChange={() => setTheme(isDark ? "light" : "dark")}
+              />
             </div>
 
             {/* Theme Options */}
-            <div className="flex gap-3 pt-4 border-t border-border">
-              {["light", "dark", "system"].map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setTheme(option)}
-                  className={`flex-1 flex flex-col items-center gap-2 p-4 rounded-lg border transition-all ${
-                    theme === option ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-2xl">
-                    {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
-                  </span>
-                  <span className="text-sm font-medium capitalize">{option}</span>
-                </button>
-              ))}
+            <div className="pt-4 border-t border-border">
+              <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
+                {["light", "dark", "system"].map((option) => (
+                  <button
+                    key={option}
+                    onClick={() => setTheme(option)}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all",
+                      theme === option
+                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                        : "text-text-muted hover:text-text-main"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[20px]">
+                      {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
+                    </span>
+                    <span className="capitalize">{option}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </Card>
 
         {/* Data Management */}
         <Card>
-          <h3 className="text-lg font-semibold mb-4">Data</h3>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
+              <span className="material-symbols-outlined text-[20px]">database</span>
+            </div>
+            <h3 className="text-lg font-semibold">Data</h3>
+          </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
               <div>
                 <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/9router/data/db.json</p>
+                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
           </div>
@@ -258,9 +332,7 @@ export default function ProfilePage() {
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
-          <p>
-            {APP_CONFIG.name} v{APP_CONFIG.version}
-          </p>
+          <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>

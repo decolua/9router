@@ -3,6 +3,7 @@ import { translateRequest, needsTranslation } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger, COLORS } from "../utils/stream.js";
 import { createStreamController, pipeWithDisconnect } from "../utils/streamHandler.js";
+import { addBufferToUsage, filterUsageForFormat } from "../utils/usageTracking.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
@@ -54,8 +55,8 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
             type: "function",
             function: {
               name: part.functionCall.name,
-              arguments: JSON.stringify(part.functionCall.args || {}),
-            },
+              arguments: JSON.stringify(part.functionCall.args || {})
+            }
           });
         }
       }
@@ -88,13 +89,11 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       object: "chat.completion",
       created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
       model: response.modelVersion || "gemini",
-      choices: [
-        {
-          index: 0,
-          message,
-          finish_reason: finishReason,
-        },
-      ],
+      choices: [{
+        index: 0,
+        message,
+        finish_reason: finishReason
+      }]
     };
 
     // Add usage if available (match streaming translator: add thoughtsTokenCount to prompt_tokens)
@@ -102,11 +101,11 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       result.usage = {
         prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
         completion_tokens: usage.candidatesTokenCount || 0,
-        total_tokens: usage.totalTokenCount || 0,
+        total_tokens: usage.totalTokenCount || 0
       };
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = {
-          reasoning_tokens: usage.thoughtsTokenCount,
+          reasoning_tokens: usage.thoughtsTokenCount
         };
       }
     }
@@ -135,8 +134,8 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
           type: "function",
           function: {
             name: block.name,
-            arguments: JSON.stringify(block.input || {}),
-          },
+            arguments: JSON.stringify(block.input || {})
+          }
         });
       }
     }
@@ -164,20 +163,18 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       object: "chat.completion",
       created: Math.floor(Date.now() / 1000),
       model: responseBody.model || "claude",
-      choices: [
-        {
-          index: 0,
-          message,
-          finish_reason: finishReason,
-        },
-      ],
+      choices: [{
+        index: 0,
+        message,
+        finish_reason: finishReason
+      }]
     };
 
     if (responseBody.usage) {
       result.usage = {
         prompt_tokens: responseBody.usage.input_tokens || 0,
         completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0),
+        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
       };
     }
 
@@ -193,34 +190,34 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
  * Handles different provider response formats
  */
 function extractUsageFromResponse(responseBody, provider) {
-  if (!responseBody) return null;
+  if (!responseBody || typeof responseBody !== 'object') return null;
 
   // OpenAI format
-  if (responseBody.usage) {
+  if (responseBody.usage && typeof responseBody.usage === 'object') {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
 
   // Claude format
-  if (responseBody.usage?.input_tokens !== undefined || responseBody.usage?.output_tokens !== undefined) {
+  if (responseBody.usage && typeof responseBody.usage === 'object' && (responseBody.usage.input_tokens !== undefined || responseBody.usage.output_tokens !== undefined)) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
     };
   }
 
   // Gemini format
-  if (responseBody.usageMetadata) {
+  if (responseBody.usageMetadata && typeof responseBody.usageMetadata === 'object') {
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
       completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount,
+      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
     };
   }
 
@@ -240,18 +237,7 @@ function extractUsageFromResponse(responseBody, provider) {
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
  */
-export async function handleChatCore({
-  body,
-  modelInfo,
-  credentials,
-  log,
-  onCredentialsRefreshed,
-  onRequestSuccess,
-  onDisconnect,
-  clientRawRequest,
-  connectionId,
-  userAgent,
-}) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
 
   const sourceFormat = detectFormat(body);
@@ -268,14 +254,20 @@ export async function handleChatCore({
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
-  const stream = body.stream !== false;
+
+  // Force streaming for OpenAI/Codex models (they don't support non-streaming mode properly)
+  const stream = (provider === 'openai' || provider === 'codex') ? true : (body.stream !== false);
 
   // Create request logger for this session: sourceFormat_targetFormat_model
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
 
   // 0. Log client raw request (before any conversion)
   if (clientRawRequest) {
-    reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
+    reqLogger.logClientRawRequest(
+      clientRawRequest.endpoint,
+      clientRawRequest.body,
+      clientRawRequest.headers
+    );
   }
 
   // 1. Log raw request from client
@@ -301,10 +293,12 @@ export async function handleChatCore({
   trackPendingRequest(model, provider, connectionId, true);
 
   // Log start
-  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
-  const msgCount =
-    translatedBody.messages?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
+  const msgCount = translatedBody.messages?.length
+    || translatedBody.contents?.length
+    || translatedBody.request?.contents?.length
+    || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
   // Create stream controller for disconnect detection
@@ -323,7 +317,7 @@ export async function handleChatCore({
       stream,
       credentials,
       signal: streamController.signal,
-      log,
+      log
     });
 
     providerResponse = result.response;
@@ -333,14 +327,10 @@ export async function handleChatCore({
 
     // Log target request (final request to provider)
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
-    appendRequestLog({
-      model,
-      provider,
-      connectionId,
-      status: `FAILED ${error.name === "AbortError" ? 499 : 502}`,
-    }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => { });
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -352,7 +342,11 @@ export async function handleChatCore({
 
   // Handle 401/403 - try token refresh using executor
   if (providerResponse.status === 401 || providerResponse.status === 403) {
-    const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
+    const newCredentials = await refreshWithRetry(
+      () => executor.refreshCredentials(credentials, log),
+      3,
+      log
+    );
 
     if (newCredentials?.accessToken || newCredentials?.copilotToken) {
       log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
@@ -373,7 +367,7 @@ export async function handleChatCore({
           stream,
           credentials,
           signal: streamController.signal,
-          log,
+          log
         });
 
         if (retryResult.response.ok) {
@@ -392,7 +386,7 @@ export async function handleChatCore({
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
 
@@ -420,9 +414,9 @@ export async function handleChatCore({
 
     // Log usage for non-streaming responses
     const usage = extractUsageFromResponse(responseBody, provider);
-    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => {});
-    if (usage) {
-      const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage.prompt_tokens || 0} | out=${usage.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
+    appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
+    if (usage && typeof usage === 'object') {
+      const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
 
       saveRequestUsage({
@@ -430,8 +424,8 @@ export async function handleChatCore({
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
-        connectionId: connectionId || undefined,
-      }).catch((err) => {
+        connectionId: connectionId || undefined
+      }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
     }
@@ -441,14 +435,20 @@ export async function handleChatCore({
       ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       : responseBody;
 
+    // Add buffer and filter usage for client (to prevent CLI context errors)
+    if (translatedResponse?.usage) {
+      const buffered = addBufferToUsage(translatedResponse.usage);
+      translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
+    }
+
     return {
       success: true,
       response: new Response(JSON.stringify(translatedResponse), {
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }),
+          "Access-Control-Allow-Origin": "*"
+        }
+      })
     };
   }
 
@@ -462,24 +462,22 @@ export async function handleChatCore({
   const responseHeaders = {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "*",
+    "Connection": "keep-alive",
+    "Access-Control-Allow-Origin": "*"
   };
 
   // Create transform stream with logger for streaming response
   let transformStream;
-  if (needsTranslation(targetFormat, sourceFormat)) {
-    transformStream = createSSETransformStreamWithLogger(
-      targetFormat,
-      sourceFormat,
-      provider,
-      reqLogger,
-      toolNameMap,
-      model,
-      connectionId
-    );
+  // For Codex provider, always translate response from openai-responses to openai format
+  // This ensures clients like Cursor get the expected chat completions format
+  const needsCodexTranslation = (provider === 'codex' || provider === 'openai') && targetFormat === 'openai-responses';
+  if (needsCodexTranslation || needsTranslation(targetFormat, sourceFormat)) {
+    // For Codex, translate FROM openai-responses TO openai (client's expected format)
+    const responseSourceFormat = needsCodexTranslation ? 'openai-responses' : targetFormat;
+    const responseTargetFormat = needsCodexTranslation ? 'openai' : sourceFormat;
+    transformStream = createSSETransformStreamWithLogger(responseSourceFormat, responseTargetFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
   } else {
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
   }
 
   // Pipe response through transform with disconnect detection
@@ -488,8 +486,8 @@ export async function handleChatCore({
   return {
     success: true,
     response: new Response(transformedBody, {
-      headers: responseHeaders,
-    }),
+      headers: responseHeaders
+    })
   };
 }
 

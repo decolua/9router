@@ -26,7 +26,7 @@ export function register(from, to, requestFn, responseFn) {
 function ensureInitialized() {
   if (initialized) return;
   initialized = true;
-
+  
   // Request translators - sync require pattern for bundler
   require("./request/claude-to-openai.js");
   require("./request/openai-to-claude.js");
@@ -34,26 +34,19 @@ function ensureInitialized() {
   require("./request/openai-to-gemini.js");
   require("./request/openai-responses.js");
   require("./request/openai-to-kiro.js");
-
+  require("./request/openai-to-cursor.js");
+  
   // Response translators
   require("./response/claude-to-openai.js");
   require("./response/openai-to-claude.js");
   require("./response/gemini-to-openai.js");
   require("./response/openai-responses.js");
   require("./response/kiro-to-openai.js");
+  require("./response/cursor-to-openai.js");
 }
 
 // Translate request: source -> openai -> target
-export function translateRequest(
-  sourceFormat,
-  targetFormat,
-  model,
-  body,
-  stream = true,
-  credentials = null,
-  provider = null,
-  reqLogger = null
-) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null) {
   ensureInitialized();
   let result = body;
 
@@ -62,7 +55,7 @@ export function translateRequest(
 
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
-
+  
   // Fix missing tool responses (insert empty tool_result if needed)
   fixMissingToolResponses(result);
 
@@ -166,7 +159,7 @@ export function initState(sourceFormat) {
     finishReason: null,
     finishReasonSent: false,
     usage: null,
-    contentBlockIndex: -1,
+    contentBlockIndex: -1
   };
 
   // Add openai-responses specific fields
@@ -192,7 +185,7 @@ export function initState(sourceFormat) {
       funcCallIds: {},
       funcArgsDone: {},
       funcItemDone: {},
-      completedSent: false,
+      completedSent: false
     };
   }
 

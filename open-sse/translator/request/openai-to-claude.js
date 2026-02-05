@@ -7,7 +7,7 @@ import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Convert OpenAI request to Claude format
-function openaiToClaudeRequest(model, body, stream) {
+export function openaiToClaudeRequest(model, body, stream) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
   const result = {

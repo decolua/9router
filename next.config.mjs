@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  images: {
+    unoptimized: true
+  },
   env: {
     NEXT_PUBLIC_CLOUD_URL: "https://9router.com",
   },

@@ -66,7 +66,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   };
 
   return (
-    <header className="flex items-center justify-between px-8 py-5 border-b border-border bg-bg/80 backdrop-blur-md z-10 sticky top-0">
+    <header className="flex items-center justify-between px-8 py-5 border-b border-black/5 dark:border-white/5 bg-bg/80 backdrop-blur-xl z-10 sticky top-0">
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden">
         {showMenuButton && (

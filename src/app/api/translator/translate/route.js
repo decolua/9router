@@ -94,7 +94,10 @@ export async function POST(request) {
         };
 
         // Build URL and headers
-        const url = buildProviderUrl(provider, model, true, { baseUrlIndex: 0 });
+        const url = buildProviderUrl(provider, model, true, {
+          baseUrlIndex: 0,
+          baseUrl: connection.providerSpecificData?.baseUrl
+        });
         const headers = buildProviderHeaders(provider, credentials, true, actualBody);
 
         result = {

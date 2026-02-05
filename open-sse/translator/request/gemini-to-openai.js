@@ -3,7 +3,7 @@ import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
 // Convert Gemini request to OpenAI format
-function geminiToOpenAIRequest(model, body, stream) {
+export function geminiToOpenAIRequest(model, body, stream) {
   const result = {
     model: model,
     messages: [],

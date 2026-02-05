@@ -3,6 +3,7 @@ import { GeminiCLIExecutor } from "./gemini-cli.js";
 import { GithubExecutor } from "./github.js";
 import { KiroExecutor } from "./kiro.js";
 import { CodexExecutor } from "./codex.js";
+import { CursorExecutor } from "./cursor.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -11,6 +12,8 @@ const executors = {
   github: new GithubExecutor(),
   kiro: new KiroExecutor(),
   codex: new CodexExecutor(),
+  cursor: new CursorExecutor(),
+  cu: new CursorExecutor() // Alias for cursor
 };
 
 const defaultCache = new Map();
@@ -31,4 +34,5 @@ export { GeminiCLIExecutor } from "./gemini-cli.js";
 export { GithubExecutor } from "./github.js";
 export { KiroExecutor } from "./kiro.js";
 export { CodexExecutor } from "./codex.js";
+export { CursorExecutor } from "./cursor.js";
 export { DefaultExecutor } from "./default.js";

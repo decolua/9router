@@ -3,7 +3,7 @@ import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
 // Convert Claude request to OpenAI format
-function claudeToOpenAIRequest(model, body, stream) {
+export function claudeToOpenAIRequest(model, body, stream) {
   const result = {
     model: model,
     messages: [],

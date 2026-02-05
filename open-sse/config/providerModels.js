@@ -31,6 +31,7 @@ export const PROVIDER_MODELS = {
   ],
   qw: [
     // Qwen Code
+    // { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "qwen3-coder-flash", name: "Qwen3 Coder Flash" },
     { id: "vision-model", name: "Qwen3 Vision Model" },
@@ -43,7 +44,7 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-r1", name: "DeepSeek R1" },
     { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
-    { id: "minimax-m2", name: "MiniMax M2" },
+    { id: "minimax-m2.1", name: "MiniMax M2.1" },
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
   ag: [
@@ -72,6 +73,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     // GitHub Copilot - Google models
@@ -87,6 +89,17 @@ export const PROVIDER_MODELS = {
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+  ],
+  cu: [
+    // Cursor IDE
+    { id: "default", name: "Auto (Server Picks)" },
+    { id: "claude-4.5-opus-high-thinking", name: "Claude 4.5 Opus High Thinking" },
+    { id: "claude-4.5-opus-high", name: "Claude 4.5 Opus High" },
+    { id: "claude-4.5-sonnet-thinking", name: "Claude 4.5 Sonnet Thinking" },
+    { id: "claude-4.5-sonnet", name: "Claude 4.5 Sonnet" },
+    { id: "claude-4.5-haiku", name: "Claude 4.5 Haiku" },
+    { id: "claude-4.5-opus", name: "Claude 4.5 Opus" },
+    { id: "gpt-5.2-codex", name: "GPT 5.2 Codex" },
   ],
 
   // API Key Providers (alias = id)
@@ -113,7 +126,11 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
-  kimi: [{ id: "kimi-latest", name: "Kimi Latest" }],
+  kimi: [
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
+    { id: "kimi-latest", name: "Kimi Latest" },
+  ],
   minimax: [{ id: "MiniMax-M2.1", name: "MiniMax M2.1" }],
 };
 
@@ -158,6 +175,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   antigravity: "ag",
   github: "gh",
   kiro: "kr",
+  cursor: "cu",
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",

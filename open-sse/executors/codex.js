@@ -32,6 +32,11 @@ export class CodexExecutor extends BaseExecutor {
     delete body.top_logprobs;
     delete body.n;
     delete body.seed;
+    delete body.max_tokens;
+    delete body.user; // Cursor sends this but Codex doesn't support it
+    delete body.prompt_cache_retention; // Cursor sends this but Codex doesn't support it
+    delete body.metadata; // Cursor sends this but Codex doesn't support it
+    delete body.stream_options; // Cursor sends this but Codex doesn't support it
 
     return body;
   }

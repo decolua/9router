@@ -10,7 +10,7 @@ import { FORMATS } from "../formats.js";
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
-function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
+export function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
   if (!body.input) return body;
 
   const result = { ...body };
@@ -131,7 +131,7 @@ function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
 /**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
-function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
+export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   const result = {
     model,
     input: [],

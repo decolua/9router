@@ -48,6 +48,8 @@ export async function getUsageForProvider(connection) {
       return await getClaudeUsage(accessToken);
     case "codex":
       return await getCodexUsage(accessToken);
+    case "kiro":
+      return await getKiroUsage(accessToken, providerSpecificData);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
@@ -360,6 +362,82 @@ async function getCodexUsage(accessToken) {
     };
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
+  }
+}
+
+/**
+ * Kiro (AWS CodeWhisperer) Usage
+ */
+async function getKiroUsage(accessToken, providerSpecificData) {
+  try {
+    const profileArn = providerSpecificData?.profileArn;
+    if (!profileArn) {
+      return { message: "Kiro connected. Profile ARN not available for quota tracking." };
+    }
+
+    // Kiro uses AWS CodeWhisperer GetUsageLimits API
+    const payload = {
+      origin: "AI_EDITOR",
+      profileArn: profileArn,
+      resourceType: "AGENTIC_REQUEST",
+    };
+
+    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Kiro API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+
+    // Parse usage data from usageBreakdownList
+    const usageList = data.usageBreakdownList || [];
+    const quotaInfo = {};
+
+    usageList.forEach((breakdown) => {
+      const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
+      const used = breakdown.currentUsageWithPrecision || 0;
+      const total = breakdown.usageLimitWithPrecision || 0;
+      
+      quotaInfo[resourceType] = {
+        used,
+        total,
+        remaining: total - used,
+        resetTime: data.nextDateReset ? new Date(data.nextDateReset).toISOString() : null,
+        unlimited: false,
+      };
+
+      // Add free trial if available
+      if (breakdown.freeTrialInfo) {
+        const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
+        const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
+        
+        quotaInfo[`${resourceType}_freetrial`] = {
+          used: freeUsed,
+          total: freeTotal,
+          remaining: freeTotal - freeUsed,
+          resetTime: data.nextDateReset ? new Date(data.nextDateReset).toISOString() : null,
+          unlimited: false,
+        };
+      }
+    });
+
+    return {
+      plan: data.subscriptionInfo?.subscriptionTitle || "Kiro",
+      quotas: quotaInfo,
+    };
+  } catch (error) {
+    throw new Error(`Failed to fetch Kiro usage: ${error.message}`);
   }
 }
 

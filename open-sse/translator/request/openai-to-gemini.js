@@ -191,12 +191,12 @@ function openaiToGeminiBase(model, body, stream) {
 }
 
 // OpenAI -> Gemini (standard API)
-function openaiToGeminiRequest(model, body, stream) {
+export function openaiToGeminiRequest(model, body, stream) {
   return openaiToGeminiBase(model, body, stream);
 }
 
 // OpenAI -> Gemini CLI (Cloud Code Assist)
-function openaiToGeminiCLIRequest(model, body, stream) {
+export function openaiToGeminiCLIRequest(model, body, stream) {
   const gemini = openaiToGeminiBase(model, body, stream);
   const isClaude = model.toLowerCase().includes("claude");
 
@@ -386,7 +386,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
 }
 
 // OpenAI -> Antigravity (Sandbox Cloud Code with wrapper)
-function openaiToAntigravityRequest(model, body, stream, credentials = null) {
+export function openaiToAntigravityRequest(model, body, stream, credentials = null) {
   const isClaude = model.toLowerCase().includes("claude");
 
   if (isClaude) {

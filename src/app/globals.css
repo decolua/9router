@@ -1,50 +1,50 @@
-@import url("https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Claude-inspired Color Palette */
+/* macOS-inspired Color Palette with Terracotta Primary */
 :root {
   /* Primary - Warm Coral/Terracotta */
-  --color-primary: #d97757;
-  --color-primary-hover: #c56243;
-
+  --color-primary: #D97757;
+  --color-primary-hover: #C56243;
+  
   /* Light theme */
-  --color-bg: #fbf9f6;
-  --color-bg-alt: #f5f1ed;
-  --color-surface: #ffffff;
-  --color-sidebar: #f0efec;
-  --color-border: #e6e4dd;
+  --color-bg: #FBF9F6;
+  --color-bg-alt: #F5F1ED;
+  --color-surface: #FFFFFF;
+  --color-sidebar: rgba(246, 246, 246, 0.8);
+  --color-border: rgba(0, 0, 0, 0.1);
   --color-text-main: #383733;
-  --color-text-muted: #75736e;
-
-  /* Shadows */
-  --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.03), 0 10px 25px rgba(0, 0, 0, 0.02);
-  --shadow-warm: 0 4px 20px -2px rgba(217, 119, 87, 0.15);
-  --shadow-elevated: 0 20px 40px -4px rgba(60, 50, 45, 0.08);
+  --color-text-muted: #75736E;
+  
+  /* Shadows - subtle macOS style */
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.015);
+  --shadow-warm: 0 2px 12px -2px rgba(217, 119, 87, 0.12);
+  --shadow-elevated: 0 12px 28px -4px rgba(60, 50, 45, 0.06);
 }
 
 .dark {
   /* Dark theme */
   --color-bg: #191918;
-  --color-bg-alt: #1f1f1e;
+  --color-bg-alt: #1F1F1E;
   --color-surface: #242423;
-  --color-sidebar: #1f1f1e;
-  --color-border: #333331;
-  --color-text-main: #ecebe8;
-  --color-text-muted: #9e9d99;
-
-  /* Dark shadows */
-  --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.2), 0 10px 25px rgba(0, 0, 0, 0.15);
-  --shadow-warm: 0 4px 20px -2px rgba(217, 119, 87, 0.2);
-  --shadow-elevated: 0 20px 40px -4px rgba(0, 0, 0, 0.4);
+  --color-sidebar: rgba(30, 30, 30, 0.8);
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text-main: #ECEBE8;
+  --color-text-muted: #9E9D99;
+  
+  /* Dark shadows - subtle macOS style */
+  --shadow-soft: 0 1px 3px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-warm: 0 2px 12px -2px rgba(217, 119, 87, 0.15);
+  --shadow-elevated: 0 12px 28px -4px rgba(0, 0, 0, 0.3);
 }
 
 @theme inline {
   /* Primary */
   --color-primary: var(--color-primary);
   --color-primary-hover: var(--color-primary-hover);
-
+  
   /* Auto-switch colors (use CSS variables from :root/.dark) */
   --color-bg: var(--color-bg);
   --color-surface: var(--color-surface);
@@ -52,28 +52,28 @@
   --color-border: var(--color-border);
   --color-text-main: var(--color-text-main);
   --color-text-muted: var(--color-text-muted);
-
+  
   /* Static colors (for explicit light/dark usage) */
-  --color-bg-light: #fbf9f6;
+  --color-bg-light: #FBF9F6;
   --color-bg-dark: #191918;
-  --color-surface-light: #ffffff;
+  --color-surface-light: #FFFFFF;
   --color-surface-dark: #242423;
-  --color-sidebar-light: #f0efec;
-  --color-sidebar-dark: #1f1f1e;
-  --color-border-light: #e6e4dd;
+  --color-sidebar-light: #F0EFEC;
+  --color-sidebar-dark: #1F1F1E;
+  --color-border-light: #E6E4DD;
   --color-border-dark: #333331;
   --color-text-main-light: #383733;
-  --color-text-main-dark: #ecebe8;
-  --color-text-muted-light: #75736e;
-  --color-text-muted-dark: #9e9d99;
-
+  --color-text-main-dark: #ECEBE8;
+  --color-text-muted-light: #75736E;
+  --color-text-muted-dark: #9E9D99;
+  
   /* Shadows */
   --shadow-soft: var(--shadow-soft);
   --shadow-warm: var(--shadow-warm);
   --shadow-elevated: var(--shadow-elevated);
-
-  /* Font */
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  /* Font - macOS system fonts */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
 }
 
 /* Base styles */
@@ -111,16 +111,16 @@ body {
 
 /* Hero gradient */
 .bg-hero-gradient {
-  background: linear-gradient(180deg, #f5f1ed 0%, #fefcfb 100%);
+  background: linear-gradient(180deg, #F5F1ED 0%, #FEFCFB 100%);
 }
 
 .dark .bg-hero-gradient {
-  background: linear-gradient(180deg, #1f1f1e 0%, #191918 100%);
+  background: linear-gradient(180deg, #1F1F1E 0%, #191918 100%);
 }
 
 /* Material Symbols */
 .material-symbols-outlined {
-  font-family: "Material Symbols Outlined", sans-serif;
+  font-family: 'Material Symbols Outlined', sans-serif;
   font-weight: normal;
   font-style: normal;
   font-size: 24px;
@@ -131,22 +131,14 @@ body {
   white-space: nowrap;
   word-wrap: normal;
   direction: ltr;
-  font-feature-settings: "liga";
-  -webkit-font-feature-settings: "liga";
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
-  font-variation-settings:
-    "FILL" 0,
-    "wght" 400,
-    "GRAD" 0,
-    "opsz" 24;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 .material-symbols-outlined.fill-1 {
-  font-variation-settings:
-    "FILL" 1,
-    "wght" 400,
-    "GRAD" 0,
-    "opsz" 24;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
 
 /* Animations */
@@ -164,8 +156,7 @@ body {
 }
 
 @keyframes pulse {
-  0%,
-  100% {
+  0%, 100% {
     opacity: 1;
   }
   50% {
@@ -178,21 +169,51 @@ body {
 }
 
 @keyframes border-glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 5px rgba(217, 119, 87, 0.3),
-      0 0 10px rgba(217, 119, 87, 0.2);
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(217, 119, 87, 0.3), 0 0 10px rgba(217, 119, 87, 0.2);
     border-color: rgba(217, 119, 87, 0.5);
   }
   50% {
-    box-shadow:
-      0 0 10px rgba(217, 119, 87, 0.5),
-      0 0 20px rgba(217, 119, 87, 0.3);
+    box-shadow: 0 0 10px rgba(217, 119, 87, 0.5), 0 0 20px rgba(217, 119, 87, 0.3);
     border-color: rgba(217, 119, 87, 0.8);
   }
 }
 
 .animate-border-glow {
   animation: border-glow 2s ease-in-out infinite;
+}
+
+/* macOS Vibrancy/Blur Effect */
+.bg-vibrancy {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.dark .bg-vibrancy {
+  background: rgba(30, 30, 30, 0.72);
+}
+
+/* macOS Traffic Lights */
+.traffic-lights {
+  display: flex;
+  gap: 8px;
+}
+
+.traffic-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.traffic-light.red {
+  background: #FF5F56;
+}
+
+.traffic-light.yellow {
+  background: #FFBD2E;
+}
+
+.traffic-light.green {
+  background: #27C93F;
 }

@@ -10,6 +10,7 @@ export const OAUTH_PROVIDERS = {
   "gemini-cli": { id: "gemini-cli", alias: "gc", name: "Gemini CLI", icon: "terminal", color: "#4285F4" },
   github: { id: "github", alias: "gh", name: "GitHub Copilot", icon: "code", color: "#333333" },
   kiro: { id: "kiro", alias: "kr", name: "Kiro AI", icon: "psychology_alt", color: "#FF6B35" },
+  cursor: { id: "cursor", alias: "cu", name: "Cursor IDE", icon: "edit_note", color: "#00D4AA" },
 };
 
 export const APIKEY_PROVIDERS = {
@@ -43,6 +44,17 @@ export const APIKEY_PROVIDERS = {
   },
   gemini: { id: "gemini", alias: "gemini", name: "Gemini", icon: "diamond", color: "#4285F4", textIcon: "GE" },
 };
+
+export const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
+export const ANTHROPIC_COMPATIBLE_PREFIX = "anthropic-compatible-";
+
+export function isOpenAICompatibleProvider(providerId) {
+  return typeof providerId === "string" && providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
+}
+
+export function isAnthropicCompatibleProvider(providerId) {
+  return typeof providerId === "string" && providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
+}
 
 // All providers (combined)
 export const AI_PROVIDERS = { ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS };

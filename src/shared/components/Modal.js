@@ -51,14 +51,17 @@ export default function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeOnOverlay ? onClose : undefined} />
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+        onClick={closeOnOverlay ? onClose : undefined}
+      />
 
       {/* Modal content */}
       <div
         className={cn(
           "relative w-full bg-surface",
-          "border border-border",
-          "rounded-2xl shadow-elevated",
+          "border border-black/10 dark:border-white/10",
+          "rounded-xl shadow-2xl",
           "animate-in fade-in zoom-in-95 duration-200",
           sizes[size],
           className
@@ -66,10 +69,24 @@ export default function Modal({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between p-6 border-b border-border">
-            {title && <h2 className="text-lg font-semibold text-text-main">{title}</h2>}
+          <div className="flex items-center justify-between p-6 border-b border-black/5 dark:border-white/5">
+            <div className="flex items-center">
+              <div className="flex items-center gap-2 mr-4">
+                <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
+                <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
+                <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
+              </div>
+              {title && (
+                <h2 className="text-lg font-semibold text-text-main">
+                  {title}
+                </h2>
+              )}
+            </div>
             {showCloseButton && (
-              <button onClick={onClose} className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 transition-colors">
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             )}
@@ -80,7 +97,11 @@ export default function Modal({
         <div className="p-6 max-h-[calc(80vh-140px)] overflow-y-auto">{children}</div>
 
         {/* Footer */}
-        {footer && <div className="flex items-center justify-end gap-3 p-6 border-t border-border">{footer}</div>}
+        {footer && (
+          <div className="flex items-center justify-end gap-3 p-6 border-t border-black/5 dark:border-white/5">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -119,3 +140,4 @@ export function ConfirmModal({
     </Modal>
   );
 }
+

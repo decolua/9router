@@ -52,9 +52,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     let errorText = result.statusText || "";
     try {
       const errorBody = await result.clone().json();
-      errorText = errorBody.error || errorBody.message || errorText;
+      errorText = errorBody?.error ?? errorBody?.message ?? errorText;
     } catch {
       // Ignore JSON parse errors
+    }
+
+    // Normalize error text to string (Worker-safe)
+    if (typeof errorText !== "string") {
+      try {
+        errorText = JSON.stringify(errorText);
+      } catch {
+        errorText = String(errorText);
+      }
     }
 
     // Check if should fallback to next model

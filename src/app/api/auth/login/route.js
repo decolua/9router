@@ -32,7 +32,7 @@ export async function POST(request) {
       const cookieStore = await cookies();
       cookieStore.set("auth_token", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: false, // Allow HTTP for local network access
         sameSite: "lax",
         path: "/",
       });

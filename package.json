@@ -4,16 +4,14 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.6.2",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
@@ -21,22 +19,21 @@
     "jose": "^6.1.3",
     "lowdb": "^7.0.1",
     "monaco-editor": "^0.55.1",
-    "next": "^15.2.0",
+    "next": "^16.1.6",
     "node-machine-id": "^1.1.12",
-    "open": "^10.1.0",
-    "ora": "^5.4.1",
-    "react": "19.2.1",
-    "react-dom": "19.2.1",
-    "socks-proxy-agent": "^8.0.4",
-    "undici": "^7.16.0",
+    "open": "^11.0.0",
+    "ora": "^9.1.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "socks-proxy-agent": "^8.0.5",
+    "undici": "^7.19.2",
     "uuid": "^13.0.0",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
-    "eslint-config-next": "16.0.10",
-    "prettier": "^3.8.1",
+    "eslint-config-next": "16.1.6",
     "tailwindcss": "^4"
   }
 }

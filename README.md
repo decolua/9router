@@ -1,185 +1,511 @@
-# 9ROUTER - AI Proxy
+<div align="center">
+  <img src="./images/9router.png" alt="9Router Dashboard" width="800"/>
+  
+  # 9Router - Smart AI Router
+  
+  **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
+  
+  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
+  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
+  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  
+  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+</div>
 
-> Universal AI Proxy for Claude Code, Codex, Cursor | OpenAI, Claude, Gemini, Copilot
+---
 
-**Website: [9router.com](https://9router.com)**
+## 🤔 Why 9Router?
 
-[![npm version](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-[![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-[![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/yourusername/9router/blob/main/LICENSE)
+**Stop wasting money and hitting limits:**
 
-A JavaScript port of CLIProxyAPI with web dashboard.
+- ❌ Subscription quota expires unused every month
+- ❌ Rate limits stop you mid-coding
+- ❌ Expensive APIs ($20-50/month per provider)
+- ❌ Manual switching between providers
 
-![9Router Dashboard](./images/9router.png)
+**9Router solves this:**
 
-## Introduction
+- ✅ **Maximize subscriptions** - Track quota, use every bit before reset
+- ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
+- ✅ **Multi-account** - Round-robin between accounts per provider
+- ✅ **Universal** - Works with Cursor, Cline, Claude Desktop, any CLI tool
 
-**9Router** is a powerful AI API proxy server that provides unified access to multiple AI providers through a single endpoint. It features automatic format translation, intelligent fallback routing, OAuth authentication, and a modern web dashboard for easy management.
+---
 
-**Key Highlights:**
+## 🔄 How It Works
 
-- **JavaScript Port**: Converted from CLIProxyAPI (Go) to JavaScript/Node.js.
-- **Universal CLI Support**: Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, AmpCode, Kilo, and other CLI tools
-- **Cross-Platform**: Runs on Windows, Linux, and macOS
-- **Easy Deployment**: Simple installation via npx, or deploy to VPS/Dokploy
+```
+┌─────────────┐
+│  Your CLI   │  (Cursor, Cline, Claude Desktop...)
+│   Tool      │
+└──────┬──────┘
+       │ http://localhost:20128/v1
+       ↓
+┌─────────────────────────────────────────┐
+│           9Router (Smart Router)        │
+│  • Format translation (OpenAI ↔ Claude) │
+│  • Quota tracking                       │
+│  • Auto token refresh                   │
+└──────┬──────────────────────────────────┘
+       │
+       ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, Gemini CLI
+       │   ↓ quota exhausted
+       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       │   ↓ budget limit
+       └─→ [Tier 3: FREE] iFlow, Qwen, Kiro (unlimited)
 
-## Recent Updates
+Result: Never stop coding, minimal cost
+```
 
-### v0.2.27
+---
 
-- **OpenAI Responses API Support**: Full support for Codex CLI streaming via the Responses API format
-- **`/v1/models` Endpoint**: OpenAI-compatible models endpoint for client discovery
-- **Combo Support in Models**: Model combos now appear in the `/v1/models` endpoint
-- **Improved Usage Tracking**: Better handling of request status for streaming responses
-- **Kiro (AWS CodeWhisperer) Support**: New provider integration
+## ⚡ Quick Start
 
-### Provider Support
-
-| Provider             | Alias        | Auth Type | Format        |
-| -------------------- | ------------ | --------- | ------------- |
-| Claude (Anthropic)   | `cc`         | OAuth     | Claude        |
-| Codex (OpenAI)       | `cx`         | OAuth     | Responses API |
-| Gemini CLI           | `gc`         | OAuth     | Gemini CLI    |
-| Antigravity (Google) | `ag`         | OAuth     | Antigravity   |
-| GitHub Copilot       | `gh`         | OAuth     | OpenAI        |
-| Qwen                 | `qw`         | OAuth     | OpenAI        |
-| iFlow                | `if`         | OAuth     | OpenAI        |
-| Kiro (AWS)           | `kr`         | OAuth     | Kiro          |
-| OpenAI               | `openai`     | API Key   | OpenAI        |
-| Anthropic            | `anthropic`  | API Key   | Claude        |
-| Gemini               | `gemini`     | API Key   | Gemini        |
-| OpenRouter           | `openrouter` | API Key   | OpenAI        |
-
-## Features
-
-### Core Features
-
-- **Multi-Provider Support**: Unified endpoint for 15+ AI providers
-- **OAuth & API Key Authentication**: Supports both OAuth2 flow and API key authentication
-- **Format Translation**: Automatic request/response translation between OpenAI, Claude, Gemini, Codex, and Kiro formats
-- **Web Dashboard**: React-based dashboard for managing providers, combos, API keys, and settings
-- **Usage Tracking**: Real-time monitoring and analytics for all API requests
-
-### Advanced Features
-
-- **Combo System**: Create model combos with automatic fallback support
-- **Intelligent Fallback**: Automatic account rotation when rate limits or errors occur
-- **Response Caching**: Optimized caching for Claude Code
-- **Model Aliases**: Create custom model aliases for easier management
-
-### Format Support
-
-- **OpenAI Format**: Standard OpenAI Chat Completions API
-- **OpenAI Responses API**: Codex CLI format with streaming
-- **Claude Format**: Anthropic Messages API
-- **Gemini Format**: Google Generative AI API
-- **Kiro Format**: AWS CodeWhisperer format
-
-## Install
+**1. Install globally:**
 
 ```bash
-# Install globally
 npm install -g 9router
 9router
-
-# Run directly with npx
-npx 9router
 ```
 
-## Quick Start
+🎉 Dashboard opens at `http://localhost:20128`
+
+**2. Connect a FREE provider (no signup needed):**
+
+Dashboard → Providers → Connect **iFlow** or **Qwen** → OAuth login → Done!
+
+**3. Use in your CLI tool:**
+
+```
+Cursor/Cline Settings:
+  Endpoint: http://localhost:20128/v1
+  API Key: [copy from dashboard]
+  Model: if/kimi-k2-thinking
+```
+
+**That's it!** Start coding with FREE AI models.
+
+---
+
+## 💡 Key Features
+
+| Feature | What It Does | Why It Matters |
+|---------|--------------|----------------|
+| 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
+| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
+| 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini seamless | Works with any CLI tool |
+| 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
+| 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
+| 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
+| 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
+| 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
+| 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
+| 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
+
+<details>
+<summary><b>📖 Feature Details</b></summary>
+
+### 🎯 Smart 3-Tier Fallback
+
+Create combos with automatic fallback:
+
+```
+Combo: "my-coding-stack"
+  1. cc/claude-opus-4-5        (your subscription)
+  2. glm/glm-4.7               (cheap backup, $0.6/1M)
+  3. if/kimi-k2-thinking       (free fallback)
+
+→ Auto switches when quota runs out or errors occur
+```
+
+### 📊 Real-Time Quota Tracking
+
+- Token consumption per provider
+- Reset countdown (5-hour, daily, weekly)
+- Cost estimation for paid tiers
+- Monthly spending reports
+
+### 🔄 Format Translation
+
+Seamless translation between formats:
+- **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
+- Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
+- Works with any tool that supports custom OpenAI endpoints
+
+### 👥 Multi-Account Support
+
+- Add multiple accounts per provider
+- Auto round-robin or priority-based routing
+- Fallback to next account when one hits quota
+
+### 🔄 Auto Token Refresh
+
+- OAuth tokens automatically refresh before expiration
+- No manual re-authentication needed
+- Seamless experience across all providers
+
+### 🎨 Custom Combos
+
+- Create unlimited model combinations
+- Mix subscription, cheap, and free tiers
+- Name your combos for easy access
+- Share combos across devices with Cloud Sync
+
+### 📝 Request Logging
+
+- Enable debug mode for full request/response logs
+- Track API calls, headers, and payloads
+- Troubleshoot integration issues
+- Export logs for analysis
+
+### 💾 Cloud Sync
+
+- Sync providers, combos, and settings across devices
+- Automatic background sync
+- Secure encrypted storage
+- Access your setup from anywhere
+
+### 📊 Usage Analytics
+
+- Track token usage per provider and model
+- Cost estimation and spending trends
+- Monthly reports and insights
+- Optimize your AI spending
+
+### 🌐 Deploy Anywhere
+
+- 💻 **Localhost** - Default, works offline
+- ☁️ **VPS/Cloud** - Share across devices
+- 🐳 **Docker** - One-command deployment
+- 🚀 **Cloudflare Workers** - Global edge network
+
+</details>
+
+---
+
+## 💰 Pricing at a Glance
+
+| Tier | Provider | Cost | Quota Reset | Best For |
+|------|----------|------|-------------|----------|
+| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo | 5h + weekly | Already subscribed |
+| | Codex (Plus/Pro) | $20-200/mo | 5h + weekly | OpenAI users |
+| | Gemini CLI | **FREE** | 180K/mo + 1K/day | Everyone! |
+| | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
+| **💰 CHEAP** | GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
+| | MiniMax M2.1 | $0.2/1M | 5-hour rolling | Cheapest option |
+| | Kimi K2 | $9/mo flat | 10M tokens/mo | Predictable cost |
+| **🆓 FREE** | iFlow | $0 | Unlimited | 8 models free |
+| | Qwen | $0 | Unlimited | 3 models free |
+| | Kiro | $0 | Unlimited | Claude free |
+
+**💡 Pro Tip:** Start with Gemini CLI (180K free/month) + iFlow (unlimited free) combo = $0 cost!
+
+---
+
+## 🎯 Use Cases
+
+### Case 1: "I have Claude Pro subscription"
+
+**Problem:** Quota expires unused, rate limits during heavy coding
+
+**Solution:**
+```
+Combo: "maximize-claude"
+  1. cc/claude-opus-4-5        (use subscription fully)
+  2. glm/glm-4.7               (cheap backup when quota out)
+  3. if/kimi-k2                (free emergency fallback)
+
+Monthly cost: $20 (subscription) + ~$5 (backup) = $25 total
+vs. $20 + hitting limits = frustration
+```
+
+### Case 2: "I want zero cost"
+
+**Problem:** Can't afford subscriptions, need reliable AI coding
+
+**Solution:**
+```
+Combo: "free-forever"
+  1. gc/gemini-3-flash         (180K free/month)
+  2. if/kimi-k2-thinking       (unlimited free)
+  3. qw/qwen3-coder-plus       (unlimited free)
+
+Monthly cost: $0
+Quality: Production-ready models
+```
+
+### Case 3: "I need 24/7 coding, no interruptions"
+
+**Problem:** Deadlines, can't afford downtime
+
+**Solution:**
+```
+Combo: "always-on"
+  1. cc/claude-opus-4-5        (best quality)
+  2. cx/gpt-5.2-codex          (second subscription)
+  3. glm/glm-4.7               (cheap, resets daily)
+  4. minimax/MiniMax-M2.1      (cheapest, 5h reset)
+  5. if/kimi-k2-thinking       (free unlimited)
+
+Result: 5 layers of fallback = zero downtime
+Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
+```
+
+---
+
+## 📖 Setup Guide
+
+<details>
+<summary><b>🔐 Subscription Providers (Maximize Value)</b></summary>
+
+### Claude Code (Pro/Max)
 
 ```bash
-9router                    # Start server with default settings
-9router --port 8080        # Custom port
-9router --no-browser       # Don't open browser
-9router --skip-update      # Skip auto-update check
-9router --help             # Show help
+Dashboard → Providers → Connect Claude Code
+→ OAuth login → Auto token refresh
+→ 5-hour + weekly quota tracking
+
+Models:
+  cc/claude-opus-4-5-20251101
+  cc/claude-sonnet-4-5-20250929
+  cc/claude-haiku-4-5-20251001
 ```
 
-**Dashboard**: `http://localhost:20128/dashboard`
+**Pro Tip:** Use Opus for complex tasks, Sonnet for speed. 9Router tracks quota per model!
 
-## Remote Deployment
-
-### Environment Variables
-
-Configure these environment variables for remote deployment:
-
-| Variable                | Required | Default                            | Description                                                       |
-| ----------------------- | -------- | ---------------------------------- | ----------------------------------------------------------------- |
-| `DATA_DIR`              | No       | `~/.9router`                       | Custom data directory path for database storage                   |
-| `JWT_SECRET`            | **Yes**  | `9router-default-secret-change-me` | Secret key for JWT authentication. **Change this in production!** |
-| `INITIAL_PASSWORD`      | No       | `123456`                           | Initial dashboard login password                                  |
-| `API_KEY_SECRET`        | No       | Auto-generated                     | Secret for API key generation/validation                          |
-| `MACHINE_ID_SALT`       | No       | Auto-generated                     | Salt for machine ID hashing                                       |
-| `NEXT_PUBLIC_BASE_URL`  | No       | `http://localhost:3000`            | Public base URL of your deployment                                |
-| `NEXT_PUBLIC_CLOUD_URL` | No       | `https://9router.com`              | Cloud sync URL (for cloud features)                               |
-| `ENABLE_REQUEST_LOGS`   | No       | `false`                            | Enable detailed request/response logging to files                 |
-| `NODE_ENV`              | No       | `development`                      | Set to `production` for production deployments                    |
-
-### Deploying to Dokploy
-
-1. **Create a new application** in Dokploy
-2. **Connect your Git repository** or use Docker
-3. **Set environment variables** in Dokploy's settings:
-
-```env
-JWT_SECRET=your-secure-random-secret-here
-INITIAL_PASSWORD=your-secure-password
-DATA_DIR=/app/data
-NODE_ENV=production
-```
-
-4. **Build command**: `npm run build`
-5. **Start command**: `npm run start`
-6. **Port**: `3000` (or configure via `PORT` env var)
-
-### Deploying to VPS (Manual)
+### OpenAI Codex (Plus/Pro)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/9router.git
-cd 9router
+Dashboard → Providers → Connect Codex
+→ OAuth login (port 1455)
+→ 5-hour + weekly reset
 
-# Install dependencies
+Models:
+  cx/gpt-5.2-codex
+  cx/gpt-5.1-codex-max
+```
+
+### Gemini CLI (FREE 180K/month!)
+
+```bash
+Dashboard → Providers → Connect Gemini CLI
+→ Google OAuth
+→ 180K completions/month + 1K/day
+
+Models:
+  gc/gemini-3-flash-preview
+  gc/gemini-2.5-pro
+```
+
+**Best Value:** Huge free tier! Use this before paid tiers.
+
+### GitHub Copilot
+
+```bash
+Dashboard → Providers → Connect GitHub
+→ OAuth via GitHub
+→ Monthly reset (1st of month)
+
+Models:
+  gh/gpt-5
+  gh/claude-4.5-sonnet
+  gh/gemini-3-pro
+```
+
+</details>
+
+<details>
+<summary><b>💰 Cheap Providers (Backup)</b></summary>
+
+### GLM-4.7 (Daily reset, $0.6/1M)
+
+1. Sign up: [Zhipu AI](https://open.bigmodel.cn/)
+2. Get API key from Coding Plan
+3. Dashboard → Add API Key:
+   - Provider: `glm`
+   - API Key: `your-key`
+
+**Use:** `glm/glm-4.7`
+
+**Pro Tip:** Coding Plan offers 3× quota at 1/7 cost! Reset daily 10:00 AM.
+
+### MiniMax M2.1 (5h reset, $0.20/1M)
+
+1. Sign up: [MiniMax](https://www.minimax.io/)
+2. Get API key
+3. Dashboard → Add API Key
+
+**Use:** `minimax/MiniMax-M2.1`
+
+**Pro Tip:** Cheapest option for long context (1M tokens)!
+
+### Kimi K2 ($9/month flat)
+
+1. Subscribe: [Moonshot AI](https://platform.moonshot.ai/)
+2. Get API key
+3. Dashboard → Add API Key
+
+**Use:** `kimi/kimi-latest`
+
+**Pro Tip:** Fixed $9/month for 10M tokens = $0.90/1M effective cost!
+
+</details>
+
+<details>
+<summary><b>🆓 FREE Providers (Emergency Backup)</b></summary>
+
+### iFlow (8 FREE models)
+
+```bash
+Dashboard → Connect iFlow
+→ iFlow OAuth login
+→ Unlimited usage
+
+Models:
+  if/kimi-k2-thinking
+  if/qwen3-coder-plus
+  if/glm-4.7
+  if/minimax-m2
+  if/deepseek-r1
+```
+
+### Qwen (3 FREE models)
+
+```bash
+Dashboard → Connect Qwen
+→ Device code authorization
+→ Unlimited usage
+
+Models:
+  qw/qwen3-coder-plus
+  qw/qwen3-coder-flash
+```
+
+### Kiro (Claude FREE)
+
+```bash
+Dashboard → Connect Kiro
+→ AWS Builder ID or Google/GitHub
+→ Unlimited usage
+
+Models:
+  kr/claude-sonnet-4.5
+  kr/claude-haiku-4.5
+```
+
+</details>
+
+<details>
+<summary><b>🎨 Create Combos</b></summary>
+
+### Example 1: Maximize Subscription → Cheap Backup
+
+```
+Dashboard → Combos → Create New
+
+Name: premium-coding
+Models:
+  1. cc/claude-opus-4-5-20251101 (Subscription primary)
+  2. glm/glm-4.7 (Cheap backup, $0.6/1M)
+  3. minimax/MiniMax-M2.1 (Cheapest fallback, $0.20/1M)
+
+Use in CLI: premium-coding
+
+Monthly cost example (100M tokens):
+  80M via Claude (subscription): $0 extra
+  15M via GLM: $9
+  5M via MiniMax: $1
+  Total: $10 + your subscription
+```
+
+### Example 2: Free-Only (Zero Cost)
+
+```
+Name: free-combo
+Models:
+  1. gc/gemini-3-flash-preview (180K free/month)
+  2. if/kimi-k2-thinking (unlimited)
+  3. qw/qwen3-coder-plus (unlimited)
+
+Cost: $0 forever!
+```
+
+</details>
+
+<details>
+<summary><b>🔧 CLI Integration</b></summary>
+
+### Cursor IDE
+
+```
+Settings → Models → Advanced:
+  OpenAI API Base URL: http://localhost:20128/v1
+  OpenAI API Key: [from 9router dashboard]
+  Model: cc/claude-opus-4-5-20251101
+```
+
+Or use combo: `premium-coding`
+
+### Claude Desktop (Claude Code)
+
+Edit `~/.claude/config.json`:
+
+```json
+{
+  "anthropic_api_base": "http://localhost:20128/v1",
+  "anthropic_api_key": "your-9router-api-key"
+}
+```
+
+### Codex CLI
+
+```bash
+export OPENAI_BASE_URL="http://localhost:20128"
+export OPENAI_API_KEY="your-9router-api-key"
+
+codex "your prompt"
+```
+
+### Cline / Continue / RooCode
+
+```
+Provider: OpenAI Compatible
+Base URL: http://localhost:20128/v1
+API Key: [from dashboard]
+Model: cc/claude-opus-4-5-20251101
+```
+
+</details>
+
+<details>
+<summary><b>🚀 Deployment</b></summary>
+
+### VPS Deployment
+
+```bash
+# Clone and install
+git clone https://github.com/decolua/9router.git
+cd 9router/app
 npm install
+npm run build
 
-# Set environment variables
-export JWT_SECRET="your-secure-random-secret"
-export INITIAL_PASSWORD="your-secure-password"
+# Configure
+export JWT_SECRET="your-secure-secret-change-this"
+export INITIAL_PASSWORD="your-password"
 export DATA_DIR="/var/lib/9router"
 export NODE_ENV="production"
 
-# Build the application
-npm run build
-
-# Start the server
+# Start
 npm run start
+
+# Or use PM2
+npm install -g pm2
+pm2 start npm --name 9router -- start
+pm2 save
+pm2 startup
 ```
 
-### Using Docker
-
-Create a `Dockerfile`:
-
-```dockerfile
-FROM node:20-alpine
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY . .
-RUN npm run build
-
-ENV NODE_ENV=production
-ENV DATA_DIR=/app/data
-
-EXPOSE 3000
-
-CMD ["npm", "run", "start"]
-```
-
-Build and run:
+### Docker
 
 ```bash
 docker build -t 9router .
@@ -191,212 +517,169 @@ docker run -d \
   9router
 ```
 
-### Using with Reverse Proxy (Nginx)
+### Environment Variables
 
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | Auto-generated | **MUST change in production!** |
+| `DATA_DIR` | `~/.9router` | Database storage path |
+| `INITIAL_PASSWORD` | `123456` | Dashboard login password |
+| `NODE_ENV` | `development` | Set to `production` for deploy |
 
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+</details>
 
-        # SSE support
-        proxy_buffering off;
-        proxy_read_timeout 86400;
-    }
-}
-```
+---
 
-## API Endpoints
+## 📊 Available Models
+
+<details>
+<summary><b>View all available models</b></summary>
+
+**Claude Code (`cc/`)** - Pro/Max:
+- `cc/claude-opus-4-5-20251101`
+- `cc/claude-sonnet-4-5-20250929`
+- `cc/claude-haiku-4-5-20251001`
+
+**Codex (`cx/`)** - Plus/Pro:
+- `cx/gpt-5.2-codex`
+- `cx/gpt-5.1-codex-max`
+
+**Gemini CLI (`gc/`)** - FREE:
+- `gc/gemini-3-flash-preview`
+- `gc/gemini-2.5-pro`
+
+**GitHub Copilot (`gh/`)**:
+- `gh/gpt-5`
+- `gh/claude-4.5-sonnet`
+
+**GLM (`glm/`)** - $0.6/1M:
+- `glm/glm-4.7`
+
+**MiniMax (`minimax/`)** - $0.2/1M:
+- `minimax/MiniMax-M2.1`
+
+**iFlow (`if/`)** - FREE:
+- `if/kimi-k2-thinking`
+- `if/qwen3-coder-plus`
+- `if/deepseek-r1`
+
+**Qwen (`qw/`)** - FREE:
+- `qw/qwen3-coder-plus`
+- `qw/qwen3-coder-flash`
+
+**Kiro (`kr/`)** - FREE:
+- `kr/claude-sonnet-4.5`
+- `kr/claude-haiku-4.5`
+
+</details>
+
+---
+
+## 🐛 Troubleshooting
+
+**"Language model did not provide messages"**
+- Provider quota exhausted → Check dashboard quota tracker
+- Solution: Use combo fallback or switch to cheaper tier
+
+**Rate limiting**
+- Subscription quota out → Fallback to GLM/MiniMax
+- Add combo: `cc/claude-opus → glm/glm-4.7 → if/kimi-k2`
+
+**OAuth token expired**
+- Auto-refreshed by 9Router
+- If issues persist: Dashboard → Provider → Reconnect
+
+**High costs**
+- Check usage stats in Dashboard
+- Switch primary model to GLM/MiniMax
+- Use free tier (Gemini CLI, iFlow) for non-critical tasks
+
+---
+
+## 🛠️ Tech Stack
+
+- **Runtime**: Node.js 20+
+- **Framework**: Next.js 15
+- **UI**: React 19 + Tailwind CSS 4
+- **Database**: LowDB (JSON file-based)
+- **Streaming**: Server-Sent Events (SSE)
+- **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
+
+---
+
+## 📝 API Reference
 
 ### Chat Completions
 
-```
-POST /v1/chat/completions
-```
+```bash
+POST http://localhost:20128/v1/chat/completions
+Authorization: Bearer your-api-key
+Content-Type: application/json
 
-OpenAI-compatible chat completions endpoint. Supports all providers with automatic format translation.
-
-### Models List
-
-```
-GET /v1/models
-```
-
-Returns available models in OpenAI-compatible format, including combos.
-
-### Responses API (Codex)
-
-```
-POST /v1/responses
-POST /codex/responses
+{
+  "model": "cc/claude-opus-4-5-20251101",
+  "messages": [
+    {"role": "user", "content": "Write a function to..."}
+  ],
+  "stream": true
+}
 ```
 
-OpenAI Responses API endpoint for Codex CLI compatibility.
-
-## CLI Integration Examples
-
-### Claude Code
+### List Models
 
 ```bash
-# Set your 9router endpoint
-export ANTHROPIC_BASE_URL="http://your-server:3000/v1"
+GET http://localhost:20128/v1/models
+Authorization: Bearer your-api-key
 
-# Use with Claude Code
-claude
+→ Returns all models + combos in OpenAI format
 ```
 
-### Codex CLI
+---
 
-```bash
-# Configure Codex to use 9router
-export OPENAI_BASE_URL="http://your-server:3000"
+## 📧 Support
 
-# Use Codex
-codex
-```
+- **Website**: [9router.com](https://9router.com)
+- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
+- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 
-### Cursor IDE
+---
 
-Configure in Cursor settings:
+## 🌟 Stargazers
 
-- API Base URL: `http://your-server:3000/v1`
-- Use your generated API key from the dashboard
+[![Stargazers over time](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
 
-## Debugging
+---
 
-### Enable Request Logging
+## 👥 Contributors
 
-Set the environment variable to capture full request/response data:
+Thanks to all contributors who helped make 9Router better!
 
-```bash
-ENABLE_REQUEST_LOGS=true npm run start
-```
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router)](https://github.com/decolua/9router/graphs/contributors)
 
-Logs are saved to the `logs/` directory with the format:
+### How to Contribute
 
-```
-logs/
-└── {sourceFormat}_{targetFormat}_{model}_{timestamp}/
-    ├── 1_client_raw_request.json
-    ├── 2_raw_request.json
-    ├── 3_converted_request.json
-    ├── 4_provider_response.txt
-    ├── 5_converted_response.txt
-    └── 6_error.json (if error occurred)
-```
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-### Console Debug Logging
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-The application includes debug logging for troubleshooting provider issues. Check your container/server logs for `[DEBUG]` prefixed messages.
+---
 
-## Data Location
+## 🙏 Acknowledgments
 
-User data stored at:
+Special thanks to **CLIProxyAPI** - the original Go implementation that inspired this JavaScript port.
 
-- **macOS/Linux**: `~/.9router/db.json`
-- **Windows**: `%APPDATA%/9router/db.json`
-- **Custom**: Set `DATA_DIR` environment variable
+---
 
-## Development
-
-### Setup
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/9router.git
-cd 9router
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-```
-
-### Project Structure
-
-```
-9router/
-├── src/
-│   ├── app/               # Next.js app (dashboard & API routes)
-│   ├── lib/               # Core libraries (DB, OAuth, etc.)
-│   ├── shared/            # Shared components & utilities
-│   └── sse/               # SSE streaming handlers
-├── open-sse/              # Core proxy engine (translator, handlers)
-│   ├── translator/        # Format translators (request/response)
-│   │   ├── request/       # Request translators
-│   │   └── response/      # Response translators
-│   ├── handlers/          # Request handlers
-│   ├── executors/         # Provider-specific executors
-│   ├── services/          # Core services (fallback, token refresh)
-│   └── config/            # Provider configurations
-├── tester/                # Testing utilities
-└── public/                # Static assets
-```
-
-## Tech Stack
-
-| Layer                | Technology                   |
-| -------------------- | ---------------------------- |
-| **Runtime**          | Node.js 20+ / Bun            |
-| **Framework**        | Next.js 15                   |
-| **Dashboard**        | React 19 + Tailwind CSS 4    |
-| **Database**         | LowDB (JSON file-based)      |
-| **CLI**              | Node.js CLI with auto-update |
-| **Streaming**        | Server-Sent Events (SSE)     |
-| **Auth**             | OAuth 2.0 (PKCE) + API Keys  |
-| **Deployment**       | Standalone / VPS / Docker    |
-| **State Management** | Zustand                      |
-
-### Core Libraries
-
-- **lowdb**: Lightweight JSON database
-- **undici**: High-performance HTTP client
-- **uuid**: Unique identifier generation
-- **jose**: JWT handling
-- **bcryptjs**: Password hashing
-
-## Troubleshooting
-
-### "The language model did not provide any assistant messages"
-
-This error typically means the upstream provider returned an empty or malformed response. Check:
-
-1. Your provider credentials are valid and not rate-limited
-2. The model name is correct (e.g., `ag/gemini-3-pro-high`)
-3. Enable debug logging to see the actual provider response
-
-### OAuth Token Expired
-
-OAuth tokens are automatically refreshed. If you see authentication errors:
-
-1. Re-authenticate via the dashboard
-2. Check if the provider's OAuth credentials are still valid
-
-### Rate Limiting
-
-9Router implements automatic fallback when rate limits are hit:
-
-1. Add multiple accounts for the same provider
-2. Configure account priorities in the dashboard
-3. Use combos to fallback between different providers
-
-## Acknowledgments
-
-Special thanks to:
-
-- **CLIProxyAPI**: The original Go implementation that inspired this project. 9Router is a JavaScript port with additional features and web dashboard.
-
-## License
+## 📄 License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for developers who code 24/7</sub>
+</div>

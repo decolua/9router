@@ -9,16 +9,15 @@ import { FORMATS } from "../formats.js";
  * Parse Kiro SSE event and convert to OpenAI format
  * Kiro events: assistantResponseEvent, codeEvent, supplementaryWebLinksEvent, etc.
  */
-function convertKiroToOpenAI(chunk, state) {
+export function convertKiroToOpenAI(chunk, state) {
+  
   if (!chunk) return null;
 
   // If chunk is already in OpenAI format (from executor transform), return as-is
   if (chunk.object === "chat.completion.chunk" && chunk.choices) {
     return chunk;
   }
-
-  console.log("chunk", chunk);
-
+  
   // Handle string chunk (raw SSE data)
   let data = chunk;
   if (typeof chunk === "string") {
@@ -72,16 +71,14 @@ function convertKiroToOpenAI(chunk, state) {
       object: "chat.completion.chunk",
       created: state.created,
       model: state.model || "kiro",
-      choices: [
-        {
-          index: 0,
-          delta: {
-            ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
-            content: content,
-          },
-          finish_reason: null,
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          content: content
         },
-      ],
+        finish_reason: null
+      }]
     };
 
     state.chunkIndex++;
@@ -99,16 +96,14 @@ function convertKiroToOpenAI(chunk, state) {
       object: "chat.completion.chunk",
       created: state.created,
       model: state.model || "kiro",
-      choices: [
-        {
-          index: 0,
-          delta: {
-            ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
-            content: `<thinking>${content}</thinking>`,
-          },
-          finish_reason: null,
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          content: `<thinking>${content}</thinking>`
         },
-      ],
+        finish_reason: null
+      }]
     };
 
     state.chunkIndex++;
@@ -127,26 +122,22 @@ function convertKiroToOpenAI(chunk, state) {
       object: "chat.completion.chunk",
       created: state.created,
       model: state.model || "kiro",
-      choices: [
-        {
-          index: 0,
-          delta: {
-            ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
-            tool_calls: [
-              {
-                index: 0,
-                id: toolCallId,
-                type: "function",
-                function: {
-                  name: toolName,
-                  arguments: JSON.stringify(toolInput),
-                },
-              },
-            ],
-          },
-          finish_reason: null,
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          tool_calls: [{
+            index: 0,
+            id: toolCallId,
+            type: "function",
+            function: {
+              name: toolName,
+              arguments: JSON.stringify(toolInput)
+            }
+          }]
         },
-      ],
+        finish_reason: null
+      }]
     };
 
     state.chunkIndex++;
@@ -155,31 +146,38 @@ function convertKiroToOpenAI(chunk, state) {
 
   // Handle completion/done events
   if (eventType === "messageStopEvent" || eventType === "done" || data.messageStopEvent) {
+    state.finishReason = "stop"; // Mark for usage injection in stream.js
+    
     const openaiChunk = {
       id: state.responseId,
       object: "chat.completion.chunk",
       created: state.created,
       model: state.model || "kiro",
-      choices: [
-        {
-          index: 0,
-          delta: {},
-          finish_reason: "stop",
-        },
-      ],
+      choices: [{
+        index: 0,
+        delta: {},
+        finish_reason: "stop"
+      }]
     };
+
+    // Include usage in final chunk if available
+    if (state.usage && typeof state.usage === "object") {
+      openaiChunk.usage = state.usage;
+    }
 
     return openaiChunk;
   }
 
-  // Handle usage events
+// Handle usage events
   if (eventType === "usageEvent" || data.usageEvent) {
     const usage = data.usageEvent || data;
-    state.usage = {
-      prompt_tokens: usage.inputTokens || 0,
-      completion_tokens: usage.outputTokens || 0,
-      total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
-    };
+    if (usage && typeof usage === 'object') {
+      state.usage = {
+        prompt_tokens: usage.inputTokens || 0,
+        completion_tokens: usage.outputTokens || 0,
+        total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0)
+      };
+    }
     return null;
   }
 
@@ -189,5 +187,3 @@ function convertKiroToOpenAI(chunk, state) {
 
 // Register translator
 register(FORMATS.KIRO, FORMATS.OPENAI, null, convertKiroToOpenAI);
-
-export { convertKiroToOpenAI };

@@ -9,7 +9,7 @@ import { FORMATS } from "../formats.js";
  * Translate OpenAI chunk to Responses API events
  * @returns {Array} Array of events with { event, data } structure
  */
-function openaiToOpenAIResponsesResponse(chunk, state) {
+export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
@@ -359,7 +359,7 @@ function flushEvents(state) {
  * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
  * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
  */
-function openaiResponsesToOpenAIResponse(chunk, state) {
+export function openaiResponsesToOpenAIResponse(chunk, state) {
   if (!chunk) {
     // Flush: send final chunk with finish_reason
     if (!state.finishReasonSent && state.started) {
@@ -486,9 +486,40 @@ function openaiResponsesToOpenAIResponse(chunk, state) {
 
   // Response completed
   if (eventType === "response.completed") {
+    // Extract usage from response.completed event
+    const responseUsage = data.response?.usage;
+    if (responseUsage && typeof responseUsage === "object") {
+      const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
+      const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
+      const cacheReadTokens = responseUsage.cache_read_input_tokens || 0;
+      const cacheCreationTokens = responseUsage.cache_creation_input_tokens || 0;
+      
+      // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
+      const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+      
+      state.usage = {
+        prompt_tokens: promptTokens,
+        completion_tokens: outputTokens,
+        total_tokens: promptTokens + outputTokens
+      };
+      
+      // Add prompt_tokens_details if cache tokens exist
+      if (cacheReadTokens > 0 || cacheCreationTokens > 0) {
+        state.usage.prompt_tokens_details = {};
+        if (cacheReadTokens > 0) {
+          state.usage.prompt_tokens_details.cached_tokens = cacheReadTokens;
+        }
+        if (cacheCreationTokens > 0) {
+          state.usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
+        }
+      }
+    }
+    
     if (!state.finishReasonSent) {
       state.finishReasonSent = true;
-      return {
+      state.finishReason = "stop"; // Mark for usage injection in stream.js
+      
+      const finalChunk = {
         id: state.chatId,
         object: "chat.completion.chunk",
         created: state.created,
@@ -501,6 +532,13 @@ function openaiResponsesToOpenAIResponse(chunk, state) {
           },
         ],
       };
+      
+      // Include usage in final chunk if available
+      if (state.usage && typeof state.usage === "object") {
+        finalChunk.usage = state.usage;
+      }
+      
+      return finalChunk;
     }
     return null;
   }

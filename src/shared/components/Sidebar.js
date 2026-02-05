@@ -18,9 +18,13 @@ const navItems = [
 ];
 
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
-const debugItems = [{ href: "/dashboard/translator", label: "Translator", icon: "translate" }];
+const debugItems = [
+  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+];
 
-const systemItems = [{ href: "/dashboard/profile", label: "Settings", icon: "settings" }];
+const systemItems = [
+  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
@@ -32,8 +36,8 @@ export default function Sidebar({ onClose }) {
   // Check if debug mode is enabled
   useEffect(() => {
     fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => setShowDebug(data?.enableRequestLogs === true))
+      .then(res => res.json())
+      .then(data => setShowDebug(data?.enableRequestLogs === true))
       .catch(() => {});
   }, []);
 
@@ -58,14 +62,23 @@ export default function Sidebar({ onClose }) {
 
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-border bg-sidebar transition-colors duration-300">
+      <aside className="flex w-72 flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-colors duration-300">
+        {/* Traffic lights */}
+        <div className="flex items-center gap-2 px-6 pt-5 pb-2">
+          <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
+          <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
+          <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
+        </div>
+
         {/* Logo */}
-        <div className="p-8">
+        <div className="px-6 py-4">
           <Link href="/dashboard" className="flex items-center gap-3">
             <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <h1 className="text-lg font-semibold tracking-tight text-text-main">{APP_CONFIG.name}</h1>
+            <h1 className="text-lg font-semibold tracking-tight text-text-main">
+              {APP_CONFIG.name}
+            </h1>
           </Link>
         </div>
 
@@ -77,15 +90,15 @@ export default function Sidebar({ onClose }) {
               href={item.href}
               onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-lg transition-all group",
+                "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
                 isActive(item.href)
-                  ? "bg-surface text-primary shadow-sm border border-border"
+                  ? "bg-primary/10 text-primary"
                   : "text-text-muted hover:bg-surface/50 hover:text-text-main"
               )}
             >
               <span
                 className={cn(
-                  "material-symbols-outlined text-[20px]",
+                  "material-symbols-outlined text-[18px]",
                   isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
                 )}
               >
@@ -97,23 +110,25 @@ export default function Sidebar({ onClose }) {
 
           {/* Debug section (only show when ENABLE_REQUEST_LOGS=true) */}
           {showDebug && (
-            <div className="pt-6 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">Debug</p>
+            <div className="pt-4 mt-2">
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                Debug
+              </p>
               {debugItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 rounded-lg transition-all group",
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
                     isActive(item.href)
-                      ? "bg-surface text-primary shadow-sm border border-border"
+                      ? "bg-primary/10 text-primary"
                       : "text-text-muted hover:bg-surface/50 hover:text-text-main"
                   )}
                 >
                   <span
                     className={cn(
-                      "material-symbols-outlined text-[20px]",
+                      "material-symbols-outlined text-[18px]",
                       isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
                     )}
                   >
@@ -126,21 +141,28 @@ export default function Sidebar({ onClose }) {
           )}
 
           {/* System section */}
-          <div className="pt-6 mt-2">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-3">System</p>
+          <div className="pt-4 mt-2">
+            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+              System
+            </p>
             {systemItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
                 className={cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-lg transition-all group",
+                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
                   isActive(item.href)
-                    ? "bg-surface text-primary shadow-sm border border-border"
+                    ? "bg-primary/10 text-primary"
                     : "text-text-muted hover:bg-surface/50 hover:text-text-main"
                 )}
               >
-                <span className="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
                   {item.icon}
                 </span>
                 <span className="text-sm font-medium">{item.label}</span>
@@ -150,11 +172,11 @@ export default function Sidebar({ onClose }) {
         </nav>
 
         {/* Footer section */}
-        <div className="p-4 border-t border-border">
+        <div className="p-3 border-t border-black/5 dark:border-white/5">
           {/* Info message */}
-          <div className="flex items-start gap-3 p-3 rounded-xl bg-surface border border-border mb-3">
-            <div className="flex items-center justify-center size-8 rounded-lg bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[18px]">info</span>
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
+            <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
+              <span className="material-symbols-outlined text-[14px]">info</span>
             </div>
             <div className="flex flex-col">
               <span className="text-xs font-medium text-text-main leading-relaxed">

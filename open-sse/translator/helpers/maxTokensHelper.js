@@ -12,7 +12,6 @@ export function adjustMaxTokens(body) {
   // Tool calls with large content (like writing files) need more tokens
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     if (maxTokens < DEFAULT_MIN_TOKENS) {
-      console.log(`[AUTO-ADJUST] max_tokens: ${maxTokens} → ${DEFAULT_MIN_TOKENS} (tool calling detected)`);
       maxTokens = DEFAULT_MIN_TOKENS;
     }
   }

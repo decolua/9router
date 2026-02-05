@@ -21,14 +21,17 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes] = await Promise.all([fetch("/api/combos"), fetch("/api/providers")]);
+      const [combosRes, providersRes] = await Promise.all([
+        fetch("/api/combos"),
+        fetch("/api/providers"),
+      ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
-
+      
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         const active = (providersData.connections || []).filter(
-          (c) => c.testStatus === "active" || c.testStatus === "success"
+          c => c.testStatus === "active" || c.testStatus === "success"
         );
         setActiveProviders(active);
       }
@@ -82,7 +85,7 @@ export default function CombosPage() {
     try {
       const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setCombos(combos.filter((c) => c.id !== id));
+        setCombos(combos.filter(c => c.id !== id));
       }
     } catch (error) {
       console.log("Error deleting combo:", error);
@@ -104,7 +107,9 @@ export default function CombosPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Combos</h1>
-          <p className="text-sm text-text-muted mt-1">Create model combos with fallback support</p>
+          <p className="text-sm text-text-muted mt-1">
+            Create model combos with fallback support
+          </p>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)}>
           Create Combo
@@ -115,10 +120,13 @@ export default function CombosPage() {
       {combos.length === 0 ? (
         <Card>
           <div className="text-center py-12">
-            <span className="material-symbols-outlined text-5xl text-text-muted mb-3 block">layers</span>
-            <p className="text-text-muted mb-4">No combos yet</p>
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+              <span className="material-symbols-outlined text-[32px]">layers</span>
+            </div>
+            <p className="text-text-main font-medium mb-1">No combos yet</p>
+            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)}>
-              Create your first combo
+              Create Combo
             </Button>
           </div>
         </Card>
@@ -161,52 +169,57 @@ export default function CombosPage() {
 
 function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
   return (
-    <Card>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          {/* Name + Copy */}
-          <div className="flex items-center gap-2 mb-3">
-            <span className="material-symbols-outlined text-primary">layers</span>
-            <code className="text-lg font-semibold font-mono">{combo.name}</code>
-            <button
-              onClick={() => onCopy(combo.name, `combo-${combo.id}`)}
-              className="p-1 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-              title="Copy combo name"
-            >
-              <span className="material-symbols-outlined text-sm">
-                {copied === `combo-${combo.id}` ? "check" : "content_copy"}
-              </span>
-            </button>
+    <Card padding="sm" className="group">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
-
-          {/* Models list */}
-          <div className="flex flex-col gap-1.5">
-            {combo.models.length === 0 ? (
-              <p className="text-sm text-text-muted italic">No models added</p>
-            ) : (
-              combo.models.map((model, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted w-5">{index + 1}.</span>
-                  <code className="text-sm font-mono bg-sidebar px-2 py-0.5 rounded">{model}</code>
-                  {index === 0 && <span className="text-xs text-primary font-medium">Primary</span>}
-                  {index > 0 && <span className="text-xs text-text-muted">Fallback</span>}
-                </div>
-              ))
-            )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
+              <button
+                onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
+                className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                title="Copy combo name"
+              >
+                <span className="material-symbols-outlined text-[14px]">
+                  {copied === `combo-${combo.id}` ? "check" : "content_copy"}
+                </span>
+              </button>
+            </div>
+            <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+              {combo.models.length === 0 ? (
+                <span className="text-xs text-text-muted italic">No models</span>
+              ) : (
+                combo.models.slice(0, 3).map((model, index) => (
+                  <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
+                    {model}
+                  </code>
+                ))
+              )}
+              {combo.models.length > 3 && (
+                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex gap-1">
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button
             onClick={onEdit}
-            className="p-2 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
             title="Edit"
           >
-            <span className="material-symbols-outlined text-lg">edit</span>
+            <span className="material-symbols-outlined text-[16px]">edit</span>
           </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded text-red-500" title="Delete">
-            <span className="material-symbols-outlined text-lg">delete</span>
+          <button
+            onClick={onDelete}
+            className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
+            title="Delete"
+          >
+            <span className="material-symbols-outlined text-[16px]">delete</span>
           </button>
         </div>
       </div>
@@ -300,8 +313,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title={isEdit ? "Edit Combo" : "Create Combo"} size="md">
-        <div className="flex flex-col gap-4">
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title={isEdit ? "Edit Combo" : "Create Combo"}
+      >
+        <div className="flex flex-col gap-3">
           {/* Name */}
           <div>
             <Input
@@ -311,73 +328,94 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               placeholder="my-combo"
               error={nameError}
             />
-            <p className="text-xs text-text-muted mt-1">Only letters, numbers, - and _ allowed</p>
+            <p className="text-[10px] text-text-muted mt-0.5">
+              Only letters, numbers, - and _ allowed
+            </p>
           </div>
 
           {/* Models */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Models</label>
-              <Button size="sm" variant="secondary" icon="add" onClick={() => setShowModelSelect(true)}>
-                Add Model
-              </Button>
-            </div>
+            <label className="text-sm font-medium mb-1.5 block">Models</label>
 
             {models.length === 0 ? (
-              <div className="text-center py-6 border border-dashed border-border rounded-lg">
-                <p className="text-sm text-text-muted">No models added</p>
-                <p className="text-xs text-text-muted mt-1">Click &quot;Add Model&quot; to add</p>
+              <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
+                <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-2 max-h-[240px] overflow-y-auto">
+              <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
                 {models.map((model, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    {/* Priority arrows */}
-                    <div className="flex flex-col gap-0">
+                  <div
+                    key={index}
+                    className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
+                  >
+                    {/* Index badge */}
+                    <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+
+                    {/* Model Input */}
+                    <input
+                      type="text"
+                      value={model}
+                      onChange={(e) => handleModelChange(index, e.target.value)}
+                      placeholder="provider/model"
+                      className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono bg-transparent border-0 focus:outline-none text-text-main placeholder:text-text-muted/50"
+                    />
+
+                    {/* Priority arrows - horizontal, always visible */}
+                    <div className="flex items-center gap-0.5">
                       <button
                         onClick={() => handleMoveUp(index)}
                         disabled={index === 0}
-                        className={`p-0.5 rounded ${index === 0 ? "text-text-muted/30" : "hover:bg-surface text-text-muted hover:text-primary"}`}
+                        className={`p-0.5 rounded ${index === 0 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+                        title="Move up"
                       >
-                        <span className="material-symbols-outlined text-sm leading-none">keyboard_arrow_up</span>
+                        <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
                       </button>
                       <button
                         onClick={() => handleMoveDown(index)}
                         disabled={index === models.length - 1}
-                        className={`p-0.5 rounded ${index === models.length - 1 ? "text-text-muted/30" : "hover:bg-surface text-text-muted hover:text-primary"}`}
+                        className={`p-0.5 rounded ${index === models.length - 1 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+                        title="Move down"
                       >
-                        <span className="material-symbols-outlined text-sm leading-none">keyboard_arrow_down</span>
+                        <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
                       </button>
                     </div>
 
-                    {/* Model Input */}
-                    <Input
-                      value={model}
-                      onChange={(e) => handleModelChange(index, e.target.value)}
-                      placeholder="model-name"
-                      className="flex-1"
-                    />
-
-                    {/* Remove */}
+                    {/* Remove - always visible */}
                     <button
                       onClick={() => handleRemoveModel(index)}
-                      className="p-2 hover:bg-red-50 rounded text-red-500"
+                      className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+                      title="Remove"
                     >
-                      <span className="material-symbols-outlined text-sm">close</span>
+                      <span className="material-symbols-outlined text-[12px]">close</span>
                     </button>
                   </div>
                 ))}
               </div>
             )}
+
+            {/* Add Model button - moved to bottom */}
+            <button
+              onClick={() => setShowModelSelect(true)}
+              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-text-muted hover:text-primary hover:border-primary/30 transition-colors flex items-center justify-center gap-1"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add Model
+            </button>
           </div>
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <Button onClick={handleSave} fullWidth disabled={!name.trim() || !!nameError || saving}>
-              {saving ? "Saving..." : "Apply"}
-            </Button>
-            <Button onClick={onClose} variant="ghost" fullWidth>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              fullWidth
+              size="sm"
+              disabled={!name.trim() || !!nameError || saving}
+            >
+              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
             </Button>
           </div>
         </div>
@@ -395,3 +433,4 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     </>
   );
 }
+
