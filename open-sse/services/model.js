@@ -8,11 +8,13 @@ const ALIAS_TO_PROVIDER_ID = {
   ag: "antigravity",
   gh: "github",
   kr: "kiro",
+  cu: "cursor",
   // API Key providers (alias = id)
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",
   openrouter: "openrouter",
+  cursor: "cursor",
 };
 
 /**

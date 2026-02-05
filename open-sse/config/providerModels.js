@@ -74,6 +74,18 @@ export const PROVIDER_MODELS = {
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
   ],
+  cu: [  // Cursor IDE
+    { id: "default", name: "Default (Server Picks)" },
+    { id: "claude-4.5-opus-high-thinking", name: "Claude 4.5 Opus High Thinking" },
+    { id: "claude-4.5-opus-high", name: "Claude 4.5 Opus High" },
+    { id: "claude-4.5-sonnet-thinking", name: "Claude 4.5 Sonnet Thinking" },
+    { id: "claude-4-sonnet", name: "Claude 4 Sonnet" },
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-5.1-codex", name: "GPT 5.1 Codex" },
+    { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet" },
+    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "cursor-small", name: "Cursor Small" },
+  ],
 
   // API Key Providers (alias = id)
   openai: [
@@ -152,6 +164,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   antigravity: "ag",
   github: "gh",
   kiro: "kr",
+  cursor: "cu",
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",

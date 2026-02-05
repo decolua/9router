@@ -149,6 +149,18 @@ export const PROVIDERS = {
     // Kiro OAuth endpoints
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev"
+  },
+  cursor: {
+    baseUrl: "https://api2.cursor.sh",
+    chatPath: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",
+    format: "cursor",
+    headers: {
+      "connect-accept-encoding": "gzip",
+      "connect-protocol-version": "1",
+      "Content-Type": "application/connect+proto",
+      "User-Agent": "connect-es/1.6.1"
+    },
+    clientVersion: "1.1.3"
   }
 };
 
