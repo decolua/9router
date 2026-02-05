@@ -4,6 +4,7 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
+  turbopack: {},
   env: {
     NEXT_PUBLIC_CLOUD_URL: "https://9router.com",
   },
