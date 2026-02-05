@@ -55,12 +55,9 @@ export default function ModelSelectModal({
     // Get all active provider IDs from connections
     const activeConnectionIds = activeProviders.map(p => p.provider);
     
-    // Combine standard providers with active custom providers
-    // Standard providers should always be shown (they have hardcoded models)
-    // Custom providers (OpenAI/Anthropic Compatible) only shown if active
+    // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
-      ...PROVIDER_ORDER,  // All standard providers
-      ...activeConnectionIds,  // Active custom providers from connections
+      ...activeConnectionIds,  // Only connected providers
     ]);
 
     // Sort by PROVIDER_ORDER

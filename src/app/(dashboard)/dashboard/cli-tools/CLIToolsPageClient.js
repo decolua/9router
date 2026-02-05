@@ -88,22 +88,6 @@ export default function CLIToolsPageClient({ machineId }) {
       });
     });
     
-    if (models.length === 0) {
-      Object.entries(PROVIDER_MODELS).forEach(([alias, providerModels]) => {
-        providerModels.forEach(m => {
-          const modelValue = `${alias}/${m.id}`;
-          models.push({
-            value: modelValue,
-            label: `${alias}/${m.id}`,
-            provider: alias,
-            alias: alias,
-            connectionName: alias,
-            modelId: m.id,
-          });
-        });
-      });
-    }
-    
     return models;
   };
 
