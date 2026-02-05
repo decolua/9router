@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -23,6 +23,8 @@ export default function ModelSelectModal({
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
+  const [customModelInputs, setCustomModelInputs] = useState({});
+  const [providerNodes, setProviderNodes] = useState([]);
 
   // Fetch combos when modal opens
   useEffect(() => {
@@ -31,6 +33,16 @@ export default function ModelSelectModal({
         .then(res => res.json())
         .then(data => setCombos(data.combos || []))
         .catch(() => setCombos([]));
+    }
+  }, [isOpen]);
+
+  // Fetch provider nodes when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      fetch("/api/provider-nodes")
+        .then(res => res.json())
+        .then(data => setProviderNodes(data.nodes || []))
+        .catch(() => setProviderNodes([]));
     }
   }, [isOpen]);
 
@@ -55,8 +67,8 @@ export default function ModelSelectModal({
     sortedProviderIds.forEach((providerId) => {
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
+      const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
       
-      // For passthrough providers, get models from aliases
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
@@ -74,6 +86,29 @@ export default function ModelSelectModal({
             models: aliasModels,
           };
         }
+      } else if (isCustomProvider) {
+        // Match provider node to get custom name and prefix
+        const matchedNode = providerNodes.find(node => node.id === providerId);
+        const nodePrefix = matchedNode?.prefix || providerId;
+        const displayName = matchedNode?.name || providerInfo.name;
+        
+        // Get models from modelAliases using the node's prefix
+        const nodeModels = Object.entries(modelAliases)
+          .filter(([, fullModel]) => fullModel.startsWith(`${nodePrefix}/`))
+          .map(([aliasName, fullModel]) => ({
+            id: fullModel.replace(`${nodePrefix}/`, ""),
+            name: aliasName,
+            value: fullModel,
+          }));
+        
+        groups[providerId] = {
+          name: displayName,
+          alias: nodePrefix,
+          color: providerInfo.color,
+          models: nodeModels,
+          isCustom: true,
+          hasModels: nodeModels.length > 0,
+        };
       } else {
         const models = getModelsByProviderId(providerId);
         if (models.length > 0) {
@@ -92,7 +127,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders]);
+  }, [activeProviders, modelAliases, allProviders, providerNodes]);
 
   // Filter combos by search query
   const filteredCombos = useMemo(() => {
@@ -112,11 +147,12 @@ export default function ModelSelectModal({
       const matchedModels = group.models.filter(
         (m) =>
           m.name.toLowerCase().includes(query) ||
-          m.id.toLowerCase().includes(query) ||
-          group.name.toLowerCase().includes(query)
+          m.id.toLowerCase().includes(query)
       );
 
-      if (matchedModels.length > 0) {
+      const providerNameMatches = group.name.toLowerCase().includes(query);
+      
+      if (matchedModels.length > 0 || providerNameMatches || group.isCustom) {
         filtered[providerId] = {
           ...group,
           models: matchedModels,
@@ -210,27 +246,32 @@ export default function ModelSelectModal({
               </span>
             </div>
 
-            {/* Models as wrap chips - compact */}
-            <div className="flex flex-wrap gap-1.5">
-              {group.models.map((model) => {
-                const isSelected = selectedModel === model.value;
-                return (
-                  <button
-                    key={model.id}
-                    onClick={() => handleSelect(model)}
-                    className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected 
-                        ? "bg-primary text-white border-primary" 
-                        : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
-                      }
-                    `}
-                  >
-                    {model.name}
-                  </button>
-                );
-              })}
-            </div>
+            {group.isCustom && !group.hasModels ? (
+              <div className="text-xs text-text-muted px-2 py-1">
+                No models configured. Add models in provider settings.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {group.models.map((model) => {
+                  const isSelected = selectedModel === model.value;
+                  return (
+                    <button
+                      key={model.id}
+                      onClick={() => handleSelect(model)}
+                      className={`
+                        px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
+                        ${isSelected 
+                          ? "bg-primary text-white border-primary" 
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                        }
+                      `}
+                    >
+                      {model.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
 
