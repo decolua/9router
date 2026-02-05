@@ -85,8 +85,12 @@ export default function ModelSelectModal({
           }));
         
         if (aliasModels.length > 0) {
+          // Check for custom name from providerNodes (for compatible providers)
+          const matchedNode = providerNodes.find(node => node.id === providerId);
+          const displayName = matchedNode?.name || providerInfo.name;
+          
           groups[providerId] = {
-            name: providerInfo.name,
+            name: displayName,
             alias: alias,
             color: providerInfo.color,
             models: aliasModels,
