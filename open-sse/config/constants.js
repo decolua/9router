@@ -120,6 +120,14 @@ export const PROVIDERS = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
+  "minimax-cn": {
+    baseUrl: "https://api.minimaxi.com/anthropic/v1/messages",
+    format: "claude",
+    headers: {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    }
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
     format: "openai", // GitHub Copilot uses OpenAI-compatible format

@@ -189,6 +189,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   glm: "glm",
   kimi: "kimi",
   minimax: "minimax",
+  "minimax-cn": "minimax",
 };
 
 export function getModelsByProviderId(providerId) {

@@ -23,6 +23,7 @@ export class DefaultExecutor extends BaseExecutor {
       case "glm":
       case "kimi":
       case "minimax":
+      case "minimax-cn":
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
@@ -44,6 +45,7 @@ export class DefaultExecutor extends BaseExecutor {
       case "glm":
       case "kimi":
       case "minimax":
+      case "minimax-cn":
         headers["x-api-key"] = credentials.apiKey;
         break;
       default:

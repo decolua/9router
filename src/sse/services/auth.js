@@ -20,7 +20,10 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
   try {
     await currentMutex;
 
+    // DEBUG: Log the provider being requested
+    console.log(`[AUTH DEBUG] Looking up credentials for provider: "${provider}"`);
     const connections = await getProviderConnections({ provider, isActive: true });
+    console.log(`[AUTH DEBUG] Found ${connections.length} connections for ${provider}`);
 
     if (connections.length === 0) {
       log.warn("AUTH", `No credentials for ${provider}`);
