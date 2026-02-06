@@ -46,6 +46,7 @@ export const PROVIDER_MODELS = {
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "kimi-k2", name: "Kimi K2" },
     { id: "kimi-k2-thinking", name: "Kimi K2 Thinking" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "deepseek-r1", name: "DeepSeek R1" },
     { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
@@ -189,6 +190,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   glm: "glm",
   kimi: "kimi",
   minimax: "minimax",
+  "minimax-cn": "minimax",
 };
 
 export function getModelsByProviderId(providerId) {

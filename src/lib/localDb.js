@@ -54,6 +54,60 @@ const defaultData = {
   pricing: {} // NEW: pricing configuration
 };
 
+function cloneDefaultData() {
+  return {
+    providerConnections: [],
+    providerNodes: [],
+    modelAliases: {},
+    combos: [],
+    apiKeys: [],
+    settings: {
+      cloudEnabled: false,
+      stickyRoundRobinLimit: 3,
+      requireLogin: true,
+    },
+    pricing: {},
+  };
+}
+
+function ensureDbShape(data) {
+  const defaults = cloneDefaultData();
+  const next = data && typeof data === "object" ? data : {};
+  let changed = false;
+
+  for (const [key, defaultValue] of Object.entries(defaults)) {
+    if (next[key] === undefined || next[key] === null) {
+      next[key] = defaultValue;
+      changed = true;
+      continue;
+    }
+
+    if (
+      key === "settings" &&
+      (typeof next.settings !== "object" || Array.isArray(next.settings))
+    ) {
+      next.settings = { ...defaultValue };
+      changed = true;
+      continue;
+    }
+
+    if (
+      key === "settings" &&
+      typeof next.settings === "object" &&
+      !Array.isArray(next.settings)
+    ) {
+      for (const [settingKey, settingDefault] of Object.entries(defaultValue)) {
+        if (next.settings[settingKey] === undefined) {
+          next.settings[settingKey] = settingDefault;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return { data: next, changed };
+}
+
 // Singleton instance
 let dbInstance = null;
 
@@ -64,35 +118,43 @@ export async function getDb() {
   if (isCloud) {
     // Return in-memory DB for Workers
     if (!dbInstance) {
-      dbInstance = new Low({ read: async () => {}, write: async () => {} }, defaultData);
-      dbInstance.data = defaultData;
+      const data = cloneDefaultData();
+      dbInstance = new Low({ read: async () => {}, write: async () => {} }, data);
+      dbInstance.data = data;
     }
     return dbInstance;
   }
 
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
-    dbInstance = new Low(adapter, defaultData);
+    dbInstance = new Low(adapter, cloneDefaultData());
+  }
 
-    // Try to read DB with error recovery for corrupt JSON
-    try {
-      await dbInstance.read();
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
-        dbInstance.data = defaultData;
-        await dbInstance.write();
-      } else {
-        throw error;
-      }
+  // Always read latest disk state to avoid stale singleton data across route workers.
+  try {
+    await dbInstance.read();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
+      dbInstance.data = cloneDefaultData();
+      await dbInstance.write();
+    } else {
+      throw error;
     }
+  }
 
-    // Initialize with default data if empty
-    if (!dbInstance.data) {
-      dbInstance.data = defaultData;
+  // Initialize/migrate missing keys for older DB schema versions.
+  if (!dbInstance.data) {
+    dbInstance.data = cloneDefaultData();
+    await dbInstance.write();
+  } else {
+    const { data, changed } = ensureDbShape(dbInstance.data);
+    dbInstance.data = data;
+    if (changed) {
       await dbInstance.write();
     }
   }
+
   return dbInstance;
 }
 
@@ -147,6 +209,12 @@ export async function getProviderNodeById(id) {
  */
 export async function createProviderNode(data) {
   const db = await getDb();
+  
+  // Initialize providerNodes if undefined (backward compatibility)
+  if (!db.data.providerNodes) {
+    db.data.providerNodes = [];
+  }
+  
   const now = new Date().toISOString();
 
   const node = {
@@ -171,6 +239,10 @@ export async function createProviderNode(data) {
  */
 export async function updateProviderNode(id, data) {
   const db = await getDb();
+  if (!db.data.providerNodes) {
+    db.data.providerNodes = [];
+  }
+  
   const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
   if (index === -1) return null;
@@ -191,6 +263,10 @@ export async function updateProviderNode(id, data) {
  */
 export async function deleteProviderNode(id) {
   const db = await getDb();
+  if (!db.data.providerNodes) {
+    db.data.providerNodes = [];
+  }
+  
   const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
   if (index === -1) return null;
