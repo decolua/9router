@@ -163,7 +163,7 @@ async function handleDisable(machineId, request) {
   }
 
   // Update Claude CLI settings to use local endpoint
-  const host = request.headers.get("host") || "localhost:3000";
+  const host = request.headers.get("host") || "localhost:20128";
   await updateClaudeSettingsToLocal(machineId, host);
 
   return NextResponse.json({
