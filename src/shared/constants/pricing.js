@@ -7,6 +7,13 @@ export const DEFAULT_PRICING = {
 
   // Claude Code (cc)
   cc: {
+    "claude-opus-4-6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
+    },
     "claude-opus-4-5-20251101": {
       input: 15.00,
       output: 75.00,
@@ -223,6 +230,13 @@ export const DEFAULT_PRICING = {
 
   // Antigravity (ag) - User-provided pricing
   ag: {
+    "claude-opus-4-6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
+    },
     "gemini-3-pro-low": {
       input: 2.00,
       output: 12.00,
@@ -325,6 +339,13 @@ export const DEFAULT_PRICING = {
       reasoning: 37.50,
       cache_creation: 5.00
     },
+    "claude-opus-4-6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
+    },
     "claude-4.5-haiku": {
       input: 0.50,
       output: 2.50,
@@ -411,6 +432,13 @@ export const DEFAULT_PRICING = {
       cached: 1.50,
       reasoning: 15.00,
       cache_creation: 3.00
+    },
+    "claude-opus-4-6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
     },
     "claude-opus-4-20250514": {
       input: 15.00,

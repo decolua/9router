@@ -71,7 +71,7 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 
+      'input_tokens', 'output_tokens',
       'cache_read_input_tokens', 'cache_creation_input_tokens',
       'estimated'
     ],
@@ -96,7 +96,7 @@ export function filterUsageForFormat(usage, targetFormat) {
 
   // Get fields for target format
   let fields = formatFields[targetFormat];
-  
+
   // Use same fields for similar formats
   if (targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.ANTIGRAVITY) {
     fields = formatFields[FORMATS.GEMINI];
@@ -246,10 +246,10 @@ export function estimateOutputTokens(contentLength) {
 export function formatUsage(inputTokens, outputTokens, targetFormat) {
   // Claude format uses input_tokens/output_tokens
   if (targetFormat === FORMATS.CLAUDE) {
-    return addBufferToUsage({ 
-      input_tokens: inputTokens, 
-      output_tokens: outputTokens, 
-      estimated: true 
+    return addBufferToUsage({
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated: true
     });
   }
 
@@ -310,13 +310,14 @@ export function logUsage(provider, usage, model = null, connectionId = null) {
 
   console.log(msg);
 
-  // Save to usage DB
+  // Save to usage DB with standardized OpenAI field names
   const tokens = {
-    input: inTokens,
-    output: outTokens,
-    cacheRead: cacheRead || 0,
-    cacheCreation: cacheCreation || 0,
-    reasoning: reasoning || 0
+    prompt_tokens: inTokens,
+    completion_tokens: outTokens,
+    cached_tokens: cacheRead || undefined,
+    cache_read_input_tokens: cacheRead || undefined,
+    cache_creation_input_tokens: cacheCreation || undefined,
+    reasoning_tokens: reasoning || undefined
   };
   saveRequestUsage({ model, provider, connectionId, tokens }).catch(() => { });
   appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
