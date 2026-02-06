@@ -469,10 +469,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Create transform stream with logger for streaming response
   let transformStream;
   // For Codex provider, translate response from openai-responses to openai (Chat Completions) format
-  // UNLESS client originally sent in openai-responses format (like Droid CLI) - they expect same format back
-  const needsCodexTranslation = provider === 'codex' 
-    && targetFormat === 'openai-responses' 
-    && sourceFormat !== 'openai-responses';
+  // UNLESS client is Droid CLI which expects openai-responses format back
+  const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
+  const needsCodexTranslation = provider === 'codex'
+    && targetFormat === 'openai-responses'
+    && !isDroidCLI;
 
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
