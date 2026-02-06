@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
+import { Card, Button, Input, Modal, ConfirmModal, CardSkeleton } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -11,7 +11,38 @@ export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showRotateModal, setShowRotateModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showRevokeModal, setShowRevokeModal] = useState(false);
+  const [editingKeyId, setEditingKeyId] = useState(null);
+  const [rotatingKeyId, setRotatingKeyId] = useState(null);
+  const [historyKey, setHistoryKey] = useState(null);
+  const [revokeTarget, setRevokeTarget] = useState(null);
+  const [rotateGraceHours, setRotateGraceHours] = useState(2);
+  const [rotateLoading, setRotateLoading] = useState(false);
+  const [toggleLoadingId, setToggleLoadingId] = useState(null);
+  const [revokeLoadingId, setRevokeLoadingId] = useState(null);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newOwnerName, setNewOwnerName] = useState("");
+  const [newOwnerEmail, setNewOwnerEmail] = useState("");
+  const [newOwnerAge, setNewOwnerAge] = useState("");
+  const [newRequestLimit, setNewRequestLimit] = useState("");
+  const [newTokenLimit, setNewTokenLimit] = useState("");
+  const [newAllowedModels, setNewAllowedModels] = useState([]);
+  const [newModelSearch, setNewModelSearch] = useState("");
+  const [newModelProvider, setNewModelProvider] = useState("all");
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editOwnerName, setEditOwnerName] = useState("");
+  const [editOwnerEmail, setEditOwnerEmail] = useState("");
+  const [editOwnerAge, setEditOwnerAge] = useState("");
+  const [editRequestLimit, setEditRequestLimit] = useState("");
+  const [editTokenLimit, setEditTokenLimit] = useState("");
+  const [editAllowedModels, setEditAllowedModels] = useState([]);
+  const [editModelSearch, setEditModelSearch] = useState("");
+  const [editModelProvider, setEditModelProvider] = useState("all");
   const [createdKey, setCreatedKey] = useState(null);
 
   // Cloud sync state
@@ -28,6 +59,103 @@ export default function APIPageClient({ machineId }) {
     fetchData();
     loadCloudSettings();
   }, []);
+
+  const openCreateModal = () => {
+    setShowAddModal(true);
+    // Empty list means "allow all models".
+    setNewAllowedModels([]);
+  };
+
+  const closeCreateModal = () => {
+    setShowAddModal(false);
+    setNewKeyName("");
+    setNewOwnerName("");
+    setNewOwnerEmail("");
+    setNewOwnerAge("");
+    setNewRequestLimit("");
+    setNewTokenLimit("");
+    setNewAllowedModels([]);
+    setNewModelSearch("");
+    setNewModelProvider("all");
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingKeyId(null);
+    setEditKeyName("");
+    setEditOwnerName("");
+    setEditOwnerEmail("");
+    setEditOwnerAge("");
+    setEditRequestLimit("");
+    setEditTokenLimit("");
+    setEditAllowedModels([]);
+    setEditModelSearch("");
+    setEditModelProvider("all");
+  };
+
+  const closeRotateModal = () => {
+    setShowRotateModal(false);
+    setRotatingKeyId(null);
+    setRotateGraceHours(2);
+  };
+
+  const closeHistoryModal = () => {
+    setShowHistoryModal(false);
+    setHistoryKey(null);
+  };
+
+  const closeRevokeModal = () => {
+    setShowRevokeModal(false);
+    setRevokeTarget(null);
+  };
+
+  const normalizeModelList = (data) => {
+    if (Array.isArray(data?.data)) {
+      return [...new Set(data.data.map((m) => m?.id).filter(Boolean))].sort();
+    }
+    if (Array.isArray(data?.models)) {
+      return [...new Set(
+        data.models
+          .map((m) => m?.fullModel || (m?.provider && m?.model ? `${m.provider}/${m.model}` : m?.name))
+          .filter(Boolean),
+      )].sort();
+    }
+    return [];
+  };
+
+  const fetchAvailableModels = async (preferredKey = null) => {
+    setModelsLoading(true);
+    try {
+      let modelList = [];
+
+      if (preferredKey) {
+        const res = await fetch("/api/v1/models", {
+          headers: {
+            Authorization: `Bearer ${preferredKey}`,
+          },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          modelList = normalizeModelList(data);
+        }
+      }
+
+      if (modelList.length === 0) {
+        const fallbackRes = await fetch("/api/models");
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json();
+          modelList = normalizeModelList(fallbackData);
+        }
+      }
+
+      setAvailableModels(modelList);
+    } catch (error) {
+      console.log("Error fetching available models:", error);
+      setAvailableModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
 
   const loadCloudSettings = async () => {
     try {
@@ -46,13 +174,205 @@ export default function APIPageClient({ machineId }) {
       const keysRes = await fetch("/api/keys");
       const keysData = await keysRes.json();
       if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+        const loadedKeys = keysData.keys || [];
+        setKeys(loadedKeys);
+        await fetchAvailableModels(loadedKeys[0]?.key || null);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
+      setKeys([]);
+      await fetchAvailableModels(null);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleAllowedModel = (modelId, list, setter) => {
+    if (list.includes(modelId)) {
+      setter(list.filter((m) => m !== modelId));
+    } else {
+      setter([...list, modelId]);
+    }
+  };
+
+  const openEditModal = (key) => {
+    setEditingKeyId(key.id);
+    setEditKeyName(key.name || "");
+    setEditOwnerName(key.ownerName || "");
+    setEditOwnerEmail(key.ownerEmail || "");
+    setEditOwnerAge(key.ownerAge === null || key.ownerAge === undefined ? "" : String(key.ownerAge));
+    setEditRequestLimit(key.requestLimit ? String(key.requestLimit) : "");
+    setEditTokenLimit(key.tokenLimit ? String(key.tokenLimit) : "");
+
+    const keyAllowed = Array.isArray(key.allowedModels) ? key.allowedModels : [];
+    // Persist semantics: empty list means "allow all models".
+    setEditAllowedModels(keyAllowed);
+    setShowEditModal(true);
+  };
+
+  const openRotateModal = (key) => {
+    setRotatingKeyId(key.id);
+    setRotateGraceHours(2);
+    setShowRotateModal(true);
+  };
+
+  const openHistoryModal = (key) => {
+    if (!key) return;
+    const previousKeys = Array.isArray(key.previousKeys)
+      ? key.previousKeys.filter((entry) => entry && entry.expiresAt)
+      : [];
+    setHistoryKey({
+      ...key,
+      previousKeys,
+    });
+    setShowHistoryModal(true);
+  };
+
+  const openRevokeModal = (keyId, keyHash) => {
+    if (!keyId || !keyHash) return;
+    setRevokeTarget({ keyId, keyHash });
+    setShowRevokeModal(true);
+  };
+
+  const handleRotateKey = async () => {
+    if (!rotatingKeyId) return;
+    setRotateLoading(true);
+    try {
+      const res = await fetch(`/api/keys/${rotatingKeyId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "rotate", graceHours: rotateGraceHours }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setCreatedKey(data.key);
+        await fetchData();
+        closeRotateModal();
+      }
+    } catch (error) {
+      console.log("Error rotating key:", error);
+    } finally {
+      setRotateLoading(false);
+    }
+  };
+
+  const formatRotateExpiry = () => {
+    if (rotateGraceHours === 0) return "immediately";
+    const expiresAt = new Date(Date.now() + rotateGraceHours * 60 * 60 * 1000);
+    return expiresAt.toLocaleString();
+  };
+
+  const handleUpdateKey = async () => {
+    if (!editingKeyId || !editKeyName.trim()) return;
+
+    try {
+      const res = await fetch(`/api/keys/${editingKeyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editKeyName,
+          ownerName: editOwnerName,
+          ownerEmail: editOwnerEmail,
+          ownerAge: editOwnerAge === "" ? null : Number(editOwnerAge),
+          requestLimit: editRequestLimit === "" ? 0 : Number(editRequestLimit),
+          tokenLimit: editTokenLimit === "" ? 0 : Number(editTokenLimit),
+          allowedModels: editAllowedModels,
+        }),
+      });
+
+      if (res.ok) {
+        await fetchData();
+        closeEditModal();
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
+    }
+  };
+
+  const handleToggleKeyStatus = async (keyId, nextActive) => {
+    setToggleLoadingId(keyId);
+    try {
+      const res = await fetch(`/api/keys/${keyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      if (res.ok) {
+        await fetchData();
+      }
+    } catch (error) {
+      console.log("Error updating key status:", error);
+    } finally {
+      setToggleLoadingId(null);
+    }
+  };
+
+  const handleRevokePreviousKey = async (keyId, previousKeyHash) => {
+    if (!keyId || !previousKeyHash) return;
+    setRevokeLoadingId(`${keyId}:${previousKeyHash}`);
+    try {
+      const res = await fetch(`/api/keys/${keyId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "revokePreviousKey", keyHash: previousKeyHash }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setHistoryKey((prev) => {
+          if (!prev || prev.id !== keyId) return prev;
+          return {
+            ...prev,
+            previousKeys: Array.isArray(prev.previousKeys)
+              ? prev.previousKeys.filter((entry) => entry.keyHash !== previousKeyHash)
+              : [],
+          };
+        });
+        closeRevokeModal();
+      }
+    } catch (error) {
+      console.log("Error revoking previous key:", error);
+    } finally {
+      setRevokeLoadingId(null);
+    }
+  };
+
+  const getProviderOptions = () => {
+    const providers = new Set();
+    availableModels.forEach((modelId) => {
+      if (typeof modelId !== "string") return;
+      const parts = modelId.split("/");
+      if (parts.length > 1 && parts[0]) providers.add(parts[0]);
+    });
+    return ["all", ...Array.from(providers).sort()];
+  };
+
+  const filterModels = (searchValue, providerValue) => {
+    const search = String(searchValue || "").trim().toLowerCase();
+    const provider = providerValue || "all";
+    return availableModels.filter((modelId) => {
+      if (provider !== "all" && !String(modelId).startsWith(`${provider}/`)) return false;
+      if (!search) return true;
+      return String(modelId).toLowerCase().includes(search);
+    });
+  };
+
+  const providerOptions = getProviderOptions();
+  const filteredNewModels = filterModels(newModelSearch, newModelProvider);
+  const filteredEditModels = filterModels(editModelSearch, editModelProvider);
+
+  const maskKeyValue = (value) => {
+    if (!value) return "";
+    const str = String(value);
+    if (str.length <= 12) return "••••";
+    return `${str.slice(0, 6)}••••${str.slice(-4)}`;
+  };
+
+  const formatHistoryTime = (iso) => {
+    if (!iso) return "-";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
   };
 
   const handleCloudToggle = (checked) => {
@@ -171,7 +491,15 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          ownerName: newOwnerName,
+          ownerEmail: newOwnerEmail,
+          ownerAge: newOwnerAge === "" ? null : Number(newOwnerAge),
+          requestLimit: newRequestLimit === "" ? 0 : Number(newRequestLimit),
+          tokenLimit: newTokenLimit === "" ? 0 : Number(newTokenLimit),
+          allowedModels: newAllowedModels,
+        }),
       });
       const data = await res.json();
 
@@ -179,6 +507,12 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewOwnerName("");
+        setNewOwnerEmail("");
+        setNewOwnerAge("");
+        setNewRequestLimit("");
+        setNewTokenLimit("");
+        setNewAllowedModels([]);
         setShowAddModal(false);
       }
     } catch (error) {
@@ -287,7 +621,7 @@ export default function APIPageClient({ machineId }) {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">API Keys</h2>
-          <Button icon="add" onClick={() => setShowAddModal(true)}>
+          <Button icon="add" onClick={openCreateModal}>
             Create Key
           </Button>
         </div>
@@ -299,7 +633,7 @@ export default function APIPageClient({ machineId }) {
             </div>
             <p className="text-text-main font-medium mb-1">No API keys yet</p>
             <p className="text-sm text-text-muted mb-4">Create your first API key to get started</p>
-            <Button icon="add" onClick={() => setShowAddModal(true)}>
+            <Button icon="add" onClick={openCreateModal}>
               Create Key
             </Button>
           </div>
@@ -312,6 +646,48 @@ export default function APIPageClient({ machineId }) {
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{key.name}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span
+                      className={`text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                        key.isActive === false
+                          ? "border-red-300/80 text-red-600 bg-red-50"
+                          : "border-emerald-200 text-emerald-700 bg-emerald-50"
+                      }`}
+                    >
+                      {key.isActive === false ? "Disabled" : "Active"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleKeyStatus(key.id, key.isActive === false)}
+                      disabled={toggleLoadingId === key.id}
+                      title={key.isActive === false ? "Enable key" : "Disable key"}
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                        key.isActive === false
+                          ? "bg-bg-subtle border border-border"
+                          : "bg-primary"
+                      } ${toggleLoadingId === key.id ? "opacity-60" : ""}`}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                          key.isActive === false ? "translate-x-1" : "translate-x-5"
+                        }`}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openHistoryModal(key)}
+                      className="text-xs text-text-muted hover:text-primary"
+                    >
+                      History
+                    </button>
+                  </div>
+                  {(key.ownerName || key.ownerEmail || (key.ownerAge !== null && key.ownerAge !== undefined)) && (
+                    <p className="text-xs text-text-muted mt-0.5">
+                      Owner: {key.ownerName || "-"}
+                      {key.ownerEmail ? ` • ${key.ownerEmail}` : ""}
+                      {key.ownerAge !== null && key.ownerAge !== undefined ? ` • ${key.ownerAge}y` : ""}
+                    </p>
+                  )}
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">{key.key}</code>
                     <button
@@ -326,13 +702,41 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Requests: {key.requestUsed || 0}
+                    {key.requestLimit > 0 ? ` / ${key.requestLimit} (remaining ${key.requestRemaining ?? 0})` : " / unlimited"}
+                    {" • "}
+                    Tokens: {key.tokenUsed || 0}
+                    {key.tokenLimit > 0 ? ` / ${key.tokenLimit} (remaining ${key.tokenRemaining ?? 0})` : " / unlimited"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5 break-all">
+                    Allowed models: {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 ? key.allowedModels.join(", ") : "all"}
+                  </p>
                 </div>
-                <button
-                  onClick={() => handleDeleteKey(key.id)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                >
-                  <span className="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button
+                      onClick={() => openEditModal(key)}
+                      className="p-2 hover:bg-primary/10 rounded text-primary"
+                      title="Edit key"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">edit</span>
+                    </button>
+                    <button
+                      onClick={() => openRotateModal(key)}
+                      className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted"
+                      title="Regenerate key"
+                      disabled={key.isActive === false}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">autorenew</span>
+                    </button>
+                  <button
+                    onClick={() => handleDeleteKey(key.id)}
+                    className="p-2 hover:bg-red-500/10 rounded text-red-500"
+                    title="Delete key"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -467,10 +871,8 @@ export default function APIPageClient({ machineId }) {
       <Modal
         isOpen={showAddModal}
         title="Create API Key"
-        onClose={() => {
-          setShowAddModal(false);
-          setNewKeyName("");
-        }}
+        size="full"
+        onClose={closeCreateModal}
       >
         <div className="flex flex-col gap-4">
           <Input
@@ -479,18 +881,274 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Input
+            label="Owner Name"
+            value={newOwnerName}
+            onChange={(e) => setNewOwnerName(e.target.value)}
+            placeholder="Nguyen Van A"
+          />
+          <Input
+            label="Owner Email"
+            type="email"
+            value={newOwnerEmail}
+            onChange={(e) => setNewOwnerEmail(e.target.value)}
+            placeholder="owner@example.com"
+          />
+          <Input
+            label="Owner Age"
+            type="number"
+            min="0"
+            value={newOwnerAge}
+            onChange={(e) => setNewOwnerAge(e.target.value)}
+            placeholder="30"
+          />
+          <Input
+            label="Request Limit (optional)"
+            type="number"
+            min="0"
+            value={newRequestLimit}
+            onChange={(e) => setNewRequestLimit(e.target.value)}
+            hint="0 hoặc để trống = không giới hạn"
+            placeholder="1000"
+          />
+          <Input
+            label="Token Limit (optional)"
+            type="number"
+            min="0"
+            value={newTokenLimit}
+            onChange={(e) => setNewTokenLimit(e.target.value)}
+            hint="0 hoặc để trống = không giới hạn"
+            placeholder="1000000"
+          />
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-text-main">Allowed Models</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">
+                  Selected {newAllowedModels.length} / {availableModels.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={newModelSearch}
+                onChange={(e) => setNewModelSearch(e.target.value)}
+                placeholder="Search models..."
+                className="min-w-[200px]"
+              />
+              <select
+                className="px-3 py-2 rounded-lg border border-border bg-bg text-sm"
+                value={newModelProvider}
+                onChange={(e) => setNewModelProvider(e.target.value)}
+              >
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {provider === "all" ? "All providers" : provider}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setNewAllowedModels([])}
+                className="text-xs text-text-muted hover:underline"
+              >
+                Allow all
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewAllowedModels(filteredNewModels)}
+                className="text-xs text-primary hover:underline"
+                disabled={filteredNewModels.length === 0}
+              >
+                Select filtered
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewAllowedModels([])}
+                className="text-xs text-text-muted hover:underline"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="max-h-64 overflow-y-auto rounded-md border border-black/10 dark:border-white/10 p-3 bg-white dark:bg-white/5">
+              {modelsLoading ? (
+                <p className="text-sm text-text-muted">Loading models...</p>
+              ) : availableModels.length === 0 ? (
+                <p className="text-sm text-text-muted">No models found.</p>
+              ) : filteredNewModels.length === 0 ? (
+                <p className="text-sm text-text-muted">No models match your filter.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {filteredNewModels.map((modelId) => (
+                    <label key={modelId} className="flex items-center gap-2 text-sm text-text-main">
+                      <input
+                        type="checkbox"
+                        checked={newAllowedModels.includes(modelId)}
+                        onChange={() => toggleAllowedModel(modelId, newAllowedModels, setNewAllowedModels)}
+                        className="h-4 w-4"
+                      />
+                      <span className="break-all">{modelId}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-text-muted">Allow all = cho phép tất cả model</p>
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
             </Button>
             <Button
-              onClick={() => {
-                setShowAddModal(false);
-                setNewKeyName("");
-              }}
+              onClick={closeCreateModal}
               variant="ghost"
               fullWidth
             >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={showEditModal}
+        title="Edit API Key"
+        size="full"
+        onClose={closeEditModal}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="Production Key"
+          />
+          <Input
+            label="Owner Name"
+            value={editOwnerName}
+            onChange={(e) => setEditOwnerName(e.target.value)}
+            placeholder="Nguyen Van A"
+          />
+          <Input
+            label="Owner Email"
+            type="email"
+            value={editOwnerEmail}
+            onChange={(e) => setEditOwnerEmail(e.target.value)}
+            placeholder="owner@example.com"
+          />
+          <Input
+            label="Owner Age"
+            type="number"
+            min="0"
+            value={editOwnerAge}
+            onChange={(e) => setEditOwnerAge(e.target.value)}
+            placeholder="30"
+          />
+          <Input
+            label="Request Limit (optional)"
+            type="number"
+            min="0"
+            value={editRequestLimit}
+            onChange={(e) => setEditRequestLimit(e.target.value)}
+            hint="0 hoặc để trống = không giới hạn"
+            placeholder="1000"
+          />
+          <Input
+            label="Token Limit (optional)"
+            type="number"
+            min="0"
+            value={editTokenLimit}
+            onChange={(e) => setEditTokenLimit(e.target.value)}
+            hint="0 hoặc để trống = không giới hạn"
+            placeholder="1000000"
+          />
+
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-text-main">Allowed Models</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">
+                  Selected {editAllowedModels.length} / {availableModels.length}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Input
+                value={editModelSearch}
+                onChange={(e) => setEditModelSearch(e.target.value)}
+                placeholder="Search models..."
+                className="min-w-[200px]"
+              />
+              <select
+                className="px-3 py-2 rounded-lg border border-border bg-bg text-sm"
+                value={editModelProvider}
+                onChange={(e) => setEditModelProvider(e.target.value)}
+              >
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {provider === "all" ? "All providers" : provider}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setEditAllowedModels([])}
+                className="text-xs text-text-muted hover:underline"
+              >
+                Allow all
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditAllowedModels(filteredEditModels)}
+                className="text-xs text-primary hover:underline"
+                disabled={filteredEditModels.length === 0}
+              >
+                Select filtered
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditAllowedModels([])}
+                className="text-xs text-text-muted hover:underline"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="max-h-64 overflow-y-auto rounded-md border border-black/10 dark:border-white/10 p-3 bg-white dark:bg-white/5">
+              {modelsLoading ? (
+                <p className="text-sm text-text-muted">Loading models...</p>
+              ) : availableModels.length === 0 ? (
+                <p className="text-sm text-text-muted">No models found.</p>
+              ) : filteredEditModels.length === 0 ? (
+                <p className="text-sm text-text-muted">No models match your filter.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {filteredEditModels.map((modelId) => (
+                    <label key={modelId} className="flex items-center gap-2 text-sm text-text-main">
+                      <input
+                        type="checkbox"
+                        checked={editAllowedModels.includes(modelId)}
+                        onChange={() => toggleAllowedModel(modelId, editAllowedModels, setEditAllowedModels)}
+                        className="h-4 w-4"
+                      />
+                      <span className="break-all">{modelId}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-text-muted">Allow all = cho phép tất cả model</p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={handleUpdateKey} fullWidth disabled={!editKeyName.trim()}>
+              Save
+            </Button>
+            <Button onClick={closeEditModal} variant="ghost" fullWidth>
               Cancel
             </Button>
           </div>
@@ -531,6 +1189,151 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={showRotateModal}
+        onClose={closeRotateModal}
+        title="Regenerate API Key"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeRotateModal} disabled={rotateLoading}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={handleRotateKey} loading={rotateLoading}>
+              Regenerate
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-text-muted">
+            This will generate a new key value for this API key ID. Usage/quota and metadata
+            (owner/limits/allowed models) will be kept.
+          </p>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">Grace period</label>
+            <select
+              className="w-full px-3 py-2 rounded-lg border border-border bg-bg text-sm"
+              value={rotateGraceHours}
+              onChange={(e) => setRotateGraceHours(Number(e.target.value))}
+              disabled={rotateLoading}
+            >
+              <option value={0}>0h (immediate)</option>
+              <option value={1}>1h</option>
+              <option value={2}>2h (default)</option>
+              <option value={24}>24h</option>
+            </select>
+            <p className="text-xs text-text-muted">
+              Old key expires {formatRotateExpiry()}.
+            </p>
+          </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-text">
+            Clients using the old key will continue to work until it expires. Disable or delete
+            the key if you need to revoke access immediately.
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showHistoryModal}
+        onClose={closeHistoryModal}
+        title="API Key History"
+        size="md"
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <div className="text-xs uppercase text-text-muted">Current key</div>
+            <div className="flex items-center gap-2">
+              <code className="text-xs font-mono text-text">{maskKeyValue(historyKey?.key)}</code>
+              <span className={`text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+                historyKey?.isActive === false
+                  ? "border-red-300/80 text-red-600 bg-red-50"
+                  : "border-emerald-200 text-emerald-700 bg-emerald-50"
+              }`}>
+                {historyKey?.isActive === false ? "Disabled" : "Active"}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs uppercase text-text-muted">Previous keys (grace)</div>
+              <span className="text-xs text-text-muted">
+                {Array.isArray(historyKey?.previousKeys) ? historyKey.previousKeys.length : 0} keys
+              </span>
+            </div>
+            {Array.isArray(historyKey?.previousKeys) && historyKey.previousKeys.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {historyKey.previousKeys.map((entry) => {
+                  const expiresAt = formatHistoryTime(entry.expiresAt);
+                  const rotatedAt = formatHistoryTime(entry.rotatedAt);
+                  const revokeId = `${historyKey.id}:${entry.keyHash}`;
+                  return (
+                    <div
+                      key={`${entry.keyHash}-${entry.expiresAt}`}
+                      className="flex items-center justify-between rounded-lg border border-border bg-bg-subtle/40 px-3 py-2"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <code className="text-xs font-mono text-text">{maskKeyValue(entry.keyHash)}</code>
+                        <div className="text-[11px] text-text-muted">
+                          Rotated {rotatedAt} • Expires {expiresAt}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openRevokeModal(historyKey.id, entry.keyHash)}
+                        loading={revokeLoadingId === revokeId}
+                      >
+                        Revoke now
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-sm text-text-muted">No previous keys in grace period.</div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="text-xs uppercase text-text-muted">Rotation history</div>
+            {Array.isArray(historyKey?.rotationHistory) && historyKey.rotationHistory.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                {historyKey.rotationHistory.map((entry, index) => (
+                  <div
+                    key={`${entry.rotatedAt || ""}-${index}`}
+                    className="rounded-lg border border-border bg-bg-subtle/20 px-3 py-2 text-xs"
+                  >
+                    <div className="font-medium text-text">
+                      Rotated {formatHistoryTime(entry.rotatedAt)}
+                    </div>
+                    <div className="text-text-muted">
+                      Grace {Number.isFinite(Number(entry.graceHours)) ? `${entry.graceHours}h` : "-"}
+                      {entry.expiresAt ? ` • Expires ${formatHistoryTime(entry.expiresAt)}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-sm text-text-muted">No rotation history yet.</div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        isOpen={showRevokeModal}
+        onClose={closeRevokeModal}
+        onConfirm={() => handleRevokePreviousKey(revokeTarget?.keyId, revokeTarget?.keyHash)}
+        title="Revoke previous key"
+        message="This previous key will stop working immediately. This does not delete the API key or reset usage."
+        confirmText="Revoke"
+        cancelText="Cancel"
+        variant="danger"
+        loading={revokeLoadingId === `${revokeTarget?.keyId}:${revokeTarget?.keyHash}`}
+      />
 
       {/* Disable Cloud Modal */}
       <Modal

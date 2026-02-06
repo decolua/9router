@@ -2,10 +2,16 @@ import { NextResponse } from "next/server";
 import { validateApiKey, getModelAliases, setModelAlias, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 // PUT /api/cloud/models/alias - Set model alias (for cloud/CLI)
 export async function PUT(request) {
   try {
+    const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
+    if (!quota.ok) {
+      return quota.response;
+    }
+
     const authHeader = request.headers.get("authorization");
     const apiKey = authHeader?.replace("Bearer ", "");
 
@@ -70,6 +76,11 @@ async function syncToCloudIfEnabled() {
 // GET /api/cloud/models/alias - Get all aliases
 export async function GET(request) {
   try {
+    const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
+    if (!quota.ok) {
+      return quota.response;
+    }
+
     const authHeader = request.headers.get("authorization");
     const apiKey = authHeader?.replace("Bearer ", "");
 

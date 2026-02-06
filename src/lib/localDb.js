@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import crypto from "node:crypto";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -503,12 +504,217 @@ export async function deleteCombo(id) {
 
 // ============ API Keys ============
 
+function normalizeAllowedModels(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((v) => String(v || "").trim()).filter(Boolean))];
+}
+
+function normalizeRotationHistory(value) {
+  if (!Array.isArray(value)) {
+    return { list: [], changed: value !== undefined && value !== null };
+  }
+  const list = [];
+  let changed = false;
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      changed = true;
+      continue;
+    }
+    list.push(entry);
+  }
+  return { list, changed };
+}
+
+function hashApiKey(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+function normalizePreviousKeys(value, nowMs) {
+  if (!Array.isArray(value)) {
+    return { list: [], changed: value !== undefined && value !== null };
+  }
+  const list = [];
+  let changed = false;
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      changed = true;
+      continue;
+    }
+    const keyHash = String(entry.keyHash || "").trim();
+    const key = String(entry.key || "").trim();
+    let resolvedHash = keyHash;
+    if (!resolvedHash && key) {
+      resolvedHash = hashApiKey(key);
+      changed = true;
+    }
+    if (!resolvedHash) {
+      changed = true;
+      continue;
+    }
+    const expiresAtMs = entry.expiresAt ? new Date(entry.expiresAt).getTime() : Number.NaN;
+    if (!Number.isFinite(expiresAtMs)) {
+      changed = true;
+      continue;
+    }
+    if (expiresAtMs <= nowMs) {
+      changed = true;
+      continue;
+    }
+
+    const cleaned = {
+      keyHash: resolvedHash,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+    };
+    if (entry.rotatedAt) {
+      const rotatedAtMs = new Date(entry.rotatedAt).getTime();
+      if (Number.isFinite(rotatedAtMs)) {
+        cleaned.rotatedAt = new Date(rotatedAtMs).toISOString();
+      } else {
+        changed = true;
+      }
+    }
+    list.push(cleaned);
+  }
+  return { list, changed };
+}
+
+function normalizeApiKeyDefaults(key, nowMs) {
+  const normalized = { ...key };
+  let changed = false;
+
+  const isActive = normalized.isActive !== false;
+  if (normalized.isActive !== isActive) {
+    normalized.isActive = isActive;
+    changed = true;
+  }
+
+  const previousResult = normalizePreviousKeys(normalized.previousKeys, nowMs);
+  if (previousResult.changed) changed = true;
+  normalized.previousKeys = previousResult.list;
+
+  const historyResult = normalizeRotationHistory(normalized.rotationHistory);
+  if (historyResult.changed) changed = true;
+  normalized.rotationHistory = historyResult.list;
+
+  if (Array.isArray(normalized.previousKeys)) {
+    for (const entry of normalized.previousKeys) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.key !== undefined) {
+        delete entry.key;
+        changed = true;
+      }
+    }
+  }
+
+  return { normalized, changed };
+}
+
+function normalizeApiKeyResponse(key) {
+  return {
+    ...key,
+    ownerName: key.ownerName || "",
+    ownerEmail: key.ownerEmail || "",
+    ownerAge: Number.isFinite(Number(key.ownerAge)) ? Number(key.ownerAge) : null,
+    requestLimit: Number.isFinite(Number(key.requestLimit)) ? Number(key.requestLimit) : 0,
+    tokenLimit: Number.isFinite(Number(key.tokenLimit)) ? Number(key.tokenLimit) : 0,
+    requestUsed: Number.isFinite(Number(key.requestUsed)) ? Number(key.requestUsed) : 0,
+    tokenUsed: Number.isFinite(Number(key.tokenUsed)) ? Number(key.tokenUsed) : 0,
+    allowedModels: normalizeAllowedModels(key.allowedModels),
+    isActive: key.isActive !== false,
+    previousKeys: Array.isArray(key.previousKeys) ? key.previousKeys : [],
+    rotationHistory: Array.isArray(key.rotationHistory) ? key.rotationHistory : [],
+    lastAccessed: key.lastAccessed || null,
+  };
+}
+
+function findApiKeyByValue(keys, keyValue, nowMs) {
+  const lookupHash = hashApiKey(keyValue);
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    if (!key.isActive) continue;
+    if (key.key === keyValue) {
+      return { index: i, record: key };
+    }
+    if (Array.isArray(key.previousKeys)) {
+      const matched = key.previousKeys.some((entry) => entry.keyHash === lookupHash);
+      if (matched) return { index: i, record: key };
+    }
+  }
+  return { index: -1, record: null };
+}
+
 /**
  * Get all API keys
  */
 export async function getApiKeys() {
   const db = await getDb();
-  return db.data.apiKeys || [];
+  const keys = db.data.apiKeys || [];
+  const nowMs = Date.now();
+  let changed = false;
+
+  const results = keys.map((key, index) => {
+    const normalizedResult = normalizeApiKeyDefaults(key, nowMs);
+    if (normalizedResult.changed) {
+      keys[index] = normalizedResult.normalized;
+      changed = true;
+    }
+    return normalizeApiKeyResponse(normalizedResult.normalized);
+  });
+
+  if (changed) {
+    await db.write();
+  }
+
+  return results;
+}
+
+/**
+ * Get API key by ID
+ */
+export async function getApiKeyById(id) {
+  const db = await getDb();
+  const keys = db.data.apiKeys || [];
+  const index = keys.findIndex((k) => k.id === id);
+  if (index === -1) return null;
+
+  const nowMs = Date.now();
+  const normalizedResult = normalizeApiKeyDefaults(keys[index], nowMs);
+  if (normalizedResult.changed) {
+    keys[index] = normalizedResult.normalized;
+    await db.write();
+  }
+
+  return normalizeApiKeyResponse(normalizedResult.normalized);
+}
+
+/**
+ * Get API key by key value
+ */
+export async function getApiKeyByValue(keyValue) {
+  const db = await getDb();
+  if (!keyValue) return null;
+
+  const keys = db.data.apiKeys || [];
+  const nowMs = Date.now();
+  let changed = false;
+
+  for (let i = 0; i < keys.length; i += 1) {
+    const normalizedResult = normalizeApiKeyDefaults(keys[i], nowMs);
+    if (normalizedResult.changed) {
+      keys[i] = normalizedResult.normalized;
+      changed = true;
+    }
+  }
+
+  const matched = findApiKeyByValue(keys, keyValue, nowMs);
+  if (changed) {
+    await db.write();
+  }
+
+  if (!matched.record) return null;
+  return normalizeApiKeyResponse(matched.record);
 }
 
 /**
@@ -527,8 +733,9 @@ function generateShortKey() {
  * Create API key
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
+ * @param {object} options - Optional metadata and quota
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, options = {}) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -545,13 +752,225 @@ export async function createApiKey(name, machineId) {
     name: name,
     key: result.key,
     machineId: machineId,
+    isActive: true,
+    previousKeys: [],
+    rotationHistory: [],
+    ownerName: options.ownerName || "",
+    ownerEmail: options.ownerEmail || "",
+    ownerAge: Number.isFinite(Number(options.ownerAge)) ? Math.max(0, Number(options.ownerAge)) : null,
+    requestLimit: Number.isFinite(Number(options.requestLimit)) ? Math.max(0, Number(options.requestLimit)) : 0,
+    tokenLimit: Number.isFinite(Number(options.tokenLimit)) ? Math.max(0, Number(options.tokenLimit)) : 0,
+    requestUsed: 0,
+    tokenUsed: 0,
+    allowedModels: Array.isArray(options.allowedModels)
+      ? [...new Set(options.allowedModels.map((v) => String(v || "").trim()).filter(Boolean))]
+      : [],
+    lastAccessed: null,
     createdAt: now,
+    updatedAt: now,
   };
   
   db.data.apiKeys.push(apiKey);
   await db.write();
   
   return apiKey;
+}
+
+/**
+ * Update API key metadata or limits
+ */
+export async function updateApiKey(id, data = {}) {
+  const db = await getDb();
+  const index = db.data.apiKeys.findIndex((k) => k.id === id);
+  if (index === -1) return null;
+
+  const current = db.data.apiKeys[index];
+  const update = {};
+
+  if (data.name !== undefined) update.name = data.name;
+  if (data.ownerName !== undefined) update.ownerName = data.ownerName;
+  if (data.ownerEmail !== undefined) update.ownerEmail = data.ownerEmail;
+  if (data.ownerAge !== undefined) {
+    const n = Number(data.ownerAge);
+    update.ownerAge = Number.isFinite(n) ? Math.max(0, n) : null;
+  }
+  if (data.requestLimit !== undefined) {
+    const n = Number(data.requestLimit);
+    update.requestLimit = Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (data.tokenLimit !== undefined) {
+    const n = Number(data.tokenLimit);
+    update.tokenLimit = Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (data.requestUsed !== undefined) {
+    const n = Number(data.requestUsed);
+    update.requestUsed = Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (data.tokenUsed !== undefined) {
+    const n = Number(data.tokenUsed);
+    update.tokenUsed = Number.isFinite(n) ? Math.max(0, n) : 0;
+  }
+  if (data.isActive !== undefined) {
+    update.isActive = data.isActive === true;
+  }
+  if (data.key !== undefined) {
+    update.key = String(data.key || "").trim();
+  }
+  if (data.previousKeys !== undefined) {
+    update.previousKeys = Array.isArray(data.previousKeys) ? data.previousKeys : [];
+  }
+  if (data.rotationHistory !== undefined) {
+    update.rotationHistory = Array.isArray(data.rotationHistory) ? data.rotationHistory : [];
+  }
+  if (data.allowedModels !== undefined) {
+    if (!Array.isArray(data.allowedModels)) {
+      update.allowedModels = [];
+    } else {
+      update.allowedModels = [...new Set(data.allowedModels.map((v) => String(v || "").trim()).filter(Boolean))];
+    }
+  }
+  if (data.lastAccessed !== undefined) {
+    if (!data.lastAccessed) {
+      update.lastAccessed = null;
+    } else {
+      const parsed = new Date(data.lastAccessed);
+      update.lastAccessed = Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+    }
+  }
+
+  db.data.apiKeys[index] = {
+    ...current,
+    ...update,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.write();
+  return db.data.apiKeys[index];
+}
+
+/**
+ * Validate API key and consume one request quota unit
+ */
+export async function validateAndConsumeApiKeyRequest(keyValue) {
+  const db = await getDb();
+  const keys = db.data.apiKeys || [];
+  const nowMs = Date.now();
+  let changed = false;
+
+  for (let i = 0; i < keys.length; i += 1) {
+    const normalizedResult = normalizeApiKeyDefaults(keys[i], nowMs);
+    if (normalizedResult.changed) {
+      keys[i] = normalizedResult.normalized;
+      changed = true;
+    }
+  }
+
+  const match = findApiKeyByValue(keys, keyValue, nowMs);
+  if (match.index === -1) {
+    if (changed) await db.write();
+    return { ok: false, code: "invalid_api_key", apiKey: null };
+  }
+
+  const apiKey = keys[match.index];
+  const requestLimit = Number.isFinite(Number(apiKey.requestLimit)) ? Number(apiKey.requestLimit) : 0;
+  const tokenLimit = Number.isFinite(Number(apiKey.tokenLimit)) ? Number(apiKey.tokenLimit) : 0;
+  const requestUsed = Number.isFinite(Number(apiKey.requestUsed)) ? Number(apiKey.requestUsed) : 0;
+  const tokenUsed = Number.isFinite(Number(apiKey.tokenUsed)) ? Number(apiKey.tokenUsed) : 0;
+
+  if (requestLimit > 0 && requestUsed >= requestLimit) {
+    return {
+      ok: false,
+      code: "request_quota_exceeded",
+      apiKey: {
+        ...apiKey,
+        requestLimit,
+        tokenLimit,
+        requestUsed,
+        tokenUsed,
+      },
+    };
+  }
+
+  if (tokenLimit > 0 && tokenUsed >= tokenLimit) {
+    return {
+      ok: false,
+      code: "token_quota_exceeded",
+      apiKey: {
+        ...apiKey,
+        requestLimit,
+        tokenLimit,
+        requestUsed,
+        tokenUsed,
+      },
+    };
+  }
+
+  const now = new Date().toISOString();
+  keys[match.index] = {
+    ...apiKey,
+    requestUsed: requestUsed + 1,
+    requestLimit,
+    tokenLimit,
+    tokenUsed,
+    lastAccessed: now,
+    updatedAt: now,
+  };
+
+  await db.write();
+
+  return {
+    ok: true,
+    code: null,
+    apiKey: keys[match.index],
+  };
+}
+
+/**
+ * Increment API key request usage
+ */
+export async function incrementApiKeyRequestUsage(id, delta = 1) {
+  const db = await getDb();
+  const index = db.data.apiKeys.findIndex((k) => k.id === id);
+  if (index === -1) return null;
+
+  const key = db.data.apiKeys[index];
+  const current = Number.isFinite(Number(key.requestUsed)) ? Number(key.requestUsed) : 0;
+  const next = Math.max(0, current + Number(delta || 0));
+  const now = new Date().toISOString();
+
+  db.data.apiKeys[index] = {
+    ...key,
+    requestUsed: next,
+    lastAccessed: now,
+    updatedAt: now,
+  };
+
+  await db.write();
+  return db.data.apiKeys[index];
+}
+
+/**
+ * Increment API key token usage
+ */
+export async function incrementApiKeyTokenUsage(id, delta = 0) {
+  const db = await getDb();
+  const index = db.data.apiKeys.findIndex((k) => k.id === id);
+  if (index === -1) return null;
+
+  const key = db.data.apiKeys[index];
+  const current = Number.isFinite(Number(key.tokenUsed)) ? Number(key.tokenUsed) : 0;
+  const next = Math.max(0, current + Number(delta || 0));
+  const now = new Date().toISOString();
+
+  db.data.apiKeys[index] = {
+    ...key,
+    tokenUsed: next,
+    lastAccessed: now,
+    updatedAt: now,
+  };
+
+  await db.write();
+  return db.data.apiKeys[index];
 }
 
 /**
@@ -574,7 +993,24 @@ export async function deleteApiKey(id) {
  */
 export async function validateApiKey(key) {
   const db = await getDb();
-  return db.data.apiKeys.some(k => k.key === key);
+  if (!key) return false;
+  const keys = db.data.apiKeys || [];
+  const nowMs = Date.now();
+  let changed = false;
+
+  for (let i = 0; i < keys.length; i += 1) {
+    const normalizedResult = normalizeApiKeyDefaults(keys[i], nowMs);
+    if (normalizedResult.changed) {
+      keys[i] = normalizedResult.normalized;
+      changed = true;
+    }
+  }
+
+  const matched = findApiKeyByValue(keys, key, nowMs);
+  if (changed) {
+    await db.write();
+  }
+  return matched.index !== -1;
 }
 
 // ============ Data Cleanup ============

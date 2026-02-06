@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { homedir } from "os";
 import { join } from "path";
-import Database from "better-sqlite3";
+
+export const runtime = "nodejs";
 
 /**
  * GET /api/oauth/cursor/auto-import
@@ -9,6 +10,18 @@ import Database from "better-sqlite3";
  */
 export async function GET() {
   try {
+    let Database;
+    try {
+      const moduleName = "better-sqlite3";
+      const mod = await import(/* webpackIgnore: true */ moduleName);
+      Database = mod?.default || mod;
+    } catch (error) {
+      return NextResponse.json({
+        found: false,
+        error: "Optional dependency 'better-sqlite3' is not installed.",
+      }, { status: 500 });
+    }
+
     const platform = process.platform;
     let dbPath;
 

@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, getModelAliases } from "@/models";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 // Resolve model alias to provider/model
 export async function POST(request) {
   try {
+    const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
+    if (!quota.ok) {
+      return quota.response;
+    }
+
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing API key" }, { status: 401 });

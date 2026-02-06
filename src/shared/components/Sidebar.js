@@ -26,12 +26,13 @@ const systemItems = [
   { href: "/dashboard/profile", label: "Settings", icon: "settings" },
 ];
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar({ onClose, authType: initialAuthType = "admin" }) {
   const pathname = usePathname();
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [authType, setAuthType] = useState(initialAuthType);
 
   // Check if debug mode is enabled
   useEffect(() => {
@@ -40,6 +41,14 @@ export default function Sidebar({ onClose }) {
       .then(data => setShowDebug(data?.enableRequestLogs === true))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (initialAuthType) return;
+    fetch("/api/auth/session")
+      .then(res => res.json())
+      .then(data => setAuthType(data?.authType || "admin"))
+      .catch(() => {});
+  }, [initialAuthType]);
 
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
@@ -59,6 +68,11 @@ export default function Sidebar({ onClose }) {
     setShowShutdownModal(false);
     setIsDisconnected(true);
   };
+
+  const isKeyUser = authType === "apiKey";
+  const displayNavItems = isKeyUser
+    ? [{ href: "/dashboard/key", label: "My Key", icon: "vpn_key" }]
+    : navItems;
 
   return (
     <>
@@ -87,7 +101,7 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {displayNavItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -112,7 +126,7 @@ export default function Sidebar({ onClose }) {
           ))}
 
           {/* Debug section (only show when ENABLE_REQUEST_LOGS=true) */}
-          {showDebug && (
+          {!isKeyUser && showDebug && (
             <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
                 Debug
@@ -144,90 +158,98 @@ export default function Sidebar({ onClose }) {
           )}
 
           {/* System section */}
-          <div className="pt-4 mt-2">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                )}
-              >
-                <span
+          {!isKeyUser && (
+            <div className="pt-4 mt-2">
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                System
+              </p>
+              {systemItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
                   className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    isActive(item.href)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
                   )}
                 >
-                  {item.icon}
-                </span>
-                <span className="text-sm font-medium">{item.label}</span>
-              </Link>
-            ))}
-          </div>
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[18px]",
+                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          )}
         </nav>
 
         {/* Footer section */}
-        <div className="p-3 border-t border-black/5 dark:border-white/5">
-          {/* Info message */}
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
-            <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">info</span>
+        {!isKeyUser && (
+          <div className="p-3 border-t border-black/5 dark:border-white/5">
+            {/* Info message */}
+            <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
+              <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
+                <span className="material-symbols-outlined text-[14px]">info</span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-text-main leading-relaxed">
+                  Service is running in terminal. You can close this web page. Shutdown will stop the service.
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
-              </span>
-            </div>
-          </div>
 
-          {/* Shutdown button */}
-          <Button
-            variant="outline"
-            fullWidth
-            icon="power_settings_new"
-            onClick={() => setShowShutdownModal(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-          >
-            Shutdown
-          </Button>
-        </div>
-      </aside>
-
-      {/* Shutdown Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showShutdownModal}
-        onClose={() => setShowShutdownModal(false)}
-        onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
-        variant="danger"
-        loading={isShuttingDown}
-      />
-
-      {/* Disconnected Overlay */}
-      {isDisconnected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="text-center p-8">
-            <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-              <span className="material-symbols-outlined text-[32px]">power_off</span>
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-            <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-            <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-              Reload Page
+            {/* Shutdown button */}
+            <Button
+              variant="outline"
+              fullWidth
+              icon="power_settings_new"
+              onClick={() => setShowShutdownModal(true)}
+              className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+            >
+              Shutdown
             </Button>
           </div>
-        </div>
+        )}
+      </aside>
+
+      {!isKeyUser && (
+        <>
+          {/* Shutdown Confirmation Modal */}
+          <ConfirmModal
+            isOpen={showShutdownModal}
+            onClose={() => setShowShutdownModal(false)}
+            onConfirm={handleShutdown}
+            title="Close Proxy"
+            message="Are you sure you want to close the proxy server?"
+            confirmText="Close"
+            cancelText="Cancel"
+            variant="danger"
+            loading={isShuttingDown}
+          />
+
+          {/* Disconnected Overlay */}
+          {isDisconnected && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+              <div className="text-center p-8">
+                <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+                  <span className="material-symbols-outlined text-[32px]">power_off</span>
+                </div>
+                <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
+                <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+                <Button variant="secondary" onClick={() => globalThis.location.reload()}>
+                  Reload Page
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </>
   );
@@ -235,4 +257,5 @@ export default function Sidebar({ onClose }) {
 
 Sidebar.propTypes = {
   onClose: PropTypes.func,
+  authType: PropTypes.string,
 };

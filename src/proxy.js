@@ -12,14 +12,20 @@ export async function proxy(request) {
   if (pathname.startsWith("/dashboard")) {
     const token = request.cookies.get("auth_token")?.value;
 
-    if (token) {
-      try {
-        await jwtVerify(token, SECRET);
-        return NextResponse.next();
-      } catch (err) {
-        return NextResponse.redirect(new URL("/login", request.url));
+      if (token) {
+        try {
+          const { payload } = await jwtVerify(token, SECRET);
+          if (payload?.authType === "apiKey") {
+            if (pathname.startsWith("/dashboard/key")) {
+              return NextResponse.next();
+            }
+            return NextResponse.redirect(new URL("/dashboard/key", request.url));
+          }
+          return NextResponse.next();
+        } catch (err) {
+          return NextResponse.redirect(new URL("/login", request.url));
+        }
       }
-    }
 
     const origin = request.nextUrl.origin;
     try {

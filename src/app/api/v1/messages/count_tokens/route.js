@@ -1,3 +1,5 @@
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -15,6 +17,11 @@ export async function OPTIONS() {
  * POST /v1/messages/count_tokens - Mock token count response
  */
 export async function POST(request) {
+  const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
+  if (!quota.ok) {
+    return quota.response;
+  }
+
   let body;
   try {
     body = await request.json();

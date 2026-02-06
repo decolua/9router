@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
+  const [activeTab, setActiveTab] = useState("password");
   const router = useRouter();
 
   useEffect(() => {
@@ -58,10 +60,14 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const isApiKeyLogin = activeTab === "apiKey";
+      const endpoint = isApiKeyLogin ? "/api/auth/api-key-login" : "/api/auth/login";
+      const payload = isApiKeyLogin ? { apiKey } : { password };
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -69,7 +75,7 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || (isApiKeyLogin ? "Invalid API key" : "Invalid password"));
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -100,16 +106,57 @@ export default function LoginPage() {
 
         <Card>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            <div className="flex gap-2 rounded-lg bg-bg-subtle p-1 border border-border">
+              <button
+                type="button"
+                onClick={() => setActiveTab("password")}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === "password"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("apiKey")}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === "apiKey"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                API Key
+              </button>
+            </div>
+
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Password</label>
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoFocus
-              />
+              {activeTab === "password" ? (
+                <>
+                  <label className="text-sm font-medium">Password</label>
+                  <Input
+                    type="password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </>
+              ) : (
+                <>
+                  <label className="text-sm font-medium">API Key</label>
+                  <Input
+                    type="text"
+                    placeholder="sk-xxxxxxxxxxxxxxxx"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </>
+              )}
               {error && <p className="text-xs text-red-500">{error}</p>}
             </div>
 
@@ -119,12 +166,18 @@ export default function LoginPage() {
               className="w-full"
               loading={loading}
             >
-              Login
+              {activeTab === "apiKey" ? "Login with API Key" : "Login"}
             </Button>
 
-            <p className="text-xs text-center text-text-muted mt-2">
-              Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-            </p>
+            {activeTab === "password" ? (
+              <p className="text-xs text-center text-text-muted mt-2">
+                Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+              </p>
+            ) : (
+              <p className="text-xs text-center text-text-muted mt-2">
+                Only want to check quota? Use <a className="text-primary hover:underline" href="/key-status">/key-status</a>.
+              </p>
+            )}
           </form>
         </Card>
       </div>

@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 let initialized = false;
 
@@ -26,6 +27,18 @@ export async function OPTIONS() {
  * Now handled by translator pattern (openai-responses format auto-detected)
  */
 export async function POST(request) {
+  const requestForChat = request.clone();
+  let bodyForQuota = null;
+  try {
+    const cloned = request.clone();
+    bodyForQuota = await cloned.json();
+  } catch {}
+
+  const quota = await enforceApiKeyQuota(request, { model: bodyForQuota?.model || null });
+  if (!quota.ok) {
+    return quota.response;
+  }
+
   await ensureInitialized();
-  return await handleChat(request);
+  return await handleChat(requestForChat, null, { apiKeyId: quota.apiKeyId });
 }

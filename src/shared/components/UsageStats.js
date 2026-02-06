@@ -45,6 +45,8 @@ export default function UsageStats() {
 
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
+  const apiKeyId = searchParams.get("apiKeyId") || "all";
+  const rangeDays = Number(searchParams.get("rangeDays") || 7);
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -105,9 +107,12 @@ export default function UsageStats() {
       });
   }, [sortBy, sortOrder]);
 
+  const selectedModelStats = apiKeyId !== "all"
+    ? stats?.byApiKeyByModel?.[apiKeyId]
+    : stats?.byModel;
   const sortedModels = useMemo(
-    () => sortData(stats?.byModel, stats?.pending?.byModel),
-    [stats?.byModel, stats?.pending?.byModel, sortData]
+    () => sortData(selectedModelStats, stats?.pending?.byModel),
+    [selectedModelStats, stats?.pending?.byModel, sortData]
   );
   const sortedAccounts = useMemo(() => {
     // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
@@ -131,7 +136,16 @@ export default function UsageStats() {
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/usage/history");
+      const params = new URLSearchParams();
+      if (apiKeyId && apiKeyId !== "all") {
+        params.set("apiKeyId", apiKeyId);
+      }
+      if (Number.isFinite(rangeDays) && rangeDays > 0) {
+        const startDate = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000).toISOString();
+        params.set("startDate", startDate);
+      }
+      const url = params.toString() ? `/api/usage/history?${params.toString()}` : "/api/usage/history";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -152,7 +166,7 @@ export default function UsageStats() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [prevTotalRequests]);
+  }, [apiKeyId, rangeDays, prevTotalRequests]);
 
   useEffect(() => {
     fetchStats();
@@ -196,6 +210,13 @@ export default function UsageStats() {
       <div className="text-text-muted">Failed to load usage statistics.</div>
     );
 
+  const apiKeyOptions = [{ id: "all", name: "All API keys" }].concat(
+    Object.values(stats.byApiKey || {}).map((entry) => ({
+      id: entry.apiKeyId,
+      name: entry.name || entry.apiKeyId,
+    }))
+  );
+
   // Format number with commas
   const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 
@@ -221,7 +242,45 @@ export default function UsageStats() {
       {/* Header with Auto Refresh Toggle and View Toggle */}
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Usage Overview</h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <select
+            className="px-3 py-2 rounded-lg border border-border bg-bg text-sm"
+            value={apiKeyId}
+            onChange={(e) => {
+              const params = new URLSearchParams(searchParams.toString());
+              if (e.target.value === "all") {
+                params.delete("apiKeyId");
+              } else {
+                params.set("apiKeyId", e.target.value);
+              }
+              router.replace(`?${params.toString()}`, { scroll: false });
+            }}
+          >
+            {apiKeyOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+            {[7, 30].map((days) => (
+              <button
+                key={days}
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("rangeDays", String(days));
+                  router.replace(`?${params.toString()}`, { scroll: false });
+                }}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  rangeDays === days
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                {days}d
+              </button>
+            ))}
+          </div>
           {/* View Toggle */}
           <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
             <button
@@ -360,10 +419,39 @@ export default function UsageStats() {
         </Card>
       </div>
 
+      {apiKeyId !== "all" && stats.byApiKey && stats.byApiKey[apiKeyId] && (
+        <Card className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase text-text-muted">API Key</div>
+              <div className="text-lg font-semibold">{stats.byApiKey[apiKeyId].name}</div>
+              <div className="text-xs text-text-muted">{apiKeyId}</div>
+            </div>
+            <div className="flex gap-6 text-sm">
+              <div>
+                <div className="text-xs text-text-muted">Requests</div>
+                <div className="font-medium">
+                  {fmt(stats.byApiKey[apiKeyId].requestRemaining ?? 0)} remaining
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Tokens</div>
+                <div className="font-medium">
+                  {fmt(stats.byApiKey[apiKeyId].tokenRemaining ?? 0)} remaining
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Usage by Model Table */}
       <Card className="overflow-hidden">
-        <div className="p-4 border-b border-border bg-bg-subtle/50">
+        <div className="p-4 border-b border-border bg-bg-subtle/50 flex items-center justify-between">
           <h3 className="font-semibold">Usage by Model</h3>
+          {apiKeyId !== "all" && (
+            <span className="text-xs text-text-muted">Filtered by API key</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
