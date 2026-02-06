@@ -100,11 +100,13 @@ export async function POST(request) {
 
         case "glm":
         case "kimi":
-        case "minimax": {
+        case "minimax":
+        case "minimax-cn": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
             kimi: "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
+            "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
           };
           const claudeRes = await fetch(claudeBaseUrls[provider], {
             method: "POST",
