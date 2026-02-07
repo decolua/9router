@@ -575,7 +575,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let streamUsage = null;
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   
-  const onStreamComplete = (contentObj, usage) => {
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
     // contentObj is object { content, thinking }
     streamUsage = usage;
     
@@ -585,7 +585,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       connectionId: connectionId || undefined,
       timestamp: new Date().toISOString(),
       latency: {
-        ttft: Date.now() - requestStartTime,
+        ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
         total: Date.now() - requestStartTime
       },
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
@@ -648,8 +648,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionId: connectionId || undefined,
     timestamp: new Date().toISOString(),
     latency: {
-      ttft: totalLatency,
-      total: totalLatency
+      ttft: 0,
+      total: Date.now() - requestStartTime
     },
     tokens: { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),

@@ -52,9 +52,13 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  let ttftAt = null;
 
   return new TransformStream({
     transform(chunk, controller) {
+      if (!ttftAt) {
+        ttftAt = Date.now();
+      }
       const text = sharedDecoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -251,7 +255,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage);
+            }, usage, ttftAt);
           }
           return;
         }
@@ -313,7 +317,7 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage);
+          }, state?.usage, ttftAt);
         }
       } catch (error) {
         console.log("Error in flush:", error);
