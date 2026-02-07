@@ -6,7 +6,7 @@ export async function POST(request) {
   try {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      // return NextResponse.json({ error: "Missing API key" }, { status: 401 });
+      return NextResponse.json({ error: "Missing API key" }, { status: 401 });
     }
 
     const apiKey = authHeader.slice(7);
@@ -14,7 +14,7 @@ export async function POST(request) {
     // Validate API key
     const isValid = await validateApiKey(apiKey);
     if (!isValid) {
-      // return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
     // Get active provider connections
