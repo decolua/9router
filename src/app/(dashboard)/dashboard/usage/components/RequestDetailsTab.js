@@ -6,6 +6,50 @@ import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
+import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+
+let providerNameCache = null;
+let providerNodesCache = null;
+
+async function fetchProviderNames() {
+  if (providerNameCache && providerNodesCache) {
+    return { providerNameCache, providerNodesCache };
+  }
+
+  const nodesRes = await fetch("/api/provider-nodes");
+  const nodesData = await nodesRes.json();
+  const nodes = nodesData.nodes || [];
+  providerNodesCache = {};
+
+  for (const node of nodes) {
+    providerNodesCache[node.id] = node.name;
+  }
+
+  providerNameCache = {
+    ...AI_PROVIDERS,
+    ...providerNodesCache
+  };
+
+  return { providerNameCache, providerNodesCache };
+}
+
+function getProviderName(providerId, cache) {
+  if (!providerId) return providerId;
+  if (!cache) return providerId;
+
+  const cached = cache[providerId];
+
+  if (typeof cached === 'string') {
+    return cached;
+  }
+
+  if (cached?.name) {
+    return cached.name;
+  }
+
+  const providerConfig = getProviderByAlias(providerId) || AI_PROVIDERS[providerId];
+  return providerConfig?.name || providerId;
+}
 
 function CollapsibleSection({ title, children, defaultOpen = false, icon = null }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -40,20 +84,35 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
 
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
-  const [pagination, setPagination] = useState({ 
-    page: 1, 
-    pageSize: 20, 
-    totalItems: 0, 
-    totalPages: 0 
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 0
   });
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [providers, setProviders] = useState([]);
+  const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
     startDate: "",
     endDate: ""
   });
+
+  const fetchProviders = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/providers");
+      const data = await res.json();
+      setProviders(data.providers || []);
+
+      const cache = await fetchProviderNames();
+      setProviderNameCache(cache.providerNameCache);
+    } catch (error) {
+      console.error("Failed to fetch providers:", error);
+    }
+  }, []);
 
   const fetchDetails = useCallback(async () => {
     setLoading(true);
@@ -65,10 +124,10 @@ export default function RequestDetailsTab() {
       if (filters.provider) params.append("provider", filters.provider);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
-      
+
       const res = await fetch(`/api/usage/request-details?${params}`);
       const data = await res.json();
-      
+
       setDetails(data.details || []);
       setPagination(prev => ({ ...prev, ...data.pagination }));
     } catch (error) {
@@ -77,6 +136,10 @@ export default function RequestDetailsTab() {
       setLoading(false);
     }
   }, [pagination.page, pagination.pageSize, filters]);
+
+  useEffect(() => {
+    fetchProviders();
+  }, [fetchProviders]);
 
   useEffect(() => {
     fetchDetails();
@@ -116,15 +179,11 @@ export default function RequestDetailsTab() {
               )}
             >
               <option value="">All Providers</option>
-              <option value="claude">Claude</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Gemini</option>
-              <option value="glm">GLM</option>
-              <option value="minimax">MiniMax</option>
-              <option value="iflow">iFlow</option>
-              <option value="qwen">Qwen</option>
-              <option value="kiro">Kiro</option>
-              <option value="github">GitHub</option>
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
             </select>
           </div>
           
@@ -212,10 +271,10 @@ export default function RequestDetailsTab() {
                       {detail.model}
                     </td>
                     <td className="p-4 text-sm text-text-main">
-                      <span className="uppercase font-medium">
-                        {detail.provider}
-                      </span>
-                    </td>
+                       <span className="font-medium">
+                         {getProviderName(detail.provider, providerNameCache)}
+                       </span>
+                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {detail.tokens?.prompt_tokens?.toLocaleString() || 0}
                     </td>
@@ -275,9 +334,9 @@ export default function RequestDetailsTab() {
                 <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
               </div>
               <div>
-                <span className="text-text-muted">Provider:</span>{" "}
-                <span className="text-text-main uppercase font-medium">{selectedDetail.provider}</span>
-              </div>
+                 <span className="text-text-muted">Provider:</span>{" "}
+                 <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
+               </div>
               <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
