@@ -38,6 +38,8 @@ async function getObservabilityConfig() {
 // Cache config to avoid repeated database reads
 let cachedConfig = null;
 
+let dbInstance = null;
+
 // Get app name
 function getAppName() {
   return "9router";
