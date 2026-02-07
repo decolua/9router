@@ -12,6 +12,7 @@
     "allowAll": "Cho phép tất cả",
     "selectAll": "Chọn tất cả",
     "clear": "Xóa chọn",
+    "add": "Thêm",
     "confirm": "Xác nhận",
     "warning": "Cảnh báo",
     "copy": "Copy",
@@ -243,6 +244,271 @@
       "anthropicPrefixPlaceholder": "ac-prod",
       "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
       "anthropicBaseUrlHint": "Dùng base URL (kết thúc /v1) cho Anthropic-compatible API. Hệ thống sẽ thêm /messages."
+    },
+    "messages": {
+      "setAliasFailed": "Thiết lập alias thất bại",
+      "deleteConnectionConfirm": "Xóa kết nối này?",
+      "noModelsConfigured": "Chưa có model cấu hình",
+      "notFound": "Không tìm thấy provider",
+      "backToProviders": "Quay lại Providers",
+      "connectionCount": "{count} kết nối",
+      "apiTypeMessages": "Messages API",
+      "apiTypeResponses": "Responses API",
+      "apiTypeChatCompletions": "Chat Completions",
+      "deleteCompatibleConfirm": "Xóa node {type} này?",
+      "oneConnectionLimit": "Mỗi compatible node chỉ cho phép một kết nối. Thêm node khác nếu cần nhiều kết nối.",
+      "connectionsTitle": "Kết nối",
+      "import": "Nhập",
+      "emptyConnectionsTitle": "Chưa có kết nối",
+      "emptyConnectionsSubtitle": "Thêm kết nối đầu tiên để bắt đầu",
+      "importJson": "Nhập JSON",
+      "addConnection": "Thêm kết nối",
+      "modelAliases": "Alias model",
+      "availableModels": "Model có sẵn",
+      "copyModel": "Copy model",
+      "aliasExists": "Alias \"{alias}\" đã tồn tại. Vui lòng chọn model khác hoặc sửa alias hiện có.",
+      "passthroughHint": "OpenRouter hỗ trợ mọi model. Thêm model và tạo alias để truy cập nhanh.",
+      "modelIdFromOpenRouter": "Model ID (từ OpenRouter)",
+      "modelIdPlaceholder": "anthropic/claude-3-opus",
+      "adding": "Đang thêm...",
+      "removeModel": "Xóa model",
+      "aliasSuggestionsUsed": "Các alias gợi ý đã tồn tại. Vui lòng chọn model khác hoặc xóa alias bị trùng.",
+      "importModelsFailed": "Nhập models thất bại",
+      "noModelsReturned": "Không có models trả về từ /models.",
+      "noNewModels": "Không có model mới được thêm.",
+      "addCompatibleModels": "Thêm model tương thích {type} thủ công hoặc import từ /models.",
+      "modelId": "Model ID",
+      "anthropicModelPlaceholder": "claude-3-opus-20240229",
+      "openaiModelPlaceholder": "gpt-4o",
+      "importing": "Đang nhập...",
+      "importFromModels": "Import từ /models",
+      "addConnectionToImport": "Thêm kết nối để bật import models.",
+      "oauthAccount": "Tài khoản OAuth",
+      "statusDisabled": "Đã tắt",
+      "statusUnknown": "Không rõ",
+      "statusActive": "Hoạt động",
+      "statusSuccess": "Thành công",
+      "statusError": "Lỗi",
+      "statusExpired": "Hết hạn",
+      "statusUnavailable": "Không khả dụng",
+      "autoPriority": "Auto: {value}",
+      "disableConnection": "Tắt kết nối",
+      "enableConnection": "Bật kết nối",
+      "name": "Tên",
+      "namePlaceholder": "Production Key",
+      "apiKey": "API Key",
+      "check": "Kiểm tra",
+      "checking": "Đang kiểm tra...",
+      "valid": "Hợp lệ",
+      "invalid": "Không hợp lệ",
+      "validateAnthropic": "Kiểm tra {name} bằng cách xác thực API key.",
+      "validateOpenAI": "Kiểm tra {name} qua /models trên base URL của bạn.",
+      "priority": "Ưu tiên",
+      "invalidJson": "JSON không hợp lệ. Vui lòng kiểm tra định dạng.",
+      "jsonFormatHint": "JSON phải là mảng hoặc { connections: [...] }.",
+      "importRowInvalid": "Dòng {row}: Object không hợp lệ",
+      "importRowProvider": "Dòng {row}: provider phải là {provider}",
+      "importRowMissing": "Dòng {row}: cần name và apiKey",
+      "importRowPriority": "Dòng {row}: priority phải là số",
+      "importRowGlobalPriority": "Dòng {row}: globalPriority phải là số",
+      "importRowMore": "{head} (+{count} dòng)",
+      "readFileFailed": "Đọc file thất bại.",
+      "importFailed": "Nhập thất bại",
+      "importTitle": "Nhập API Keys cho {name}",
+      "importDesc": "Tải lên file JSON chứa mảng API keys. Mỗi item cần có name và apiKey.",
+      "example": "Ví dụ",
+      "jsonFile": "File JSON",
+      "parseLocalOnly": "File được parse tại máy và không lưu lại.",
+      "pasteJson": "Dán JSON (tùy chọn)",
+      "pasteJsonPlaceholder": "Dán JSON vào đây",
+      "preview": "Xem trước ({count})",
+      "moreItems": "+{count} mục",
+      "importResult": "Kết quả nhập",
+      "importResultSummary": "Đã nhập {success}/{total}",
+      "editConnection": "Chỉnh sửa kết nối",
+      "accountNamePlaceholder": "Tên tài khoản",
+      "email": "Email",
+      "newApiKeyPlaceholder": "Nhập API key mới",
+      "keepApiKeyHint": "Để trống để giữ API key hiện tại.",
+      "testing": "Đang test...",
+      "testConnection": "Test kết nối",
+      "failed": "Thất bại",
+      "editCompatibleTitle": "Chỉnh sửa {type}",
+      "requiredLabel": "Bắt buộc. Nhãn hiển thị cho node.",
+      "prefix": "Prefix",
+      "prefixHint": "Bắt buộc. Dùng làm prefix cho model IDs.",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "apiKeyCheck": "API Key (để kiểm tra)",
+      "saving": "Đang lưu...",
+      "cooldownSeconds": "{count}s",
+      "cooldownMinutes": "{minutes}m {seconds}s",
+      "cooldownHours": "{hours}h {minutes}m",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "anthropicBaseUrlHint": "Dùng base URL (kết thúc /v1) cho Anthropic-compatible API. Hệ thống sẽ thêm /messages.",
+      "openaiBaseUrlHint": "Dùng base URL (kết thúc /v1) cho OpenAI-compatible API."
+    }
+  },
+  "cliTools": {
+    "common": {
+      "comingSoon": "Sắp có...",
+      "noApiKeysCloud": "Chưa có API key - Tạo trong trang Keys",
+      "apiKeyDefault": "sk_9router",
+      "apiKeyDefaultFull": "sk_9router (mặc định)",
+      "noActiveProviders": "Chưa có provider hoạt động",
+      "noActiveProvidersDesc": "Hãy thêm và kết nối providers trước khi cấu hình CLI tools."
+    },
+    "actions": {
+      "selectModel": "Chọn model",
+      "apply": "Áp dụng",
+      "reset": "Reset",
+      "manualConfig": "Cấu hình thủ công",
+      "howToInstall": "Cách cài",
+      "hide": "Ẩn"
+    },
+    "fields": {
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://...",
+      "apiKey": "API Key",
+      "model": "Model",
+      "modelPlaceholder": "provider/model-id"
+    },
+    "tools": {
+      "claude": {
+        "name": "Claude Code",
+        "description": "Anthropic Claude Code CLI",
+        "models": {
+          "opus": "Claude Opus",
+          "sonnet": "Claude Sonnet",
+          "haiku": "Claude Haiku"
+        }
+      },
+      "codex": {
+        "name": "OpenAI Codex CLI",
+        "description": "OpenAI Codex CLI"
+      },
+      "cursor": {
+        "name": "Cursor",
+        "description": "Cursor AI Code Editor",
+        "notes": {
+          "requiresPro": "Cần tài khoản Cursor Pro để dùng tính năng này.",
+          "cloudOnly": "Cursor đi qua server riêng nên local endpoint không hỗ trợ. Vui lòng bật Cloud Endpoint trong Settings."
+        },
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào Settings → Models"
+          },
+          "enableOpenAI": {
+            "title": "Bật OpenAI API",
+            "desc": "Bật tùy chọn \"OpenAI API key\""
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "addCustomModel": {
+            "title": "Thêm Custom Model",
+            "desc": "Chọn \"View All Model\" → \"Add Custom Model\""
+          },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "cline": {
+        "name": "Cline",
+        "description": "CLINE AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào panel CLINE Settings"
+          },
+          "selectProvider": {
+            "title": "Chọn Provider",
+            "desc": "Chọn API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "roo": {
+        "name": "Roo",
+        "description": "Roo AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào panel Roo Settings"
+          },
+          "selectProvider": {
+            "title": "Chọn Provider",
+            "desc": "Chọn API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "continue": {
+        "name": "Continue",
+        "description": "Continue AI Assistant",
+        "steps": {
+          "openConfig": {
+            "title": "Mở Config",
+            "desc": "Mở file cấu hình Continue"
+          },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" },
+          "addModelConfig": {
+            "title": "Thêm cấu hình model",
+            "desc": "Thêm cấu hình sau vào mảng models của bạn:"
+          }
+        }
+      }
+    },
+    "claude": {
+      "status": {
+        "checking": "Đang kiểm tra Claude CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Claude CLI",
+        "subtitle": "Vui lòng cài Claude CLI để dùng tính năng này.",
+        "guideTitle": "Hướng dẫn cài đặt",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "Sau khi cài, chạy claude để kiểm tra."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Reset cấu hình thành công!",
+        "resetFailed": "Reset cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho {alias}",
+      "manualConfigTitle": "Claude CLI - Cấu hình thủ công"
+    },
+    "codex": {
+      "status": {
+        "checking": "Đang kiểm tra Codex CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Codex CLI",
+        "subtitle": "Vui lòng cài Codex CLI để dùng auto-apply.",
+        "guideTitle": "Hướng dẫn cài đặt",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "Sau khi cài, chạy codex để kiểm tra.",
+        "details": "Codex dùng ~/.codex/auth.json với OPENAI_API_KEY. Bấm Apply để tự cấu hình."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Reset cấu hình thành công!",
+        "resetFailed": "Reset cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Codex",
+      "manualConfigTitle": "Codex CLI - Cấu hình thủ công",
+      "manualConfigHeader": "Cấu hình 9Router cho Codex CLI"
     }
   },
   "login": {

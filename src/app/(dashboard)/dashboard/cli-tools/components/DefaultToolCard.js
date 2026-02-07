@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false }) {
+  const t = useTranslations();
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
@@ -28,7 +30,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return text
       .replace(/\{\{baseUrl\}\}/g, baseUrlWithV1)
       .replace(/\{\{apiKey\}\}/g, keyToUse)
-      .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
+      .replace(/\{\{model\}\}/g, modelValue || t("cliTools.fields.modelPlaceholder"));
   };
 
   const handleCopy = async (text, field) => {
@@ -68,7 +70,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           </>
         ) : (
           <span className="text-sm text-text-muted">
-            {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router"}
+            {cloudEnabled ? t("cliTools.common.noApiKeysCloud") : t("cliTools.common.apiKeyDefault")}
           </span>
         )}
       </div>
@@ -82,7 +84,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           type="text"
           value={modelValue}
           onChange={(e) => setModelValue(e.target.value)}
-          placeholder="provider/model-id"
+          placeholder={t("cliTools.fields.modelPlaceholder")}
           className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
         />
         <button
@@ -94,7 +96,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               : "opacity-50 cursor-not-allowed border-border"
           }`}
         >
-          Select Model
+          {t("cliTools.actions.selectModel")}
         </button>
         {modelValue && (
           <>
@@ -109,7 +111,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             <button
               onClick={() => setModelValue("")}
               className="p-2 text-text-muted hover:text-red-500 rounded transition-colors"
-              title="Clear"
+              title={t("common.clear")}
             >
               <span className="material-symbols-outlined text-lg">close</span>
             </button>
@@ -125,6 +127,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return (
       <div className="flex flex-col gap-2 mb-4">
         {tool.notes.map((note, index) => {
+          const noteText = note.textKey ? t(note.textKey) : note.text;
           // Skip cloudCheck note if cloud is enabled
           if (note.type === "cloudCheck" && cloudEnabled) return null;
           
@@ -151,7 +154,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           return (
             <div key={index} className={`flex items-start gap-3 p-3 rounded-lg border ${bgClass}`}>
               <span className={`material-symbols-outlined text-lg ${iconClass}`}>{icon}</span>
-              <p className={`text-sm ${textClass}`}>{note.text}</p>
+              <p className={`text-sm ${textClass}`}>{noteText}</p>
             </div>
           );
         })}
@@ -165,7 +168,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const renderGuideSteps = () => {
-    if (!tool.guideSteps) return <p className="text-text-muted text-sm">Coming soon...</p>;
+    if (!tool.guideSteps) return <p className="text-text-muted text-sm">{t("cliTools.common.comingSoon")}</p>;
 
     return (
       <div className="flex flex-col gap-4">
@@ -179,8 +182,9 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
               {item.step}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-text">{item.title}</p>
-              {item.desc && <p className="text-sm text-text-muted mt-0.5">{item.desc}</p>}
+              <p className="font-medium text-text">{item.titleKey ? t(item.titleKey) : item.title}</p>
+              {item.descKey && <p className="text-sm text-text-muted mt-0.5">{t(item.descKey)}</p>}
+              {!item.descKey && item.desc && <p className="text-sm text-text-muted mt-0.5">{item.desc}</p>}
               {item.type === "apiKeySelector" && renderApiKeySelector()}
               {item.type === "modelSelector" && renderModelSelector()}
               {item.value && (
@@ -215,7 +219,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
                 <span className="material-symbols-outlined text-sm">
                   {copiedField === "codeblock" ? "check" : "content_copy"}
                 </span>
-                {copiedField === "codeblock" ? "Copied!" : "Copy"}
+                {copiedField === "codeblock" ? t("common.copied") : t("common.copy")}
               </button>
             </div>
             <pre className="p-4 bg-bg-secondary rounded-lg border border-border overflow-x-auto">
@@ -284,7 +288,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
         onSelect={handleSelectModel}
         selectedModel={modelValue}
         activeProviders={activeProviders}
-        title="Select Model"
+        title={t("cliTools.actions.selectModel")}
       />
     </Card>
   );

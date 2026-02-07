@@ -12,6 +12,7 @@
     "allowAll": "Allow all",
     "selectAll": "Select all",
     "clear": "Clear",
+    "add": "Add",
     "confirm": "Confirm",
     "warning": "Warning",
     "copy": "Copy",
@@ -243,6 +244,271 @@
       "anthropicPrefixPlaceholder": "ac-prod",
       "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
       "anthropicBaseUrlHint": "Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
+    },
+    "messages": {
+      "setAliasFailed": "Failed to set alias",
+      "deleteConnectionConfirm": "Delete this connection?",
+      "noModelsConfigured": "No models configured",
+      "notFound": "Provider not found",
+      "backToProviders": "Back to Providers",
+      "connectionCount": "{count} connection(s)",
+      "apiTypeMessages": "Messages API",
+      "apiTypeResponses": "Responses API",
+      "apiTypeChatCompletions": "Chat Completions",
+      "deleteCompatibleConfirm": "Delete this {type} node?",
+      "oneConnectionLimit": "Only one connection is allowed per compatible node. Add another node if you need more connections.",
+      "connectionsTitle": "Connections",
+      "import": "Import",
+      "emptyConnectionsTitle": "No connections yet",
+      "emptyConnectionsSubtitle": "Add your first connection to get started",
+      "importJson": "Import JSON",
+      "addConnection": "Add Connection",
+      "modelAliases": "Model Aliases",
+      "availableModels": "Available Models",
+      "copyModel": "Copy model",
+      "aliasExists": "Alias \"{alias}\" already exists. Please use a different model or edit existing alias.",
+      "passthroughHint": "OpenRouter supports any model. Add models and create aliases for quick access.",
+      "modelIdFromOpenRouter": "Model ID (from OpenRouter)",
+      "modelIdPlaceholder": "anthropic/claude-3-opus",
+      "adding": "Adding...",
+      "removeModel": "Remove model",
+      "aliasSuggestionsUsed": "All suggested aliases already exist. Please choose a different model or remove conflicting aliases.",
+      "importModelsFailed": "Failed to import models",
+      "noModelsReturned": "No models returned from /models.",
+      "noNewModels": "No new models were added.",
+      "addCompatibleModels": "Add {type}-compatible models manually or import them from the /models endpoint.",
+      "modelId": "Model ID",
+      "anthropicModelPlaceholder": "claude-3-opus-20240229",
+      "openaiModelPlaceholder": "gpt-4o",
+      "importing": "Importing...",
+      "importFromModels": "Import from /models",
+      "addConnectionToImport": "Add a connection to enable importing models.",
+      "oauthAccount": "OAuth Account",
+      "statusDisabled": "Disabled",
+      "statusUnknown": "Unknown",
+      "statusActive": "Active",
+      "statusSuccess": "Success",
+      "statusError": "Error",
+      "statusExpired": "Expired",
+      "statusUnavailable": "Unavailable",
+      "autoPriority": "Auto: {value}",
+      "disableConnection": "Disable connection",
+      "enableConnection": "Enable connection",
+      "name": "Name",
+      "namePlaceholder": "Production Key",
+      "apiKey": "API Key",
+      "check": "Check",
+      "checking": "Checking...",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "validateAnthropic": "Validation checks {name} by verifying the API key.",
+      "validateOpenAI": "Validation checks {name} via /models on your base URL.",
+      "priority": "Priority",
+      "invalidJson": "Invalid JSON. Please check formatting.",
+      "jsonFormatHint": "JSON must be an array or { connections: [...] }.",
+      "importRowInvalid": "Row {row}: Invalid object",
+      "importRowProvider": "Row {row}: provider must be {provider}",
+      "importRowMissing": "Row {row}: name and apiKey are required",
+      "importRowPriority": "Row {row}: priority must be a number",
+      "importRowGlobalPriority": "Row {row}: globalPriority must be a number",
+      "importRowMore": "{head} (+{count} more)",
+      "readFileFailed": "Failed to read file.",
+      "importFailed": "Failed to import",
+      "importTitle": "Import {name} API Keys",
+      "importDesc": "Upload a JSON file with an array of API keys. Each item should include name and apiKey.",
+      "example": "Example",
+      "jsonFile": "JSON File",
+      "parseLocalOnly": "We parse this file locally and never store it.",
+      "pasteJson": "Paste JSON (optional)",
+      "pasteJsonPlaceholder": "Paste JSON here",
+      "preview": "Preview ({count})",
+      "moreItems": "+{count} more",
+      "importResult": "Import Result",
+      "importResultSummary": "Imported {success} of {total}",
+      "editConnection": "Edit Connection",
+      "accountNamePlaceholder": "Account name",
+      "email": "Email",
+      "newApiKeyPlaceholder": "Enter new API key",
+      "keepApiKeyHint": "Leave blank to keep the current API key.",
+      "testing": "Testing...",
+      "testConnection": "Test Connection",
+      "failed": "Failed",
+      "editCompatibleTitle": "Edit {type}",
+      "requiredLabel": "Required. A friendly label for this node.",
+      "prefix": "Prefix",
+      "prefixHint": "Required. Used as the provider prefix for model IDs.",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "apiKeyCheck": "API Key (for Check)",
+      "saving": "Saving...",
+      "cooldownSeconds": "{count}s",
+      "cooldownMinutes": "{minutes}m {seconds}s",
+      "cooldownHours": "{hours}h {minutes}m",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "anthropicBaseUrlHint": "Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages.",
+      "openaiBaseUrlHint": "Use the base URL (ending in /v1) for your OpenAI-compatible API."
+    }
+  },
+  "cliTools": {
+    "common": {
+      "comingSoon": "Coming soon...",
+      "noApiKeysCloud": "No API keys - Create one in Keys page",
+      "apiKeyDefault": "sk_9router",
+      "apiKeyDefaultFull": "sk_9router (default)",
+      "noActiveProviders": "No active providers",
+      "noActiveProvidersDesc": "Please add and connect providers first to configure CLI tools."
+    },
+    "actions": {
+      "selectModel": "Select Model",
+      "apply": "Apply",
+      "reset": "Reset",
+      "manualConfig": "Manual Config",
+      "howToInstall": "How to Install",
+      "hide": "Hide"
+    },
+    "fields": {
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://...",
+      "apiKey": "API Key",
+      "model": "Model",
+      "modelPlaceholder": "provider/model-id"
+    },
+    "tools": {
+      "claude": {
+        "name": "Claude Code",
+        "description": "Anthropic Claude Code CLI",
+        "models": {
+          "opus": "Claude Opus",
+          "sonnet": "Claude Sonnet",
+          "haiku": "Claude Haiku"
+        }
+      },
+      "codex": {
+        "name": "OpenAI Codex CLI",
+        "description": "OpenAI Codex CLI"
+      },
+      "cursor": {
+        "name": "Cursor",
+        "description": "Cursor AI Code Editor",
+        "notes": {
+          "requiresPro": "Requires Cursor Pro account to use this feature.",
+          "cloudOnly": "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Cloud Endpoint in Settings."
+        },
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to Settings → Models"
+          },
+          "enableOpenAI": {
+            "title": "Enable OpenAI API",
+            "desc": "Enable \"OpenAI API key\" option"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "addCustomModel": {
+            "title": "Add Custom Model",
+            "desc": "Click \"View All Model\" → \"Add Custom Model\""
+          },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "cline": {
+        "name": "Cline",
+        "description": "CLINE AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to CLINE Settings panel"
+          },
+          "selectProvider": {
+            "title": "Select Provider",
+            "desc": "Choose API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "roo": {
+        "name": "Roo",
+        "description": "Roo AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to Roo Settings panel"
+          },
+          "selectProvider": {
+            "title": "Select Provider",
+            "desc": "Choose API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "continue": {
+        "name": "Continue",
+        "description": "Continue AI Assistant",
+        "steps": {
+          "openConfig": {
+            "title": "Open Config",
+            "desc": "Open Continue configuration file"
+          },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" },
+          "addModelConfig": {
+            "title": "Add Model Config",
+            "desc": "Add the following configuration to your models array:"
+          }
+        }
+      }
+    },
+    "claude": {
+      "status": {
+        "checking": "Checking Claude CLI..."
+      },
+      "install": {
+        "title": "Claude CLI not installed",
+        "subtitle": "Please install Claude CLI to use this feature.",
+        "guideTitle": "Installation Guide",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "After installation, run claude to verify."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select model for {alias}",
+      "manualConfigTitle": "Claude CLI - Manual Configuration"
+    },
+    "codex": {
+      "status": {
+        "checking": "Checking Codex CLI..."
+      },
+      "install": {
+        "title": "Codex CLI not installed",
+        "subtitle": "Please install Codex CLI to use auto-apply feature.",
+        "guideTitle": "Installation Guide",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "After installation, run codex to verify.",
+        "details": "Codex uses ~/.codex/auth.json with OPENAI_API_KEY. Click Apply to auto-configure."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Codex",
+      "manualConfigTitle": "Codex CLI - Manual Configuration",
+      "manualConfigHeader": "9Router Configuration for Codex CLI"
     }
   }
   ,

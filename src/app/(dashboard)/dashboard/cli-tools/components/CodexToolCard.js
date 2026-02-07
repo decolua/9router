@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled }) {
+  const t = useTranslations();
   const [codexStatus, setCodexStatus] = useState(null);
   const [checkingCodex, setCheckingCodex] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -95,13 +97,13 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings applied successfully!" });
+        setMessage({ type: "success", text: t("cliTools.codex.messages.applySuccess") });
         checkCodexStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+        setMessage({ type: "error", text: data.error || t("cliTools.codex.messages.applyFailed") });
       }
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: error.message || t("cliTools.codex.messages.applyFailed") });
     } finally {
       setApplying(false);
     }
@@ -114,14 +116,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const res = await fetch("/api/cli-tools/codex-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings reset successfully!" });
+        setMessage({ type: "success", text: t("cliTools.codex.messages.resetSuccess") });
         setSelectedModel("");
         checkCodexStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to reset settings" });
+        setMessage({ type: "error", text: data.error || t("cliTools.codex.messages.resetFailed") });
       }
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: error.message || t("cliTools.codex.messages.resetFailed") });
     } finally {
       setRestoring(false);
     }
@@ -137,19 +139,19 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       ? selectedApiKey 
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
     
-    const configContent = `# 9Router Configuration for Codex CLI
-model = "${selectedModel}"
-model_provider = "9router"
-
-[model_providers.9router]
-name = "9Router"
-base_url = "${getEffectiveBaseUrl()}"
-wire_api = "responses"
-`;
+    const configContent = `# ${t("cliTools.codex.manualConfigHeader")}
+ model = "${selectedModel}"
+ model_provider = "9router"
+ 
+ [model_providers.9router]
+ name = "9Router"
+ base_url = "${getEffectiveBaseUrl()}"
+ wire_api = "responses"
+ `;
 
     const authContent = JSON.stringify({
-      OPENAI_API_KEY: keyToUse
-    }, null, 2);
+       OPENAI_API_KEY: keyToUse
+     }, null, 2);
 
     return [
       {
@@ -188,7 +190,7 @@ wire_api = "responses"
           {checkingCodex && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking Codex CLI...</span>
+              <span>{t("cliTools.codex.status.checking")}</span>
             </div>
           )}
 
@@ -197,27 +199,26 @@ wire_api = "responses"
               <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-yellow-500">warning</span>
                 <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">Codex CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install Codex CLI to use auto-apply feature.</p>
+                  <p className="font-medium text-yellow-600 dark:text-yellow-400">{t("cliTools.codex.install.title")}</p>
+                  <p className="text-sm text-text-muted">{t("cliTools.codex.install.subtitle")}</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
                   <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
-                  {showInstallGuide ? "Hide" : "How to Install"}
+                  {showInstallGuide ? t("cliTools.actions.hide") : t("cliTools.actions.howToInstall")}
                 </Button>
               </div>
               {showInstallGuide && (
                 <div className="p-4 bg-surface border border-border rounded-lg">
-                  <h4 className="font-medium mb-3">Installation Guide</h4>
+                  <h4 className="font-medium mb-3">{t("cliTools.codex.install.guideTitle")}</h4>
                   <div className="space-y-3 text-sm">
                     <div>
-                      <p className="text-text-muted mb-1">macOS / Linux / Windows:</p>
+                      <p className="text-text-muted mb-1">{t("cliTools.codex.install.platforms")}</p>
                       <code className="block px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs">npm install -g @openai/codex</code>
                     </div>
-                    <p className="text-text-muted">After installation, run <code className="px-1 bg-black/5 dark:bg-white/5 rounded">codex</code> to verify.</p>
+                    <p className="text-text-muted">{t("cliTools.codex.install.verify")}</p>
                     <div className="pt-2 border-t border-border">
                       <p className="text-text-muted text-xs">
-                        Codex uses <code className="px-1 bg-black/5 dark:bg-white/5 rounded">~/.codex/auth.json</code> with <code className="px-1 bg-black/5 dark:bg-white/5 rounded">OPENAI_API_KEY</code>. 
-                        Click &quot;Apply&quot; to auto-configure.
+                        {t("cliTools.codex.install.details")}
                       </p>
                     </div>
                   </div>
@@ -246,13 +247,13 @@ wire_api = "responses"
 
                 {/* Base URL */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Base URL</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.baseUrl")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <input 
                     type="text" 
                     value={getDisplayUrl()} 
                     onChange={(e) => setCustomBaseUrl(e.target.value)} 
-                    placeholder="https://.../v1" 
+                    placeholder={t("cliTools.fields.baseUrlPlaceholder")} 
                     className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
                   />
                   {customBaseUrl && customBaseUrl !== `${baseUrl}/v1` && (
@@ -264,7 +265,7 @@ wire_api = "responses"
 
                 {/* API Key */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.apiKey")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   {apiKeys.length > 0 ? (
                     <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
@@ -272,18 +273,18 @@ wire_api = "responses"
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? t("cliTools.common.noApiKeysCloud") : t("cliTools.common.apiKeyDefaultFull")}
                     </span>
                   )}
                 </div>
 
                 {/* Model */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.model")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
-                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder={t("cliTools.fields.modelPlaceholder")} className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                  <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>{t("cliTools.actions.selectModel")}</button>
+                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title={t("common.clear")}><span className="material-symbols-outlined text-[14px]">close</span></button>}
                 </div>
               </div>
 
@@ -296,13 +297,13 @@ wire_api = "responses"
 
               <div className="flex items-center gap-2">
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedApiKey || !selectedModel} loading={applying}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
+                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>{t("cliTools.actions.apply")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.has9Router} loading={restoring}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
+                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>{t("cliTools.actions.reset")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
+                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>{t("cliTools.actions.manualConfig")}
                 </Button>
               </div>
             </>
@@ -317,13 +318,13 @@ wire_api = "responses"
         selectedModel={selectedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for Codex"
+        title={t("cliTools.codex.selectModelTitle")}
       />
 
       <ManualConfigModal
         isOpen={showManualConfigModal}
         onClose={() => setShowManualConfigModal(false)}
-        title="Codex CLI - Manual Configuration"
+        title={t("cliTools.codex.manualConfigTitle")}
         configs={getManualConfigs()}
       />
     </Card>

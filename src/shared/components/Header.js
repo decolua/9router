@@ -59,12 +59,15 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
   const handleLocaleChange = (event) => {
     const nextLocale = event.target.value;
-    document.cookie = `NEXT_LOCALE=${nextLocale}; path=/; max-age=31536000`;
-    router.refresh();
+    if (nextLocale === locale) return;
+    const nextPathname = pathname.replace(/^\/(vi|en)(?=\/|$)/, "") || "/";
+    const search = window.location.search || "";
+    const redirect = encodeURIComponent(`${nextPathname}${search}`);
+    window.location.assign(`/api/locale?locale=${nextLocale}&redirect=${redirect}`);
   };
 
   return (
-    <header className="flex items-center justify-between px-8 py-5 border-b border-black/5 dark:border-white/5 bg-bg/80 backdrop-blur-xl z-10 sticky top-0">
+    <header className="flex items-center justify-between px-8 py-5 border-b border-black/5 dark:border-white/5 bg-bg/80 backdrop-blur-xl z-40 sticky top-0">
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden">
         {showMenuButton && (
