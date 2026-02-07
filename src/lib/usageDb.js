@@ -157,7 +157,12 @@ export async function saveRequestUsage(entry) {
       db.data.history = [];
     }
 
-    db.data.history.push(entry);
+    const cleanedEntry = { ...entry };
+    if (cleanedEntry.apiKeyId === undefined) {
+      delete cleanedEntry.apiKeyId;
+    }
+
+    db.data.history.push(cleanedEntry);
 
     // Optional: Limit history size if needed in future
     // if (db.data.history.length > 10000) db.data.history.shift();
@@ -193,6 +198,10 @@ export async function getUsageHistory(filter = {}) {
   if (filter.endDate) {
     const end = new Date(filter.endDate).getTime();
     history = history.filter(h => new Date(h.timestamp).getTime() <= end);
+  }
+
+  if (filter.apiKeyId) {
+    history = history.filter(h => h.apiKeyId === filter.apiKeyId);
   }
 
   return history;
@@ -345,12 +354,30 @@ async function calculateCost(provider, model, tokens) {
 /**
  * Get aggregated usage stats
  */
-export async function getUsageStats() {
+export async function getUsageStats(filter = {}) {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
+
+  if (filter.apiKeyId) {
+    history = history.filter((entry) => entry.apiKeyId === filter.apiKeyId);
+  }
+
+  if (filter.startDate) {
+    const startMs = new Date(filter.startDate).getTime();
+    if (Number.isFinite(startMs)) {
+      history = history.filter((entry) => new Date(entry.timestamp).getTime() >= startMs);
+    }
+  }
+
+  if (filter.endDate) {
+    const endMs = new Date(filter.endDate).getTime();
+    if (Number.isFinite(endMs)) {
+      history = history.filter((entry) => new Date(entry.timestamp).getTime() <= endMs);
+    }
+  }
 
   // Import localDb to get provider connection names
-  const { getProviderConnections } = await import("@/lib/localDb.js");
+  const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
 
   // Fetch all provider connections to get account names
   let allConnections = [];
@@ -367,6 +394,26 @@ export async function getUsageStats() {
     connectionMap[conn.id] = conn.name || conn.email || conn.id;
   }
 
+  let allApiKeys = [];
+  try {
+    allApiKeys = await getApiKeys();
+  } catch (error) {
+    console.warn("Could not fetch API keys for usage stats:", error.message);
+  }
+
+  const apiKeyMap = {};
+  for (const key of allApiKeys) {
+    apiKeyMap[key.id] = {
+      name: key.name || key.id,
+      requestLimit: key.requestLimit || 0,
+      tokenLimit: key.tokenLimit || 0,
+      requestUsed: key.requestUsed || 0,
+      tokenUsed: key.tokenUsed || 0,
+      requestRemaining: key.requestRemaining ?? null,
+      tokenRemaining: key.tokenRemaining ?? null,
+    };
+  }
+
   const stats = {
     totalRequests: history.length,
     totalPromptTokens: 0,
@@ -375,6 +422,8 @@ export async function getUsageStats() {
     byProvider: {},
     byModel: {},
     byAccount: {},
+    byApiKey: {},
+    byApiKeyByModel: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: []
@@ -478,6 +527,55 @@ export async function getUsageStats() {
     stats.byModel[modelKey].cost += entryCost;
     if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) {
       stats.byModel[modelKey].lastUsed = entry.timestamp;
+    }
+
+    if (entry.apiKeyId) {
+      const apiKeyId = entry.apiKeyId;
+      if (!stats.byApiKey[apiKeyId]) {
+        const meta = apiKeyMap[apiKeyId] || {};
+        stats.byApiKey[apiKeyId] = {
+          apiKeyId,
+          name: meta.name || apiKeyId,
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          lastUsed: entry.timestamp,
+          requestLimit: meta.requestLimit || 0,
+          tokenLimit: meta.tokenLimit || 0,
+          requestRemaining: meta.requestRemaining ?? null,
+          tokenRemaining: meta.tokenRemaining ?? null,
+        };
+      }
+
+      stats.byApiKey[apiKeyId].requests++;
+      stats.byApiKey[apiKeyId].promptTokens += promptTokens;
+      stats.byApiKey[apiKeyId].completionTokens += completionTokens;
+      stats.byApiKey[apiKeyId].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyId].lastUsed)) {
+        stats.byApiKey[apiKeyId].lastUsed = entry.timestamp;
+      }
+
+      const modelMap = stats.byApiKeyByModel[apiKeyId] || {};
+      if (!modelMap[modelKey]) {
+        modelMap[modelKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          lastUsed: entry.timestamp,
+        };
+      }
+      modelMap[modelKey].requests++;
+      modelMap[modelKey].promptTokens += promptTokens;
+      modelMap[modelKey].completionTokens += completionTokens;
+      modelMap[modelKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(modelMap[modelKey].lastUsed)) {
+        modelMap[modelKey].lastUsed = entry.timestamp;
+      }
+      stats.byApiKeyByModel[apiKeyId] = modelMap;
     }
 
     // By Account (model + oauth account)

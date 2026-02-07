@@ -11,6 +11,7 @@ import { createErrorResult, parseUpstreamError, formatProviderError } from "../u
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { recordApiKeyTokenUsage } from "@/shared/services/apiKeyQuota.js";
 import { getExecutor } from "../executors/index.js";
 
 /**
@@ -238,7 +239,7 @@ function extractUsageFromResponse(responseBody, provider) {
  * @param {function} options.onDisconnect - Callback when client disconnects
  * @param {string} options.connectionId - Connection ID for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKeyId = null }) {
   const { provider, model } = modelInfo;
 
   const sourceFormat = detectFormat(body);
@@ -425,9 +426,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
-        connectionId: connectionId || undefined
+        connectionId: connectionId || undefined,
+        apiKeyId: apiKeyId || undefined
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
+      });
+
+      recordApiKeyTokenUsage(apiKeyId, usage).catch(err => {
+        console.error("Failed to update API key token usage:", err.message);
       });
     }
 
@@ -479,14 +485,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, apiKeyId);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     // Standard translation for other providers
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, apiKeyId);
   } else {
     log?.debug?.("STREAM", `Standard passthrough mode`);
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, apiKeyId);
   }
 
   // Pipe response through transform with disconnect detection

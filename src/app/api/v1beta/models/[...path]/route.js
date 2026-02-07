@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 let initialized = false;
 
@@ -32,10 +33,40 @@ export async function OPTIONS() {
  * Converts Gemini format to internal format and handles via handleChat
  */
 export async function POST(request, { params }) {
+  const requestForBody = request.clone();
+  let modelForQuota = null;
+  let resolvedPath = [];
+  try {
+    const resolved = await params;
+    const routePath = resolved?.path || [];
+    resolvedPath = routePath;
+
+    if (routePath.length >= 2) {
+      const provider = routePath[0];
+      const modelAction = routePath[1];
+      const modelName = modelAction.replace(":generateContent", "").replace(":streamGenerateContent", "");
+      modelForQuota = `${provider}/${modelName}`;
+    } else if (routePath.length === 1) {
+      const modelAction = routePath[0];
+      modelForQuota = modelAction.replace(":generateContent", "").replace(":streamGenerateContent", "");
+    }
+  } catch {}
+
+  const quota = await enforceApiKeyQuota(request, { model: modelForQuota });
+  if (!quota.ok) {
+    return quota.response;
+  }
+
   await ensureInitialized();
 
   try {
-    const { path } = await params;
+    const path = resolvedPath;
+    if (!path || path.length === 0) {
+      return Response.json(
+        { error: { message: "Invalid model path", code: 400 } },
+        { status: 400 },
+      );
+    }
     // path = ["provider", "model:generateContent"] or ["model:generateContent"]
     
     let model;
@@ -51,7 +82,7 @@ export async function POST(request, { params }) {
       model = modelAction.replace(":generateContent", "").replace(":streamGenerateContent", "");
     }
 
-    const body = await request.json();
+    const body = await requestForBody.json();
     
     // Convert Gemini format to OpenAI/internal format
     const convertedBody = convertGeminiToInternal(body, model);
@@ -63,7 +94,7 @@ export async function POST(request, { params }) {
       body: JSON.stringify(convertedBody),
     });
 
-    return await handleChat(newRequest);
+    return await handleChat(newRequest, null, { apiKeyId: quota.apiKeyId });
   } catch (error) {
     console.log("Error handling Gemini request:", error);
     return Response.json(

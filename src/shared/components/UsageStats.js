@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import PropTypes from "prop-types";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
 import Card from "./Card";
 import Badge from "./Badge";
 import { CardSkeleton } from "./Loading";
@@ -42,9 +43,13 @@ MiniBarGraph.propTypes = {
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const locale = useLocale();
+  const t = useTranslations();
 
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
+  const apiKeyId = searchParams.get("apiKeyId") || "all";
+  const rangeDays = Number(searchParams.get("rangeDays") || 7);
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -105,9 +110,12 @@ export default function UsageStats() {
       });
   }, [sortBy, sortOrder]);
 
+  const selectedModelStats = apiKeyId !== "all"
+    ? stats?.byApiKeyByModel?.[apiKeyId]
+    : stats?.byModel;
   const sortedModels = useMemo(
-    () => sortData(stats?.byModel, stats?.pending?.byModel),
-    [stats?.byModel, stats?.pending?.byModel, sortData]
+    () => sortData(selectedModelStats, stats?.pending?.byModel),
+    [selectedModelStats, stats?.pending?.byModel, sortData]
   );
   const sortedAccounts = useMemo(() => {
     // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
@@ -131,7 +139,16 @@ export default function UsageStats() {
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/usage/history");
+      const params = new URLSearchParams();
+      if (apiKeyId && apiKeyId !== "all") {
+        params.set("apiKeyId", apiKeyId);
+      }
+      if (Number.isFinite(rangeDays) && rangeDays > 0) {
+        const startDate = new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000).toISOString();
+        params.set("startDate", startDate);
+      }
+      const url = params.toString() ? `/api/usage/history?${params.toString()}` : "/api/usage/history";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -152,7 +169,7 @@ export default function UsageStats() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [prevTotalRequests]);
+  }, [apiKeyId, rangeDays, prevTotalRequests]);
 
   useEffect(() => {
     fetchStats();
@@ -193,35 +210,85 @@ export default function UsageStats() {
 
   if (!stats)
     return (
-      <div className="text-text-muted">Failed to load usage statistics.</div>
+      <div className="text-text-muted">{t("usage.failed")}</div>
     );
 
+  const apiKeyOptions = [{ id: "all", name: t("usage.allApiKeys") }].concat(
+    Object.values(stats.byApiKey || {}).map((entry) => ({
+      id: entry.apiKeyId,
+      name: entry.name || entry.apiKeyId,
+    }))
+  );
+
   // Format number with commas
-  const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+  const fmt = (n) => new Intl.NumberFormat(locale).format(n || 0);
 
   // Format cost with dollar sign and 2 decimals
-  const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+  const fmtCost = (n) => new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n || 0);
 
   // Time format for "Last Used"
   const fmtTime = (iso) => {
-    if (!iso) return "Never";
+    if (!iso) return t("usage.never");
     const date = new Date(iso);
     const now = new Date();
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-    return date.toLocaleDateString();
+    if (diffMins < 1) return t("usage.justNow");
+    if (diffMins < 60) return t("usage.minutesAgo", { count: diffMins });
+    if (diffMins < 1440) return t("usage.hoursAgo", { count: Math.floor(diffMins / 60) });
+    return date.toLocaleDateString(locale);
   };
 
   return (
     <div className="flex flex-col gap-6">
       {/* Header with Auto Refresh Toggle and View Toggle */}
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Usage Overview</h2>
-        <div className="flex items-center gap-2">
+        <h2 className="text-xl font-semibold">{t("usage.overviewTitle")}</h2>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <select
+            className="px-3 py-2 rounded-lg border border-border bg-bg text-sm"
+            value={apiKeyId}
+            onChange={(e) => {
+              const params = new URLSearchParams(searchParams.toString());
+              if (e.target.value === "all") {
+                params.delete("apiKeyId");
+              } else {
+                params.set("apiKeyId", e.target.value);
+              }
+              router.replace(`?${params.toString()}`, { scroll: false });
+            }}
+          >
+            {apiKeyOptions.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+            {[7, 30].map((days) => (
+              <button
+                key={days}
+                onClick={() => {
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.set("rangeDays", String(days));
+                  router.replace(`?${params.toString()}`, { scroll: false });
+                }}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  rangeDays === days
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                {t("usage.days", { count: days })}
+              </button>
+            ))}
+          </div>
           {/* View Toggle */}
           <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
             <button
@@ -232,7 +299,7 @@ export default function UsageStats() {
                   : "text-text-muted hover:text-text hover:bg-bg-hover"
               }`}
             >
-              Tokens
+              {t("usage.tokens")}
             </button>
             <button
               onClick={() => setViewMode("costs")}
@@ -242,19 +309,19 @@ export default function UsageStats() {
                   : "text-text-muted hover:text-text hover:bg-bg-hover"
               }`}
             >
-              Costs
+              {t("usage.costs")}
             </button>
           </div>
 
           {/* Auto Refresh Toggle */}
           <div className="text-sm font-medium text-text-muted flex items-center gap-2">
-            <span>Auto Refresh ({refreshInterval / 1000}s)</span>
+            <span>{t("usage.autoRefresh", { seconds: refreshInterval / 1000 })}</span>
             <button
               type="button"
               onClick={() => setAutoRefresh(!autoRefresh)}
               role="switch"
               aria-checked={autoRefresh}
-              aria-label="Toggle auto refresh"
+              aria-label={t("usage.toggleAutoRefresh")}
               className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
                 autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
               }`}
@@ -278,7 +345,7 @@ export default function UsageStats() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
               </span>
-              Active Requests
+              {t("usage.activeRequests")}
             </div>
             <div className="flex flex-wrap gap-3">
               {stats.activeRequests.map((req) => (
@@ -360,10 +427,39 @@ export default function UsageStats() {
         </Card>
       </div>
 
+      {apiKeyId !== "all" && stats.byApiKey && stats.byApiKey[apiKeyId] && (
+        <Card className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs uppercase text-text-muted">{t("usage.apiKey")}</div>
+              <div className="text-lg font-semibold">{stats.byApiKey[apiKeyId].name}</div>
+              <div className="text-xs text-text-muted">{apiKeyId}</div>
+            </div>
+            <div className="flex gap-6 text-sm">
+              <div>
+                <div className="text-xs text-text-muted">{t("usage.requests")}</div>
+                <div className="font-medium">
+                  {t("usage.remaining", { value: fmt(stats.byApiKey[apiKeyId].requestRemaining ?? 0) })}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">{t("usage.tokens")}</div>
+                <div className="font-medium">
+                  {t("usage.remaining", { value: fmt(stats.byApiKey[apiKeyId].tokenRemaining ?? 0) })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Usage by Model Table */}
       <Card className="overflow-hidden">
-        <div className="p-4 border-b border-border bg-bg-subtle/50">
-          <h3 className="font-semibold">Usage by Model</h3>
+        <div className="p-4 border-b border-border bg-bg-subtle/50 flex items-center justify-between">
+          <h3 className="font-semibold">{t("usage.byModel")}</h3>
+          {apiKeyId !== "all" && (
+            <span className="text-xs text-text-muted">{t("usage.filteredByApiKey")}</span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -373,7 +469,7 @@ export default function UsageStats() {
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("rawModel")}
                 >
-                  Model{" "}
+                  {t("usage.model")}{" "}
                   <SortIcon
                     field="rawModel"
                     currentSort={sortBy}
@@ -384,7 +480,7 @@ export default function UsageStats() {
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("provider")}
                 >
-                  Provider{" "}
+                  {t("usage.provider")}{" "}
                   <SortIcon
                     field="provider"
                     currentSort={sortBy}
@@ -395,7 +491,7 @@ export default function UsageStats() {
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("requests")}
                 >
-                  Requests{" "}
+                  {t("usage.requests")}{" "}
                   <SortIcon
                     field="requests"
                     currentSort={sortBy}
@@ -406,7 +502,7 @@ export default function UsageStats() {
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("lastUsed")}
                 >
-                  Last Used{" "}
+                  {t("usage.lastUsed")}{" "}
                   <SortIcon
                     field="lastUsed"
                     currentSort={sortBy}
@@ -419,7 +515,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("promptTokens")}
                     >
-                      Input Tokens{" "}
+                      {t("usage.inputTokens")}{" "}
                       <SortIcon
                         field="promptTokens"
                         currentSort={sortBy}
@@ -430,7 +526,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("completionTokens")}
                     >
-                      Output Tokens{" "}
+                      {t("usage.outputTokens")}{" "}
                       <SortIcon
                         field="completionTokens"
                         currentSort={sortBy}
@@ -441,7 +537,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("totalTokens")}
                     >
-                      Total Tokens{" "}
+                      {t("usage.totalTokens")}{" "}
                       <SortIcon
                         field="totalTokens"
                         currentSort={sortBy}
@@ -455,7 +551,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("promptTokens")}
                     >
-                      Input Cost{" "}
+                      {t("usage.inputCost")}{" "}
                       <SortIcon
                         field="promptTokens"
                         currentSort={sortBy}
@@ -466,7 +562,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("completionTokens")}
                     >
-                      Output Cost{" "}
+                      {t("usage.outputCost")}{" "}
                       <SortIcon
                         field="completionTokens"
                         currentSort={sortBy}
@@ -477,7 +573,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("cost")}
                     >
-                      Total Cost{" "}
+                      {t("usage.totalCost")}{" "}
                       <SortIcon
                         field="cost"
                         currentSort={sortBy}
@@ -543,7 +639,7 @@ export default function UsageStats() {
                     colSpan={8}
                     className="px-6 py-8 text-center text-text-muted"
                   >
-                    No usage recorded yet. Make some requests to see data here.
+                    {t("usage.noUsageYet")}
                   </td>
                 </tr>
               )}
@@ -555,7 +651,7 @@ export default function UsageStats() {
       {/* Usage by Account Table */}
       <Card className="overflow-hidden">
         <div className="p-4 border-b border-border bg-bg-subtle/50">
-          <h3 className="font-semibold">Usage by Account</h3>
+          <h3 className="font-semibold">{t("usage.byAccount")}</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -565,7 +661,7 @@ export default function UsageStats() {
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("rawModel")}
                 >
-                  Model{" "}
+                  {t("usage.model")}{" "}
                   <SortIcon
                     field="rawModel"
                     currentSort={sortBy}
@@ -576,7 +672,7 @@ export default function UsageStats() {
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("provider")}
                 >
-                  Provider{" "}
+                  {t("usage.provider")}{" "}
                   <SortIcon
                     field="provider"
                     currentSort={sortBy}
@@ -587,7 +683,7 @@ export default function UsageStats() {
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("accountName")}
                 >
-                  Account{" "}
+                  {t("usage.account")}{" "}
                   <SortIcon
                     field="accountName"
                     currentSort={sortBy}
@@ -598,7 +694,7 @@ export default function UsageStats() {
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("requests")}
                 >
-                  Requests{" "}
+                  {t("usage.requests")}{" "}
                   <SortIcon
                     field="requests"
                     currentSort={sortBy}
@@ -609,7 +705,7 @@ export default function UsageStats() {
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                   onClick={() => toggleSort("lastUsed")}
                 >
-                  Last Used{" "}
+                  {t("usage.lastUsed")}{" "}
                   <SortIcon
                     field="lastUsed"
                     currentSort={sortBy}
@@ -622,7 +718,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("promptTokens")}
                     >
-                      Input Tokens{" "}
+                      {t("usage.inputTokens")}{" "}
                       <SortIcon
                         field="promptTokens"
                         currentSort={sortBy}
@@ -633,7 +729,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("completionTokens")}
                     >
-                      Output Tokens{" "}
+                      {t("usage.outputTokens")}{" "}
                       <SortIcon
                         field="completionTokens"
                         currentSort={sortBy}
@@ -644,7 +740,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("totalTokens")}
                     >
-                      Total Tokens{" "}
+                      {t("usage.totalTokens")}{" "}
                       <SortIcon
                         field="totalTokens"
                         currentSort={sortBy}
@@ -658,7 +754,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("promptTokens")}
                     >
-                      Input Cost{" "}
+                      {t("usage.inputCost")}{" "}
                       <SortIcon
                         field="promptTokens"
                         currentSort={sortBy}
@@ -669,7 +765,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("completionTokens")}
                     >
-                      Output Cost{" "}
+                      {t("usage.outputCost")}{" "}
                       <SortIcon
                         field="completionTokens"
                         currentSort={sortBy}
@@ -680,7 +776,7 @@ export default function UsageStats() {
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
                       onClick={() => toggleSort("cost")}
                     >
-                      Total Cost{" "}
+                      {t("usage.totalCost")}{" "}
                       <SortIcon
                         field="cost"
                         currentSort={sortBy}
@@ -756,8 +852,7 @@ export default function UsageStats() {
                     colSpan={9}
                     className="px-6 py-8 text-center text-text-muted"
                   >
-                    No account-specific usage recorded yet. Make requests using
-                    OAuth accounts to see data here.
+                    {t("usage.noAccountUsage")}
                   </td>
                 </tr>
               )}

@@ -24,7 +24,17 @@ export async function GET(request, { params }) {
 
     if (action === "authorize") {
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
+      const appOrigin = searchParams.get("app_origin");
       const authData = generateAuthData(provider, redirectUri);
+
+      if (provider === "codex" && appOrigin && authData?.authUrl) {
+        const encodedState = encodeState(authData.state, appOrigin);
+        const authUrl = new URL(authData.authUrl);
+        authUrl.searchParams.set("state", encodedState);
+        authData.state = encodedState;
+        authData.authUrl = authUrl.toString();
+      }
+
       return NextResponse.json(authData);
     }
 
@@ -57,6 +67,11 @@ export async function GET(request, { params }) {
     console.log("OAuth GET error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+function encodeState(state, appOrigin) {
+  const payload = { s: state, appOrigin };
+  return Buffer.from(JSON.stringify(payload)).toString("base64url");
 }
 
 // POST /api/oauth/[provider]/exchange - Exchange code for tokens and save

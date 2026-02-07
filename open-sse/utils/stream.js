@@ -39,7 +39,8 @@ export function createSSEStream(options = {}) {
     toolNameMap = null,
     model = null,
     connectionId = null,
-    body = null
+    body = null,
+    apiKeyId = null,
   } = options;
 
   let buffer = "";
@@ -92,7 +93,8 @@ export function createSSEStream(options = {}) {
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
+                const buffered = addBufferToUsage(estimated);
+                parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
@@ -188,7 +190,8 @@ export function createSSEStream(options = {}) {
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+              const buffered = addBufferToUsage(estimated);
+              item.usage = filterUsageForFormat(buffered, sourceFormat);
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
@@ -226,7 +229,7 @@ export function createSSEStream(options = {}) {
           }
 
           if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId);
+            logUsage(provider, usage, model, connectionId, apiKeyId);
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
@@ -287,7 +290,7 @@ export function createSSEStream(options = {}) {
         }
 
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId);
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKeyId);
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
@@ -299,7 +302,7 @@ export function createSSEStream(options = {}) {
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, apiKeyId = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -309,17 +312,19 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     toolNameMap,
     model,
     connectionId,
-    body
+    body,
+    apiKeyId,
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, apiKeyId = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
     model,
     connectionId,
-    body
+    body,
+    apiKeyId,
   });
 }

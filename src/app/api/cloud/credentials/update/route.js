@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, getProviderConnections, updateProviderConnection } from "@/models";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 // Update provider credentials (for cloud token refresh)
 export async function PUT(request) {
   try {
+    const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
+    if (!quota.ok) {
+      return quota.response;
+    }
+
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing API key" }, { status: 401 });

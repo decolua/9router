@@ -12,7 +12,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export async function handleChat(request, clientRawRequest = null, context = {}) {
   let body;
   try {
     body = await request.json();
@@ -62,19 +62,19 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, context),
       log
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, context);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, context = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -142,7 +142,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials);
-      }
+      },
+      apiKeyId: context.apiKeyId || null
     });
     
     if (result.success) return result.response;

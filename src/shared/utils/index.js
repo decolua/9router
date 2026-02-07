@@ -26,15 +26,21 @@ export function getErrorCode(lastError) {
  * @param {string} isoDate - ISO date string
  * @returns {string} Relative time
  */
-export function getRelativeTime(isoDate) {
+export function getRelativeTime(isoDate, options = {}) {
   if (!isoDate) return "";
+  const { locale = "en", messages } = options;
   const diff = Date.now() - new Date(isoDate).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return messages?.justNow || "just now";
+  if (mins < 60) {
+    return messages?.minutesAgo ? messages.minutesAgo(mins) : `${mins}m ago`;
+  }
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) {
+    return messages?.hoursAgo ? messages.hoursAgo(hours) : `${hours}h ago`;
+  }
   const days = Math.floor(hours / 24);
+  if (messages?.daysAgo) return messages.daysAgo(days);
   return `${days}d ago`;
 }
 
