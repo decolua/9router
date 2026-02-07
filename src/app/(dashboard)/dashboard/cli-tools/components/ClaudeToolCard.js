@@ -31,9 +31,10 @@ export default function ClaudeToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModels = useRef(false);
+  const cliReady = !!(claudeStatus?.installed && claudeStatus?.runnable);
 
   const getConfigStatus = () => {
-    if (!claudeStatus?.installed) return null;
+    if (!cliReady) return null;
     const currentUrl = claudeStatus.settings?.env?.ANTHROPIC_BASE_URL;
     if (!currentUrl) return "not_configured";
     const localMatch = currentUrl.includes("localhost") || currentUrl.includes("127.0.0.1");
@@ -227,13 +228,19 @@ export default function ClaudeToolCard({
             </div>
           )}
 
-          {!checkingClaude && claudeStatus && !claudeStatus.installed && (
+          {!checkingClaude && claudeStatus && !cliReady && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-yellow-500">warning</span>
                 <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">Claude CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install Claude CLI to use this feature.</p>
+                  <p className="font-medium text-yellow-600 dark:text-yellow-400">
+                    {claudeStatus.installed ? "Claude CLI not runnable" : "Claude CLI not installed"}
+                  </p>
+                  <p className="text-sm text-text-muted">
+                    {claudeStatus.installed
+                      ? `Claude CLI was found but failed runtime healthcheck${claudeStatus.reason ? ` (${claudeStatus.reason})` : ""}.`
+                      : "Please install Claude CLI to use this feature."}
+                  </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
                   <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
@@ -255,7 +262,7 @@ export default function ClaudeToolCard({
             </div>
           )}
 
-          {!checkingClaude && claudeStatus?.installed && (
+          {!checkingClaude && cliReady && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}
@@ -348,4 +355,3 @@ export default function ClaudeToolCard({
     </Card>
   );
 }
-

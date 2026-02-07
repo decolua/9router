@@ -28,9 +28,10 @@ export default function DroidToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+  const cliReady = !!(droidStatus?.installed && droidStatus?.runnable);
 
   const getConfigStatus = () => {
-    if (!droidStatus?.installed) return null;
+    if (!cliReady) return null;
     const currentConfig = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
     if (!currentConfig) return "not_configured";
     const localMatch = currentConfig.baseUrl?.includes("localhost") || currentConfig.baseUrl?.includes("127.0.0.1");
@@ -221,17 +222,23 @@ export default function DroidToolCard({
             </div>
           )}
 
-          {!checkingDroid && droidStatus && !droidStatus.installed && (
+          {!checkingDroid && droidStatus && !cliReady && (
             <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500">warning</span>
               <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Factory Droid CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Factory Droid CLI to use this feature.</p>
+                <p className="font-medium text-yellow-600 dark:text-yellow-400">
+                  {droidStatus.installed ? "Factory Droid CLI not runnable" : "Factory Droid CLI not installed"}
+                </p>
+                <p className="text-sm text-text-muted">
+                  {droidStatus.installed
+                    ? `Factory Droid CLI was found but failed runtime healthcheck${droidStatus.reason ? ` (${droidStatus.reason})` : ""}.`
+                    : "Please install Factory Droid CLI to use this feature."}
+                </p>
               </div>
             </div>
           )}
 
-          {!checkingDroid && droidStatus?.installed && (
+          {!checkingDroid && cliReady && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}

@@ -1,28 +1,16 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import {
+  ensureCliConfigWriteAllowed,
+  getCliPrimaryConfigPath,
+  getCliRuntimeStatus,
+} from "@/shared/services/cliRuntime";
 
-const execAsync = promisify(exec);
-
-const getDroidDir = () => path.join(os.homedir(), ".factory");
-const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
-
-// Check if droid CLI is installed
-const checkDroidInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "which droid";
-    await execAsync(command);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const getDroidSettingsPath = () => getCliPrimaryConfigPath("droid");
+const getDroidDir = () => path.dirname(getDroidSettingsPath());
 
 // Read current settings.json
 const readSettings = async () => {
@@ -45,20 +33,33 @@ const has9RouterConfig = (settings) => {
 // GET - Check droid CLI and read current settings
 export async function GET() {
   try {
-    const isInstalled = await checkDroidInstalled();
-    
-    if (!isInstalled) {
+    const runtime = await getCliRuntimeStatus("droid");
+
+    if (!runtime.installed || !runtime.runnable) {
       return NextResponse.json({
-        installed: false,
+        installed: runtime.installed,
+        runnable: runtime.runnable,
+        command: runtime.command,
+        commandPath: runtime.commandPath,
+        runtimeMode: runtime.runtimeMode,
+        reason: runtime.reason,
         settings: null,
-        message: "Factory Droid CLI is not installed",
+        message:
+          runtime.installed && !runtime.runnable
+            ? "Factory Droid CLI is installed but not runnable"
+            : "Factory Droid CLI is not installed",
       });
     }
 
     const settings = await readSettings();
 
     return NextResponse.json({
-      installed: true,
+      installed: runtime.installed,
+      runnable: runtime.runnable,
+      command: runtime.command,
+      commandPath: runtime.commandPath,
+      runtimeMode: runtime.runtimeMode,
+      reason: runtime.reason,
       settings,
       has9Router: has9RouterConfig(settings),
       settingsPath: getDroidSettingsPath(),
@@ -72,6 +73,11 @@ export async function GET() {
 // POST - Update 9Router customModels (merge with existing settings)
 export async function POST(request) {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const { baseUrl, apiKey, model } = await request.json();
     
     if (!baseUrl || !model) {
@@ -134,6 +140,11 @@ export async function POST(request) {
 // DELETE - Remove 9Router customModels only (keep other settings)
 export async function DELETE() {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const settingsPath = getDroidSettingsPath();
 
     // Read existing settings

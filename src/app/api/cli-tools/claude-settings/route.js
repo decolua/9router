@@ -1,32 +1,16 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  ensureCliConfigWriteAllowed,
+  getCliPrimaryConfigPath,
+  getCliRuntimeStatus,
+} from "@/shared/services/cliRuntime";
 
 // Get claude settings path based on OS
-const getClaudeSettingsPath = () => {
-  const homeDir = os.homedir();
-  return path.join(homeDir, ".claude", "settings.json");
-};
-
-
-// Check if claude CLI is installed
-const checkClaudeInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where claude" : "which claude";
-    await execAsync(command);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const getClaudeSettingsPath = () => getCliPrimaryConfigPath("claude");
 
 // Read current settings
 const readSettings = async () => {
@@ -45,13 +29,21 @@ const readSettings = async () => {
 // GET - Check claude CLI and read current settings
 export async function GET() {
   try {
-    const isInstalled = await checkClaudeInstalled();
-    
-    if (!isInstalled) {
+    const runtime = await getCliRuntimeStatus("claude");
+
+    if (!runtime.installed || !runtime.runnable) {
       return NextResponse.json({
-        installed: false,
+        installed: runtime.installed,
+        runnable: runtime.runnable,
+        command: runtime.command,
+        commandPath: runtime.commandPath,
+        runtimeMode: runtime.runtimeMode,
+        reason: runtime.reason,
         settings: null,
-        message: "Claude CLI is not installed",
+        message:
+          runtime.installed && !runtime.runnable
+            ? "Claude CLI is installed but not runnable"
+            : "Claude CLI is not installed",
       });
     }
 
@@ -59,7 +51,12 @@ export async function GET() {
     const has9Router = !!(settings?.env?.ANTHROPIC_BASE_URL);
 
     return NextResponse.json({
-      installed: true,
+      installed: runtime.installed,
+      runnable: runtime.runnable,
+      command: runtime.command,
+      commandPath: runtime.commandPath,
+      runtimeMode: runtime.runtimeMode,
+      reason: runtime.reason,
       settings: settings,
       has9Router: has9Router,
       settingsPath: getClaudeSettingsPath(),
@@ -76,6 +73,11 @@ export async function GET() {
 // POST - Backup old fields and write new settings
 export async function POST(request) {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const { env } = await request.json();
     
     if (!env || typeof env !== "object") {
@@ -147,6 +149,11 @@ const RESET_ENV_KEYS = [
 // DELETE - Reset settings (remove env fields)
 export async function DELETE() {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const settingsPath = getClaudeSettingsPath();
 
     // Read current settings
@@ -191,4 +198,3 @@ export async function DELETE() {
     );
   }
 }
-
