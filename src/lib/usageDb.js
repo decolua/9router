@@ -48,7 +48,6 @@ function getUserDataDir() {
 const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
-const DETAILS_DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
 
 // Ensure data directory exists
 if (!isCloud && fs && typeof fs.existsSync === "function") {
@@ -67,16 +66,8 @@ const defaultData = {
   history: []
 };
 
-// Default data structure for request details
-const defaultDetailsData = {
-  details: []
-};
-
 // Singleton instance
 let dbInstance = null;
-
-// Singleton instance for request details
-let detailsDbInstance = null;
 
 // Track in-flight requests in memory
 const pendingRequests = {
@@ -521,176 +512,5 @@ export async function getUsageStats() {
   return stats;
 }
 
-/**
- * Get request details database instance (singleton)
- */
-export async function getRequestDetailsDb() {
-  if (isCloud) {
-    if (!detailsDbInstance) {
-      detailsDbInstance = new Low({ read: async () => {}, write: async () => {} }, defaultDetailsData);
-      detailsDbInstance.data = defaultDetailsData;
-    }
-    return detailsDbInstance;
-  }
-
-  if (!detailsDbInstance) {
-    const adapter = new JSONFile(DETAILS_DB_FILE);
-    detailsDbInstance = new Low(adapter, defaultDetailsData);
-
-    try {
-      await detailsDbInstance.read();
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        console.warn('[DB] Corrupt request-details JSON detected, resetting to defaults...');
-        detailsDbInstance.data = defaultDetailsData;
-        await detailsDbInstance.write();
-      } else {
-        throw error;
-      }
-    }
-
-    if (!detailsDbInstance.data) {
-      detailsDbInstance.data = defaultDetailsData;
-      await detailsDbInstance.write();
-    }
-  }
-  return detailsDbInstance;
-}
-
-/**
- * Sanitize sensitive headers from request
- * @param {object} headers - Request headers
- * @returns {object} Sanitized headers
- */
-function sanitizeHeaders(headers) {
-  if (!headers || typeof headers !== 'object') return {};
-  
-  const sensitiveKeys = ['authorization', 'x-api-key', 'cookie', 'token', 'api-key'];
-  const sanitized = { ...headers };
-  
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some(sensitive => key.toLowerCase().includes(sensitive))) {
-      delete sanitized[key];
-    }
-  }
-  
-  return sanitized;
-}
-
-/**
- * Generate unique ID for request detail
- * @param {string} model - Model name
- * @returns {string} Unique ID
- */
-function generateDetailId(model) {
-  const timestamp = new Date().toISOString();
-  const random = Math.random().toString(36).substring(2, 8);
-  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, '-') : 'unknown';
-  return `${timestamp}-${random}-${modelPart}`;
-}
-
-/**
- * Save request detail
- * @param {object} detail - Request detail object
- */
-export async function saveRequestDetail(detail) {
-  if (isCloud) return;
-
-  try {
-    const db = await getRequestDetailsDb();
-
-    if (!detail.id) {
-      detail.id = generateDetailId(detail.model);
-    }
-
-    if (!detail.timestamp) {
-      detail.timestamp = new Date().toISOString();
-    }
-
-    if (detail.request && detail.request.headers) {
-      detail.request.headers = sanitizeHeaders(detail.request.headers);
-    }
-
-    if (!Array.isArray(db.data.details)) {
-      db.data.details = [];
-    }
-
-    db.data.details.unshift(detail);
-
-    if (db.data.details.length > 1000) {
-      db.data.details = db.data.details.slice(0, 1000);
-    }
-
-    await db.write();
-  } catch (error) {
-    console.error("Failed to save request detail:", error);
-  }
-}
-
-/**
- * Get request details with filtering and pagination
- * @param {object} filter - Filter options
- * @returns {Promise<object>} Details with pagination info
- */
-export async function getRequestDetails(filter = {}) {
-  const db = await getRequestDetailsDb();
-  let details = db.data.details || [];
-
-  if (filter.provider) {
-    details = details.filter(d => d.provider === filter.provider);
-  }
-
-  if (filter.model) {
-    details = details.filter(d => d.model === filter.model);
-  }
-
-  if (filter.connectionId) {
-    details = details.filter(d => d.connectionId === filter.connectionId);
-  }
-
-  if (filter.status) {
-    details = details.filter(d => d.status === filter.status);
-  }
-
-  if (filter.startDate) {
-    const start = new Date(filter.startDate).getTime();
-    details = details.filter(d => new Date(d.timestamp).getTime() >= start);
-  }
-
-  if (filter.endDate) {
-    const end = new Date(filter.endDate).getTime();
-    details = details.filter(d => new Date(d.timestamp).getTime() <= end);
-  }
-
-  const page = filter.page || 1;
-  const pageSize = filter.pageSize || 50;
-  const total = details.length;
-  const totalPages = Math.ceil(total / pageSize);
-  const startIndex = (page - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-
-  const paginatedDetails = details.slice(startIndex, endIndex);
-
-  return {
-    details: paginatedDetails,
-    pagination: {
-      page,
-      pageSize,
-      total,
-      totalPages,
-      hasNext: page < totalPages,
-      hasPrev: page > 1
-    }
-  };
-}
-
-/**
- * Get single request detail by ID
- * @param {string} id - Request detail ID
- * @returns {Promise<object|null>} Request detail or null
- */
-export async function getRequestDetailById(id) {
-  const db = await getRequestDetailsDb();
-  const details = db.data.details || [];
-  return details.find(d => d.id === id) || null;
-}
+// Re-export request details functions from new SQLite-based module
+export { saveRequestDetail, getRequestDetails, getRequestDetailById } from "./requestDetailsDb.js";
