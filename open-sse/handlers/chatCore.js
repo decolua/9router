@@ -373,6 +373,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
+      providerRequest: translatedBody || null,
+      providerResponse: null,
       response: {
         error: error.message || String(error),
         status: error.name === "AbortError" ? 499 : 502,
@@ -447,6 +449,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: null,
       response: {
         error: message,
         status: statusCode,
@@ -522,6 +526,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       },
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: responseBody || null,
       response: {
         content: translatedResponse?.choices?.[0]?.message?.content ||
                  translatedResponse?.content ||
@@ -583,6 +589,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       },
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: "[Streaming - raw response not captured]",
       response: {
         content: contentObj.content || "[Empty streaming response]",
         thinking: contentObj.thinking || null,
@@ -628,6 +636,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     },
     tokens: { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),
+    providerRequest: finalBody || translatedBody || null,
+    providerResponse: "[Streaming - raw response not captured]",
     response: {
       content: "[Streaming in progress...]",
       thinking: null,

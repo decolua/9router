@@ -7,6 +7,37 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 
+function CollapsibleSection({ title, children, defaultOpen = false, icon = null }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  
+  return (
+    <div className="border border-black/5 dark:border-white/5 rounded-lg overflow-hidden">
+      <button 
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3 bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {icon && <span className="material-symbols-outlined text-[18px] text-text-muted">{icon}</span>}
+          <span className="font-semibold text-sm text-text-main">{title}</span>
+        </div>
+        <span className={cn(
+          "material-symbols-outlined text-[20px] text-text-muted transition-transform duration-200",
+          isOpen ? "rotate-90" : ""
+        )}>
+          chevron_right
+        </span>
+      </button>
+      
+      {isOpen && (
+        <div className="p-4 border-t border-black/5 dark:border-white/5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({ 
@@ -280,32 +311,59 @@ export default function RequestDetailsTab() {
               </div>
             </div>
             
-            <div>
-              <h3 className="font-semibold text-text-main mb-2">Request</h3>
-              <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
-                {JSON.stringify(selectedDetail.request, null, 2)}
-              </pre>
-            </div>
-            
-            <div>
-              {selectedDetail.response?.thinking && (
-                <div className="mb-6">
-                  <h3 className="font-semibold text-text-main mb-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[16px]">psychology</span>
-                    Thinking Process
-                  </h3>
-                  <pre className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800">
-                    {selectedDetail.response.thinking}
+            <div className="space-y-4">
+              <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
+                <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
+                  {JSON.stringify(selectedDetail.request, null, 2)}
+                </pre>
+              </CollapsibleSection>
+
+              {selectedDetail.providerRequest && (
+                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
+                  <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
+                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
-                </div>
+                </CollapsibleSection>
+              )}
+
+              {selectedDetail.providerResponse && (
+                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
+                  {typeof selectedDetail.providerResponse === 'string' && selectedDetail.providerResponse.includes("[Streaming") ? (
+                    <div className="flex items-center gap-2 p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded border border-black/5 dark:border-white/5 text-text-muted italic text-sm">
+                      <span className="material-symbols-outlined text-[16px]">stream</span>
+                      {selectedDetail.providerResponse}
+                    </div>
+                  ) : (
+                    <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
+                      {typeof selectedDetail.providerResponse === 'object' 
+                        ? JSON.stringify(selectedDetail.providerResponse, null, 2)
+                        : selectedDetail.providerResponse
+                      }
+                    </pre>
+                  )}
+                </CollapsibleSection>
               )}
               
-              <h3 className="font-semibold text-text-main mb-2">
-                {selectedDetail.response?.thinking ? "Final Response" : "Response"}
-              </h3>
-              <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
-                {selectedDetail.response?.content || "[No content]"}
-              </pre>
+              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
+                {selectedDetail.response?.thinking && (
+                  <div className="mb-4">
+                    <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
+                      <span className="material-symbols-outlined text-[16px]">psychology</span>
+                      Thinking Process
+                    </h4>
+                    <pre className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800">
+                      {selectedDetail.response.thinking}
+                    </pre>
+                  </div>
+                )}
+                
+                <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
+                  Content
+                </h4>
+                <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
+                  {selectedDetail.response?.content || "[No content]"}
+                </pre>
+              </CollapsibleSection>
             </div>
           </div>
         )}
