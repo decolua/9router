@@ -192,6 +192,14 @@ Seamless translation between formats:
 - Secure encrypted storage
 - Access your setup from anywhere
 
+#### Cloud Runtime Notes
+
+- Prefer server-side cloud variables in production:
+  - `BASE_URL` (internal callback URL used by sync scheduler)
+  - `CLOUD_URL` (cloud sync endpoint base)
+- `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_CLOUD_URL` are still supported for compatibility/UI, but server runtime now prioritizes `BASE_URL`/`CLOUD_URL`.
+- Cloud sync requests now use timeout + fail-fast behavior to avoid UI hanging when cloud DNS/network is unavailable.
+
 ### 📊 Usage Analytics
 
 - Track token usage per provider and model
@@ -636,11 +644,15 @@ docker stop 9router && docker rm 9router
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Internal base URL used by cloud sync jobs |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Cloud sync endpoint base URL |
+| `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
+| `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
+| `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
+| `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
 
 Notes:
@@ -728,8 +740,19 @@ Notes:
 - Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
 **Cloud sync errors**
-- Verify `NEXT_PUBLIC_BASE_URL` points to your running instance
-- Verify `NEXT_PUBLIC_CLOUD_URL` points to your expected cloud endpoint
+- Verify `BASE_URL` points to your running instance (example: `http://localhost:20128`)
+- Verify `CLOUD_URL` points to your expected cloud endpoint (example: `https://9router.com`)
+- Keep `NEXT_PUBLIC_*` values aligned with server-side values when possible.
+
+**Cloud endpoint `stream=false` returns 500 (`Unexpected token 'd'...`)**
+- Symptom usually appears on public cloud endpoint (`https://9router.com/v1`) for non-streaming calls.
+- Root cause: upstream returns SSE payload (`data: ...`) while client expects JSON.
+- Workaround: use `stream=true` for cloud direct calls.
+- Local 9Router runtime includes SSE→JSON fallback for non-streaming calls when upstream returns `text/event-stream`.
+
+**Cloud says connected, but request still fails with `Invalid API key`**
+- Create a fresh key from local dashboard (`/api/keys`) and run cloud sync (`Enable Cloud` then `Sync Now`).
+- Old/non-synced keys can still return `401` on cloud even if local endpoint works.
 
 **First login not working**
 - Check `INITIAL_PASSWORD` in `.env`
@@ -788,6 +811,37 @@ Authorization: Bearer your-api-key
 - `GET /v1beta/models`
 - `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
 - `POST /v1/api/chat` (Ollama-style transform path)
+
+### Cloud Validation Scripts
+
+Added test scripts under `tester/security/`:
+
+- `tester/security/test-docker-hardening.sh`
+  - Builds Docker image and validates hardening checks (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, secure auth cookie behavior).
+- `tester/security/test-cloud-openai-compatible.sh`
+  - Sends a direct OpenAI-compatible request to cloud endpoint (`https://9router.com/v1/chat/completions`) with provided model/key.
+- `tester/security/test-cloud-sync-and-call.sh`
+  - End-to-end flow: create local key -> enable/sync cloud -> call cloud endpoint with retry.
+  - Includes fallback check with `stream=true` to distinguish auth errors from non-streaming parse issues.
+
+Security note for cloud test scripts:
+
+- Never hardcode real API keys in scripts/commits.
+- Provide keys only via environment variables:
+  - `API_KEY`, `CLOUD_API_KEY`, or `OPENAI_API_KEY` (supported by `test-cloud-openai-compatible.sh`)
+- Example:
+
+```bash
+OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatible.sh
+```
+
+Expected behavior from recent validation:
+
+- Local runtime (`http://127.0.0.1:20128/v1/chat/completions`): works with `stream=false` and `stream=true`.
+- Docker runtime (same API path exposed by container): hardening checks pass, cloud auth guard works, strict API key mode works when enabled.
+- Public cloud endpoint (`https://9router.com/v1/chat/completions`):
+  - `stream=true`: expected to succeed (SSE chunks returned).
+  - `stream=false`: may fail with `500` + parse error (`Unexpected token 'd'`) when upstream returns SSE content to a non-streaming client path.
 
 ### Dashboard and Management API
 

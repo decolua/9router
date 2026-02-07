@@ -1,4 +1,10 @@
-import { getProviderCredentials, markAccountUnavailable, clearAccountError } from "../services/auth.js";
+import {
+  getProviderCredentials,
+  markAccountUnavailable,
+  clearAccountError,
+  extractApiKey,
+  isValidApiKey,
+} from "../services/auth.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -42,12 +48,27 @@ export async function handleChat(request, clientRawRequest = null) {
   log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
   // Log API key (masked)
-  const apiKey = request.headers.get("Authorization");
-  if (apiKey) {
-    const masked = log.maskKey(apiKey.replace("Bearer ", ""));
+  const authHeader = request.headers.get("Authorization");
+  const apiKey = extractApiKey(request);
+  if (authHeader && apiKey) {
+    const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
+  }
+
+  // Optional strict API key mode for /v1 endpoints.
+  // Keep disabled by default to preserve local-mode compatibility.
+  if (process.env.REQUIRE_API_KEY === "true") {
+    if (!apiKey) {
+      log.warn("AUTH", "Missing API key while REQUIRE_API_KEY=true");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      log.warn("AUTH", "Invalid API key while REQUIRE_API_KEY=true");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
   }
 
   if (!modelStr) {
