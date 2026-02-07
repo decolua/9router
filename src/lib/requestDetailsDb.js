@@ -165,7 +165,7 @@ export async function saveRequestDetail(detail) {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO request_details
+      INSERT OR REPLACE INTO request_details
       (id, provider, model, connection_id, timestamp, status, latency, tokens,
        request, provider_request, provider_response, response)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
