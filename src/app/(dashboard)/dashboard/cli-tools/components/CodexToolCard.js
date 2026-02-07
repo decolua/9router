@@ -17,6 +17,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const cliReady = !!(codexStatus?.installed && codexStatus?.runnable);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -50,7 +51,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   }, [codexStatus]);
 
   const getConfigStatus = () => {
-    if (!codexStatus?.installed) return null;
+    if (!cliReady) return null;
     if (!codexStatus.config) return "not_configured";
     const hasBaseUrl = codexStatus.config.includes(baseUrl) || codexStatus.config.includes("localhost") || codexStatus.config.includes("127.0.0.1");
     return hasBaseUrl ? "configured" : "other";
@@ -192,13 +193,19 @@ wire_api = "responses"
             </div>
           )}
 
-          {!checkingCodex && codexStatus && !codexStatus.installed && (
+          {!checkingCodex && codexStatus && !cliReady && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-yellow-500">warning</span>
                 <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">Codex CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install Codex CLI to use auto-apply feature.</p>
+                  <p className="font-medium text-yellow-600 dark:text-yellow-400">
+                    {codexStatus.installed ? "Codex CLI not runnable" : "Codex CLI not installed"}
+                  </p>
+                  <p className="text-sm text-text-muted">
+                    {codexStatus.installed
+                      ? `Codex CLI was found but failed runtime healthcheck${codexStatus.reason ? ` (${codexStatus.reason})` : ""}.`
+                      : "Please install Codex CLI to use auto-apply feature."}
+                  </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
                   <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
@@ -226,7 +233,7 @@ wire_api = "responses"
             </div>
           )}
 
-          {!checkingCodex && codexStatus?.installed && (
+          {!checkingCodex && cliReady && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}

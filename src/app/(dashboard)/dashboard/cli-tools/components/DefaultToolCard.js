@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
@@ -8,11 +8,24 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
+  const [runtimeStatus, setRuntimeStatus] = useState(null);
+  const [checkingRuntime, setCheckingRuntime] = useState(false);
   
   // Initialize state directly with computed value - no need for useEffect
   const [selectedApiKey, setSelectedApiKey] = useState(() => 
     apiKeys?.length > 0 ? apiKeys[0].key : ""
   );
+
+  useEffect(() => {
+    if (isExpanded && !runtimeStatus && !checkingRuntime) {
+      setCheckingRuntime(true);
+      fetch(`/api/cli-tools/runtime/${toolId}`)
+        .then((res) => res.json())
+        .then((data) => setRuntimeStatus(data))
+        .catch((error) => setRuntimeStatus({ error: error?.message || "runtime_check_failed" }))
+        .finally(() => setCheckingRuntime(false));
+    }
+  }, [isExpanded, runtimeStatus, checkingRuntime, toolId]);
 
   const replaceVars = (text) => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
@@ -169,6 +182,52 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
 
     return (
       <div className="flex flex-col gap-4">
+        {checkingRuntime && (
+          <div className="flex items-center gap-2 text-text-muted text-sm">
+            <span className="material-symbols-outlined animate-spin text-base">progress_activity</span>
+            <span>Checking runtime...</span>
+          </div>
+        )}
+        {!checkingRuntime && runtimeStatus && !runtimeStatus.error && (
+          <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <span className="material-symbols-outlined text-blue-500 text-lg">
+              {runtimeStatus.reason === "not_required"
+                ? "info"
+                : runtimeStatus.installed && runtimeStatus.runnable
+                  ? "check_circle"
+                  : "warning"}
+            </span>
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                {runtimeStatus.reason === "not_required"
+                  ? "Guide-only integration: no local binary required"
+                  : runtimeStatus.installed && runtimeStatus.runnable
+                    ? "CLI runtime detected and healthy"
+                    : runtimeStatus.installed
+                      ? `CLI found but not runnable${runtimeStatus.reason ? ` (${runtimeStatus.reason})` : ""}`
+                      : "CLI runtime not detected"}
+              </p>
+              {runtimeStatus.commandPath && (
+                <p className="text-xs text-text-muted">
+                  Binary: <code className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10">{runtimeStatus.commandPath}</code>
+                </p>
+              )}
+              {runtimeStatus.configPath && (
+                <p className="text-xs text-text-muted">
+                  Config path: <code className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/10">{runtimeStatus.configPath}</code>
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+        {!checkingRuntime && runtimeStatus?.error && (
+          <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <span className="material-symbols-outlined text-red-500 text-lg">error</span>
+            <p className="text-sm text-red-600 dark:text-red-400">
+              Failed to check runtime status.
+            </p>
+          </div>
+        )}
         {renderNotes()}
         {canShowGuide() && tool.guideSteps.map((item) => (
           <div key={item.step} className="flex items-start gap-4">
@@ -265,7 +324,26 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             {renderIcon()}
           </div>
           <div className="min-w-0">
-            <h3 className="font-medium text-sm">{tool.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-sm">{tool.name}</h3>
+              {runtimeStatus && !runtimeStatus.error && (
+                <span
+                  className={`px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
+                    runtimeStatus.reason === "not_required"
+                      ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                      : runtimeStatus.installed && runtimeStatus.runnable
+                        ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                        : "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                  }`}
+                >
+                  {runtimeStatus.reason === "not_required"
+                    ? "Guide"
+                    : runtimeStatus.installed && runtimeStatus.runnable
+                      ? "Detected"
+                      : "Not ready"}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
         </div>
@@ -289,4 +367,3 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     </Card>
   );
 }
-

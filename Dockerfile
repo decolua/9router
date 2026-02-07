@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -7,7 +7,7 @@ RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm inst
 COPY . ./
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:22-bookworm-slim AS runner-base
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="9router"
@@ -26,3 +26,13 @@ COPY --from=builder /app/.next/standalone ./
 EXPOSE 20128
 
 CMD ["node", "server.js"]
+
+FROM runner-base AS runner-cli
+
+# Install commonly used CLIs inside container for portable Docker deployments.
+# openclaw depends on git+ssh references, so rewrite to https for non-interactive builds.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && git config --system url."https://github.com/".insteadOf "ssh://git@github.com/" \
+  && npm install -g --no-audit --no-fund @openai/codex @anthropic-ai/claude-code droid openclaw@latest

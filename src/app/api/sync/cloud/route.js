@@ -5,7 +5,18 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 
-const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+const CLOUD_URL = process.env.CLOUD_URL || process.env.NEXT_PUBLIC_CLOUD_URL;
+const CLOUD_SYNC_TIMEOUT_MS = Number(process.env.CLOUD_SYNC_TIMEOUT_MS || 12000);
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = CLOUD_SYNC_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 /**
  * POST /api/sync/cloud
@@ -54,28 +65,38 @@ export async function POST(request) {
  * @param {string|null} createdKey - Key created during enable
  */
 export async function syncToCloud(machineId, createdKey = null) {
+  if (!CLOUD_URL) {
+    return { error: "NEXT_PUBLIC_CLOUD_URL is not configured" };
+  }
+
   // Get current data from db
   const providers = await getProviderConnections();
   const modelAliases = await getModelAliases();
   const combos = await getCombos();
   const apiKeys = await getApiKeys();
 
-  // Send to Cloud
-  const response = await fetch(`${CLOUD_URL}/sync/${machineId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      providers,
-      modelAliases,
-      combos,
-      apiKeys
-    })
-  });
+  let response;
+  try {
+    // Send to Cloud
+    response = await fetchWithTimeout(`${CLOUD_URL}/sync/${machineId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providers,
+        modelAliases,
+        combos,
+        apiKeys
+      })
+    });
+  } catch (error) {
+    const isTimeout = error?.name === "AbortError";
+    return { error: isTimeout ? "Cloud sync timeout" : "Cloud sync request failed" };
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     console.log("Cloud sync failed:", errorText);
-    return NextResponse.json({ error: "Cloud sync failed" }, { status: 502 });
+    return { error: "Cloud sync failed" };
   }
 
   const result = await response.json();
@@ -119,7 +140,7 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
   }
 
   try {
-    const pingResponse = await fetch(`${CLOUD_URL}/${machineId}/v1/verify`, {
+    const pingResponse = await fetchWithTimeout(`${CLOUD_URL}/${machineId}/v1/verify`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
@@ -152,9 +173,22 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
  * Disable Cloud - delete cache and update Claude CLI settings
  */
 async function handleDisable(machineId, request) {
-  const response = await fetch(`${CLOUD_URL}/sync/${machineId}`, {
-    method: "DELETE"
-  });
+  if (!CLOUD_URL) {
+    return NextResponse.json({ error: "NEXT_PUBLIC_CLOUD_URL is not configured" }, { status: 500 });
+  }
+
+  let response;
+  try {
+    response = await fetchWithTimeout(`${CLOUD_URL}/sync/${machineId}`, {
+      method: "DELETE"
+    });
+  } catch (error) {
+    const isTimeout = error?.name === "AbortError";
+    return NextResponse.json(
+      { error: isTimeout ? "Cloud disable timeout" : "Failed to reach cloud service" },
+      { status: 502 }
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
