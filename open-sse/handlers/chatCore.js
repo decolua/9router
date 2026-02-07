@@ -604,6 +604,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     saveRequestDetail(updatedDetail).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+
+    // Save usage stats for dashboard
+    if (usage && typeof usage === 'object') {
+      const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [STREAM USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
+      console.log(`${COLORS.green}${msg}${COLORS.reset}`);
+
+      saveRequestUsage({
+        provider: provider || "unknown",
+        model: model || "unknown",
+        tokens: usage,
+        timestamp: new Date().toISOString(),
+        connectionId: connectionId || undefined
+      }).catch(err => {
+        console.error("Failed to save streaming usage stats:", err.message);
+      });
+    }
   };
 
   let transformStream;
