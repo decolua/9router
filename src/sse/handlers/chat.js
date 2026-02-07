@@ -1,9 +1,9 @@
 import { getProviderCredentials, markAccountUnavailable, clearAccountError } from "../services/auth.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
-import { errorResponse } from "open-sse/utils/error.js";
-import { checkFallbackError } from "open-sse/services/accountFallback.js";
+import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 
@@ -18,7 +18,7 @@ export async function handleChat(request, clientRawRequest = null) {
     body = await request.json();
   } catch {
     log.warn("CHAT", "Invalid JSON body");
-    return errorResponse(400, "Invalid JSON body");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
   
   // Build clientRawRequest for logging (if not provided)
@@ -52,7 +52,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
-    return errorResponse(400, "Missing model");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
   // Check if model is a combo (has multiple models with fallback)
@@ -78,7 +78,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
-    return errorResponse(400, "Invalid model format");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
   const { provider, model } = modelInfo;
@@ -96,19 +96,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Try with available accounts (fallback on errors)
   let excludeConnectionId = null;
   let lastError = null;
+  let lastStatus = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionId);
-    if (!credentials) {
+
+    // All accounts unavailable
+    if (!credentials || credentials.allRateLimited) {
+      if (credentials?.allRateLimited) {
+        const errorMsg = lastError || credentials.lastError || "Unavailable";
+        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+      }
       if (!excludeConnectionId) {
         log.error("AUTH", `No credentials for provider: ${provider}`);
-        return errorResponse(400, `No credentials for provider: ${provider}`);
+        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return new Response(
-        JSON.stringify({ error: lastError || "All accounts unavailable" }),
-        { status: 503, headers: { "Content-Type": "application/json" } }
-      );
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
     // Log account selection
@@ -135,22 +141,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        // Clear error status only if currently has error (optimization)
         await clearAccountError(credentials.connectionId, credentials);
       }
     });
     
     if (result.success) return result.response;
 
-    // Check if should fallback to next account
-    const { shouldFallback, cooldownMs } = checkFallbackError(result.status, result.error);
+    // Mark account unavailable (auto-calculates cooldown with exponential backoff)
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);
     
     if (shouldFallback) {
-      const accountId = credentials.connectionId.slice(0, 8);
-      log.warn("AUTH", `Account ${accountId}... unavailable (status: ${result.status}), trying fallback`);
-      await markAccountUnavailable(credentials.connectionId, cooldownMs, result.error?.slice(0, 100), result.status, provider);
+      log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
       excludeConnectionId = credentials.connectionId;
       lastError = result.error;
+      lastStatus = result.status;
       continue;
     }
 

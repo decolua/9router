@@ -5,7 +5,7 @@ import Image from "next/image";
 import PropTypes from "prop-types";
 import { Card, CardSkeleton, Badge, Button, Input, Modal, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 
@@ -151,6 +151,21 @@ export default function ProvidersPage() {
         </div>
       </div>
 
+      {/* Free Providers */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-xl font-semibold">Free Providers</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {Object.entries(FREE_PROVIDERS).map(([key, info]) => (
+            <ProviderCard
+              key={key}
+              providerId={key}
+              provider={info}
+              stats={getProviderStats(key, "oauth")}
+            />
+          ))}
+        </div>
+      </div>
+
       {/* API Key Providers */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -207,7 +222,7 @@ function ProviderCard({ providerId, provider, stats }) {
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group">
-      <Card padding="sm" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
+      <Card padding="xs" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -225,8 +240,8 @@ function ProviderCard({ providerId, provider, stats }) {
                 <Image
                   src={`/providers/${provider.id}.png`}
                   alt={provider.name}
-                  width={32}
-                  height={32}
+                  width={30}
+                  height={30}
                   className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
                   sizes="32px"
                   onError={() => setImgError(true)}
@@ -286,7 +301,7 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group">
-      <Card padding="sm" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
+      <Card padding="xs" className="h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
@@ -304,10 +319,10 @@ function ApiKeyProviderCard({ providerId, provider, stats }) {
                 <Image
                   src={getIconPath()}
                   alt={provider.name}
-                  width={32}
-                  height={32}
-                  className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
-                  sizes="32px"
+                  width={30}
+                  height={30}
+                  className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
+                  sizes="30px"
                   onError={() => setImgError(true)}
                 />
               )}

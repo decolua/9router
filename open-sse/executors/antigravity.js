@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS } from "../config/constants.js";
 
 const MAX_RETRY_AFTER_MS = 10000;
 
@@ -162,7 +162,7 @@ export class AntigravityExecutor extends BaseExecutor {
           signal
         });
 
-        if (response.status === 429 || response.status === 503) {
+        if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
           // Try to get retry time from headers first
           let retryMs = this.parseRetryHeaders(response.headers);
 
@@ -186,7 +186,7 @@ export class AntigravityExecutor extends BaseExecutor {
           }
 
           // Auto retry only for 429 when retryMs is 0 or undefined
-          if (response.status === 429 && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
+          if (response.status === HTTP_STATUS.RATE_LIMITED && (!retryMs || retryMs === 0) && retryAttemptsByUrl[urlIndex] < MAX_AUTO_RETRIES) {
             retryAttemptsByUrl[urlIndex]++;
             // Exponential backoff: 2s, 4s, 8s...
             const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);

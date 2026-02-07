@@ -2,7 +2,8 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError } from "./accountFallback.js";
+import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { unavailableResponse } from "../utils/error.js";
 
 /**
  * Get combo models from combos data
@@ -35,6 +36,8 @@ export function getComboModelsFromData(modelStr, combosData) {
  */
 export async function handleComboChat({ body, models, handleSingleModel, log }) {
   let lastError = null;
+  let earliestRetryAfter = null;
+  let lastStatus = null;
 
   for (let i = 0; i < models.length; i++) {
     const modelStr = models[i];
@@ -48,47 +51,54 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
       return result;
     }
 
-    // Extract error message from response
+    // Extract error info from response
     let errorText = result.statusText || "";
+    let retryAfter = null;
     try {
       const errorBody = await result.clone().json();
-      errorText = errorBody?.error ?? errorBody?.message ?? errorText;
+      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+      retryAfter = errorBody?.retryAfter || null;
     } catch {
       // Ignore JSON parse errors
     }
 
+    // Track earliest retryAfter across all combo models
+    if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+      earliestRetryAfter = retryAfter;
+    }
+
     // Normalize error text to string (Worker-safe)
     if (typeof errorText !== "string") {
-      try {
-        errorText = JSON.stringify(errorText);
-      } catch {
-        errorText = String(errorText);
-      }
+      try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
     }
 
     // Check if should fallback to next model
     const { shouldFallback } = checkFallbackError(result.status, errorText);
     
     if (!shouldFallback) {
-      // Don't fallback - return error immediately (e.g. 401 auth errors)
       log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
       return result;
     }
 
     // Fallback to next model
-    lastError = `${modelStr}: ${errorText || result.status}`;
-    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status, error: errorText.slice(0, 100) });
+    lastError = errorText || String(result.status);
+    if (!lastStatus) lastStatus = result.status;
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
   }
 
-  log.warn("COMBO", "All combo models failed");
-  
-  // Return 503 with last error
+  // All models failed
+  const status =  406;
+  const msg = lastError || "All combo models unavailable";
+
+  if (earliestRetryAfter) {
+    const retryHuman = formatRetryAfter(earliestRetryAfter);
+    log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
+    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+  }
+
+  log.warn("COMBO", `All models failed | ${msg}`);
   return new Response(
-    JSON.stringify({ error: lastError || "All combo models unavailable" }),
-    { 
-      status: 503, 
-      headers: { "Content-Type": "application/json" }
-    }
+    JSON.stringify({ error: { message: msg } }),
+    { status, headers: { "Content-Type": "application/json" } }
   );
 }
-

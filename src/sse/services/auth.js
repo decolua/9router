@@ -1,5 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
-import { isAccountUnavailable, getUnavailableUntil } from "open-sse/services/accountFallback.js";
+import { isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter, checkFallbackError } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -21,8 +21,23 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     await currentMutex;
 
     const connections = await getProviderConnections({ provider, isActive: true });
+    log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeId: ${excludeConnectionId || "none"}`);
 
     if (connections.length === 0) {
+      // Check all connections (including inactive) to see if rate limited
+      const allConnections = await getProviderConnections({ provider });
+      log.debug("AUTH", `${provider} | all connections (incl inactive): ${allConnections.length}`);
+      if (allConnections.length > 0) {
+        const earliest = getEarliestRateLimitedUntil(allConnections);
+        if (earliest) {
+          log.warn("AUTH", `${provider} | all ${allConnections.length} accounts rate limited (${formatRetryAfter(earliest)})`);
+          return { allRateLimited: true, retryAfter: earliest, retryAfterHuman: formatRetryAfter(earliest) };
+        }
+        log.warn("AUTH", `${provider} | ${allConnections.length} accounts found but none active`);
+        allConnections.forEach(c => {
+          log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | isActive=${c.isActive} | rateLimitedUntil=${c.rateLimitedUntil || "none"} | testStatus=${c.testStatus}`);
+        });
+      }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
     }
@@ -34,8 +49,31 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       return true;
     });
 
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
+    connections.forEach(c => {
+      const excluded = excludeConnectionId && c.id === excludeConnectionId;
+      const rateLimited = isAccountUnavailable(c.rateLimitedUntil);
+      if (excluded || rateLimited) {
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${rateLimited ? `rateLimited until ${c.rateLimitedUntil}` : ""}`);
+      }
+    });
+
     if (availableConnections.length === 0) {
-      log.warn("AUTH", `All ${connections.length} accounts for ${provider} unavailable`);
+      const earliest = getEarliestRateLimitedUntil(connections);
+      if (earliest) {
+        // Find the connection with the earliest rateLimitedUntil to get its error info
+        const rateLimitedConns = connections.filter(c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now());
+        const earliestConn = rateLimitedConns.sort((a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil))[0];
+        log.warn("AUTH", `${provider} | all ${connections.length} active accounts rate limited (${formatRetryAfter(earliest)}) | lastErrorCode=${earliestConn?.errorCode}, lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        return {
+          allRateLimited: true,
+          retryAfter: earliest,
+          retryAfterHuman: formatRetryAfter(earliest),
+          lastError: earliestConn?.lastError || null,
+          lastErrorCode: earliestConn?.errorCode || null
+        };
+      }
+      log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
     }
 
@@ -106,23 +144,35 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
 }
 
 /**
- * Mark account as unavailable with cooldown
+ * Mark account as unavailable — reads backoffLevel from DB, calculates cooldown with exponential backoff, saves new level
+ * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, cooldownMs, reason = "Provider error", errorCode = null, provider = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null) {
+  // Read current connection to get backoffLevel
+  const connections = await getProviderConnections({ provider });
+  const conn = connections.find(c => c.id === connectionId);
+  const backoffLevel = conn?.backoffLevel || 0;
+
+  const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
+  if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+
   const rateLimitedUntil = getUnavailableUntil(cooldownMs);
+  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+
   await updateProviderConnection(connectionId, {
     rateLimitedUntil,
     testStatus: "unavailable",
     lastError: reason,
-    errorCode,
-    lastErrorAt: new Date().toISOString()
+    errorCode: status,
+    lastErrorAt: new Date().toISOString(),
+    backoffLevel: newBackoffLevel ?? backoffLevel
   });
-  // log.warn("AUTH", `Account ${connectionId.slice(0,8)} unavailable until ${rateLimitedUntil}`);
-  
-  // Log to stderr for CLI to display
-  if (provider && errorCode && reason) {
-    console.error(`❌ ${provider} [${errorCode}]: ${reason}`);
+
+  if (provider && status && reason) {
+    console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
+
+  return { shouldFallback: true, cooldownMs };
 }
 
 /**
@@ -141,7 +191,8 @@ export async function clearAccountError(connectionId, currentConnection) {
     testStatus: "active",
     lastError: null,
     lastErrorAt: null,
-    rateLimitedUntil: null
+    rateLimitedUntil: null,
+    backoffLevel: 0
   });
   log.info("AUTH", `Account ${connectionId.slice(0,8)} error cleared`);
 }

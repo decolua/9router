@@ -54,7 +54,7 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
   ],
   ag: [  // Antigravity - special case: models call different backends
-    // { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
     { id: "claude-opus-4-5-thinking", name: "Claude Opus 4.5 Thinking" },
     { id: "claude-sonnet-4-5-thinking", name: "Claude Sonnet 4.5 Thinking" },
     { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
