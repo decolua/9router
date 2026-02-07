@@ -51,6 +51,7 @@ export function createSSEStream(options = {}) {
 
   let totalContentLength = 0;
   let accumulatedContent = "";
+  let accumulatedThinking = "";
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -80,10 +81,15 @@ export function createSSEStream(options = {}) {
               }
 
               const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content || delta?.reasoning_content;
+              const content = delta?.content;
+              const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
+              }
+              if (reasoning && typeof reasoning === "string") {
+                totalContentLength += reasoning.length;
+                accumulatedThinking += reasoning;
               }
 
               const extracted = extractUsage(parsed);
@@ -136,29 +142,39 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
+        // Claude format - content
         if (parsed.delta?.text) {
           totalContentLength += parsed.delta.text.length;
           accumulatedContent += parsed.delta.text;
         }
+        // Claude format - thinking
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
-          accumulatedContent += parsed.delta.thinking;
+          accumulatedThinking += parsed.delta.thinking;
         }
         
+        // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
           accumulatedContent += parsed.choices[0].delta.content;
         }
+        // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedContent += parsed.choices[0].delta.reasoning_content;
+          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
+        // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
-              accumulatedContent += part.text;
+              // Check if this is thinking content
+              if (part.thought === true) {
+                accumulatedThinking += part.text;
+              } else {
+                accumulatedContent += part.text;
+              }
             }
           }
         }
@@ -232,7 +248,10 @@ export function createSSEStream(options = {}) {
           }
           
           if (onStreamComplete) {
-            onStreamComplete(accumulatedContent, usage);
+            onStreamComplete({
+              content: accumulatedContent,
+              thinking: accumulatedThinking
+            }, usage);
           }
           return;
         }
@@ -291,7 +310,10 @@ export function createSSEStream(options = {}) {
         }
         
         if (onStreamComplete) {
-          onStreamComplete(accumulatedContent, state?.usage);
+          onStreamComplete({
+            content: accumulatedContent,
+            thinking: accumulatedThinking
+          }, state?.usage);
         }
       } catch (error) {
         console.log("Error in flush:", error);

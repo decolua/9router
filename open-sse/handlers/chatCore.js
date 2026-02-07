@@ -375,7 +375,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       response: {
         error: error.message || String(error),
-        status: error.name === "AbortError" ? 499 : 502
+        status: error.name === "AbortError" ? 499 : 502,
+        thinking: null
       },
       status: "error"
     };
@@ -448,7 +449,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       request: extractRequestConfig(body, stream),
       response: {
         error: message,
-        status: statusCode
+        status: statusCode,
+        thinking: null
       },
       status: "error"
     };
@@ -523,7 +525,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       response: {
         content: translatedResponse?.choices?.[0]?.message?.content ||
                  translatedResponse?.content ||
-                 JSON.stringify(translatedResponse),
+                 null,
+        thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content ||
+                  translatedResponse?.reasoning_content ||
+                  null,
         finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
       },
       status: "success"
@@ -563,8 +568,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let streamUsage = null;
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   
-  const onStreamComplete = (content, usage) => {
-    streamContent = content;
+  const onStreamComplete = (contentObj, usage) => {
+    // contentObj is object { content, thinking }
     streamUsage = usage;
     
     const updatedDetail = {
@@ -579,7 +584,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       response: {
-        content: content || "[Empty streaming response]",
+        content: contentObj.content || "[Empty streaming response]",
+        thinking: contentObj.thinking || null,
         type: "streaming"
       },
       status: "success",
@@ -624,6 +630,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     request: extractRequestConfig(body, stream),
     response: {
       content: "[Streaming in progress...]",
+      thinking: null,
       type: "streaming"
     },
     status: "success",

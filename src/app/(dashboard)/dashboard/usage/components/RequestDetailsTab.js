@@ -288,9 +288,23 @@ export default function RequestDetailsTab() {
             </div>
             
             <div>
-              <h3 className="font-semibold text-text-main mb-2">Response</h3>
+              {selectedDetail.response?.thinking && (
+                <div className="mb-6">
+                  <h3 className="font-semibold text-text-main mb-2 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px]">psychology</span>
+                    Thinking Process
+                  </h3>
+                  <pre className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800">
+                    {selectedDetail.response.thinking}
+                  </pre>
+                </div>
+              )}
+              
+              <h3 className="font-semibold text-text-main mb-2">
+                {selectedDetail.response?.thinking ? "Final Response" : "Response"}
+              </h3>
               <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
-                {JSON.stringify(selectedDetail.response, null, 2)}
+                {selectedDetail.response?.content || "[No content]"}
               </pre>
             </div>
           </div>
