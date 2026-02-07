@@ -9,7 +9,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 
 /**
@@ -239,6 +239,7 @@ function extractUsageFromResponse(responseBody, provider) {
  */
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
+  const requestStartTime = Date.now();
 
   const sourceFormat = detectFormat(body);
 
@@ -331,6 +332,28 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => { });
+
+    // Save error request detail
+    const errorDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: {
+        messages: body.messages || [],
+        model: body.model,
+        stream: stream
+      },
+      response: {
+        error: error.message || String(error),
+        status: error.name === "AbortError" ? 499 : 502
+      },
+      status: "error"
+    };
+    saveRequestDetail(errorDetail).catch(() => {});
+
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -387,6 +410,28 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
+
+    // Save error request detail
+    const errorDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: {
+        messages: body.messages || [],
+        model: body.model,
+        stream: stream
+      },
+      response: {
+        error: message,
+        status: statusCode
+      },
+      status: "error"
+    };
+    saveRequestDetail(errorDetail).catch(() => {});
+
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
 
@@ -441,6 +486,39 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
     }
 
+    // Save request detail with latency tracking
+    const totalLatency = Date.now() - requestStartTime;
+    const requestDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: {
+        ttft: totalLatency,  // Non-streaming: use total as ttft
+        total: totalLatency
+      },
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: {
+        messages: body.messages || [],
+        model: body.model,
+        stream: stream,
+        temperature: body.temperature,
+        max_tokens: body.max_tokens
+      },
+      response: {
+        content: translatedResponse?.choices?.[0]?.message?.content ||
+                 translatedResponse?.content ||
+                 JSON.stringify(translatedResponse),
+        finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
+      },
+      status: "success"
+    };
+
+    // Async save (don't block response)
+    saveRequestDetail(requestDetail).catch(err => {
+      console.error("[RequestDetail] Failed to save:", err.message);
+    });
+
     return {
       success: true,
       response: new Response(JSON.stringify(translatedResponse), {
@@ -490,6 +568,37 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Pipe response through transform with disconnect detection
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController);
+
+  // Save streaming request detail (TTFT approximated as total latency for streaming)
+  const totalLatency = Date.now() - requestStartTime;
+  const streamingDetail = {
+    provider: provider || "unknown",
+    model: model || "unknown",
+    connectionId: connectionId || undefined,
+    timestamp: new Date().toISOString(),
+    latency: {
+      ttft: totalLatency,  // Streaming: use total as approximation
+      total: totalLatency
+    },
+    tokens: { prompt_tokens: 0, completion_tokens: 0 },  // Will be updated by stream logger
+    request: {
+      messages: body.messages || [],
+      model: body.model,
+      stream: stream,
+      temperature: body.temperature,
+      max_tokens: body.max_tokens
+    },
+    response: {
+      content: "[Streaming response]",
+      type: "streaming"
+    },
+    status: "success"
+  };
+
+  // Async save (don't block streaming response)
+  saveRequestDetail(streamingDetail).catch(err => {
+    console.error("[RequestDetail] Failed to save streaming request:", err.message);
+  });
 
   return {
     success: true,
