@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, ConfirmModal, CardSkeleton } from "@/shared/components";
 import { useLocale, useTranslations } from "next-intl";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -132,29 +134,41 @@ export default function APIPageClient({ machineId }) {
   const fetchAvailableModels = async (preferredKey = null) => {
     setModelsLoading(true);
     try {
-      let scopedModels = [];
-      let allModels = [];
-
       if (preferredKey) {
-        const res = await fetch("/api/v1/models", {
-          headers: {
-            Authorization: `Bearer ${preferredKey}`,
-          },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          scopedModels = normalizeModelList(data);
-        }
+        void preferredKey;
       }
 
-      const fallbackRes = await fetch("/api/models");
-      if (fallbackRes.ok) {
-        const fallbackData = await fallbackRes.json();
-        allModels = normalizeModelList(fallbackData);
-      }
+      const [providersRes, modelsRes] = await Promise.all([
+        fetch("/api/providers"),
+        fetch("/api/models"),
+      ]);
 
-      const merged = Array.from(new Set([...scopedModels, ...allModels])).sort();
-      setAvailableModels(merged);
+      const providersData = providersRes.ok ? await providersRes.json() : {};
+      const connections = Array.isArray(providersData.connections)
+        ? providersData.connections
+        : [];
+
+      const allowedAliases = new Set();
+      connections.forEach((conn) => {
+        const providerId = conn?.provider;
+        if (!providerId) return;
+        const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+        allowedAliases.add(providerId);
+        allowedAliases.add(alias);
+      });
+
+      const modelData = modelsRes.ok ? await modelsRes.json() : {};
+      const allModels = normalizeModelList(modelData);
+
+      const filtered = allowedAliases.size > 0
+        ? allModels.filter((modelId) => {
+            if (typeof modelId !== "string") return false;
+            const prefix = modelId.split("/")[0];
+            return allowedAliases.has(prefix);
+          })
+        : [];
+
+      setAvailableModels(Array.from(new Set(filtered)).sort());
     } catch (error) {
       console.log("Error fetching available models:", error);
       setAvailableModels([]);
@@ -354,6 +368,12 @@ export default function APIPageClient({ machineId }) {
       if (parts.length > 1 && parts[0]) providers.add(parts[0]);
     });
     return ["all", ...Array.from(providers).sort()];
+  };
+
+  const getProviderLabel = (providerValue) => {
+    if (providerValue === "all") return t("endpoint.allProviders");
+    const providerId = ALIAS_TO_ID[providerValue] || providerValue;
+    return AI_PROVIDERS[providerId]?.name || providerValue;
   };
 
   const filterModels = (searchValue, providerValue) => {
@@ -958,7 +978,7 @@ export default function APIPageClient({ machineId }) {
               >
                 {providerOptions.map((provider) => (
                   <option key={provider} value={provider}>
-                    {provider === "all" ? t("endpoint.allProviders") : provider}
+                    {getProviderLabel(provider)}
                   </option>
                 ))}
               </select>
@@ -1104,7 +1124,7 @@ export default function APIPageClient({ machineId }) {
               >
                 {providerOptions.map((provider) => (
                   <option key={provider} value={provider}>
-                    {provider === "all" ? t("endpoint.allProviders") : provider}
+                    {getProviderLabel(provider)}
                   </option>
                 ))}
               </select>
