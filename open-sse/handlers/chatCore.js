@@ -590,7 +590,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
-      providerResponse: "[Streaming - raw response not captured]",
+      providerResponse: contentObj.content || "[Empty streaming response]",
       response: {
         content: contentObj.content || "[Empty streaming response]",
         thinking: contentObj.thinking || null,
