@@ -20,6 +20,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [polling, setPolling] = useState(false);
   const popupRef = useRef(null);
   const { copied, copy } = useCopyToClipboard();
+  const oauthStartedRef = useRef(false);
+  const providerRef = useRef(provider);
 
   // State for client-only values to avoid hydration mismatch
   const [isLocalhost, setIsLocalhost] = useState(false);
@@ -35,6 +37,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
   }, []);
+
+  useEffect(() => {
+    if (providerRef.current !== provider) {
+      providerRef.current = provider;
+      oauthStartedRef.current = false;
+    }
+  }, [provider]);
 
   // Define all useCallback hooks BEFORE the useEffects that reference them
 
@@ -146,7 +155,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         redirectUri = `http://localhost:${port}/callback`;
       }
 
-      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}&app_origin=${encodeURIComponent(window.location.origin)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -174,16 +183,22 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
-    if (isOpen && provider) {
-      setAuthData(null);
-      setCallbackUrl("");
-      setError(null);
-      setIsDeviceCode(false);
-      setDeviceData(null);
-      setPolling(false);
-      // Auto start OAuth
-      startOAuthFlow();
+    if (!isOpen) {
+      oauthStartedRef.current = false;
+      return;
     }
+
+    if (!provider || oauthStartedRef.current) return;
+
+    oauthStartedRef.current = true;
+    setAuthData(null);
+    setCallbackUrl("");
+    setError(null);
+    setIsDeviceCode(false);
+    setDeviceData(null);
+    setPolling(false);
+    // Auto start OAuth
+    startOAuthFlow();
   }, [isOpen, provider, startOAuthFlow]);
 
   // Listen for OAuth callback via multiple methods

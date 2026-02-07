@@ -1073,6 +1073,36 @@ export async function updateSettings(updates) {
 }
 
 /**
+ * Export full database (including sensitive fields)
+ */
+export async function exportDb() {
+  const db = await getDb();
+  return db.data || {};
+}
+
+/**
+ * Replace database with provided content
+ */
+export async function importDb(payload) {
+  const db = await getDb();
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid database payload");
+  }
+
+  const data = { ...defaultData };
+  const allowedKeys = Object.keys(defaultData);
+  for (const key of allowedKeys) {
+    if (payload[key] !== undefined) {
+      data[key] = payload[key];
+    }
+  }
+
+  db.data = data;
+  await db.write();
+  return db.data;
+}
+
+/**
  * Check if cloud is enabled
  */
 export async function isCloudEnabled() {

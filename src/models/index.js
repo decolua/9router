@@ -24,5 +24,7 @@ export {
   validateAndConsumeApiKeyRequest,
   incrementApiKeyRequestUsage,
   incrementApiKeyTokenUsage,
+  exportDb,
+  importDb,
   isCloudEnabled,
 } from "@/lib/localDb";

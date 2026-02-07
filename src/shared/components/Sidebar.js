@@ -4,30 +4,32 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
-  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/endpoint", labelKey: "nav.endpoint", icon: "api" },
+  { href: "/dashboard/providers", labelKey: "nav.providers", icon: "dns" },
+  { href: "/dashboard/combos", labelKey: "nav.combos", icon: "layers" },
+  { href: "/dashboard/usage", labelKey: "nav.usage", icon: "bar_chart" },
+  { href: "/dashboard/cli-tools", labelKey: "nav.cliTools", icon: "terminal" },
 ];
 
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
 const debugItems = [
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+  { href: "/dashboard/translator", labelKey: "nav.translator", icon: "translate" },
 ];
 
 const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  { href: "/dashboard/profile", labelKey: "nav.settings", icon: "settings" },
 ];
 
 export default function Sidebar({ onClose, authType: initialAuthType = "admin" }) {
   const pathname = usePathname();
+  const t = useTranslations();
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
@@ -71,7 +73,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
 
   const isKeyUser = authType === "apiKey";
   const displayNavItems = isKeyUser
-    ? [{ href: "/dashboard/key", label: "My Key", icon: "vpn_key" }]
+    ? [{ href: "/dashboard/key", labelKey: "nav.myKey", icon: "vpn_key" }]
     : navItems;
 
   return (
@@ -121,7 +123,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
               >
                 {item.icon}
               </span>
-              <span className="text-sm font-medium">{item.label}</span>
+              <span className="text-sm font-medium">{t(item.labelKey)}</span>
             </Link>
           ))}
 
@@ -129,7 +131,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
           {!isKeyUser && showDebug && (
             <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                Debug
+                {t("nav.debug")}
               </p>
               {debugItems.map((item) => (
                 <Link
@@ -151,7 +153,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
                   >
                     {item.icon}
                   </span>
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="text-sm font-medium">{t(item.labelKey)}</span>
                 </Link>
               ))}
             </div>
@@ -161,7 +163,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
           {!isKeyUser && (
             <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                System
+                {t("nav.system")}
               </p>
               {systemItems.map((item) => (
                 <Link
@@ -183,7 +185,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
                   >
                     {item.icon}
                   </span>
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="text-sm font-medium">{t(item.labelKey)}</span>
                 </Link>
               ))}
             </div>
@@ -200,7 +202,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
               </div>
               <div className="flex flex-col">
                 <span className="text-xs font-medium text-text-main leading-relaxed">
-                  Service is running in terminal. You can close this web page. Shutdown will stop the service.
+                  {t("sidebar.serviceRunning")}
                 </span>
               </div>
             </div>
@@ -213,7 +215,7 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
               onClick={() => setShowShutdownModal(true)}
               className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
             >
-              Shutdown
+              {t("sidebar.shutdown")}
             </Button>
           </div>
         )}
@@ -226,10 +228,10 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
             isOpen={showShutdownModal}
             onClose={() => setShowShutdownModal(false)}
             onConfirm={handleShutdown}
-            title="Close Proxy"
-            message="Are you sure you want to close the proxy server?"
-            confirmText="Close"
-            cancelText="Cancel"
+            title={t("sidebar.closeProxyTitle")}
+            message={t("sidebar.closeProxyMessage")}
+            confirmText={t("sidebar.close")}
+            cancelText={t("common.cancel")}
             variant="danger"
             loading={isShuttingDown}
           />
@@ -241,10 +243,10 @@ export default function Sidebar({ onClose, authType: initialAuthType = "admin" }
                 <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
                   <span className="material-symbols-outlined text-[32px]">power_off</span>
                 </div>
-                <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-                <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+                <h2 className="text-xl font-semibold text-white mb-2">{t("sidebar.serverDisconnected")}</h2>
+                <p className="text-text-muted mb-6">{t("sidebar.serverStopped")}</p>
                 <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-                  Reload Page
+                  {t("sidebar.reloadPage")}
                 </Button>
               </div>
             </div>

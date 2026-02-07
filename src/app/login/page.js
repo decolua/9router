@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export default function LoginPage() {
+  const t = useTranslations();
   const [password, setPassword] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
@@ -75,10 +77,10 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || (isApiKeyLogin ? "Invalid API key" : "Invalid password"));
+        setError(data.error || (isApiKeyLogin ? t("login.invalidApiKey") : t("login.invalidPassword")));
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError(t("login.error"));
     } finally {
       setLoading(false);
     }
@@ -90,7 +92,7 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
+          <p className="text-text-muted mt-4">{t("login.loading")}</p>
         </div>
       </div>
     );
@@ -101,7 +103,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">Enter your password to access the dashboard</p>
+          <p className="text-text-muted">{t("login.subtitle")}</p>
         </div>
 
         <Card>
@@ -116,7 +118,7 @@ export default function LoginPage() {
                     : "text-text-muted hover:text-text hover:bg-bg-hover"
                 }`}
               >
-                Password
+                {t("login.tabPassword")}
               </button>
               <button
                 type="button"
@@ -127,17 +129,17 @@ export default function LoginPage() {
                     : "text-text-muted hover:text-text hover:bg-bg-hover"
                 }`}
               >
-                API Key
+                {t("login.tabApiKey")}
               </button>
             </div>
 
             <div className="flex flex-col gap-2">
               {activeTab === "password" ? (
                 <>
-                  <label className="text-sm font-medium">Password</label>
+                  <label className="text-sm font-medium">{t("login.passwordLabel")}</label>
                   <Input
                     type="password"
-                    placeholder="Enter password"
+                    placeholder={t("login.passwordPlaceholder")}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
@@ -146,10 +148,10 @@ export default function LoginPage() {
                 </>
               ) : (
                 <>
-                  <label className="text-sm font-medium">API Key</label>
+                  <label className="text-sm font-medium">{t("login.apiKeyLabel")}</label>
                   <Input
                     type="text"
-                    placeholder="sk-xxxxxxxxxxxxxxxx"
+                    placeholder={t("login.apiKeyPlaceholder")}
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     required
@@ -166,16 +168,16 @@ export default function LoginPage() {
               className="w-full"
               loading={loading}
             >
-              {activeTab === "apiKey" ? "Login with API Key" : "Login"}
+              {activeTab === "apiKey" ? t("login.loginWithApiKey") : t("login.login")}
             </Button>
 
             {activeTab === "password" ? (
               <p className="text-xs text-center text-text-muted mt-2">
-                Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                {t("login.defaultPasswordPrefix")} <code className="bg-sidebar px-1 rounded">123456</code>
               </p>
             ) : (
               <p className="text-xs text-center text-text-muted mt-2">
-                Only want to check quota? Use <a className="text-primary hover:underline" href="/key-status">/key-status</a>.
+                {t("login.quotaPrefix")} <a className="text-primary hover:underline" href="/key-status">/key-status</a>.
               </p>
             )}
           </form>

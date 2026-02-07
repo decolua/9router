@@ -19,6 +19,7 @@ export default function ProviderDetailPage() {
   const [providerNode, setProviderNode] = useState(null);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
@@ -430,13 +431,25 @@ export default function ProviderDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
           {!isCompatible && (
-            <Button
-              size="sm"
-              icon="add"
-              onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-            >
-              Add
-            </Button>
+            <div className="flex items-center gap-2">
+              {!isOAuth && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="upload"
+                  onClick={() => setShowImportModal(true)}
+                >
+                  Import
+                </Button>
+              )}
+              <Button
+                size="sm"
+                icon="add"
+                onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+              >
+                Add
+              </Button>
+            </div>
           )}
         </div>
 
@@ -448,9 +461,16 @@ export default function ProviderDetailPage() {
             <p className="text-text-main font-medium mb-1">No connections yet</p>
             <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
             {!isCompatible && (
-              <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                Add Connection
-              </Button>
+              <div className="flex items-center justify-center gap-2">
+                {!isOAuth && (
+                  <Button variant="secondary" icon="upload" onClick={() => setShowImportModal(true)}>
+                    Import JSON
+                  </Button>
+                )}
+                <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                  Add Connection
+                </Button>
+              </div>
             )}
           </div>
         ) : (
@@ -518,6 +538,13 @@ export default function ProviderDetailPage() {
         isAnthropic={isAnthropicCompatible}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddApiKeyModal(false)}
+      />
+      <ImportApiKeysModal
+        isOpen={showImportModal}
+        providerId={providerId}
+        providerName={providerInfo.name}
+        onImported={fetchConnections}
+        onClose={() => setShowImportModal(false)}
       />
       <EditConnectionModal
         isOpen={showEditModal}
@@ -1116,6 +1143,261 @@ AddApiKeyModal.propTypes = {
   isCompatible: PropTypes.bool,
   isAnthropic: PropTypes.bool,
   onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
+
+function ImportApiKeysModal({ isOpen, providerId, providerName, onImported, onClose }) {
+  const [rawText, setRawText] = useState("");
+  const [items, setItems] = useState([]);
+  const [parseError, setParseError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setRawText("");
+    setItems([]);
+    setParseError(null);
+    setResult(null);
+    setImporting(false);
+    setFileInputKey((prev) => prev + 1);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const text = rawText.trim();
+    if (!text) {
+      setItems([]);
+      setParseError(null);
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      setItems([]);
+      setParseError("Invalid JSON. Please check formatting.");
+      return;
+    }
+
+    const list = Array.isArray(parsed)
+      ? parsed
+      : (Array.isArray(parsed.connections) ? parsed.connections : Array.isArray(parsed.items) ? parsed.items : null);
+
+    if (!list) {
+      setItems([]);
+      setParseError("JSON must be an array or { connections: [...] }.");
+      return;
+    }
+
+    const normalized = [];
+    const errors = [];
+    list.forEach((entry, index) => {
+      if (!entry || typeof entry !== "object") {
+        errors.push(`Row ${index + 1}: Invalid object`);
+        return;
+      }
+
+      if (entry.provider && entry.provider !== providerId) {
+        errors.push(`Row ${index + 1}: provider must be ${providerId}`);
+        return;
+      }
+
+      const name = typeof entry.name === "string" ? entry.name.trim() : "";
+      const apiKey = typeof entry.apiKey === "string" ? entry.apiKey.trim() : "";
+      if (!name || !apiKey) {
+        errors.push(`Row ${index + 1}: name and apiKey are required`);
+        return;
+      }
+
+      const item = { name, apiKey };
+      if (entry.priority !== undefined) {
+        const priority = Number.parseInt(entry.priority, 10);
+        if (Number.isNaN(priority)) {
+          errors.push(`Row ${index + 1}: priority must be a number`);
+          return;
+        }
+        item.priority = priority;
+      }
+      if (entry.globalPriority !== undefined) {
+        const globalPriority = Number.parseInt(entry.globalPriority, 10);
+        if (Number.isNaN(globalPriority)) {
+          errors.push(`Row ${index + 1}: globalPriority must be a number`);
+          return;
+        }
+        item.globalPriority = globalPriority;
+      }
+      if (entry.defaultModel !== undefined) {
+        item.defaultModel = String(entry.defaultModel);
+      }
+      if (entry.testStatus !== undefined) {
+        item.testStatus = String(entry.testStatus);
+      }
+
+      normalized.push(item);
+    });
+
+    setItems(normalized);
+    if (errors.length) {
+      const head = errors.slice(0, 3).join(" | ");
+      setParseError(errors.length > 3 ? `${head} (+${errors.length - 3} more)` : head);
+    } else {
+      setParseError(null);
+    }
+  }, [rawText, isOpen, providerId]);
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setRawText(text);
+    } catch {
+      setParseError("Failed to read file.");
+    }
+  };
+
+  const handleImport = async () => {
+    if (!items.length || parseError) return;
+    setImporting(true);
+    setResult(null);
+    const failures = [];
+    let success = 0;
+
+    for (const entry of items) {
+      try {
+        const res = await fetch("/api/providers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: providerId, ...entry }),
+        });
+        if (res.ok) {
+          success += 1;
+        } else {
+          const data = await res.json().catch(() => ({}));
+          failures.push({ name: entry.name, error: data.error || "Failed to import" });
+        }
+      } catch {
+        failures.push({ name: entry.name, error: "Failed to import" });
+      }
+    }
+
+    setResult({ success, total: items.length, failures });
+    setImporting(false);
+    if (success > 0) {
+      onImported();
+    }
+  };
+
+  const maskKey = (value) => {
+    if (!value || value.length < 8) return "****";
+    return `${value.slice(0, 4)}****${value.slice(-4)}`;
+  };
+
+  return (
+    <Modal isOpen={isOpen} title={`Import ${providerName || providerId} API Keys`} onClose={onClose} size="lg">
+      <div className="flex flex-col gap-4">
+        <div className="text-sm text-text-muted">
+          Upload a JSON file with an array of API keys. Each item should include <code className="font-mono">name</code> and <code className="font-mono">apiKey</code>.
+        </div>
+
+        <Card.Section>
+          <div className="flex flex-col gap-3">
+            <div className="text-xs text-text-muted">Example</div>
+            <div className="rounded-lg bg-black/[0.03] dark:bg-white/[0.04] border border-black/5 dark:border-white/5 p-3 font-mono text-xs whitespace-pre-wrap">
+{`[
+  { "name": "Primary", "apiKey": "sk-...", "priority": 1 },
+  { "name": "Backup", "apiKey": "sk-...", "priority": 2 }
+]`}
+            </div>
+          </div>
+        </Card.Section>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium text-text-main">JSON File</label>
+          <input
+            key={fileInputKey}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleFileChange}
+            className="block w-full text-sm text-text-muted file:mr-4 file:py-2 file:px-3 file:rounded-md file:border file:border-black/10 dark:file:border-white/10 file:bg-white dark:file:bg-white/10 file:text-sm file:font-medium file:text-text-main hover:file:bg-black/5 dark:hover:file:bg-white/20"
+          />
+          <div className="text-xs text-text-muted">We parse this file locally and never store it.</div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-sm font-medium text-text-main">Paste JSON (optional)</label>
+          <textarea
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            rows={6}
+            placeholder="Paste JSON here"
+            className="w-full rounded-md border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 p-3 text-sm text-text-main placeholder-text-muted/60 focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none"
+          />
+        </div>
+
+        {parseError && (
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm">
+            {parseError}
+          </div>
+        )}
+
+        {items.length > 0 && (
+          <Card.Section className="flex flex-col gap-2">
+            <div className="text-sm font-medium">Preview ({items.length})</div>
+            <div className="flex flex-col gap-1">
+              {items.slice(0, 5).map((item, index) => (
+                <div key={`${item.name}-${index}`} className="flex items-center justify-between text-xs text-text-muted">
+                  <span className="font-medium text-text-main">{item.name}</span>
+                  <span className="font-mono">{maskKey(item.apiKey)}</span>
+                </div>
+              ))}
+              {items.length > 5 && (
+                <div className="text-xs text-text-muted">+{items.length - 5} more</div>
+              )}
+            </div>
+          </Card.Section>
+        )}
+
+        {result && (
+          <Card.Section className="flex flex-col gap-2">
+            <div className="text-sm font-medium">Import Result</div>
+            <div className="text-sm text-text-muted">
+              Imported {result.success} of {result.total}
+            </div>
+            {result.failures.length > 0 && (
+              <div className="text-xs text-red-500">
+                {result.failures.slice(0, 5).map((failure, index) => (
+                  <div key={`${failure.name}-${index}`}>• {failure.name}: {failure.error}</div>
+                ))}
+                {result.failures.length > 5 && (
+                  <div>+{result.failures.length - 5} more</div>
+                )}
+              </div>
+            )}
+          </Card.Section>
+        )}
+
+        <div className="flex gap-2">
+          <Button onClick={handleImport} fullWidth loading={importing} disabled={!items.length || !!parseError}>
+            Import
+          </Button>
+          <Button onClick={onClose} variant="ghost" fullWidth disabled={importing}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+ImportApiKeysModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  providerId: PropTypes.string.isRequired,
+  providerName: PropTypes.string,
+  onImported: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
 
