@@ -210,7 +210,7 @@ export async function getRequestDetails(filter = {}) {
   const db = await getRequestDetailsDb();
 
   if (isCloud) {
-    return { details: [], pagination: { page: 1, pageSize: filter.pageSize || 50, total: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+    return { details: [], pagination: { page: 1, pageSize: filter.pageSize || 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
   }
 
   let query = 'SELECT * FROM request_details WHERE 1=1';
@@ -284,7 +284,7 @@ export async function getRequestDetails(filter = {}) {
     pagination: {
       page,
       pageSize,
-      total,
+      totalItems: total,
       totalPages: Math.ceil(total / pageSize),
       hasNext: page < Math.ceil(total / pageSize),
       hasPrev: page > 1

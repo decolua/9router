@@ -12,7 +12,7 @@ export default function Pagination({
   className,
 }) {
   const totalPages = Math.ceil(totalItems / pageSize);
-  const startItem = (currentPage - 1) * pageSize + 1;
+  const startItem = totalItems > 0 ? (currentPage - 1) * pageSize + 1 : 0;
   const endItem = Math.min(currentPage * pageSize, totalItems);
 
   const getPageNumbers = () => {
@@ -42,11 +42,13 @@ export default function Pagination({
       )}
     >
       {/* Info text */}
-      <div className="text-sm text-text-muted">
-        Showing <span className="font-medium text-text-main">{startItem}</span> to{" "}
-        <span className="font-medium text-text-main">{endItem}</span> of{" "}
-        <span className="font-medium text-text-main">{totalItems}</span> results
-      </div>
+      {totalItems > 0 && (
+        <div className="text-sm text-text-muted">
+          Showing <span className="font-medium text-text-main">{startItem}</span> to{" "}
+          <span className="font-medium text-text-main">{endItem}</span> of{" "}
+          <span className="font-medium text-text-main">{totalItems}</span> results
+        </div>
+      )}
 
       <div className="flex items-center gap-4">
         {/* Page size selector */}
@@ -71,72 +73,73 @@ export default function Pagination({
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={currentPage === 1}
-            className="w-9 px-0"
-          >
-            <span className="material-symbols-outlined text-[18px]">chevron_left</span>
-          </Button>
-
-          {pageNumbers[0] > 1 && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onPageChange(1)}
-                className="w-9 px-0"
-              >
-                1
-              </Button>
-              {pageNumbers[0] > 2 && (
-                <span className="text-text-muted px-1">...</span>
-              )}
-            </>
-          )}
-
-          {pageNumbers.map((page) => (
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1">
             <Button
-              key={page}
-              variant={currentPage === page ? "primary" : "ghost"}
+              variant="outline"
               size="sm"
-              onClick={() => onPageChange(page)}
+              onClick={() => onPageChange(currentPage - 1)}
+              disabled={currentPage === 1}
               className="w-9 px-0"
             >
-              {page}
+              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
             </Button>
-          ))}
 
-          {pageNumbers[pageNumbers.length - 1] < totalPages && (
-            <>
-              {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
-                <span className="text-text-muted px-1">...</span>
-              )}
+            {pageNumbers[0] > 1 && (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onPageChange(1)}
+                  className="w-9 px-0"
+                >
+                  1
+                </Button>
+                {pageNumbers[0] > 2 && (
+                  <span className="text-text-muted px-1">...</span>
+                )}
+              </>
+            )}
+
+            {pageNumbers.map((page) => (
               <Button
-                variant="ghost"
+                key={page}
+                variant={currentPage === page ? "primary" : "ghost"}
                 size="sm"
-                onClick={() => onPageChange(totalPages)}
+                onClick={() => onPageChange(page)}
                 className="w-9 px-0"
               >
-                {totalPages}
+                {page}
               </Button>
-            </>
-          )}
+            ))}
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={currentPage === totalPages}
-            className="w-9 px-0"
-          >
-            <span className="material-symbols-outlined text-[18px]">chevron_right</span>
-          </Button>
-        </div>
+            {pageNumbers[pageNumbers.length - 1] < totalPages && (
+              <>
+                {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
+                  <span className="text-text-muted px-1">...</span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onPageChange(totalPages)}
+                  className="w-9 px-0"
+                >
+                  {totalPages}
+                </Button>
+              </>
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+              className="w-9 px-0"
+            >
+              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
