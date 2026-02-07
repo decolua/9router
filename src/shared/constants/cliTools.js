@@ -30,6 +30,22 @@ export const CLI_TOOLS = {
     description: "OpenAI Codex CLI",
     configType: "custom",
   },
+  droid: {
+    id: "droid",
+    name: "Factory Droid",
+    image: "/providers/droid.png",
+    color: "#00D4FF",
+    description: "Factory Droid AI Assistant",
+    configType: "custom",
+  },
+  openclaw: {
+    id: "openclaw",
+    name: "Open Claw",
+    image: "/providers/openclaw.png",
+    color: "#FF6B35",
+    description: "Open Claw AI Assistant",
+    configType: "custom",
+  },
   cursor: {
     id: "cursor",
     name: "Cursor",

@@ -102,7 +102,15 @@ export default function ClaudeToolCard({
     }
   };
 
-  const getEffectiveBaseUrl = () => customBaseUrl || baseUrl;
+  const getEffectiveBaseUrl = () => {
+    const url = customBaseUrl || baseUrl;
+    return url.endsWith("/v1") ? url : `${url}/v1`;
+  };
+
+  const getDisplayUrl = () => {
+    const url = customBaseUrl || baseUrl;
+    return url.endsWith("/v1") ? url : `${url}/v1`;
+  };
 
   const handleApplySettings = async () => {
     setApplying(true);
@@ -250,15 +258,26 @@ export default function ClaudeToolCard({
           {!checkingClaude && claudeStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
+                {/* Current Base URL */}
+                {claudeStatus?.settings?.env?.ANTHROPIC_BASE_URL && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
+                    <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                    <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
+                      {claudeStatus.settings.env.ANTHROPIC_BASE_URL}
+                    </span>
+                  </div>
+                )}
+
                 {/* Base URL */}
                 <div className="flex items-center gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Base URL</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <input 
                     type="text" 
-                    value={customBaseUrl || baseUrl} 
+                    value={getDisplayUrl()} 
                     onChange={(e) => setCustomBaseUrl(e.target.value)} 
-                    placeholder="https://..." 
+                    placeholder="https://.../v1" 
                     className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
                   />
                   {customBaseUrl && customBaseUrl !== baseUrl && (

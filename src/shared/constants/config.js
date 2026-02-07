@@ -35,6 +35,7 @@ export const PROVIDER_ENDPOINTS = {
   glm: "https://api.z.ai/api/anthropic/v1/messages",
   kimi: "https://api.kimi.com/coding/v1/messages",
   minimax: "https://api.minimax.io/anthropic/v1/messages",
+  "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
   openai: "https://api.openai.com/v1/chat/completions",
   anthropic: "https://api.anthropic.com/v1/messages",
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
@@ -42,6 +43,7 @@ export const PROVIDER_ENDPOINTS = {
 
 // Re-export from providers.js for backward compatibility
 export {
+  FREE_PROVIDERS,
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
   AI_PROVIDERS,

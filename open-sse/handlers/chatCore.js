@@ -8,6 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -330,18 +331,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : 502}` }).catch(() => { });
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    const errMsg = formatProviderError(error, provider, model, 502);
+    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    return createErrorResult(502, errMsg);
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
   // Handle 401/403 - try token refresh using executor
-  if (providerResponse.status === 401 || providerResponse.status === 403) {
+  if (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN) {
     const newCredentials = await refreshWithRetry(
       () => executor.refreshCredentials(credentials, log),
       3,
@@ -469,10 +470,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Create transform stream with logger for streaming response
   let transformStream;
   // For Codex provider, translate response from openai-responses to openai (Chat Completions) format
-  // UNLESS client originally sent in openai-responses format (like Droid CLI) - they expect same format back
-  const needsCodexTranslation = provider === 'codex' 
-    && targetFormat === 'openai-responses' 
-    && sourceFormat !== 'openai-responses';
+  // UNLESS client is Droid CLI which expects openai-responses format back
+  const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
+  const needsCodexTranslation = provider === 'codex'
+    && targetFormat === 'openai-responses'
+    && !isDroidCLI;
 
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect

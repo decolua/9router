@@ -1,22 +1,45 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
-export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled }) {
-  const [codexStatus, setCodexStatus] = useState(null);
-  const [checkingCodex, setCheckingCodex] = useState(false);
+const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+
+export default function OpenClawToolCard({
+  tool,
+  isExpanded,
+  onToggle,
+  baseUrl,
+  hasActiveProviders,
+  apiKeys,
+  activeProviders,
+  cloudEnabled,
+}) {
+  const [openclawStatus, setOpenclawStatus] = useState(null);
+  const [checkingOpenclaw, setCheckingOpenclaw] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const hasInitializedModel = useRef(false);
+
+  const getConfigStatus = () => {
+    if (!openclawStatus?.installed) return null;
+    const currentProvider = openclawStatus.settings?.models?.providers?.["9router"];
+    if (!currentProvider) return "not_configured";
+    const localMatch = currentProvider.baseUrl?.includes("localhost") || currentProvider.baseUrl?.includes("127.0.0.1");
+    const cloudMatch = cloudEnabled && CLOUD_URL && currentProvider.baseUrl?.startsWith(CLOUD_URL);
+    if (localMatch || cloudMatch) return "configured";
+    return "other";
+  };
+
+  const configStatus = getConfigStatus();
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -25,11 +48,11 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
-    if (isExpanded && !codexStatus) {
-      checkCodexStatus();
+    if (isExpanded && !openclawStatus) {
+      checkOpenclawStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, codexStatus]);
+  }, [isExpanded, openclawStatus]);
 
   const fetchModelAliases = async () => {
     try {
@@ -41,62 +64,67 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     }
   };
 
-  // Parse model from config content (don't sync URL - always use baseUrl from props)
   useEffect(() => {
-    if (codexStatus?.config) {
-      const modelMatch = codexStatus.config.match(/^model\s*=\s*"([^"]+)"/m);
-      if (modelMatch) setSelectedModel(modelMatch[1]);
+    if (openclawStatus?.installed && !hasInitializedModel.current) {
+      hasInitializedModel.current = true;
+      const provider = openclawStatus.settings?.models?.providers?.["9router"];
+      if (provider) {
+        const primaryModel = openclawStatus.settings?.agents?.defaults?.model?.primary;
+        if (primaryModel) {
+          const modelId = primaryModel.replace("9router/", "");
+          setSelectedModel(modelId);
+        }
+        if (provider.apiKey && apiKeys?.some(k => k.key === provider.apiKey)) {
+          setSelectedApiKey(provider.apiKey);
+        }
+      }
     }
-  }, [codexStatus]);
+  }, [openclawStatus, apiKeys]);
 
-  const getConfigStatus = () => {
-    if (!codexStatus?.installed) return null;
-    if (!codexStatus.config) return "not_configured";
-    const hasBaseUrl = codexStatus.config.includes(baseUrl) || codexStatus.config.includes("localhost") || codexStatus.config.includes("127.0.0.1");
-    return hasBaseUrl ? "configured" : "other";
+  const checkOpenclawStatus = async () => {
+    setCheckingOpenclaw(true);
+    try {
+      const res = await fetch("/api/cli-tools/openclaw-settings");
+      const data = await res.json();
+      setOpenclawStatus(data);
+    } catch (error) {
+      setOpenclawStatus({ installed: false, error: error.message });
+    } finally {
+      setCheckingOpenclaw(false);
+    }
   };
-
-  const configStatus = getConfigStatus();
 
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || `${baseUrl}/v1`;
-    // Ensure URL ends with /v1
+    const url = customBaseUrl || baseUrl;
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
-  
-  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
-  const checkCodexStatus = async () => {
-    setCheckingCodex(true);
-    try {
-      const res = await fetch("/api/cli-tools/codex-settings");
-      const data = await res.json();
-      setCodexStatus(data);
-    } catch (error) {
-      setCodexStatus({ installed: false, error: error.message });
-    } finally {
-      setCheckingCodex(false);
-    }
+  const getDisplayUrl = () => {
+    const url = customBaseUrl || baseUrl;
+    return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
   const handleApplySettings = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      // Use sk_9router for localhost if no key, otherwise use selected key
-      const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
-        ? selectedApiKey 
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
-      
-      const res = await fetch("/api/cli-tools/codex-settings", {
+      const keyToUse = selectedApiKey?.trim() 
+        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+        || (!cloudEnabled ? "sk_9router" : null);
+
+      const res = await fetch("/api/cli-tools/openclaw-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, model: selectedModel }),
+        body: JSON.stringify({ 
+          baseUrl: getEffectiveBaseUrl(), 
+          apiKey: keyToUse,
+          model: selectedModel 
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        checkCodexStatus();
+        checkOpenclawStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -111,12 +139,13 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/cli-tools/codex-settings", { method: "DELETE" });
+      const res = await fetch("/api/cli-tools/openclaw-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
-        checkCodexStatus();
+        setSelectedApiKey("");
+        checkOpenclawStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -136,29 +165,36 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
-    
-    const configContent = `# 9Router Configuration for Codex CLI
-model = "${selectedModel}"
-model_provider = "9router"
 
-[model_providers.9router]
-name = "9Router"
-base_url = "${getEffectiveBaseUrl()}"
-wire_api = "responses"
-`;
-
-    const authContent = JSON.stringify({
-      OPENAI_API_KEY: keyToUse
-    }, null, 2);
+    const settingsContent = {
+      agents: {
+        defaults: {
+          model: {
+            primary: `9router/${selectedModel || "provider/model-id"}`,
+          },
+        },
+      },
+      models: {
+        providers: {
+          "9router": {
+            baseUrl: getEffectiveBaseUrl(),
+            apiKey: keyToUse,
+            api: "openai-completions",
+            models: [
+              {
+                id: selectedModel || "provider/model-id",
+                name: (selectedModel || "provider/model-id").split("/").pop(),
+              },
+            ],
+          },
+        },
+      },
+    };
 
     return [
       {
-        filename: "~/.codex/config.toml",
-        content: configContent,
-      },
-      {
-        filename: "~/.codex/auth.json",
-        content: authContent,
+        filename: "~/.openclaw/openclaw.json",
+        content: JSON.stringify(settingsContent, null, 2),
       },
     ];
   };
@@ -168,7 +204,7 @@ wire_api = "responses"
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/codex.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/openclaw.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -185,64 +221,36 @@ wire_api = "responses"
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {checkingCodex && (
+          {checkingOpenclaw && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking Codex CLI...</span>
+              <span>Checking Open Claw CLI...</span>
             </div>
           )}
 
-          {!checkingCodex && codexStatus && !codexStatus.installed && (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <span className="material-symbols-outlined text-yellow-500">warning</span>
-                <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">Codex CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install Codex CLI to use auto-apply feature.</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
-                  <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
-                  {showInstallGuide ? "Hide" : "How to Install"}
-                </Button>
+          {!checkingOpenclaw && openclawStatus && !openclawStatus.installed && (
+            <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+              <span className="material-symbols-outlined text-yellow-500">warning</span>
+              <div className="flex-1">
+                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not installed</p>
+                <p className="text-sm text-text-muted">Please install Open Claw CLI to use this feature.</p>
               </div>
-              {showInstallGuide && (
-                <div className="p-4 bg-surface border border-border rounded-lg">
-                  <h4 className="font-medium mb-3">Installation Guide</h4>
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <p className="text-text-muted mb-1">macOS / Linux / Windows:</p>
-                      <code className="block px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs">npm install -g @openai/codex</code>
-                    </div>
-                    <p className="text-text-muted">After installation, run <code className="px-1 bg-black/5 dark:bg-white/5 rounded">codex</code> to verify.</p>
-                    <div className="pt-2 border-t border-border">
-                      <p className="text-text-muted text-xs">
-                        Codex uses <code className="px-1 bg-black/5 dark:bg-white/5 rounded">~/.codex/auth.json</code> with <code className="px-1 bg-black/5 dark:bg-white/5 rounded">OPENAI_API_KEY</code>. 
-                        Click &quot;Apply&quot; to auto-configure.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
-          {!checkingCodex && codexStatus?.installed && (
+          {!checkingOpenclaw && openclawStatus?.installed && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}
-                {codexStatus?.config && (() => {
-                  const parsed = codexStatus.config.match(/base_url\s*=\s*"([^"]+)"/);
-                  const currentBaseUrl = parsed ? parsed[1] : null;
-                  return currentBaseUrl ? (
-                    <div className="flex items-center gap-2">
-                      <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
-                      <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                      <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
-                        {currentBaseUrl}
-                      </span>
-                    </div>
-                  ) : null;
-                })()}
+                {openclawStatus?.settings?.models?.providers?.["9router"]?.baseUrl && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
+                    <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                    <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
+                      {openclawStatus.settings.models.providers["9router"].baseUrl}
+                    </span>
+                  </div>
+                )}
 
                 {/* Base URL */}
                 <div className="flex items-center gap-2">
@@ -255,7 +263,7 @@ wire_api = "responses"
                     placeholder="https://.../v1" 
                     className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
                   />
-                  {customBaseUrl && customBaseUrl !== `${baseUrl}/v1` && (
+                  {customBaseUrl && customBaseUrl !== baseUrl && (
                     <button onClick={() => setCustomBaseUrl("")} className="p-1 text-text-muted hover:text-primary rounded transition-colors" title="Reset to default">
                       <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                     </button>
@@ -282,7 +290,7 @@ wire_api = "responses"
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
+                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
                   {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                 </div>
               </div>
@@ -295,10 +303,10 @@ wire_api = "responses"
               )}
 
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedApiKey || !selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!openclawStatus?.has9Router} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
@@ -317,13 +325,13 @@ wire_api = "responses"
         selectedModel={selectedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for Codex"
+        title="Select Model for Open Claw"
       />
 
       <ManualConfigModal
         isOpen={showManualConfigModal}
         onClose={() => setShowManualConfigModal(false)}
-        title="Codex CLI - Manual Configuration"
+        title="Open Claw - Manual Configuration"
         configs={getManualConfigs()}
       />
     </Card>

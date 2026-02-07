@@ -238,6 +238,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     if (data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
+        'claude-opus-4-6-thinking',
         'claude-opus-4-5-thinking',
         'claude-opus-4-5',
         'claude-sonnet-4-5-thinking',

@@ -1,3 +1,5 @@
+import { HTTP_STATUS } from "../config/constants.js";
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -55,7 +57,7 @@ export class BaseExecutor {
   }
 
   shouldRetry(status, urlIndex) {
-    return status === 429 && urlIndex + 1 < this.getFallbackCount();
+    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
   }
 
   // Override in subclass for provider-specific refresh

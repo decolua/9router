@@ -406,9 +406,14 @@ async function testApiKeyConnection(connection) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
 
-      case "minimax": {
+      case "minimax":
+      case "minimax-cn": {
         // MiniMax uses Claude-compatible API
-        const res = await fetch("https://api.minimax.io/anthropic/v1/messages", {
+        const minimaxEndpoints = {
+          minimax: "https://api.minimax.io/anthropic/v1/messages",
+          "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
+        };
+        const res = await fetch(minimaxEndpoints[connection.provider], {
           method: "POST",
           headers: {
             "x-api-key": connection.apiKey,

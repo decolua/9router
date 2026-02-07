@@ -1,4 +1,4 @@
-import { COOLDOWN_MS, BACKOFF_CONFIG } from "../config/constants.js";
+import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/constants.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -24,12 +24,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     const errorStr = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
     const lowerError = errorStr.toLowerCase();
 
-    // "No credentials" - should fallback to next model in combo
     if (lowerError.includes("no credentials")) {
       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
     }
 
-    // "Request not allowed" - short cooldown (5s), takes priority over status code
     if (lowerError.includes("request not allowed")) {
       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.requestNotAllowed };
     }
@@ -51,23 +49,20 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // 401 - Authentication error (token expired/invalid)
-  if (status === 401) {
+  if (status === HTTP_STATUS.UNAUTHORIZED) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.unauthorized };
   }
 
-  // 402/403 - Payment required / Forbidden (quota/permission)
-  if (status === 402 || status === 403) {
+  if (status === HTTP_STATUS.PAYMENT_REQUIRED || status === HTTP_STATUS.FORBIDDEN) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.paymentRequired };
   }
 
-  // 404 - Model not found (long cooldown)
-  if (status === 404) {
+  if (status === HTTP_STATUS.NOT_FOUND) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
   }
 
   // 429 - Rate limit with exponential backoff
-  if (status === 429) {
+  if (status === HTTP_STATUS.RATE_LIMITED) {
     const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
     return {
       shouldFallback: true,
@@ -76,12 +71,18 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     };
   }
 
-  // 408/500/502/503/504 - Transient errors (short cooldown)
-  if (status === 408 || status === 500 || status === 502 || status === 503 || status === 504) {
+  // Transient errors
+  const transientStatuses = [
+    HTTP_STATUS.NOT_ACCEPTABLE, HTTP_STATUS.REQUEST_TIMEOUT,
+    HTTP_STATUS.SERVER_ERROR, HTTP_STATUS.BAD_GATEWAY,
+    HTTP_STATUS.SERVICE_UNAVAILABLE, HTTP_STATUS.GATEWAY_TIMEOUT
+  ];
+  if (transientStatuses.includes(status)) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
   }
 
-  return { shouldFallback: false, cooldownMs: 0 };
+  // All other errors - fallback with transient cooldown
+  return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
 }
 
 /**
@@ -97,6 +98,44 @@ export function isAccountUnavailable(unavailableUntil) {
  */
 export function getUnavailableUntil(cooldownMs) {
   return new Date(Date.now() + cooldownMs).toISOString();
+}
+
+/**
+ * Get the earliest rateLimitedUntil from a list of accounts
+ * @param {Array} accounts - Array of account objects with rateLimitedUntil
+ * @returns {string|null} Earliest rateLimitedUntil ISO string, or null
+ */
+export function getEarliestRateLimitedUntil(accounts) {
+  let earliest = null;
+  const now = Date.now();
+  for (const acc of accounts) {
+    if (!acc.rateLimitedUntil) continue;
+    const until = new Date(acc.rateLimitedUntil).getTime();
+    if (until <= now) continue;
+    if (!earliest || until < earliest) earliest = until;
+  }
+  if (!earliest) return null;
+  return new Date(earliest).toISOString();
+}
+
+/**
+ * Format rateLimitedUntil to human-readable "reset after Xm Ys"
+ * @param {string} rateLimitedUntil - ISO timestamp
+ * @returns {string} e.g. "reset after 2m 30s"
+ */
+export function formatRetryAfter(rateLimitedUntil) {
+  if (!rateLimitedUntil) return "";
+  const diffMs = new Date(rateLimitedUntil).getTime() - Date.now();
+  if (diffMs <= 0) return "reset after 0s";
+  const totalSec = Math.ceil(diffMs / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0 || parts.length === 0) parts.push(`${s}s`);
+  return `reset after ${parts.join(" ")}`;
 }
 
 /**

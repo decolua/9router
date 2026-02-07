@@ -1,9 +1,15 @@
 <div align="center">
   <img src="./images/9router.png" alt="9Router Dashboard" width="800"/>
   
-  # 9Router - Smart AI Router
+  # 9Router - Free AI Router
   
   **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
+  
+  **Free AI Provider for OpenClaw.**
+  
+  <p align="center">
+    <img src="./public/providers/openclaw.png" alt="OpenClaw" width="80"/>
+  </p>
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
@@ -28,7 +34,7 @@
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
 - ✅ **Multi-account** - Round-robin between accounts per provider
-- ✅ **Universal** - Works with Cursor, Cline, Claude Desktop, any CLI tool
+- ✅ **Universal** - Works with Claude Code, Codex, Gemini CLI, Cursor, Cline, any CLI tool
 
 ---
 
@@ -36,7 +42,7 @@
 
 ```
 ┌─────────────┐
-│  Your CLI   │  (Cursor, Cline, Claude Desktop...)
+│  Your CLI   │  (Claude Code, Codex, Gemini CLI, OpenClaw, Cursor, Cline...)
 │   Tool      │
 └──────┬──────┘
        │ http://localhost:20128/v1
@@ -72,18 +78,39 @@ npm install -g 9router
 
 **2. Connect a FREE provider (no signup needed):**
 
-Dashboard → Providers → Connect **iFlow** or **Qwen** → OAuth login → Done!
+Dashboard → Providers → Connect **Claude Code** or **Antigravity** → OAuth login → Done!
 
 **3. Use in your CLI tool:**
 
 ```
-Cursor/Cline Settings:
+Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline Settings:
   Endpoint: http://localhost:20128/v1
   API Key: [copy from dashboard]
   Model: if/kimi-k2-thinking
 ```
 
 **That's it!** Start coding with FREE AI models.
+
+**Alternative: run from source (this repository):**
+
+This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
+
+```bash
+cp .env.example .env
+npm install
+PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+```
+
+Production mode:
+
+```bash
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+```
+
+Default URLs:
+- Dashboard: `http://localhost:20128/dashboard`
+- OpenAI-compatible API: `http://localhost:20128/v1`
 
 ---
 
@@ -111,7 +138,7 @@ Create combos with automatic fallback:
 
 ```
 Combo: "my-coding-stack"
-  1. cc/claude-opus-4-5        (your subscription)
+  1. cc/claude-opus-4-6        (your subscription)
   2. glm/glm-4.7               (cheap backup, $0.6/1M)
   3. if/kimi-k2-thinking       (free fallback)
 
@@ -211,9 +238,9 @@ Seamless translation between formats:
 **Solution:**
 ```
 Combo: "maximize-claude"
-  1. cc/claude-opus-4-5        (use subscription fully)
+  1. cc/claude-opus-4-6        (use subscription fully)
   2. glm/glm-4.7               (cheap backup when quota out)
-  3. if/kimi-k2                (free emergency fallback)
+  3. if/kimi-k2-thinking       (free emergency fallback)
 
 Monthly cost: $20 (subscription) + ~$5 (backup) = $25 total
 vs. $20 + hitting limits = frustration
@@ -241,7 +268,7 @@ Quality: Production-ready models
 **Solution:**
 ```
 Combo: "always-on"
-  1. cc/claude-opus-4-5        (best quality)
+  1. cc/claude-opus-4-6        (best quality)
   2. cx/gpt-5.2-codex          (second subscription)
   3. glm/glm-4.7               (cheap, resets daily)
   4. minimax/MiniMax-M2.1      (cheapest, 5h reset)
@@ -249,6 +276,21 @@ Combo: "always-on"
 
 Result: 5 layers of fallback = zero downtime
 Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
+```
+
+### Case 4: "I want FREE AI in OpenClaw"
+
+**Problem:** Need AI assistant in messaging apps (WhatsApp, Telegram, Slack...), completely free
+
+**Solution:**
+```
+Combo: "openclaw-free"
+  1. if/glm-4.7                (unlimited free)
+  2. if/minimax-m2.1           (unlimited free)
+  3. if/kimi-k2-thinking       (unlimited free)
+
+Monthly cost: $0
+Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 ```
 
 ---
@@ -266,7 +308,7 @@ Dashboard → Providers → Connect Claude Code
 → 5-hour + weekly quota tracking
 
 Models:
-  cc/claude-opus-4-5-20251101
+  cc/claude-opus-4-6
   cc/claude-sonnet-4-5-20250929
   cc/claude-haiku-4-5-20251001
 ```
@@ -405,7 +447,7 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-5-20251101 (Subscription primary)
+  1. cc/claude-opus-4-6 (Subscription primary)
   2. glm/glm-4.7 (Cheap backup, $0.6/1M)
   3. minimax/MiniMax-M2.1 (Cheapest fallback, $0.20/1M)
 
@@ -441,12 +483,12 @@ Cost: $0 forever!
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [from 9router dashboard]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-4-6
 ```
 
 Or use combo: `premium-coding`
 
-### Claude Desktop (Claude Code)
+### Claude Code
 
 Edit `~/.claude/config.json`:
 
@@ -466,13 +508,46 @@ export OPENAI_API_KEY="your-9router-api-key"
 codex "your prompt"
 ```
 
+### OpenClaw
+
+Edit `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "9router/if/glm-4.7"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "9router": {
+        "baseUrl": "http://localhost:20128/v1",
+        "apiKey": "your-9router-api-key",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "if/glm-4.7",
+            "name": "glm-4.7"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+**Or use Dashboard:** CLI Tools → OpenClaw → Auto-config
+
 ### Cline / Continue / RooCode
 
 ```
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-4-6
 ```
 
 </details>
@@ -485,7 +560,7 @@ Model: cc/claude-opus-4-5-20251101
 ```bash
 # Clone and install
 git clone https://github.com/decolua/9router.git
-cd 9router/app
+cd 9router
 npm install
 npm run build
 
@@ -493,7 +568,13 @@ npm run build
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
 export DATA_DIR="/var/lib/9router"
+export PORT="20128"
+export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
+export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
+export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export API_KEY_SECRET="endpoint-proxy-api-key-secret"
+export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Start
 npm run start
@@ -508,23 +589,72 @@ pm2 startup
 ### Docker
 
 ```bash
+# Build image (from repository root)
 docker build -t 9router .
+
+# Run container (command used in current setup)
 docker run -d \
-  -p 3000:3000 \
-  -e JWT_SECRET="your-secure-secret" \
-  -e INITIAL_PASSWORD="your-password" \
+  --name 9router \
+  -p 20128:20128 \
+  --env-file /root/dev/9router/.env \
   -v 9router-data:/app/data \
+  -v 9router-usage:/root/.9router \
   9router
+```
+
+Portable command (if you are already at repository root):
+
+```bash
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  --env-file ./.env \
+  -v 9router-data:/app/data \
+  -v 9router-usage:/root/.9router \
+  9router
+```
+
+Container defaults:
+- `PORT=20128`
+- `HOSTNAME=0.0.0.0`
+
+Useful commands:
+
+```bash
+docker logs -f 9router
+docker restart 9router
+docker stop 9router && docker rm 9router
 ```
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated | **MUST change in production!** |
-| `DATA_DIR` | `~/.9router` | Database storage path |
-| `INITIAL_PASSWORD` | `123456` | Dashboard login password |
-| `NODE_ENV` | `development` | Set to `production` for deploy |
+| `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
+| `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
+| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
+| `PORT` | framework default | Service port (`20128` in examples) |
+| `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
+| `NODE_ENV` | runtime default | Set `production` for deploy |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Internal base URL used by cloud sync jobs |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Cloud sync endpoint base URL |
+| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
+| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
+| `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+
+Notes:
+- Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
+- `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
+- On Windows, `APPDATA` can be used for local storage path resolution.
+- `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
+
+### Runtime Files and Storage
+
+- Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
+- Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
+- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
+- Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
 
 </details>
 
@@ -536,7 +666,7 @@ docker run -d \
 <summary><b>View all available models</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
-- `cc/claude-opus-4-5-20251101`
+- `cc/claude-opus-4-6`
 - `cc/claude-sonnet-4-5-20250929`
 - `cc/claude-haiku-4-5-20251001`
 
@@ -583,7 +713,7 @@ docker run -d \
 
 **Rate limiting**
 - Subscription quota out → Fallback to GLM/MiniMax
-- Add combo: `cc/claude-opus → glm/glm-4.7 → if/kimi-k2`
+- Add combo: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth token expired**
 - Auto-refreshed by 9Router
@@ -594,12 +724,26 @@ docker run -d \
 - Switch primary model to GLM/MiniMax
 - Use free tier (Gemini CLI, iFlow) for non-critical tasks
 
+**Dashboard opens on wrong port**
+- Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+
+**Cloud sync errors**
+- Verify `NEXT_PUBLIC_BASE_URL` points to your running instance
+- Verify `NEXT_PUBLIC_CLOUD_URL` points to your expected cloud endpoint
+
+**First login not working**
+- Check `INITIAL_PASSWORD` in `.env`
+- If unset, fallback password is `123456`
+
+**No request logs under `logs/`**
+- Set `ENABLE_REQUEST_LOGS=true`
+
 ---
 
 ## 🛠️ Tech Stack
 
 - **Runtime**: Node.js 20+
-- **Framework**: Next.js 15
+- **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
 - **Database**: LowDB (JSON file-based)
 - **Streaming**: Server-Sent Events (SSE)
@@ -617,7 +761,7 @@ Authorization: Bearer your-api-key
 Content-Type: application/json
 
 {
-  "model": "cc/claude-opus-4-5-20251101",
+  "model": "cc/claude-opus-4-6",
   "messages": [
     {"role": "user", "content": "Write a function to..."}
   ],
@@ -634,6 +778,47 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
+### Compatibility Endpoints
+
+- `POST /v1/chat/completions`
+- `POST /v1/messages`
+- `POST /v1/responses`
+- `GET /v1/models`
+- `POST /v1/messages/count_tokens`
+- `GET /v1beta/models`
+- `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
+- `POST /v1/api/chat` (Ollama-style transform path)
+
+### Dashboard and Management API
+
+- Auth/settings: `/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
+- Provider management: `/api/providers`, `/api/providers/[id]`, `/api/providers/[id]/test`, `/api/providers/[id]/models`, `/api/providers/validate`, `/api/provider-nodes*`
+- OAuth flows: `/api/oauth/[provider]/[action]` (+ provider-specific imports like Cursor/Kiro)
+- Routing config: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
+- Usage/logs: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
+- Cloud sync: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
+- CLI helpers: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
+
+### Authentication Behavior
+
+- Dashboard routes (`/dashboard/*`) use `auth_token` cookie protection.
+- Login uses saved password hash when present; otherwise it falls back to `INITIAL_PASSWORD`.
+- `requireLogin` can be toggled via `/api/settings/require-login`.
+
+### Request Processing (High Level)
+
+1. Client sends request to `/v1/*`.
+2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`).
+3. Model is resolved (direct provider/model or alias/combo resolution).
+4. Credentials are selected from local DB with account availability filtering.
+5. `handleChatCore` (`open-sse/handlers/chatCore.js`) detects format and translates request.
+6. Provider executor sends upstream request.
+7. Stream is translated back to client format when needed.
+8. Usage/logging is recorded (`src/lib/usageDb.js`).
+9. Fallback applies on provider/account/model errors according to combo rules.
+
+Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
 ---
 
 ## 📧 Support
@@ -644,17 +829,17 @@ Authorization: Bearer your-api-key
 
 ---
 
-## 🌟 Stargazers
-
-[![Stargazers over time](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
-
----
-
 ## 👥 Contributors
 
 Thanks to all contributors who helped make 9Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+
+---
+
+## 📊 Star Chart
+
+[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
 
 ### How to Contribute
 

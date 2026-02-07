@@ -155,9 +155,11 @@ export async function POST(request) {
     parsed._root.model_provider = "9router";
     
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
+    // Ensure /v1 suffix is added only once
+    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     parsed._sections["model_providers.9router"] = {
       name: "9Router",
-      base_url: `${baseUrl}/v1`,
+      base_url: normalizedBaseUrl,
       wire_api: "responses",
     };
 
