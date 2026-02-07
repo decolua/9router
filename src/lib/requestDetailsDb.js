@@ -5,6 +5,39 @@ import fs from "fs";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
+// ============================================================================
+// CONFIGURATION: Batch Processing Settings
+// ============================================================================
+
+/**
+ * Get observability configuration from settings.
+ * Falls back to environment variables, then defaults.
+ */
+async function getObservabilityConfig() {
+  try {
+    const { getSettings } = await import("@/lib/localDb");
+    const settings = await getSettings();
+
+    return {
+      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || '1000', 10),
+      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || '20', 10),
+      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || '5000', 10),
+      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || '1024', 10)) * 1024
+    };
+  } catch (error) {
+    console.error("[requestDetailsDb] Failed to load observability config:", error);
+    return {
+      maxRecords: 1000,
+      batchSize: 20,
+      flushIntervalMs: 5000,
+      maxJsonSize: 1024 * 1024
+    };
+  }
+}
+
+// Cache config to avoid repeated database reads
+let cachedConfig = null;
+
 // Get app name
 function getAppName() {
   return "9router";
@@ -45,8 +78,30 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
   }
 }
 
-// Singleton instance
-let dbInstance = null;
+// ============================================================================
+// BATCH WRITE QUEUE
+// ============================================================================
+
+/**
+ * In-memory buffer for batch writes.
+ * Accumulates request details before flushing to database in a transaction.
+ * @type {Array<object>}
+ */
+let writeBuffer = [];
+
+/**
+ * Timer reference for auto-flush mechanism.
+ * Ensures data is written even during low traffic periods.
+ * @type {NodeJS.Timeout|null}
+ */
+let flushTimer = null;
+
+/**
+ * Flag indicating if a flush operation is currently in progress.
+ * Prevents concurrent flushes.
+ * @type {boolean}
+ */
+let isFlushing = false;
 
 /**
  * Get SQLite database instance (singleton)
@@ -108,6 +163,9 @@ export async function getRequestDetailsDb() {
     `);
 
     dbInstance = db;
+
+    // Register shutdown handler on first database initialization
+    ensureShutdownHandler();
   }
 
   return dbInstance;
@@ -121,6 +179,112 @@ function generateDetailId(model) {
   const random = Math.random().toString(36).substring(2, 8);
   const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, '-') : 'unknown';
   return `${timestamp}-${random}-${modelPart}`;
+}
+
+/**
+ * Flush all buffered items to database in a single transaction.
+ * This function is called automatically when:
+ * 1. Buffer size reaches OBSERVABILITY_BATCH_SIZE
+ * 2. OBSERVABILITY_FLUSH_INTERVAL_MS elapses
+ * 3. Process is shutting down (graceful shutdown)
+ *
+ * @private
+ */
+async function flushToDatabase() {
+  if (isCloud || isFlushing || writeBuffer.length === 0) {
+    return;
+  }
+
+  isFlushing = true;
+
+  try {
+    // Take a snapshot of the buffer and clear it immediately
+    const itemsToSave = [...writeBuffer];
+    writeBuffer = [];
+
+    const db = await getRequestDetailsDb();
+    const config = await getObservabilityConfig();
+
+    // Prepare statements outside transaction for better performance
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO request_details
+      (id, provider, model, connection_id, timestamp, status, latency, tokens,
+       request, provider_request, provider_response, response)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const deleteStmt = db.prepare(`
+      DELETE FROM request_details
+      WHERE id NOT IN (
+        SELECT id FROM request_details
+        ORDER BY timestamp DESC
+        LIMIT ?
+      )
+    `);
+
+    // Execute all writes in a single transaction for atomicity
+    const transaction = db.transaction((items) => {
+      const maxJsonSize = config.maxJsonSize;
+
+      for (const item of items) {
+        if (!item.id) {
+          item.id = generateDetailId(item.model);
+        }
+
+        if (!item.timestamp) {
+          item.timestamp = new Date().toISOString();
+        }
+
+        // Sanitize headers if present
+        if (item.request && item.request.headers) {
+          item.request.headers = sanitizeHeaders(item.request.headers);
+        }
+
+        insertStmt.run(
+          item.id,
+          item.provider || null,
+          item.model || null,
+          item.connectionId || null,
+          new Date(item.timestamp).getTime(),
+          item.status || null,
+          JSON.stringify(item.latency || {}),
+          JSON.stringify(item.tokens || {}),
+          safeJsonStringify(item.request || {}, maxJsonSize),
+          safeJsonStringify(item.providerRequest || {}, maxJsonSize),
+          safeJsonStringify(item.providerResponse || {}, maxJsonSize),
+          safeJsonStringify(item.response || {}, maxJsonSize)
+        );
+      }
+
+      // Cleanup old records once per batch (not per item)
+      deleteStmt.run(config.maxRecords);
+    });
+
+    transaction(itemsToSave);
+  } catch (error) {
+    console.error("[requestDetailsDb] Batch write failed:", error);
+  } finally {
+    isFlushing = false;
+  }
+}
+
+/**
+ * Safely stringify an object with a size limit.
+ * Truncates the result if it exceeds the limit.
+ * @param {object} obj - Object to stringify
+ * @param {number} maxSize - Maximum string size in bytes
+ * @returns {string}
+ */
+function safeJsonStringify(obj, maxSize) {
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxSize) {
+      return str.substring(0, maxSize) + "... (truncated due to size limit)";
+    }
+    return str;
+  } catch (error) {
+    return JSON.stringify({ error: "Failed to stringify object", message: error.message });
+  }
 }
 
 /**
@@ -142,63 +306,72 @@ function sanitizeHeaders(headers) {
 }
 
 /**
- * Save request detail to SQLite
+ * Save request detail to SQLite (batched for performance).
+ * Details are accumulated in memory and flushed to database in batches.
+ *
  * @param {object} detail - Request detail object
+ * @see {@link flushToDatabase} for batch write implementation
  */
 export async function saveRequestDetail(detail) {
   if (isCloud) return;
 
-  try {
-    const db = await getRequestDetailsDb();
-
-    if (!detail.id) {
-      detail.id = generateDetailId(detail.model);
-    }
-
-    if (!detail.timestamp) {
-      detail.timestamp = new Date().toISOString();
-    }
-
-    // Sanitize headers if present
-    if (detail.request && detail.request.headers) {
-      detail.request.headers = sanitizeHeaders(detail.request.headers);
-    }
-
-    const stmt = db.prepare(`
-      INSERT OR REPLACE INTO request_details
-      (id, provider, model, connection_id, timestamp, status, latency, tokens,
-       request, provider_request, provider_response, response)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      detail.id,
-      detail.provider || null,
-      detail.model || null,
-      detail.connectionId || null,
-      new Date(detail.timestamp).getTime(),
-      detail.status || null,
-      JSON.stringify(detail.latency || {}),
-      JSON.stringify(detail.tokens || {}),
-      JSON.stringify(detail.request || {}),
-      JSON.stringify(detail.providerRequest || {}),
-      JSON.stringify(detail.providerResponse || {}),
-      JSON.stringify(detail.response || {})
-    );
-
-    // Keep only the latest 1000 records
-    db.prepare(`
-      DELETE FROM request_details
-      WHERE id NOT IN (
-        SELECT id FROM request_details
-        ORDER BY timestamp DESC
-        LIMIT 1000
-      )
-    `).run();
-
-  } catch (error) {
-    console.error("[requestDetailsDb] Failed to save request detail:", error);
+  if (!cachedConfig) {
+    cachedConfig = await getObservabilityConfig();
   }
+
+  writeBuffer.push(detail);
+
+  if (writeBuffer.length >= cachedConfig.batchSize) {
+    await flushToDatabase();
+
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+  } else if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushToDatabase().catch(() => {});
+      flushTimer = null;
+    }, cachedConfig.flushIntervalMs);
+  }
+}
+
+// ============================================================================
+// GRACEFUL SHUTDOWN HANDLER
+// ============================================================================
+
+let shutdownHandlerRegistered = false;
+
+/**
+ * Register process shutdown handlers to flush remaining data before exit.
+ * Should be called once when the module initializes.
+ */
+function ensureShutdownHandler() {
+  if (shutdownHandlerRegistered || isCloud) {
+    return;
+  }
+
+  const handler = async () => {
+    // Clear timer to prevent any pending flush
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+
+    // Flush any remaining data in buffer
+    if (writeBuffer.length > 0) {
+      console.log(`[requestDetailsDb] Flushing ${writeBuffer.length} items before shutdown...`);
+      await flushToDatabase();
+    }
+  };
+
+  // Register handlers for various termination signals
+  process.on('beforeExit', handler);
+  process.on('SIGINT', handler);
+  process.on('SIGTERM', handler);
+  process.on('exit', handler);
+
+  shutdownHandlerRegistered = true;
 }
 
 /**

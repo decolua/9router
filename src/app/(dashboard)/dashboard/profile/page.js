@@ -110,6 +110,24 @@ export default function ProfilePage() {
     }
   };
 
+  const updateObservabilitySetting = async (key, value) => {
+    const numValue = parseInt(value);
+    if (isNaN(numValue) || numValue < 1) return;
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: numValue }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: numValue }));
+      }
+    } catch (err) {
+      console.error(`Failed to update ${key}:`, err);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
@@ -293,6 +311,7 @@ export default function ProfilePage() {
                 {["light", "dark", "system"].map((option) => (
                   <button
                     key={option}
+                    type="button"
                     onClick={() => setTheme(option)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all",
@@ -327,6 +346,97 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
+          </div>
+        </Card>
+
+        {/* Observability Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+              <span className="material-symbols-outlined text-[20px]">monitoring</span>
+            </div>
+            <h3 className="text-lg font-semibold">Observability</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max Records</p>
+                <p className="text-sm text-text-muted">
+                  Maximum request detail records to keep (older records are auto-deleted)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10000"
+                step="100"
+                value={settings.observabilityMaxRecords || 1000}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxRecords", parseInt(e.target.value))}
+                disabled={loading}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Batch Size</p>
+                <p className="text-sm text-text-muted">
+                  Number of items to accumulate before writing to database (higher = better performance)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="5"
+                max="100"
+                step="5"
+                value={settings.observabilityBatchSize || 20}
+                onChange={(e) => updateObservabilitySetting("observabilityBatchSize", parseInt(e.target.value))}
+                disabled={loading}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Flush Interval (ms)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum time to wait before flushing buffer (prevents data loss during low traffic)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1000"
+                max="30000"
+                step="1000"
+                value={settings.observabilityFlushIntervalMs || 5000}
+                onChange={(e) => updateObservabilitySetting("observabilityFlushIntervalMs", parseInt(e.target.value))}
+                disabled={loading}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max JSON Size (KB)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum size for each JSON field (request/response) before truncation
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10240"
+                step="100"
+                value={settings.observabilityMaxJsonSize || 1024}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxJsonSize", parseInt(e.target.value))}
+                disabled={loading}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
+            </p>
           </div>
         </Card>
 
