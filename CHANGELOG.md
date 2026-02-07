@@ -6,11 +6,11 @@
 - Improved usage/quota UX with richer provider limit cards, new quota table, and clearer reset/countdown display (`32aefe5`).
 - Added model support for custom providers in UI/combos/model selection (`a7a52be`).
 - Expanded model/provider catalog:
-  - Codex updates: GPT-5.3 support, translation fixes, thinking levels (`127475d`)
-  - Added Claude Opus 4.6 model (`e8aa3e2`)
-  - Added MiniMax Coding (CN) provider (`7c609d7`)
-  - Added iFlow Kimi K2.5 model (`9e357a7`)
-  - Updated CLI tools with Droid/OpenClaw cards and base URL visibility improvements (`a2122e3`)
+  - Codex updates: GPT-5.3 support, translation fixes, thinking levels (`127475d`).
+  - Added Claude Opus 4.6 model (`e8aa3e2`).
+  - Added MiniMax Coding (CN) provider (`7c609d7`).
+  - Added iFlow Kimi K2.5 model (`9e357a7`).
+  - Updated CLI tools with Droid/OpenClaw cards and base URL visibility improvements (`a2122e3`).
 - Added auto-validation for provider API keys when saving settings (`b275dfd`).
 - Added Docker/runtime deployment docs and architecture documentation updates (`5e4a15b`).
 
