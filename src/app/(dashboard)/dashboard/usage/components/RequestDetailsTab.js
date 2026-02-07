@@ -200,9 +200,9 @@ export default function RequestDetailsTab() {
                   </td>
                 </tr>
               ) : (
-                details.map((detail) => (
-                  <tr 
-                    key={detail.id} 
+                details.map((detail, index) => (
+                  <tr
+                    key={`${detail.id}-${index}`}
                     className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
                   >
                     <td className="p-4 text-sm text-text-main">
@@ -328,19 +328,12 @@ export default function RequestDetailsTab() {
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  {typeof selectedDetail.providerResponse === 'string' && selectedDetail.providerResponse.includes("[Streaming") ? (
-                    <div className="flex items-center gap-2 p-2 bg-black/[0.02] dark:bg-white/[0.02] rounded border border-black/5 dark:border-white/5 text-text-muted italic text-sm">
-                      <span className="material-symbols-outlined text-[16px]">stream</span>
-                      {selectedDetail.providerResponse}
-                    </div>
-                  ) : (
-                    <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
-                      {typeof selectedDetail.providerResponse === 'object' 
-                        ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                        : selectedDetail.providerResponse
-                      }
-                    </pre>
-                  )}
+                  <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
+                    {typeof selectedDetail.providerResponse === 'object'
+                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
+                      : selectedDetail.providerResponse
+                    }
+                  </pre>
                 </CollapsibleSection>
               )}
               
