@@ -3,6 +3,9 @@
  * Centralized DRY approach for all OAuth providers
  */
 
+// Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
+import "open-sse/index.js";
+
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
   CLAUDE_CONFIG,

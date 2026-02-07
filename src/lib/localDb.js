@@ -49,7 +49,10 @@ const defaultData = {
   settings: {
     cloudEnabled: false,
     stickyRoundRobinLimit: 3,
-    requireLogin: true
+    requireLogin: true,
+    outboundProxyEnabled: false,
+    outboundProxyUrl: "",
+    outboundNoProxy: ""
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -65,6 +68,9 @@ function cloneDefaultData() {
       cloudEnabled: false,
       stickyRoundRobinLimit: 3,
       requireLogin: true,
+      outboundProxyEnabled: false,
+      outboundProxyUrl: "",
+      outboundNoProxy: "",
     },
     pricing: {},
   };
@@ -98,7 +104,17 @@ function ensureDbShape(data) {
     ) {
       for (const [settingKey, settingDefault] of Object.entries(defaultValue)) {
         if (next.settings[settingKey] === undefined) {
-          next.settings[settingKey] = settingDefault;
+          // Backward-compat: if users previously saved a proxy URL,
+          // default to enabled so behavior doesn't silently change.
+          if (
+            settingKey === "outboundProxyEnabled" &&
+            typeof next.settings.outboundProxyUrl === "string" &&
+            next.settings.outboundProxyUrl.trim()
+          ) {
+            next.settings.outboundProxyEnabled = true;
+          } else {
+            next.settings[settingKey] = settingDefault;
+          }
           changed = true;
         }
       }

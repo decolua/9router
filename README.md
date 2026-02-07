@@ -297,6 +297,19 @@ Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 
 ## 📖 Setup Guide
 
+## Outbound Proxy (Optional)
+
+If your network requires an upstream proxy (e.g. Clash), you can route 9Router's outbound requests (OAuth + provider API calls) via environment variables:
+
+You can also set this in Dashboard → Settings → Network (takes effect immediately).
+
+```powershell
+$env:HTTP_PROXY="http://127.0.0.1:7897"
+$env:HTTPS_PROXY=$env:HTTP_PROXY
+$env:NO_PROXY="localhost,127.0.0.1"
+npm run dev
+```
+
 <details>
 <summary><b>🔐 Subscription Providers (Maximize Value)</b></summary>
 
