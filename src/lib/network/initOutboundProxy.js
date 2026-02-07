@@ -1,5 +1,5 @@
 import { getSettings } from "@/lib/localDb";
-import { applyOutboundProxyEnv } from "@/lib/outboundProxy";
+import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 
 let initialized = false;
 

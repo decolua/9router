@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { applyOutboundProxyEnv } from "@/lib/outboundProxy";
+import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
