@@ -43,6 +43,7 @@ export const PROVIDER_ENDPOINTS = {
 
 // Re-export from providers.js for backward compatibility
 export {
+  FREE_PROVIDERS,
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
   AI_PROVIDERS,

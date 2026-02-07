@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS, HTTP_STATUS } from "../config/constants.js";
 import {
   generateCursorBody,
   parseConnectRPCFrame,
@@ -77,7 +77,7 @@ function createErrorResponse(jsonError) {
       code: jsonError?.error?.details?.[0]?.debug?.error || "unknown"
     }
   }), {
-    status: isRateLimit ? 429 : 400,
+    status: isRateLimit ? HTTP_STATUS.RATE_LIMITED : HTTP_STATUS.BAD_REQUEST,
     headers: { "Content-Type": "application/json" }
   });
 }
@@ -275,7 +275,7 @@ export class CursorExecutor extends BaseExecutor {
           code: ""
         }
       }), {
-        status: 500,
+        status: HTTP_STATUS.SERVER_ERROR,
         headers: { "Content-Type": "application/json" }
       });
       return { response: errorResponse, url, headers, transformedBody: body };
@@ -338,7 +338,7 @@ export class CursorExecutor extends BaseExecutor {
             code: "rate_limited"
           }
         }), {
-          status: 429,
+          status: HTTP_STATUS.RATE_LIMITED,
           headers: { "Content-Type": "application/json" }
         });
       }
@@ -480,7 +480,7 @@ export class CursorExecutor extends BaseExecutor {
             code: "rate_limited"
           }
         }), {
-          status: 429,
+          status: HTTP_STATUS.RATE_LIMITED,
           headers: { "Content-Type": "application/json" }
         });
       }

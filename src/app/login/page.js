@@ -30,19 +30,10 @@ export default function LoginPage() {
             router.refresh();
             return;
           }
-          if (!data.password) {
-            const loginRes = await fetch(`${baseUrl}/api/auth/login`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ password: "123456" }),
-            });
-            if (loginRes.ok) {
-              router.push("/dashboard");
-              router.refresh();
-              return;
-            }
-          }
-          setHasPassword(!!data.password);
+          setHasPassword(!!data.hasPassword);
+        } else {
+          // Safe fallback on non-OK response to avoid infinite loading state.
+          setHasPassword(true);
         }
       } catch (err) {
         clearTimeout(timeoutId);

@@ -91,6 +91,27 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
+**Alternative: run from source (this repository):**
+
+This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
+
+```bash
+cp .env.example .env
+npm install
+PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+```
+
+Production mode:
+
+```bash
+npm run build
+PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+```
+
+Default URLs:
+- Dashboard: `http://localhost:20128/dashboard`
+- OpenAI-compatible API: `http://localhost:20128/v1`
+
 ---
 
 ## 💡 Key Features
@@ -539,7 +560,7 @@ Model: cc/claude-opus-4-6
 ```bash
 # Clone and install
 git clone https://github.com/decolua/9router.git
-cd 9router/app
+cd 9router
 npm install
 npm run build
 
@@ -547,7 +568,13 @@ npm run build
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
 export DATA_DIR="/var/lib/9router"
+export PORT="20128"
+export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
+export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
+export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export API_KEY_SECRET="endpoint-proxy-api-key-secret"
+export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Start
 npm run start
@@ -562,23 +589,72 @@ pm2 startup
 ### Docker
 
 ```bash
+# Build image (from repository root)
 docker build -t 9router .
+
+# Run container (command used in current setup)
 docker run -d \
-  -p 3000:3000 \
-  -e JWT_SECRET="your-secure-secret" \
-  -e INITIAL_PASSWORD="your-password" \
+  --name 9router \
+  -p 20128:20128 \
+  --env-file /root/dev/9router/.env \
   -v 9router-data:/app/data \
+  -v 9router-usage:/root/.9router \
   9router
+```
+
+Portable command (if you are already at repository root):
+
+```bash
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  --env-file ./.env \
+  -v 9router-data:/app/data \
+  -v 9router-usage:/root/.9router \
+  9router
+```
+
+Container defaults:
+- `PORT=20128`
+- `HOSTNAME=0.0.0.0`
+
+Useful commands:
+
+```bash
+docker logs -f 9router
+docker restart 9router
+docker stop 9router && docker rm 9router
 ```
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated | **MUST change in production!** |
-| `DATA_DIR` | `~/.9router` | Database storage path |
-| `INITIAL_PASSWORD` | `123456` | Dashboard login password |
-| `NODE_ENV` | `development` | Set to `production` for deploy |
+| `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
+| `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
+| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
+| `PORT` | framework default | Service port (`20128` in examples) |
+| `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
+| `NODE_ENV` | runtime default | Set `production` for deploy |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Internal base URL used by cloud sync jobs |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Cloud sync endpoint base URL |
+| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
+| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
+| `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+
+Notes:
+- Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
+- `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
+- On Windows, `APPDATA` can be used for local storage path resolution.
+- `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
+
+### Runtime Files and Storage
+
+- Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
+- Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
+- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
+- Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
 
 </details>
 
@@ -648,12 +724,26 @@ docker run -d \
 - Switch primary model to GLM/MiniMax
 - Use free tier (Gemini CLI, iFlow) for non-critical tasks
 
+**Dashboard opens on wrong port**
+- Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
+
+**Cloud sync errors**
+- Verify `NEXT_PUBLIC_BASE_URL` points to your running instance
+- Verify `NEXT_PUBLIC_CLOUD_URL` points to your expected cloud endpoint
+
+**First login not working**
+- Check `INITIAL_PASSWORD` in `.env`
+- If unset, fallback password is `123456`
+
+**No request logs under `logs/`**
+- Set `ENABLE_REQUEST_LOGS=true`
+
 ---
 
 ## 🛠️ Tech Stack
 
 - **Runtime**: Node.js 20+
-- **Framework**: Next.js 15
+- **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
 - **Database**: LowDB (JSON file-based)
 - **Streaming**: Server-Sent Events (SSE)
@@ -687,6 +777,47 @@ Authorization: Bearer your-api-key
 
 → Returns all models + combos in OpenAI format
 ```
+
+### Compatibility Endpoints
+
+- `POST /v1/chat/completions`
+- `POST /v1/messages`
+- `POST /v1/responses`
+- `GET /v1/models`
+- `POST /v1/messages/count_tokens`
+- `GET /v1beta/models`
+- `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
+- `POST /v1/api/chat` (Ollama-style transform path)
+
+### Dashboard and Management API
+
+- Auth/settings: `/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
+- Provider management: `/api/providers`, `/api/providers/[id]`, `/api/providers/[id]/test`, `/api/providers/[id]/models`, `/api/providers/validate`, `/api/provider-nodes*`
+- OAuth flows: `/api/oauth/[provider]/[action]` (+ provider-specific imports like Cursor/Kiro)
+- Routing config: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
+- Usage/logs: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
+- Cloud sync: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
+- CLI helpers: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
+
+### Authentication Behavior
+
+- Dashboard routes (`/dashboard/*`) use `auth_token` cookie protection.
+- Login uses saved password hash when present; otherwise it falls back to `INITIAL_PASSWORD`.
+- `requireLogin` can be toggled via `/api/settings/require-login`.
+
+### Request Processing (High Level)
+
+1. Client sends request to `/v1/*`.
+2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`).
+3. Model is resolved (direct provider/model or alias/combo resolution).
+4. Credentials are selected from local DB with account availability filtering.
+5. `handleChatCore` (`open-sse/handlers/chatCore.js`) detects format and translates request.
+6. Provider executor sends upstream request.
+7. Stream is translated back to client format when needed.
+8. Usage/logging is recorded (`src/lib/usageDb.js`).
+9. Fallback applies on provider/account/model errors according to combo rules.
+
+Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ---
 

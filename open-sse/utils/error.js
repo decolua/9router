@@ -1,15 +1,4 @@
-// OpenAI-compatible error types mapping
-const ERROR_TYPES = {
-  400: { type: "invalid_request_error", code: "bad_request" },
-  401: { type: "authentication_error", code: "invalid_api_key" },
-  403: { type: "permission_error", code: "insufficient_quota" },
-  404: { type: "invalid_request_error", code: "model_not_found" },
-  429: { type: "rate_limit_error", code: "rate_limit_exceeded" },
-  500: { type: "server_error", code: "internal_server_error" },
-  502: { type: "server_error", code: "bad_gateway" },
-  503: { type: "server_error", code: "service_unavailable" },
-  504: { type: "server_error", code: "gateway_timeout" }
-};
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/constants.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -25,29 +14,11 @@ export function buildErrorBody(statusCode, message) {
 
   return {
     error: {
-      message: message || getDefaultMessage(statusCode),
+      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
       code: errorInfo.code
     }
   };
-}
-
-/**
- * Get default error message for status code
- */
-function getDefaultMessage(statusCode) {
-  const messages = {
-    400: "Bad request",
-    401: "Invalid API key provided",
-    403: "You exceeded your current quota",
-    404: "Model not found",
-    429: "Rate limit exceeded",
-    500: "Internal server error",
-    502: "Bad gateway - upstream provider error",
-    503: "Service temporarily unavailable",
-    504: "Gateway timeout"
-  };
-  return messages[statusCode] || "An error occurred";
 }
 
 /**
@@ -173,6 +144,29 @@ export function createErrorResult(statusCode, message, retryAfterMs = null) {
   }
   
   return result;
+}
+
+/**
+ * Create unavailable response when all accounts are rate limited
+ * @param {number} statusCode - Original error status code
+ * @param {string} message - Error message (without retry info)
+ * @param {string} retryAfter - ISO timestamp when earliest account becomes available
+ * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
+ * @returns {Response}
+ */
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
+  const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
+  const msg = `${message} (${retryAfterHuman})`;
+  return new Response(
+    JSON.stringify({ error: { message: msg } }),
+    {
+      status: statusCode,
+      headers: {
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSec)
+      }
+    }
+  );
 }
 
 /**
