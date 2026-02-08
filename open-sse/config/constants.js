@@ -105,6 +105,11 @@ export const PROVIDERS = {
     }
   },
   kimi: {
+    // Kimi uses Moonshot OpenAI-compatible endpoint.
+    baseUrl: "https://api.moonshot.ai/v1/chat/completions",
+    format: "openai"
+  },
+  "kimi-coding": {
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
     headers: {
@@ -285,4 +290,3 @@ export const COOLDOWN_MS = {
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
 ];
-
