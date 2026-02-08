@@ -66,7 +66,7 @@ async function installCert(sudoPassword, certPath) {
 }
 
 async function installCertMac(sudoPassword, certPath) {
-  const command = `sudo -S security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
+  const command = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
     await execWithPassword(command, sudoPassword);
     console.log(`✅ Installed certificate to system keychain: ${certPath}`);
@@ -110,7 +110,7 @@ async function uninstallCert(sudoPassword, certPath) {
 
 async function uninstallCertMac(sudoPassword, certPath) {
   const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
-  const command = `sudo -S security delete-certificate -Z "${fingerprint}" /Library/Keychains/System.keychain`;
+  const command = `security delete-certificate -Z "${fingerprint}" /Library/Keychains/System.keychain`;
   try {
     await execWithPassword(command, sudoPassword);
     console.log("✅ Uninstalled certificate from system keychain");

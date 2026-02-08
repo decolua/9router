@@ -1,4 +1,4 @@
-const { exec } = require("child_process");
+const { exec, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -13,13 +13,20 @@ const HOSTS_FILE = IS_WIN
  */
 function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
-    const child = exec(command, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`Command failed: ${error.message}\n${stderr}`));
-      } else {
-        resolve(stdout);
-      }
+    const child = spawn("sudo", ["-S", "sh", "-c", command], {
+      stdio: ["pipe", "pipe", "pipe"]
     });
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => { stdout += d; });
+    child.stderr.on("data", (d) => { stderr += d; });
+
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(stderr || `Exit code ${code}`));
+    });
+
     child.stdin.write(`${password}\n`);
     child.stdin.end();
   });
@@ -69,12 +76,18 @@ async function addDNSEntry(sudoPassword) {
       // Windows: use elevated echo >> hosts
       await execElevatedWindows(`echo ${entry} >> "${HOSTS_FILE}"`);
     } else {
-      const command = `echo "${entry}" | sudo -S tee -a ${HOSTS_FILE} > /dev/null`;
-      await execWithPassword(command, sudoPassword);
+      await execWithPassword(`echo "${entry}" >> ${HOSTS_FILE}`, sudoPassword);
+    }
+    // Flush DNS cache
+    if (IS_WIN) {
+      await execElevatedWindows("ipconfig /flushdns");
+    } else {
+      await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
     }
     console.log(`✅ Added DNS entry: ${entry}`);
   } catch (error) {
-    throw new Error(`Failed to add DNS entry: ${error.message}`);
+    const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to add DNS entry";
+    throw new Error(msg);
   }
 }
 
@@ -99,12 +112,18 @@ async function removeDNSEntry(sudoPassword) {
         });
       });
     } else {
-      const command = `sudo -S sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`;
-      await execWithPassword(command, sudoPassword);
+      await execWithPassword(`sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`, sudoPassword);
+    }
+    // Flush DNS cache
+    if (IS_WIN) {
+      await execElevatedWindows("ipconfig /flushdns");
+    } else {
+      await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
     }
     console.log(`✅ Removed DNS entry for ${TARGET_HOST}`);
   } catch (error) {
-    throw new Error(`Failed to remove DNS entry: ${error.message}`);
+    const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to remove DNS entry";
+    throw new Error(msg);
   }
 }
 
