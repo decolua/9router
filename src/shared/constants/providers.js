@@ -20,6 +20,7 @@ export const OAUTH_PROVIDERS = {
 export const APIKEY_PROVIDERS = {
   openrouter: { id: "openrouter", alias: "openrouter", name: "OpenRouter", icon: "router", color: "#6366F1", textIcon: "OR" , passthroughModels: true },
   glm: { id: "glm", alias: "glm", name: "GLM Coding", icon: "code", color: "#2563EB", textIcon: "GL" },
+  "glm-cn": { id: "glm-cn", alias: "glm-cn", name: "GLM Coding (China)", icon: "code", color: "#DC2626", textIcon: "GC" },
   kimi: { id: "kimi", alias: "kimi", name: "Kimi Coding", icon: "psychology", color: "#1E3A8A", textIcon: "KM" },
   minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM" },
   "minimax-cn": { id: "minimax-cn", alias: "minimax-cn", name: "Minimax (China)", icon: "memory", color: "#DC2626", textIcon: "MC" },

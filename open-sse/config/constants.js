@@ -104,6 +104,11 @@ export const PROVIDERS = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
+  "glm-cn": {
+    baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   kimi: {
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
