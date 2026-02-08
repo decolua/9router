@@ -431,7 +431,15 @@ async function testApiKeyConnection(connection) {
       }
 
       case "kimi": {
-        // Kimi uses Claude-compatible API
+        // Kimi uses Moonshot OpenAI-compatible endpoint
+        const moonshotRes = await fetch("https://api.moonshot.ai/v1/models", {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        });
+        return { valid: moonshotRes.ok, error: moonshotRes.ok ? null : "Invalid API key" };
+      }
+
+      case "kimi-coding": {
+        // Legacy Kimi Coding uses Claude-compatible API
         const res = await fetch("https://api.kimi.com/coding/v1/messages", {
           method: "POST",
           headers: {

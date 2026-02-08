@@ -192,6 +192,14 @@ Seamless translation between formats:
 - Secure encrypted storage
 - Access your setup from anywhere
 
+#### Cloud Runtime Notes
+
+- Prefer server-side cloud variables in production:
+  - `BASE_URL` (internal callback URL used by sync scheduler)
+  - `CLOUD_URL` (cloud sync endpoint base)
+- `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_CLOUD_URL` are still supported for compatibility/UI, but server runtime now prioritizes `BASE_URL`/`CLOUD_URL`.
+- Cloud sync requests now use timeout + fail-fast behavior to avoid UI hanging when cloud DNS/network is unavailable.
+
 ### 📊 Usage Analytics
 
 - Track token usage per provider and model
@@ -589,20 +597,17 @@ pm2 startup
 ### Docker
 
 ```bash
-# Build image (from repository root)
-docker build -t 9router .
+# Build image (default target = runner-cli with codex/claude/droid preinstalled)
+docker build -t 9router:cli .
 
-# Run container (command used in current setup)
-docker run -d \
-  --name 9router \
-  -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+# Build minimal image without bundled CLIs
+docker build --target runner-base -t 9router:base .
+
+# Build explicit CLI profile
+docker build --target runner-cli -t 9router:cli .
 ```
 
-Portable command (if you are already at repository root):
+Portable mode (recommended for Docker Desktop and generic hosts):
 
 ```bash
 docker run -d \
@@ -611,7 +616,63 @@ docker run -d \
   --env-file ./.env \
   -v 9router-data:/app/data \
   -v 9router-usage:/root/.9router \
-  9router
+  9router:cli
+```
+
+Host-integrated mode (Linux-first; use host mounts for CLI bins/configs):
+
+Host prerequisites example (real host binaries):
+
+```bash
+# Install host CLIs (example)
+npm install -g @openai/codex @anthropic-ai/claude-code droid openclaw@latest cline @continuedev/cli
+```
+
+Run using host-mounted CLIs (`codex` from host tool dir + npm global CLIs from Node root):
+
+```bash
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  --env-file ./.env \
+  -e CLI_MODE=host \
+  -e CLI_EXTRA_PATHS=/host-local/bin:/host-node/bin:/host-codex \
+  -e CLI_CURSOR_BIN=agent \
+  -e CLI_CLINE_BIN=cline \
+  -e CLI_CONTINUE_BIN=cn \
+  -e CLI_CONFIG_HOME=/host-home \
+  -e CLI_ALLOW_CONFIG_WRITES=true \
+  -v ~/.local/bin:/host-local/bin:ro \
+  -v ~/.nvm/versions/node/v22.16.0:/host-node:ro \
+  -v /path/to/host/codex/bin:/host-codex:ro \
+  -v ~/.codex:/host-home/.codex:rw \
+  -v ~/.claude:/host-home/.claude:rw \
+  -v ~/.factory:/host-home/.factory:rw \
+  -v ~/.openclaw:/host-home/.openclaw:rw \
+  -v ~/.cursor:/host-home/.cursor:rw \
+  -v ~/.config/cursor:/host-home/.config/cursor:rw \
+  -v 9router-data:/app/data \
+  -v 9router-usage:/root/.9router \
+  9router:base
+```
+
+Notes:
+- `runner-cli` currently bundles `@openai/codex`, `@anthropic-ai/claude-code`, `droid`, and `openclaw@latest`.
+- `runner-cli` uses Node 22 Debian slim to satisfy OpenClaw runtime requirements.
+- Host CLI mount mode is Linux-first. On Docker Desktop (Mac/Windows), prefer `runner-cli`.
+- `Continue CLI` executable is usually `cn`, so set `CLI_CONTINUE_BIN=cn` in host mode.
+- `Cursor Agent` executable is commonly `agent` in `~/.local/bin`, so set `CLI_CURSOR_BIN=agent` and include that directory in `CLI_EXTRA_PATHS`.
+- Cursor auth/config typically live in `~/.config/cursor` and `~/.cursor`; mount both for host-integrated mode.
+
+Quick runtime validation:
+
+```bash
+curl -s http://localhost:20128/api/cli-tools/codex-settings | jq '{installed,runnable,commandPath,runtimeMode,reason}'
+curl -s http://localhost:20128/api/cli-tools/claude-settings | jq '{installed,runnable,commandPath,runtimeMode,reason}'
+curl -s http://localhost:20128/api/cli-tools/openclaw-settings | jq '{installed,runnable,commandPath,runtimeMode,reason}'
+curl -s http://localhost:20128/api/cli-tools/runtime/cursor | jq '{installed,runnable,command,commandPath,configPath,runtimeMode,reason}'
+curl -s http://localhost:20128/api/cli-tools/runtime/cline | jq '{installed,runnable,commandPath,runtimeMode,reason}'
+curl -s http://localhost:20128/api/cli-tools/runtime/continue | jq '{installed,runnable,commandPath,runtimeMode,reason}'
 ```
 
 Container defaults:
@@ -636,17 +697,34 @@ docker stop 9router && docker rm 9router
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Internal base URL used by cloud sync jobs |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Cloud sync endpoint base URL |
+| `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
+| `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
+| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
+| `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
+| `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `CLI_MODE` | `auto` | CLI runtime profile: `auto`, `host`, or `container` |
+| `CLI_EXTRA_PATHS` | empty | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux) |
+| `CLI_CONFIG_HOME` | runtime home (`os.homedir`) | Base directory used to read/write CLI config files |
+| `CLI_ALLOW_CONFIG_WRITES` | `true` | If `false`, `/api/cli-tools/*` `POST`/`DELETE` return `403` |
+| `CLI_CLAUDE_BIN` | `claude` | Override command/path used for Claude CLI detection |
+| `CLI_CODEX_BIN` | `codex` | Override command/path used for Codex CLI detection |
+| `CLI_DROID_BIN` | `droid` | Override command/path used for Droid CLI detection |
+| `CLI_OPENCLAW_BIN` | `openclaw` | Override command/path used for OpenClaw CLI detection |
+| `CLI_CURSOR_BIN` | `agent` | Override command/path used for Cursor Agent detection (`agent`, fallback `cursor`) |
+| `CLI_CLINE_BIN` | empty | Optional override for Cline runtime detection (set `cline` if you have local CLI) |
+| `CLI_ROO_BIN` | empty | Optional override for Roo runtime detection |
+| `CLI_CONTINUE_BIN` | empty | Optional override for Continue runtime detection (commonly `cn`) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
 
 Notes:
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
 - `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
 - On Windows, `APPDATA` can be used for local storage path resolution.
+- `CLI_EXTRA_PATHS` uses the platform delimiter (`:` on Linux/macOS, `;` on Windows).
 - `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
 
 ### Runtime Files and Storage
@@ -728,8 +806,25 @@ Notes:
 - Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
 **Cloud sync errors**
-- Verify `NEXT_PUBLIC_BASE_URL` points to your running instance
-- Verify `NEXT_PUBLIC_CLOUD_URL` points to your expected cloud endpoint
+- Verify `BASE_URL` points to your running instance (example: `http://localhost:20128`)
+- Verify `CLOUD_URL` points to your expected cloud endpoint (example: `https://9router.com`)
+- Keep `NEXT_PUBLIC_*` values aligned with server-side values when possible.
+
+**Cloud endpoint `stream=false` returns 500 (`Unexpected token 'd'...`)**
+- Symptom usually appears on public cloud endpoint (`https://9router.com/v1`) for non-streaming calls.
+- Root cause: upstream returns SSE payload (`data: ...`) while client expects JSON.
+- Workaround: use `stream=true` for cloud direct calls.
+- Local 9Router runtime includes SSE→JSON fallback for non-streaming calls when upstream returns `text/event-stream`.
+
+**Cloud says connected, but request still fails with `Invalid API key`**
+- Create a fresh key from local dashboard (`/api/keys`) and run cloud sync (`Enable Cloud` then `Sync Now`).
+- Old/non-synced keys can still return `401` on cloud even if local endpoint works.
+
+**CLI tool shows not installed inside Docker**
+- Check runtime fields from `/api/cli-tools/*` (`installed`, `runnable`, `reason`, `commandPath`).
+- For portable mode, use image target `runner-cli` (bundled `codex`/`claude`/`droid`).
+- For host mount mode, set `CLI_EXTRA_PATHS` and mount host bin directory as read-only.
+- If `installed=true` and `runnable=false`, binary was found but failed healthcheck.
 
 **First login not working**
 - Check `INITIAL_PASSWORD` in `.env`
@@ -789,6 +884,39 @@ Authorization: Bearer your-api-key
 - `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
 - `POST /v1/api/chat` (Ollama-style transform path)
 
+### Cloud Validation Scripts
+
+Added test scripts under `tester/security/`:
+
+- `tester/security/test-docker-hardening.sh`
+  - Builds Docker image and validates hardening checks (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, secure auth cookie behavior).
+- `tester/security/test-cloud-openai-compatible.sh`
+  - Sends a direct OpenAI-compatible request to cloud endpoint (`https://9router.com/v1/chat/completions`) with provided model/key.
+- `tester/security/test-cloud-sync-and-call.sh`
+  - End-to-end flow: create local key -> enable/sync cloud -> call cloud endpoint with retry.
+  - Includes fallback check with `stream=true` to distinguish auth errors from non-streaming parse issues.
+- `tester/security/test-cli-runtime.sh`
+  - Validates Docker CLI runtime profiles (`runner-base`, `runner-cli`, host mount mode, write policy, non-executable regression).
+
+Security note for cloud test scripts:
+
+- Never hardcode real API keys in scripts/commits.
+- Provide keys only via environment variables:
+  - `API_KEY`, `CLOUD_API_KEY`, or `OPENAI_API_KEY` (supported by `test-cloud-openai-compatible.sh`)
+- Example:
+
+```bash
+OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatible.sh
+```
+
+Expected behavior from recent validation:
+
+- Local runtime (`http://127.0.0.1:20128/v1/chat/completions`): works with `stream=false` and `stream=true`.
+- Docker runtime (same API path exposed by container): hardening checks pass, cloud auth guard works, strict API key mode works when enabled.
+- Public cloud endpoint (`https://9router.com/v1/chat/completions`):
+  - `stream=true`: expected to succeed (SSE chunks returned).
+  - `stream=false`: may fail with `500` + parse error (`Unexpected token 'd'`) when upstream returns SSE content to a non-streaming client path.
+
 ### Dashboard and Management API
 
 - Auth/settings: `/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
@@ -798,6 +926,8 @@ Authorization: Bearer your-api-key
 - Usage/logs: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
 - Cloud sync: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
 - CLI helpers: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
+  - Generic runtime status: `/api/cli-tools/runtime/[toolId]` (covers `claude`, `codex`, `droid`, `openclaw`, `cursor`, `cline`, `roo`, `continue`)
+  - CLI `GET` responses expose runtime fields: `installed`, `runnable`, `command`, `commandPath`, `runtimeMode`, `reason`
 
 ### Authentication Behavior
 

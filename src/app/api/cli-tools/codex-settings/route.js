@@ -1,17 +1,17 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import {
+  ensureCliConfigWriteAllowed,
+  getCliConfigPaths,
+  getCliRuntimeStatus,
+} from "@/shared/services/cliRuntime";
 
-const execAsync = promisify(exec);
-
-const getCodexDir = () => path.join(os.homedir(), ".codex");
-const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
-const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
+const getCodexConfigPath = () => getCliConfigPaths("codex").config;
+const getCodexAuthPath = () => getCliConfigPaths("codex").auth;
+const getCodexDir = () => path.dirname(getCodexConfigPath());
 
 // Parse TOML config to object (simple parser for codex config)
 const parseToml = (content) => {
@@ -71,18 +71,6 @@ const toToml = (parsed) => {
   return lines.join("\n") + "\n";
 };
 
-// Check if codex CLI is installed
-const checkCodexInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where codex" : "which codex";
-    await execAsync(command);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 // Read current config.toml
 const readConfig = async () => {
   try {
@@ -104,20 +92,33 @@ const has9RouterConfig = (config) => {
 // GET - Check codex CLI and read current settings
 export async function GET() {
   try {
-    const isInstalled = await checkCodexInstalled();
-    
-    if (!isInstalled) {
+    const runtime = await getCliRuntimeStatus("codex");
+
+    if (!runtime.installed || !runtime.runnable) {
       return NextResponse.json({
-        installed: false,
+        installed: runtime.installed,
+        runnable: runtime.runnable,
+        command: runtime.command,
+        commandPath: runtime.commandPath,
+        runtimeMode: runtime.runtimeMode,
+        reason: runtime.reason,
         config: null,
-        message: "Codex CLI is not installed",
+        message:
+          runtime.installed && !runtime.runnable
+            ? "Codex CLI is installed but not runnable"
+            : "Codex CLI is not installed",
       });
     }
 
     const config = await readConfig();
 
     return NextResponse.json({
-      installed: true,
+      installed: runtime.installed,
+      runnable: runtime.runnable,
+      command: runtime.command,
+      commandPath: runtime.commandPath,
+      runtimeMode: runtime.runtimeMode,
+      reason: runtime.reason,
       config,
       has9Router: has9RouterConfig(config),
       configPath: getCodexConfigPath(),
@@ -131,6 +132,11 @@ export async function GET() {
 // POST - Update 9Router settings (merge with existing config)
 export async function POST(request) {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const { baseUrl, apiKey, model } = await request.json();
     
     if (!baseUrl || !apiKey || !model) {
@@ -192,6 +198,11 @@ export async function POST(request) {
 // DELETE - Remove 9Router settings only (keep other settings)
 export async function DELETE() {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const configPath = getCodexConfigPath();
 
     // Read and parse existing config

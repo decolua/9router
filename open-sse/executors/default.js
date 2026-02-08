@@ -21,7 +21,7 @@ export class DefaultExecutor extends BaseExecutor {
     switch (this.provider) {
       case "claude":
       case "glm":
-      case "kimi":
+      case "kimi-coding":
       case "minimax":
       case "minimax-cn":
         return `${this.config.baseUrl}?beta=true`;
@@ -43,7 +43,7 @@ export class DefaultExecutor extends BaseExecutor {
         credentials.apiKey ? headers["x-api-key"] = credentials.apiKey : headers["Authorization"] = `Bearer ${credentials.accessToken}`;
         break;
       case "glm":
-      case "kimi":
+      case "kimi-coding":
       case "minimax":
       case "minimax-cn":
         headers["x-api-key"] = credentials.apiKey;

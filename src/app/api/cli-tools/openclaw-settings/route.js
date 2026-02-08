@@ -1,28 +1,16 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
-import os from "os";
+import {
+  ensureCliConfigWriteAllowed,
+  getCliPrimaryConfigPath,
+  getCliRuntimeStatus,
+} from "@/shared/services/cliRuntime";
 
-const execAsync = promisify(exec);
-
-const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
-const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
-
-// Check if openclaw CLI is installed
-const checkOpenClawInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where openclaw" : "which openclaw";
-    await execAsync(command);
-    return true;
-  } catch {
-    return false;
-  }
-};
+const getOpenClawSettingsPath = () => getCliPrimaryConfigPath("openclaw");
+const getOpenClawDir = () => path.dirname(getOpenClawSettingsPath());
 
 // Read current settings.json
 const readSettings = async () => {
@@ -45,20 +33,33 @@ const has9RouterConfig = (settings) => {
 // GET - Check openclaw CLI and read current settings
 export async function GET() {
   try {
-    const isInstalled = await checkOpenClawInstalled();
-    
-    if (!isInstalled) {
+    const runtime = await getCliRuntimeStatus("openclaw");
+
+    if (!runtime.installed || !runtime.runnable) {
       return NextResponse.json({
-        installed: false,
+        installed: runtime.installed,
+        runnable: runtime.runnable,
+        command: runtime.command,
+        commandPath: runtime.commandPath,
+        runtimeMode: runtime.runtimeMode,
+        reason: runtime.reason,
         settings: null,
-        message: "Open Claw CLI is not installed",
+        message:
+          runtime.installed && !runtime.runnable
+            ? "Open Claw CLI is installed but not runnable"
+            : "Open Claw CLI is not installed",
       });
     }
 
     const settings = await readSettings();
 
     return NextResponse.json({
-      installed: true,
+      installed: runtime.installed,
+      runnable: runtime.runnable,
+      command: runtime.command,
+      commandPath: runtime.commandPath,
+      runtimeMode: runtime.runtimeMode,
+      reason: runtime.reason,
       settings,
       has9Router: has9RouterConfig(settings),
       settingsPath: getOpenClawSettingsPath(),
@@ -72,6 +73,11 @@ export async function GET() {
 // POST - Update 9Router settings (merge with existing settings)
 export async function POST(request) {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const { baseUrl, apiKey, model } = await request.json();
     
     if (!baseUrl || !model) {
@@ -134,6 +140,11 @@ export async function POST(request) {
 // DELETE - Remove 9Router settings only (keep other settings)
 export async function DELETE() {
   try {
+    const writeGuard = ensureCliConfigWriteAllowed();
+    if (writeGuard) {
+      return NextResponse.json({ error: writeGuard }, { status: 403 });
+    }
+
     const settingsPath = getOpenClawSettingsPath();
 
     // Read existing settings

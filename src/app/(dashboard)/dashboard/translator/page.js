@@ -22,6 +22,7 @@ const PROVIDERS = [
   { value: "openrouter", label: "OpenRouter" },
   { value: "glm", label: "GLM" },
   { value: "kimi", label: "Kimi" },
+  { value: "kimi-coding", label: "Kimi Coding" },
   { value: "minimax", label: "MiniMax" },
 ];
 

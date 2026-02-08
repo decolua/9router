@@ -98,15 +98,30 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
+        case "kimi": {
+          // Kimi uses Moonshot OpenAI-compatible endpoint
+          const moonshotRes = await fetch("https://api.moonshot.ai/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = moonshotRes.ok;
+          break;
+        }
+
         case "glm":
-        case "kimi":
+        case "kimi-coding":
         case "minimax":
         case "minimax-cn": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
-            kimi: "https://api.kimi.com/coding/v1/messages",
+            "kimi-coding": "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
             "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
+          };
+          const testModels = {
+            glm: "glm-4.7",
+            "kimi-coding": "kimi-latest",
+            minimax: "minimax-m2",
+            "minimax-cn": "minimax-m2",
           };
           const claudeRes = await fetch(claudeBaseUrls[provider], {
             method: "POST",
@@ -116,12 +131,12 @@ export async function POST(request) {
               "content-type": "application/json",
             },
             body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
+              model: testModels[provider] || "claude-sonnet-4-20250514",
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
             }),
           });
-          isValid = claudeRes.status !== 401;
+          isValid = claudeRes.status !== 401 && claudeRes.status !== 403;
           break;
         }
 

@@ -28,9 +28,10 @@ export default function OpenClawToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+  const cliReady = !!(openclawStatus?.installed && openclawStatus?.runnable);
 
   const getConfigStatus = () => {
-    if (!openclawStatus?.installed) return null;
+    if (!cliReady) return null;
     const currentProvider = openclawStatus.settings?.models?.providers?.["9router"];
     if (!currentProvider) return "not_configured";
     const localMatch = currentProvider.baseUrl?.includes("localhost") || currentProvider.baseUrl?.includes("127.0.0.1");
@@ -228,17 +229,23 @@ export default function OpenClawToolCard({
             </div>
           )}
 
-          {!checkingOpenclaw && openclawStatus && !openclawStatus.installed && (
+          {!checkingOpenclaw && openclawStatus && !cliReady && (
             <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500">warning</span>
               <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Open Claw CLI to use this feature.</p>
+                <p className="font-medium text-yellow-600 dark:text-yellow-400">
+                  {openclawStatus.installed ? "Open Claw CLI not runnable" : "Open Claw CLI not installed"}
+                </p>
+                <p className="text-sm text-text-muted">
+                  {openclawStatus.installed
+                    ? `Open Claw CLI was found but failed runtime healthcheck${openclawStatus.reason ? ` (${openclawStatus.reason})` : ""}.`
+                    : "Please install Open Claw CLI to use this feature."}
+                </p>
               </div>
             </div>
           )}
 
-          {!checkingOpenclaw && openclawStatus?.installed && (
+          {!checkingOpenclaw && cliReady && (
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}

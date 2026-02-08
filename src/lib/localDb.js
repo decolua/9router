@@ -797,6 +797,7 @@ export async function getPricingForModel(provider, model) {
     openrouter: "openrouter",
     glm: "glm",
     kimi: "kimi",
+    "kimi-coding": "kimi",
     minimax: "minimax",
   };
 
