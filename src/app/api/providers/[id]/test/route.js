@@ -406,6 +406,24 @@ async function testApiKeyConnection(connection) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
 
+      case "glm-cn": {
+        // GLM Coding (China) uses OpenAI-compatible API
+        const res = await fetch("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${connection.apiKey}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "glm-4.7",
+            max_tokens: 1,
+            messages: [{ role: "user", content: "test" }],
+          }),
+        });
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+
       case "minimax":
       case "minimax-cn": {
         // MiniMax uses Claude-compatible API

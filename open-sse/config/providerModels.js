@@ -131,6 +131,12 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
+  "glm-cn": [
+    { id: "glm-4.7", name: "GLM-4.7" },
+    { id: "glm-4.6", name: "GLM-4.6" },
+    { id: "glm-4.5", name: "GLM-4.5" },
+    { id: "glm-4.5-air", name: "GLM-4.5-Air" },
+  ],
   kimi: [
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
@@ -188,6 +194,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   gemini: "gemini",
   openrouter: "openrouter",
   glm: "glm",
+  "glm-cn": "glm-cn",
   kimi: "kimi",
   minimax: "minimax",
   "minimax-cn": "minimax",
