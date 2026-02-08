@@ -109,6 +109,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 ```
 
 Default URLs:
+
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 
@@ -116,18 +117,18 @@ Default URLs:
 
 ## 💡 Key Features
 
-| Feature | What It Does | Why It Matters |
-|---------|--------------|----------------|
-| 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
-| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
-| 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini seamless | Works with any CLI tool |
-| 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
-| 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
-| 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
-| 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
-| 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
-| 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
-| 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
+| Feature                         | What It Does                               | Why It Matters                   |
+| ------------------------------- | ------------------------------------------ | -------------------------------- |
+| 🎯 **Smart 3-Tier Fallback**    | Auto-route: Subscription → Cheap → Free    | Never stop coding, zero downtime |
+| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown         | Maximize subscription value      |
+| 🔄 **Format Translation**       | OpenAI ↔ Claude ↔ Gemini seamless          | Works with any CLI tool          |
+| 👥 **Multi-Account Support**    | Multiple accounts per provider             | Load balancing + redundancy      |
+| 🔄 **Auto Token Refresh**       | OAuth tokens refresh automatically         | No manual re-login needed        |
+| 🎨 **Custom Combos**            | Create unlimited model combinations        | Tailor fallback to your needs    |
+| 📝 **Request Logging**          | Debug mode with full request/response logs | Troubleshoot issues easily       |
+| 💾 **Cloud Sync**               | Sync config across devices                 | Same setup everywhere            |
+| 📊 **Usage Analytics**          | Track tokens, cost, trends over time       | Optimize spending                |
+| 🌐 **Deploy Anywhere**          | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options      |
 
 <details>
 <summary><b>📖 Feature Details</b></summary>
@@ -155,6 +156,7 @@ Combo: "my-coding-stack"
 ### 🔄 Format Translation
 
 Seamless translation between formats:
+
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
 - Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
 - Works with any tool that supports custom OpenAI endpoints
@@ -220,18 +222,18 @@ Seamless translation between formats:
 
 ## 💰 Pricing at a Glance
 
-| Tier | Provider | Cost | Quota Reset | Best For |
-|------|----------|------|-------------|----------|
-| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo | 5h + weekly | Already subscribed |
-| | Codex (Plus/Pro) | $20-200/mo | 5h + weekly | OpenAI users |
-| | Gemini CLI | **FREE** | 180K/mo + 1K/day | Everyone! |
-| | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
-| **💰 CHEAP** | GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
-| | MiniMax M2.1 | $0.2/1M | 5-hour rolling | Cheapest option |
-| | Kimi K2 | $9/mo flat | 10M tokens/mo | Predictable cost |
-| **🆓 FREE** | iFlow | $0 | Unlimited | 8 models free |
-| | Qwen | $0 | Unlimited | 3 models free |
-| | Kiro | $0 | Unlimited | Claude free |
+| Tier                | Provider          | Cost       | Quota Reset      | Best For           |
+| ------------------- | ----------------- | ---------- | ---------------- | ------------------ |
+| **💳 SUBSCRIPTION** | Claude Code (Pro) | $20/mo     | 5h + weekly      | Already subscribed |
+|                     | Codex (Plus/Pro)  | $20-200/mo | 5h + weekly      | OpenAI users       |
+|                     | Gemini CLI        | **FREE**   | 180K/mo + 1K/day | Everyone!          |
+|                     | GitHub Copilot    | $10-19/mo  | Monthly          | GitHub users       |
+| **💰 CHEAP**        | GLM-4.7           | $0.6/1M    | Daily 10AM       | Budget backup      |
+|                     | MiniMax M2.1      | $0.2/1M    | 5-hour rolling   | Cheapest option    |
+|                     | Kimi K2           | $9/mo flat | 10M tokens/mo    | Predictable cost   |
+| **🆓 FREE**         | iFlow             | $0         | Unlimited        | 8 models free      |
+|                     | Qwen              | $0         | Unlimited        | 3 models free      |
+|                     | Kiro              | $0         | Unlimited        | Claude free        |
 
 **💡 Pro Tip:** Start with Gemini CLI (180K free/month) + iFlow (unlimited free) combo = $0 cost!
 
@@ -244,6 +246,7 @@ Seamless translation between formats:
 **Problem:** Quota expires unused, rate limits during heavy coding
 
 **Solution:**
+
 ```
 Combo: "maximize-claude"
   1. cc/claude-opus-4-6        (use subscription fully)
@@ -259,6 +262,7 @@ vs. $20 + hitting limits = frustration
 **Problem:** Can't afford subscriptions, need reliable AI coding
 
 **Solution:**
+
 ```
 Combo: "free-forever"
   1. gc/gemini-3-flash         (180K free/month)
@@ -274,6 +278,7 @@ Quality: Production-ready models
 **Problem:** Deadlines, can't afford downtime
 
 **Solution:**
+
 ```
 Combo: "always-on"
   1. cc/claude-opus-4-6        (best quality)
@@ -291,6 +296,7 @@ Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
 **Problem:** Need AI assistant in messaging apps (WhatsApp, Telegram, Slack...), completely free
 
 **Solution:**
+
 ```
 Combo: "openclaw-free"
   1. if/glm-4.7                (unlimited free)
@@ -657,6 +663,7 @@ docker run -d \
 ```
 
 Notes:
+
 - `runner-cli` currently bundles `@openai/codex`, `@anthropic-ai/claude-code`, `droid`, and `openclaw@latest`.
 - `runner-cli` uses Node 22 Debian slim to satisfy OpenClaw runtime requirements.
 - Host CLI mount mode is Linux-first. On Docker Desktop (Mac/Windows), prefer `runner-cli`.
@@ -676,6 +683,7 @@ curl -s http://localhost:20128/api/cli-tools/runtime/continue | jq '{installed,r
 ```
 
 Container defaults:
+
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
@@ -689,38 +697,39 @@ docker stop 9router && docker rm 9router
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
-| `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
-| `PORT` | framework default | Service port (`20128` in examples) |
-| `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
-| `NODE_ENV` | runtime default | Set `production` for deploy |
-| `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
-| `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
-| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
-| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
-| `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
-| `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
-| `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
-| `CLI_MODE` | `auto` | CLI runtime profile: `auto`, `host`, or `container` |
-| `CLI_EXTRA_PATHS` | empty | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux) |
-| `CLI_CONFIG_HOME` | runtime home (`os.homedir`) | Base directory used to read/write CLI config files |
-| `CLI_ALLOW_CONFIG_WRITES` | `true` | If `false`, `/api/cli-tools/*` `POST`/`DELETE` return `403` |
-| `CLI_CLAUDE_BIN` | `claude` | Override command/path used for Claude CLI detection |
-| `CLI_CODEX_BIN` | `codex` | Override command/path used for Codex CLI detection |
-| `CLI_DROID_BIN` | `droid` | Override command/path used for Droid CLI detection |
-| `CLI_OPENCLAW_BIN` | `openclaw` | Override command/path used for OpenClaw CLI detection |
-| `CLI_CURSOR_BIN` | `agent` | Override command/path used for Cursor Agent detection (`agent`, fallback `cursor`) |
-| `CLI_CLINE_BIN` | empty | Optional override for Cline runtime detection (set `cline` if you have local CLI) |
-| `CLI_ROO_BIN` | empty | Optional override for Roo runtime detection |
-| `CLI_CONTINUE_BIN` | empty | Optional override for Continue runtime detection (commonly `cn`) |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+| Variable                                             | Default                            | Description                                                                         |
+| ---------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**)             |
+| `INITIAL_PASSWORD`                                   | `123456`                           | First login password when no saved hash exists                                      |
+| `DATA_DIR`                                           | `~/.9router`                       | Main app database location (`db.json`)                                              |
+| `PORT`                                               | framework default                  | Service port (`20128` in examples)                                                  |
+| `HOSTNAME`                                           | framework default                  | Bind host (Docker defaults to `0.0.0.0`)                                            |
+| `NODE_ENV`                                           | runtime default                    | Set `production` for deploy                                                         |
+| `BASE_URL`                                           | `http://localhost:20128`           | Server-side internal base URL used by cloud sync jobs                               |
+| `CLOUD_URL`                                          | `https://9router.com`              | Server-side cloud sync endpoint base URL                                            |
+| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`            | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime)          |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`              | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)        |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`    | HMAC secret for generated API keys                                                  |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`              | Salt for stable machine ID hashing                                                  |
+| `ENABLE_REQUEST_LOGS`                                | `false`                            | Enables request/response logs under `logs/`                                         |
+| `AUTH_COOKIE_SECURE`                                 | `false`                            | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
+| `REQUIRE_API_KEY`                                    | `false`                            | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `CLI_MODE`                                           | `auto`                             | CLI runtime profile: `auto`, `host`, or `container`                                 |
+| `CLI_EXTRA_PATHS`                                    | empty                              | Extra `PATH` entries used for CLI detection/healthcheck (split by `:` on Linux)     |
+| `CLI_CONFIG_HOME`                                    | runtime home (`os.homedir`)        | Base directory used to read/write CLI config files                                  |
+| `CLI_ALLOW_CONFIG_WRITES`                            | `true`                             | If `false`, `/api/cli-tools/*` `POST`/`DELETE` return `403`                         |
+| `CLI_CLAUDE_BIN`                                     | `claude`                           | Override command/path used for Claude CLI detection                                 |
+| `CLI_CODEX_BIN`                                      | `codex`                            | Override command/path used for Codex CLI detection                                  |
+| `CLI_DROID_BIN`                                      | `droid`                            | Override command/path used for Droid CLI detection                                  |
+| `CLI_OPENCLAW_BIN`                                   | `openclaw`                         | Override command/path used for OpenClaw CLI detection                               |
+| `CLI_CURSOR_BIN`                                     | `agent`                            | Override command/path used for Cursor Agent detection (`agent`, fallback `cursor`)  |
+| `CLI_CLINE_BIN`                                      | empty                              | Optional override for Cline runtime detection (set `cline` if you have local CLI)   |
+| `CLI_ROO_BIN`                                        | empty                              | Optional override for Roo runtime detection                                         |
+| `CLI_CONTINUE_BIN`                                   | empty                              | Optional override for Continue runtime detection (commonly `cn`)                    |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                              | Optional outbound proxy for upstream provider calls                                 |
 
 Notes:
+
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
 - `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
 - On Windows, `APPDATA` can be used for local storage path resolution.
@@ -744,38 +753,47 @@ Notes:
 <summary><b>View all available models</b></summary>
 
 **Claude Code (`cc/`)** - Pro/Max:
+
 - `cc/claude-opus-4-6`
 - `cc/claude-sonnet-4-5-20250929`
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
+
 - `cx/gpt-5.2-codex`
 - `cx/gpt-5.1-codex-max`
 
 **Gemini CLI (`gc/`)** - FREE:
+
 - `gc/gemini-3-flash-preview`
 - `gc/gemini-2.5-pro`
 
 **GitHub Copilot (`gh/`)**:
+
 - `gh/gpt-5`
 - `gh/claude-4.5-sonnet`
 
 **GLM (`glm/`)** - $0.6/1M:
+
 - `glm/glm-4.7`
 
 **MiniMax (`minimax/`)** - $0.2/1M:
+
 - `minimax/MiniMax-M2.1`
 
 **iFlow (`if/`)** - FREE:
+
 - `if/kimi-k2-thinking`
 - `if/qwen3-coder-plus`
 - `if/deepseek-r1`
 
 **Qwen (`qw/`)** - FREE:
+
 - `qw/qwen3-coder-plus`
 - `qw/qwen3-coder-flash`
 
 **Kiro (`kr/`)** - FREE:
+
 - `kr/claude-sonnet-4.5`
 - `kr/claude-haiku-4.5`
 
@@ -786,51 +804,62 @@ Notes:
 ## 🐛 Troubleshooting
 
 **"Language model did not provide messages"**
+
 - Provider quota exhausted → Check dashboard quota tracker
 - Solution: Use combo fallback or switch to cheaper tier
 
 **Rate limiting**
+
 - Subscription quota out → Fallback to GLM/MiniMax
 - Add combo: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth token expired**
+
 - Auto-refreshed by 9Router
 - If issues persist: Dashboard → Provider → Reconnect
 
 **High costs**
+
 - Check usage stats in Dashboard
 - Switch primary model to GLM/MiniMax
 - Use free tier (Gemini CLI, iFlow) for non-critical tasks
 
 **Dashboard opens on wrong port**
+
 - Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
 **Cloud sync errors**
+
 - Verify `BASE_URL` points to your running instance (example: `http://localhost:20128`)
 - Verify `CLOUD_URL` points to your expected cloud endpoint (example: `https://9router.com`)
 - Keep `NEXT_PUBLIC_*` values aligned with server-side values when possible.
 
 **Cloud endpoint `stream=false` returns 500 (`Unexpected token 'd'...`)**
+
 - Symptom usually appears on public cloud endpoint (`https://9router.com/v1`) for non-streaming calls.
 - Root cause: upstream returns SSE payload (`data: ...`) while client expects JSON.
 - Workaround: use `stream=true` for cloud direct calls.
 - Local 9Router runtime includes SSE→JSON fallback for non-streaming calls when upstream returns `text/event-stream`.
 
 **Cloud says connected, but request still fails with `Invalid API key`**
+
 - Create a fresh key from local dashboard (`/api/keys`) and run cloud sync (`Enable Cloud` then `Sync Now`).
 - Old/non-synced keys can still return `401` on cloud even if local endpoint works.
 
 **CLI tool shows not installed inside Docker**
+
 - Check runtime fields from `/api/cli-tools/*` (`installed`, `runnable`, `reason`, `commandPath`).
 - For portable mode, use image target `runner-cli` (bundled `codex`/`claude`/`droid`).
 - For host mount mode, set `CLI_EXTRA_PATHS` and mount host bin directory as read-only.
 - If `installed=true` and `runnable=false`, binary was found but failed healthcheck.
 
 **First login not working**
+
 - Check `INITIAL_PASSWORD` in `.env`
 - If unset, fallback password is `123456`
 
 **No request logs under `logs/`**
+
 - Set `ENABLE_REQUEST_LOGS=true`
 
 ---

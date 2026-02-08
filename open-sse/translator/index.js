@@ -32,6 +32,7 @@ function ensureInitialized() {
   require("./request/openai-to-claude.js");
   require("./request/gemini-to-openai.js");
   require("./request/openai-to-gemini.js");
+  require("./request/antigravity-to-openai.js");
   require("./request/openai-responses.js");
   require("./request/openai-to-kiro.js");
   require("./request/openai-to-cursor.js");
@@ -40,6 +41,7 @@ function ensureInitialized() {
   require("./response/claude-to-openai.js");
   require("./response/openai-to-claude.js");
   require("./response/gemini-to-openai.js");
+  require("./response/openai-to-antigravity.js");
   require("./response/openai-responses.js");
   require("./response/kiro-to-openai.js");
   require("./response/cursor-to-openai.js");

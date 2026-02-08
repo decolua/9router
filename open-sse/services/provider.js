@@ -41,6 +41,11 @@ export function detectFormat(body) {
     return "openai-responses";
   }
 
+  // Antigravity format: Gemini wrapped in body.request
+  if (body.request?.contents && body.userAgent === "antigravity") {
+    return "antigravity";
+  }
+
   // Gemini format: has contents array
   if (body.contents && Array.isArray(body.contents)) {
     return "gemini";
