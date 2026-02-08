@@ -540,10 +540,12 @@ export async function getUsageStats() {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
       const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
-      console.log('[DEBUG getUsageStats] Processing entry with apiKey:', entry.apiKey.slice(0, 8) + '...', 'Found keyInfo:', keyInfo ? 'yes (' + keyInfo.name + ')' : 'no');
+      // Group by API Key + Model + Provider combination to track different models used with the same key
+      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
+      console.log('[DEBUG getUsageStats] Processing entry with apiKey:', entry.apiKey.slice(0, 8) + '...', 'model:', entry.model, 'provider:', entry.provider, 'Found keyInfo:', keyInfo ? 'yes (' + keyInfo.name + ')' : 'no');
 
-      if (!stats.byApiKey[apiKeyKey]) {
-        stats.byApiKey[apiKeyKey] = {
+      if (!stats.byApiKey[apiKeyModelKey]) {
+        stats.byApiKey[apiKeyModelKey] = {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
@@ -556,12 +558,12 @@ export async function getUsageStats() {
           lastUsed: entry.timestamp
         };
       }
-      stats.byApiKey[apiKeyKey].requests++;
-      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
-      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
-      stats.byApiKey[apiKeyKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
-        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
+      stats.byApiKey[apiKeyModelKey].requests++;
+      stats.byApiKey[apiKeyModelKey].promptTokens += promptTokens;
+      stats.byApiKey[apiKeyModelKey].completionTokens += completionTokens;
+      stats.byApiKey[apiKeyModelKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyModelKey].lastUsed)) {
+        stats.byApiKey[apiKeyModelKey].lastUsed = entry.timestamp;
       }
     }
   }
