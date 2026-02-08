@@ -144,6 +144,9 @@ export async function getUsageDb() {
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
 
+  // Debug logging for API Key tracking
+  console.log('[DEBUG saveRequestUsage] entry.apiKey:', entry.apiKey ? entry.apiKey.slice(0, 8) + '...' : 'null');
+
   try {
     const db = await getUsageDb();
 
@@ -439,6 +442,11 @@ export async function getUsageStats() {
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
 
+  // Debug logging for API Key tracking
+  console.log('[DEBUG getUsageStats] Total history entries:', history.length);
+  console.log('[DEBUG getUsageStats] apiKeyMap keys count:', Object.keys(apiKeyMap).length);
+  let apiKeyEntryCount = 0;
+
   for (const entry of history) {
     const promptTokens = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
@@ -528,9 +536,11 @@ export async function getUsageStats() {
     }
 
     if (entry.apiKey) {
+      apiKeyEntryCount++;
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
       const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
+      console.log('[DEBUG getUsageStats] Processing entry with apiKey:', entry.apiKey.slice(0, 8) + '...', 'Found keyInfo:', keyInfo ? 'yes (' + keyInfo.name + ')' : 'no');
 
       if (!stats.byApiKey[apiKeyKey]) {
         stats.byApiKey[apiKeyKey] = {
@@ -555,6 +565,10 @@ export async function getUsageStats() {
       }
     }
   }
+
+  // Debug logging summary
+  console.log('[DEBUG getUsageStats] Entries with apiKey:', apiKeyEntryCount);
+  console.log('[DEBUG getUsageStats] byApiKey stats count:', Object.keys(stats.byApiKey).length);
 
   return stats;
 }

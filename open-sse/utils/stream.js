@@ -28,6 +28,7 @@ const STREAM_MODE = {
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {object} options.body - Request body (for input token estimation)
+ * @param {string} options.apiKey - API key for usage tracking
  */
 export function createSSEStream(options = {}) {
   const {
@@ -39,7 +40,8 @@ export function createSSEStream(options = {}) {
     toolNameMap = null,
     model = null,
     connectionId = null,
-    body = null
+    body = null,
+    apiKey = null
   } = options;
 
   let buffer = "";
@@ -226,7 +228,7 @@ export function createSSEStream(options = {}) {
           }
 
           if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId);
+            logUsage(provider, usage, model, connectionId, apiKey);
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
@@ -287,7 +289,7 @@ export function createSSEStream(options = {}) {
         }
 
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId);
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
@@ -299,7 +301,7 @@ export function createSSEStream(options = {}) {
 }
 
 // Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -309,17 +311,19 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     toolNameMap,
     model,
     connectionId,
-    body
+    body,
+    apiKey
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
     model,
     connectionId,
-    body
+    body,
+    apiKey
   });
 }
