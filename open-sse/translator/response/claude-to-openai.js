@@ -64,7 +64,7 @@ export function claudeToOpenAIResponse(chunk, state) {
       if (delta?.type === "text_delta" && delta.text) {
         results.push(createChunk(state, { content: delta.text }));
       } else if (delta?.type === "thinking_delta" && delta.thinking) {
-        results.push(createChunk(state, { content: delta.thinking }));
+        results.push(createChunk(state, { reasoning_content: delta.thinking }));
       } else if (delta?.type === "input_json_delta" && delta.partial_json) {
         const toolCall = state.toolCalls.get(chunk.index);
         if (toolCall) {
@@ -83,7 +83,7 @@ export function claudeToOpenAIResponse(chunk, state) {
 
     case "content_block_stop": {
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
+        results.push(createChunk(state, { reasoning_content: "" }));
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;

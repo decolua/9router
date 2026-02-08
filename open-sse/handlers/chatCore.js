@@ -10,7 +10,7 @@ import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerMo
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 
 /**
@@ -226,6 +226,38 @@ function extractUsageFromResponse(responseBody, provider) {
 }
 
 /**
+ * Extract full request configuration from body
+ * Captures all relevant parameters for request details
+ */
+function extractRequestConfig(body, stream) {
+  const config = {
+    messages: body.messages || [],
+    model: body.model,
+    stream: stream
+  };
+  
+  // Add all optional configuration parameters
+  const optionalParams = [
+    'temperature', 'top_p', 'top_k',
+    'max_tokens', 'max_completion_tokens',
+    'thinking', 'reasoning', 'enable_thinking',
+    'presence_penalty', 'frequency_penalty',
+    'seed', 'stop', 'tools', 'tool_choice',
+    'response_format', 'prediction', 'store', 'metadata',
+    'n', 'logprobs', 'top_logprobs', 'logit_bias',
+    'user', 'parallel_tool_calls'
+  ];
+  
+  for (const param of optionalParams) {
+    if (body[param] !== undefined) {
+      config[param] = body[param];
+    }
+  }
+  
+  return config;
+}
+
+/**
  * Convert OpenAI-style SSE chunks into a single non-streaming JSON response.
  * Used as a fallback when upstream returns text/event-stream for stream=false.
  */
@@ -315,6 +347,7 @@ function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  */
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent }) {
   const { provider, model } = modelInfo;
+  const requestStartTime = Date.now();
 
   const sourceFormat = detectFormat(body);
 
@@ -407,6 +440,26 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+
+    const errorDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: translatedBody || null,
+      providerResponse: null,
+      response: {
+        error: error.message || String(error),
+        status: error.name === "AbortError" ? 499 : 502,
+        thinking: null
+      },
+      status: "error"
+    };
+    saveRequestDetail(errorDetail).catch(() => {});
+
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -463,6 +516,26 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     trackPendingRequest(model, provider, connectionId, false);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
+
+    const errorDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: null,
+      response: {
+        error: message,
+        status: statusCode,
+        thinking: null
+      },
+      status: "error"
+    };
+    saveRequestDetail(errorDetail).catch(() => {});
+
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
 
@@ -531,6 +604,37 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
     }
 
+    const totalLatency = Date.now() - requestStartTime;
+    const requestDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: {
+        ttft: totalLatency,
+        total: totalLatency
+      },
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: responseBody || null,
+      response: {
+        content: translatedResponse?.choices?.[0]?.message?.content ||
+                 translatedResponse?.content ||
+                 null,
+        thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content ||
+                  translatedResponse?.reasoning_content ||
+                  null,
+        finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
+      },
+      status: "success"
+    };
+
+    // Async save (don't block response)
+    saveRequestDetail(requestDetail).catch(err => {
+      console.error("[RequestDetail] Failed to save:", err.message);
+    });
+
     return {
       success: true,
       response: new Response(JSON.stringify(translatedResponse), {
@@ -556,30 +660,102 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     "Access-Control-Allow-Origin": "*"
   };
 
-  // Create transform stream with logger for streaming response
+  let streamContent = "";
+  let streamUsage = null;
+  const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
+    // contentObj is object { content, thinking }
+    streamUsage = usage;
+    
+    const updatedDetail = {
+      provider: provider || "unknown",
+      model: model || "unknown",
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: {
+        ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
+        total: Date.now() - requestStartTime
+      },
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: contentObj.content || "[Empty streaming response]",
+      response: {
+        content: contentObj.content || "[Empty streaming response]",
+        thinking: contentObj.thinking || null,
+        type: "streaming"
+      },
+      status: "success",
+      id: streamDetailId
+    };
+    
+    saveRequestDetail(updatedDetail).catch(err => {
+      console.error("[RequestDetail] Failed to update streaming content:", err.message);
+    });
+
+    // Save usage stats for dashboard
+    if (usage && typeof usage === 'object') {
+      const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [STREAM USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
+      console.log(`${COLORS.green}${msg}${COLORS.reset}`);
+
+      saveRequestUsage({
+        provider: provider || "unknown",
+        model: model || "unknown",
+        tokens: usage,
+        timestamp: new Date().toISOString(),
+        connectionId: connectionId || undefined
+      }).catch(err => {
+        console.error("Failed to save streaming usage stats:", err.message);
+      });
+    }
+  };
+
   let transformStream;
-  // For Codex provider, translate response from openai-responses to openai (Chat Completions) format
-  // UNLESS client is Droid CLI which expects openai-responses format back
   const isDroidCLI = userAgent?.toLowerCase().includes('droid') || userAgent?.toLowerCase().includes('codex-cli');
   const needsCodexTranslation = provider === 'codex'
     && targetFormat === 'openai-responses'
     && !isDroidCLI;
 
   if (needsCodexTranslation) {
-    // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
-    // Standard translation for other providers
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
   } else {
     log?.debug?.("STREAM", `Standard passthrough mode`);
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete);
   }
 
-  // Pipe response through transform with disconnect detection
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController);
+
+  const totalLatency = Date.now() - requestStartTime;
+  const streamingDetail = {
+    provider: provider || "unknown",
+    model: model || "unknown",
+    connectionId: connectionId || undefined,
+    timestamp: new Date().toISOString(),
+    latency: {
+      ttft: 0,
+      total: Date.now() - requestStartTime
+    },
+    tokens: { prompt_tokens: 0, completion_tokens: 0 },
+    request: extractRequestConfig(body, stream),
+    providerRequest: finalBody || translatedBody || null,
+    providerResponse: "[Streaming - raw response not captured]",
+    response: {
+      content: "[Streaming in progress...]",
+      thinking: null,
+      type: "streaming"
+    },
+    status: "success",
+    id: streamDetailId
+  };
+
+  saveRequestDetail(streamingDetail).catch(err => {
+    console.error("[RequestDetail] Failed to save streaming request:", err.message);
+  });
 
   return {
     success: true,
