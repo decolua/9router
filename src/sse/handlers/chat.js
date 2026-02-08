@@ -89,13 +89,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -153,6 +153,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       clientRawRequest,
       connectionId: credentials.connectionId,
       userAgent,
+      apiKey,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

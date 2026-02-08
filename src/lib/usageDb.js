@@ -139,7 +139,7 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId? }
+ * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
@@ -349,8 +349,8 @@ export async function getUsageStats() {
   const db = await getUsageDb();
   const history = db.data.history || [];
 
-  // Import localDb to get provider connection names
-  const { getProviderConnections } = await import("@/lib/localDb.js");
+  // Import localDb to get provider connection names and API keys
+  const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
 
   // Fetch all provider connections to get account names
   let allConnections = [];
@@ -367,14 +367,33 @@ export async function getUsageStats() {
     connectionMap[conn.id] = conn.name || conn.email || conn.id;
   }
 
+  // Fetch all API keys to get key names
+  let allApiKeys = [];
+  try {
+    allApiKeys = await getApiKeys();
+  } catch (error) {
+    console.warn("Could not fetch API keys for usage stats:", error.message);
+  }
+
+  // Create a map from API key to key info
+  const apiKeyMap = {};
+  for (const key of allApiKeys) {
+    apiKeyMap[key.key] = {
+      name: key.name,
+      id: key.id,
+      createdAt: key.createdAt
+    };
+  }
+
   const stats = {
     totalRequests: history.length,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
-    totalCost: 0, // NEW
+    totalCost: 0,
     byProvider: {},
     byModel: {},
     byAccount: {},
+    byApiKey: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: []
@@ -505,6 +524,33 @@ export async function getUsageStats() {
       stats.byAccount[accountKey].cost += entryCost;
       if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
+      }
+    }
+
+    if (entry.apiKey) {
+      const keyInfo = apiKeyMap[entry.apiKey];
+      const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
+      const keyKey = entry.apiKey;
+
+      if (!stats.byApiKey[keyKey]) {
+        stats.byApiKey[keyKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: entry.apiKey,
+          keyName: keyName,
+          lastUsed: entry.timestamp
+        };
+      }
+      stats.byApiKey[keyKey].requests++;
+      stats.byApiKey[keyKey].promptTokens += promptTokens;
+      stats.byApiKey[keyKey].completionTokens += completionTokens;
+      stats.byApiKey[keyKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[keyKey].lastUsed)) {
+        stats.byApiKey[keyKey].lastUsed = entry.timestamp;
       }
     }
   }
