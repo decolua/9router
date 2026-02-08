@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { FREE_PROVIDERS, OAUTH_PROVIDERS, APIKEY_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -36,8 +36,8 @@ export default function ProviderDetailPage() {
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
       }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
-  const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
+    : (FREE_PROVIDERS[providerId] || OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId]);
+  const isOAuth = !!FREE_PROVIDERS[providerId] || !!OAUTH_PROVIDERS[providerId];
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   

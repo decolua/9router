@@ -136,6 +136,11 @@ export const PROVIDER_MODELS = {
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
+  kmc: [
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
+    { id: "kimi-latest", name: "Kimi Latest" },
+  ],
   minimax: [
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
@@ -189,6 +194,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   openrouter: "openrouter",
   glm: "glm",
   kimi: "kimi",
+  "kimi-coding": "kmc",
   minimax: "minimax",
   "minimax-cn": "minimax",
 };
@@ -197,4 +203,3 @@ export function getModelsByProviderId(providerId) {
   const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
   return PROVIDER_MODELS[alias] || [];
 }
-

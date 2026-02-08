@@ -62,6 +62,21 @@ const PROVIDER_MODELS_CONFIG = {
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || []
   },
+  kimi: {
+    url: "https://api.moonshot.ai/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || []
+  },
+  "kimi-coding": {
+    url: "https://api.kimi.com/coding/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "x-api-key",
+    parseResponse: (data) => data.data || data.models || []
+  },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
