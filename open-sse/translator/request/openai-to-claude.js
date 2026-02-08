@@ -141,6 +141,15 @@ export function openaiToClaudeRequest(model, body, stream) {
     result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
   }
 
+  // Thinking configuration
+  if (body.thinking) {
+    result.thinking = {
+      type: body.thinking.type || "enabled",
+      ...(body.thinking.budget_tokens && { budget_tokens: body.thinking.budget_tokens }),
+      ...(body.thinking.max_tokens && { max_tokens: body.thinking.max_tokens })
+    };
+  }
+
   // Attach toolNameMap to result for response translation
   if (toolNameMap.size > 0) {
     result._toolNameMap = toolNameMap;

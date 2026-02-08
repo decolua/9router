@@ -44,6 +44,7 @@ const defaultData = {
   providerConnections: [],
   providerNodes: [],
   modelAliases: {},
+  mitmAlias: {},
   combos: [],
   apiKeys: [],
   settings: {
@@ -63,6 +64,7 @@ function cloneDefaultData() {
     providerConnections: [],
     providerNodes: [],
     modelAliases: {},
+    mitmAlias: {},
     combos: [],
     apiKeys: [],
     settings: {
@@ -500,6 +502,22 @@ export async function setModelAlias(alias, model) {
 export async function deleteModelAlias(alias) {
   const db = await getDb();
   delete db.data.modelAliases[alias];
+  await db.write();
+}
+
+// ============ MITM Alias ============
+
+export async function getMitmAlias(toolName) {
+  const db = await getDb();
+  const all = db.data.mitmAlias || {};
+  if (toolName) return all[toolName] || {};
+  return all;
+}
+
+export async function setMitmAliasAll(toolName, mappings) {
+  const db = await getDb();
+  if (!db.data.mitmAlias) db.data.mitmAlias = {};
+  db.data.mitmAlias[toolName] = mappings || {};
   await db.write();
 }
 

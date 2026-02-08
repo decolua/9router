@@ -24,22 +24,6 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
     }
 
-    const aliases = await getModelAliases();
-    
-    // Check if alias already used by different model
-    const existingModel = aliases[alias];
-    if (existingModel && existingModel !== model) {
-      return NextResponse.json({ 
-        error: `Alias '${alias}' already in use for model '${existingModel}'` 
-      }, { status: 400 });
-    }
-
-    // Delete old alias for this model (if exists and different from new alias)
-    const oldAlias = Object.entries(aliases).find(([a, m]) => m === model && a !== alias)?.[0];
-    if (oldAlias) {
-      await deleteModelAlias(oldAlias);
-    }
-
     await setModelAlias(alias, model);
     await syncToCloudIfEnabled();
 

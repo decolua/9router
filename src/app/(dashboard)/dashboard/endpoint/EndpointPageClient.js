@@ -6,6 +6,7 @@ import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+const CLOUD_ACTION_TIMEOUT_MS = 15000;
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -28,6 +29,28 @@ export default function APIPageClient({ machineId }) {
     fetchData();
     loadCloudSettings();
   }, []);
+
+  const postCloudAction = async (action, timeoutMs = CLOUD_ACTION_TIMEOUT_MS) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch("/api/sync/cloud", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      return { ok: res.ok, status: res.status, data };
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return { ok: false, status: 408, data: { error: "Cloud request timeout" } };
+      }
+      return { ok: false, status: 500, data: { error: error.message || "Cloud request failed" } };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   const loadCloudSettings = async () => {
     try {
@@ -67,14 +90,8 @@ export default function APIPageClient({ machineId }) {
     setCloudSyncing(true);
     setSyncStep("syncing");
     try {
-      const res = await fetch("/api/sync/cloud", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "enable" })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
+      const { ok, data } = await postCloudAction("enable");
+      if (ok) {
         setSyncStep("verifying");
         
         if (data.verified) {
@@ -111,25 +128,19 @@ export default function APIPageClient({ machineId }) {
     
     try {
       // Step 1: Sync latest data from cloud
-      await fetch("/api/sync/cloud", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sync" })
-      });
+      await postCloudAction("sync");
 
       setSyncStep("disabling");
 
       // Step 2: Disable cloud
-      const disableRes = await fetch("/api/sync/cloud", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "disable" })
-      });
+      const { ok, data } = await postCloudAction("disable");
 
-      if (disableRes.ok) {
+      if (ok) {
         setCloudEnabled(false);
         setCloudStatus({ type: "success", message: "Cloud disabled" });
         setShowDisableModal(false);
+      } else {
+        setCloudStatus({ type: "error", message: data.error || "Failed to disable cloud" });
       }
     } catch (error) {
       console.log("Error disabling cloud:", error);
@@ -145,14 +156,8 @@ export default function APIPageClient({ machineId }) {
 
     setCloudSyncing(true);
     try {
-      const res = await fetch("/api/sync/cloud", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "sync" })
-      });
-
-      const data = await res.json();
-      if (res.ok) {
+      const { ok, data } = await postCloudAction("sync");
+      if (ok) {
         setCloudStatus({ type: "success", message: "Synced successfully" });
       } else {
         setCloudStatus({ type: "error", message: data.error });

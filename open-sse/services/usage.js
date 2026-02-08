@@ -471,8 +471,6 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     }
 
     const data = await response.json();
-    
-    console.log("[Kiro Usage] API Response:", JSON.stringify(data, null, 2));
 
     // Parse usage data from usageBreakdownList
     const usageList = data.usageBreakdownList || [];
@@ -480,12 +478,6 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     
     // Parse reset time - supports multiple formats (nextDateReset, resetDate, etc.)
     const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
-    
-    console.log("[Kiro Usage] Reset time:", {
-      nextDateReset: data.nextDateReset,
-      resetDate: data.resetDate,
-      parsedResetAt: resetAt
-    });
 
     usageList.forEach((breakdown) => {
       const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
