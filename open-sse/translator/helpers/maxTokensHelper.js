@@ -9,11 +9,15 @@ export function adjustMaxTokens(body) {
   let maxTokens = body.max_tokens || DEFAULT_MAX_TOKENS;
   
   // Auto-increase for tool calling to prevent truncated arguments
-  // Tool calls with large content (like writing files) need more tokens
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     if (maxTokens < DEFAULT_MIN_TOKENS) {
       maxTokens = DEFAULT_MIN_TOKENS;
     }
+  }
+  
+  // Ensure max_tokens > thinking.budget_tokens (Claude API requirement)
+  if (body.thinking?.budget_tokens && maxTokens <= body.thinking.budget_tokens) {
+    maxTokens = DEFAULT_MAX_TOKENS;
   }
   
   return maxTokens;
