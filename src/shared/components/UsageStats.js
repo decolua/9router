@@ -907,7 +907,7 @@ export default function UsageStats() {
             </thead>
             <tbody className="divide-y divide-border">
               {sortedApiKeys.map((data) => (
-                <tr key={data.key} className="hover:bg-bg-subtle/20">
+                <tr key={data.apiKeyKey} className="hover:bg-bg-subtle/20">
                   <td
                     className="px-6 py-3 font-medium"
                   >

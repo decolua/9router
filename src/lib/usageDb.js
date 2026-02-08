@@ -530,10 +530,10 @@ export async function getUsageStats() {
     if (entry.apiKey) {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
-      const keyKey = entry.apiKey;
+      const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
 
-      if (!stats.byApiKey[keyKey]) {
-        stats.byApiKey[keyKey] = {
+      if (!stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey] = {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
@@ -542,15 +542,16 @@ export async function getUsageStats() {
           provider: entry.provider,
           apiKey: entry.apiKey,
           keyName: keyName,
+          apiKeyKey: apiKeyKey,
           lastUsed: entry.timestamp
         };
       }
-      stats.byApiKey[keyKey].requests++;
-      stats.byApiKey[keyKey].promptTokens += promptTokens;
-      stats.byApiKey[keyKey].completionTokens += completionTokens;
-      stats.byApiKey[keyKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[keyKey].lastUsed)) {
-        stats.byApiKey[keyKey].lastUsed = entry.timestamp;
+      stats.byApiKey[apiKeyKey].requests++;
+      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
+      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
+      stats.byApiKey[apiKeyKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
+        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
       }
     }
   }
