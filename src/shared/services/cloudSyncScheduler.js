@@ -1,6 +1,11 @@
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { isCloudEnabled } from "@/lib/localDb";
 
+const INTERNAL_BASE_URL =
+  process.env.BASE_URL ||
+  process.env.NEXT_PUBLIC_BASE_URL ||
+  "http://localhost:20128";
+
 /**
  * Cloud sync scheduler
  */
@@ -83,7 +88,7 @@ export class CloudSyncScheduler {
     await this.initializeMachineId();
     
     // Call internal API route which handles both sync and token update
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/sync/cloud`, {
+    const response = await fetch(`${INTERNAL_BASE_URL}/api/sync/cloud`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ machineId: this.machineId, action: "sync" })

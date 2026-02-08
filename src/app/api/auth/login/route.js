@@ -26,6 +26,11 @@ export async function POST(request) {
     }
 
     if (isValid) {
+      const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
+      const forwardedProto = request.headers.get("x-forwarded-proto");
+      const isHttpsRequest = forwardedProto === "https";
+      const useSecureCookie = forceSecureCookie || isHttpsRequest;
+
       const token = await new SignJWT({ authenticated: true })
         .setProtectedHeader({ alg: "HS256" })
         .setExpirationTime("24h")
@@ -34,7 +39,7 @@ export async function POST(request) {
       const cookieStore = await cookies();
       cookieStore.set("auth_token", token, {
         httpOnly: true,
-        secure: false, // Allow HTTP for local network access
+        secure: useSecureCookie,
         sameSite: "lax",
         path: "/",
       });
