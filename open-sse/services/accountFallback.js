@@ -81,6 +81,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
   }
 
+  // 400 Bad Request - don't fallback (same request will fail on all accounts)
+  if (status === HTTP_STATUS.BAD_REQUEST) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   // All other errors - fallback with transient cooldown
   return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
 }

@@ -4,8 +4,21 @@
  * Can be used in both Next.js and Cloudflare Workers
  */
 
-import fs from "fs";
-import path from "path";
+// Dynamic import for Node.js-only modules (fs/path unavailable in Workers)
+let _fs = null;
+let _path = null;
+async function getFs() {
+  if (_fs === null) {
+    try { _fs = (await import("fs")).default; } catch { _fs = false; }
+  }
+  return _fs || null;
+}
+async function getPath() {
+  if (_path === null) {
+    try { _path = (await import("path")).default; } catch { _path = false; }
+  }
+  return _path || null;
+}
 
 // Create log directory for responses (Node.js only)
 export function createResponsesLogger(model, logsDir = null) {

@@ -15,7 +15,11 @@ export const COLORS = {
   cyan: "\x1b[36m"
 };
 
-// Buffer tokens to prevent context errors
+/**
+ * Safety buffer added to reported token usage to prevent clients from hitting
+ * context window limits. 2000 tokens accounts for overhead from system prompts,
+ * tool definitions, and format translation that may not be reflected in raw usage.
+ */
 const BUFFER_TOKENS = 2000;
 
 // Get HH:MM:SS timestamp
@@ -221,7 +225,9 @@ export function estimateInputTokens(body) {
     const bodyStr = JSON.stringify(body);
     const totalChars = bodyStr.length;
 
-    // Estimate: ~4 chars per token (rough average across all tokenizers)
+    // Rough estimate: ~4 characters per token is a widely-used heuristic for
+    // English text across GPT/Claude/Gemini tokenizers. This overestimates for
+    // code (which has shorter tokens) but is acceptable for a safety buffer.
     return Math.ceil(totalChars / 4);
   } catch (err) {
     // Fallback if stringify fails

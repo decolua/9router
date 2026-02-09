@@ -4,14 +4,11 @@ import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 
-// Registry for translators
+// Registry for translators (must be defined before translator module imports below)
 const requestRegistry = new Map();
 const responseRegistry = new Map();
 
-// Track initialization state
-let initialized = false;
-
-// Register translator
+// Register translator (called by each translator module on import)
 export function register(from, to, requestFn, responseFn) {
   const key = `${from}:${to}`;
   if (requestFn) {
@@ -22,30 +19,26 @@ export function register(from, to, requestFn, responseFn) {
   }
 }
 
-// Lazy load translators (called once on first use)
-function ensureInitialized() {
-  if (initialized) return;
-  initialized = true;
-  
-  // Request translators - sync require pattern for bundler
-  require("./request/claude-to-openai.js");
-  require("./request/openai-to-claude.js");
-  require("./request/gemini-to-openai.js");
-  require("./request/openai-to-gemini.js");
-  require("./request/antigravity-to-openai.js");
-  require("./request/openai-responses.js");
-  require("./request/openai-to-kiro.js");
-  require("./request/openai-to-cursor.js");
-  
-  // Response translators
-  require("./response/claude-to-openai.js");
-  require("./response/openai-to-claude.js");
-  require("./response/gemini-to-openai.js");
-  require("./response/openai-to-antigravity.js");
-  require("./response/openai-responses.js");
-  require("./response/kiro-to-openai.js");
-  require("./response/cursor-to-openai.js");
-}
+// Translator modules self-register via register() on import
+import "./request/claude-to-openai.js";
+import "./request/openai-to-claude.js";
+import "./request/gemini-to-openai.js";
+import "./request/openai-to-gemini.js";
+import "./request/antigravity-to-openai.js";
+import "./request/openai-responses.js";
+import "./request/openai-to-kiro.js";
+import "./request/openai-to-cursor.js";
+
+import "./response/claude-to-openai.js";
+import "./response/openai-to-claude.js";
+import "./response/gemini-to-openai.js";
+import "./response/openai-to-antigravity.js";
+import "./response/openai-responses.js";
+import "./response/kiro-to-openai.js";
+import "./response/cursor-to-openai.js";
+
+// No-op (translators registered at import time)
+function ensureInitialized() {}
 
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null) {

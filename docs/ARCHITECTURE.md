@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-02-08_
 
 ## Executive Summary
 
@@ -446,20 +446,39 @@ flowchart LR
 - `src/lib/localDb.js`: persistent config/state
 - `src/lib/usageDb.js`: usage history and rolling request logs
 
-## Provider Executor Coverage
+## Provider Executor Coverage (Strategy Pattern)
 
-Specialized executors:
+Each provider has a specialized executor extending `BaseExecutor` (in `open-sse/executors/base.js`), which provides URL building, header construction, retry with exponential backoff, credential refresh hooks, and the `execute()` orchestration method.
 
-- `antigravity`
-- `gemini-cli`
-- `github`
-- `kiro`
-- `codex`
-- `cursor`
+| Executor              | Provider(s)                                                         | Special Handling                                                     |
+| --------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `DefaultExecutor`     | OpenAI, Claude, Gemini, Qwen, iFlow, OpenRouter, GLM, Kimi, MiniMax | Dynamic URL/header config per provider                               |
+| `AntigravityExecutor` | Google Antigravity                                                  | Custom project/session IDs, Retry-After parsing                      |
+| `CodexExecutor`       | OpenAI Codex                                                        | Injects system instructions, forces reasoning effort                 |
+| `CursorExecutor`      | Cursor IDE                                                          | ConnectRPC protocol, Protobuf encoding, request signing via checksum |
+| `GithubExecutor`      | GitHub Copilot                                                      | Copilot token refresh, VSCode-mimicking headers                      |
+| `KiroExecutor`        | AWS CodeWhisperer/Kiro                                              | AWS EventStream binary format → SSE conversion                       |
+| `GeminiCLIExecutor`   | Gemini CLI                                                          | Google OAuth token refresh cycle                                     |
 
-Default executor path:
+All other providers (including custom compatible nodes) use the `DefaultExecutor`.
 
-- all other providers (including compatible node providers) use `open-sse/executors/default.js`
+## Provider Compatibility Matrix
+
+| Provider         | Format           | Auth                  | Stream           | Non-Stream | Token Refresh | Usage API          |
+| ---------------- | ---------------- | --------------------- | ---------------- | ---------- | ------------- | ------------------ |
+| Claude           | claude           | API Key / OAuth       | ✅               | ✅         | ✅            | ⚠️ Admin only      |
+| Gemini           | gemini           | API Key / OAuth       | ✅               | ✅         | ✅            | ⚠️ Cloud Console   |
+| Gemini CLI       | gemini-cli       | OAuth                 | ✅               | ✅         | ✅            | ⚠️ Cloud Console   |
+| Antigravity      | antigravity      | OAuth                 | ✅               | ✅         | ✅            | ✅ Full quota API  |
+| OpenAI           | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| Codex            | openai-responses | OAuth                 | ✅ forced        | ❌         | ✅            | ✅ Rate limits     |
+| GitHub Copilot   | openai           | OAuth + Copilot Token | ✅               | ✅         | ✅            | ✅ Quota snapshots |
+| Cursor           | cursor           | Custom checksum       | ✅               | ✅         | ❌            | ❌                 |
+| Kiro             | kiro             | AWS SSO OIDC          | ✅ (EventStream) | ❌         | ✅            | ✅ Usage limits    |
+| Qwen             | openai           | OAuth                 | ✅               | ✅         | ✅            | ⚠️ Per request     |
+| iFlow            | openai           | OAuth (Basic)         | ✅               | ✅         | ✅            | ⚠️ Per request     |
+| OpenRouter       | openai           | API Key               | ✅               | ✅         | ❌            | ❌                 |
+| GLM/Kimi/MiniMax | claude           | API Key               | ✅               | ✅         | ❌            | ❌                 |
 
 ## Format Translation Coverage
 
@@ -478,7 +497,39 @@ Target formats include:
 - Kiro
 - Cursor
 
+Translations use **OpenAI as the hub format** — all conversions go through OpenAI as intermediate:
+
+```
+Source Format → OpenAI (hub) → Target Format
+```
+
 Translations are selected dynamically based on source payload shape and provider target format.
+
+## Supported API Endpoints
+
+| Endpoint                                      | Format             | Handler                                 |
+| --------------------------------------------- | ------------------ | --------------------------------------- |
+| `POST /v1/chat/completions`                   | OpenAI Chat        | `src/sse/handlers/chat.js`              |
+| `POST /v1/messages`                           | Claude Messages    | Same handler (auto-detected)            |
+| `POST /v1/responses`                          | OpenAI Responses   | `open-sse/handlers/responsesHandler.js` |
+| `POST /v1/messages/count_tokens`              | Claude Token Count | API route                               |
+| `GET /v1/models`                              | OpenAI Models list | API route                               |
+| `POST /v1beta/models/*:streamGenerateContent` | Gemini native      | API route                               |
+
+## Bypass Handler
+
+The bypass handler (`open-sse/utils/bypassHandler.js`) intercepts known "throwaway" requests from Claude CLI — warmup pings, title extractions, and token counts — and returns a **fake response** without consuming upstream provider tokens. This is triggered only when `User-Agent` contains `claude-cli`.
+
+## Request Logger Pipeline
+
+The request logger (`open-sse/utils/requestLogger.js`) provides a 7-stage debug logging pipeline, disabled by default, enabled via `ENABLE_REQUEST_LOGS=true`:
+
+```
+1_req_client.json → 2_req_source.json → 3_req_openai.json → 4_req_target.json
+→ 5_res_provider.txt → 6_res_openai.txt → 7_res_client.txt
+```
+
+Files are written to `<repo>/logs/<session>/` for each request session.
 
 ## Failure Modes and Resilience
 

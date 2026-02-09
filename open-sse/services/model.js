@@ -1,21 +1,10 @@
-// Provider alias to ID mapping
-const ALIAS_TO_PROVIDER_ID = {
-  cc: "claude",
-  cx: "codex",
-  gc: "gemini-cli",
-  qw: "qwen",
-  if: "iflow",
-  ag: "antigravity",
-  gh: "github",
-  kr: "kiro",
-  cu: "cursor",
-  // API Key providers (alias = id)
-  openai: "openai",
-  anthropic: "anthropic",
-  gemini: "gemini",
-  openrouter: "openrouter",
-  cursor: "cursor",
-};
+import { PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+
+// Derive alias→provider mapping from the single source of truth (PROVIDER_ID_TO_ALIAS)
+// This prevents the two maps from drifting out of sync
+const ALIAS_TO_PROVIDER_ID = Object.fromEntries(
+  Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+);
 
 /**
  * Resolve provider alias to provider ID

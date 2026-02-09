@@ -193,8 +193,8 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
 function extractUsageFromResponse(responseBody, provider) {
   if (!responseBody || typeof responseBody !== 'object') return null;
 
-  // OpenAI format
-  if (responseBody.usage && typeof responseBody.usage === 'object') {
+  // OpenAI format (has prompt_tokens / completion_tokens)
+  if (responseBody.usage && typeof responseBody.usage === 'object' && responseBody.usage.prompt_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
@@ -331,8 +331,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
 
-  // Force streaming for OpenAI/Codex models (they don't support non-streaming mode properly)
-  const stream = (provider === 'openai' || provider === 'codex') ? true : (body.stream !== false);
+  // Default to streaming unless client explicitly sets stream: false
+  const stream = body.stream !== false;
 
   // Create request logger for this session: sourceFormat_targetFormat_model
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);

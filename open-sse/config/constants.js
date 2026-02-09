@@ -27,13 +27,13 @@ export const PROVIDERS = {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
     format: "gemini",
     clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || ""
   },
   "gemini-cli": {
     baseUrl: "https://cloudcode-pa.googleapis.com/v1internal",
     format: "gemini-cli",
     clientId: "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || ""
   },
   codex: {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
@@ -45,7 +45,7 @@ export const PROVIDERS = {
     },
     // OpenAI OAuth configuration
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
+    clientSecret: process.env.CODEX_OAUTH_CLIENT_SECRET || "",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -68,7 +68,7 @@ export const PROVIDERS = {
     },
     // iFlow OAuth configuration (from CLIProxyAPI)
     clientId: "10009311001",
-    clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
+    clientSecret: process.env.IFLOW_OAUTH_CLIENT_SECRET || "",
     tokenUrl: "https://iflow.cn/oauth/token",
     authUrl: "https://iflow.cn/oauth"
   },
@@ -82,7 +82,7 @@ export const PROVIDERS = {
       "User-Agent": "antigravity/1.104.0 darwin/arm64"
     },
     clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-    clientSecret: "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"
+    clientSecret: process.env.ANTIGRAVITY_OAUTH_CLIENT_SECRET || ""
   },
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",

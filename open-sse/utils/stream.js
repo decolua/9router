@@ -6,8 +6,9 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
 
 export { COLORS, formatSSE };
 
-const sharedDecoder = new TextDecoder();
-const sharedEncoder = new TextEncoder();
+// Note: TextDecoder/TextEncoder are created per-stream inside createSSEStream()
+// to avoid shared state issues with concurrent streams (TextDecoder with {stream:true}
+// maintains internal buffering state between decode() calls).
 
 /**
  * Stream modes
@@ -51,9 +52,13 @@ export function createSSEStream(options = {}) {
   // Track content length for usage estimation (both modes)
   let totalContentLength = 0;
 
+  // Per-stream instances to avoid shared state with concurrent streams
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
   return new TransformStream({
     transform(chunk, controller) {
-      const text = sharedDecoder.decode(chunk, { stream: true });
+      const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
@@ -117,7 +122,7 @@ export function createSSEStream(options = {}) {
           }
 
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          controller.enqueue(encoder.encode(output));
           continue;
         }
 
@@ -130,7 +135,7 @@ export function createSSEStream(options = {}) {
         if (parsed && parsed.done) {
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          controller.enqueue(encoder.encode(output));
           continue;
         }
 
@@ -198,7 +203,7 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            controller.enqueue(encoder.encode(output));
           }
         }
       }
@@ -207,7 +212,7 @@ export function createSSEStream(options = {}) {
     flush(controller) {
       trackPendingRequest(model, provider, connectionId, false);
       try {
-        const remaining = sharedDecoder.decode();
+        const remaining = decoder.decode();
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
@@ -217,7 +222,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            controller.enqueue(encoder.encode(output));
           }
 
           // Estimate usage if provider didn't return valid usage (PASSTHROUGH is always OpenAI format)
@@ -251,7 +256,7 @@ export function createSSEStream(options = {}) {
               for (const item of translated) {
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
+                controller.enqueue(encoder.encode(output));
               }
             }
           }
