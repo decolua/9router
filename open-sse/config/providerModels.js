@@ -150,6 +150,9 @@ export const PROVIDER_MODELS = {
   minimax: [
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
+  "minimax-cn": [
+    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+  ],
 };
 
 // Helper functions
