@@ -312,11 +312,11 @@ export function logUsage(provider, usage, model = null, connectionId = null) {
 
   // Save to usage DB
   const tokens = {
-    input: inTokens,
-    output: outTokens,
-    cacheRead: cacheRead || 0,
-    cacheCreation: cacheCreation || 0,
-    reasoning: reasoning || 0
+    prompt_tokens: inTokens,
+    completion_tokens: outTokens,
+    cache_read_input_tokens: cacheRead || 0,
+    cache_creation_input_tokens: cacheCreation || 0,
+    reasoning_tokens: reasoning || 0
   };
   saveRequestUsage({ model, provider, connectionId, tokens }).catch(() => { });
   appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
