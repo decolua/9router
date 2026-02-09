@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
 const CLOUD_ACTION_TIMEOUT_MS = 15000;
 
 export default function APIPageClient({ machineId }) {
@@ -17,8 +17,13 @@ export default function APIPageClient({ machineId }) {
 
   // Cloud sync state
   const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [cloudUrl, setCloudUrl] = useState(DEFAULT_CLOUD_URL);
+  const [cloudUrlInput, setCloudUrlInput] = useState(DEFAULT_CLOUD_URL);
+  const [cloudUrlSaving, setCloudUrlSaving] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [showDisableModal, setShowDisableModal] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
+  const [setupStatus, setSetupStatus] = useState(null);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState(null);
   const [syncStep, setSyncStep] = useState(""); // "syncing" | "verifying" | "disabling" | ""
@@ -58,6 +63,9 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         const data = await res.json();
         setCloudEnabled(data.cloudEnabled || false);
+        const url = data.cloudUrl || DEFAULT_CLOUD_URL;
+        setCloudUrl(url);
+        setCloudUrlInput(url);
       }
     } catch (error) {
       console.log("Error loading cloud settings:", error);
@@ -169,6 +177,51 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleSaveCloudUrl = async () => {
+    // Strip trailing /v1 or /v1/ and trailing slashes
+    const trimmed = cloudUrlInput.trim().replace(/\/v1\/?$/, "").replace(/\/+$/, "");
+    if (!trimmed) return;
+
+    setCloudUrlSaving(true);
+    setSetupStatus(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cloudUrl: trimmed }),
+      });
+      if (res.ok) {
+        setCloudUrl(trimmed);
+        setCloudUrlInput(trimmed);
+        setSetupStatus({ type: "success", message: "Worker URL saved" });
+      } else {
+        setSetupStatus({ type: "error", message: "Failed to save Worker URL" });
+      }
+    } catch (error) {
+      setSetupStatus({ type: "error", message: error.message });
+    } finally {
+      setCloudUrlSaving(false);
+    }
+  };
+
+  const handleCheckCloud = async () => {
+    if (!cloudUrl) return;
+    setCloudSyncing(true);
+    setSetupStatus(null);
+    try {
+      const { ok, data } = await postCloudAction("check", 8000);
+      if (ok) {
+        setSetupStatus({ type: "success", message: data.message || "Worker is running" });
+      } else {
+        setSetupStatus({ type: "error", message: data.error || "Check failed" });
+      }
+    } catch {
+      setSetupStatus({ type: "error", message: "Cannot reach worker" });
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
@@ -205,7 +258,7 @@ export default function APIPageClient({ machineId }) {
   };
 
   const [baseUrl, setBaseUrl] = useState("/v1");
-  const cloudEndpointNew = `${CLOUD_URL}/v1`;
+  const cloudEndpointNew = cloudUrl ? `${cloudUrl}/v1` : "";
 
   // Hydration fix: Only access window on client side
   useEffect(() => {
@@ -226,17 +279,10 @@ export default function APIPageClient({ machineId }) {
   // Use new format endpoint (machineId embedded in key)
   const currentEndpoint = cloudEnabled ? cloudEndpointNew : baseUrl;
 
-  const cloudBenefits = [
-    { icon: "public", title: "Access Anywhere", desc: "No port forwarding needed" },
-    { icon: "group", title: "Share Endpoint", desc: "Easy team collaboration" },
-    { icon: "schedule", title: "Always Online", desc: "24/7 availability" },
-    { icon: "speed", title: "Global Edge", desc: "Fast worldwide access" },
-  ];
-
   return (
     <div className="flex flex-col gap-8">
       {/* Endpoint Card */}
-      <Card className={cloudEnabled ? "" : ""}>
+      <Card>
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold">API Endpoint</h2>
@@ -245,6 +291,14 @@ export default function APIPageClient({ machineId }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="settings"
+              onClick={() => setShowSetupModal(true)}
+            >
+              Setup Cloudflare
+            </Button>
             {cloudEnabled ? (
               <Button
                 size="sm"
@@ -261,7 +315,7 @@ export default function APIPageClient({ machineId }) {
                 variant="primary"
                 icon="cloud_upload"
                 onClick={() => handleCloudToggle(true)}
-                disabled={cloudSyncing}
+                disabled={cloudSyncing || !cloudUrl}
                 className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
               >
                 Enable Cloud
@@ -271,7 +325,7 @@ export default function APIPageClient({ machineId }) {
         </div>
 
         {/* Endpoint URL */}
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2">
           <Input 
             value={currentEndpoint} 
             readOnly 
@@ -286,6 +340,16 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
+        {/* Cloud Status */}
+        {cloudStatus && (
+          <div className={`mt-3 p-2 rounded text-sm ${
+            cloudStatus.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+            cloudStatus.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
+            "bg-red-500/10 text-red-600 dark:text-red-400"
+          }`}>
+            {cloudStatus.message}
+          </div>
+        )}
       </Card>
 
       {/* API Keys */}
@@ -344,62 +408,66 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* Cloud Proxy Card - Hidden */}
-      {false && (
-        <Card className={cloudEnabled ? "bg-primary/5" : ""}>
-          <div className="flex flex-col gap-4">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`p-2 rounded-lg ${cloudEnabled ? "bg-primary text-white" : "bg-sidebar text-text-muted"}`}>
-                  <span className="material-symbols-outlined text-xl">cloud</span>
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold">Cloud Proxy</h2>
-                  <p className="text-xs text-text-muted">
-                    {cloudEnabled ? "Connected & Ready" : "Access your API from anywhere"}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {cloudEnabled ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon="cloud_off"
-                    onClick={() => handleCloudToggle(false)}
-                    disabled={cloudSyncing}
-                    className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
-                  >
-                    Disable
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    icon="cloud_upload"
-                    onClick={() => handleCloudToggle(true)}
-                    disabled={cloudSyncing}
-                    className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600 px-6"
-                  >
-                    Enable Cloud
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Benefits Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {cloudBenefits.map((benefit) => (
-                <div key={benefit.title} className="flex flex-col items-center text-center p-3 rounded-lg bg-sidebar/50">
-                  <span className="material-symbols-outlined text-xl text-primary mb-1">{benefit.icon}</span>
-                  <p className="text-xs font-semibold">{benefit.title}</p>
-                  <p className="text-xs text-text-muted">{benefit.desc}</p>
-                </div>
-              ))}
-            </div>
+      {/* Setup Cloud Modal */}
+      <Modal
+        isOpen={showSetupModal}
+        title="Setup Cloudflare Worker"
+        onClose={() => { setShowSetupModal(false); setSetupStatus(null); }}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              <code className="font-semibold">https://9router.com</code> is a pre-configured worker ready to use. You can also deploy your own.
+            </p>
           </div>
-        </Card>
-      )}
+          <div>
+            <p className="text-sm font-medium mb-2">Worker URL</p>
+            <div className="flex gap-2">
+              <Input
+                value={cloudUrlInput}
+                onChange={(e) => setCloudUrlInput(e.target.value)}
+                placeholder="https://9router.your-subdomain.workers.dev"
+                className="flex-1 font-mono text-sm"
+              />
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              Deploy your own worker from <code className="text-xs bg-sidebar px-1 py-0.5 rounded">app/cloud/</code> directory.{" "}
+              <a href="https://github.com/decolua/9router/tree/main/app/cloud" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                Setup guide →
+              </a>
+            </p>
+          </div>
+
+          {/* Status in modal */}
+          {setupStatus && (
+            <div className={`p-2 rounded text-sm ${
+              setupStatus.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+              "bg-red-500/10 text-red-600 dark:text-red-400"
+            }`}>
+              {setupStatus.message}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleSaveCloudUrl}
+              fullWidth
+              disabled={cloudUrlSaving || !cloudUrlInput.trim() || cloudUrlInput.trim().replace(/\/v1\/?$/, "").replace(/\/+$/, "") === cloudUrl}
+            >
+              {cloudUrlSaving ? "Saving..." : "Save"}
+            </Button>
+            <Button
+              onClick={handleCheckCloud}
+              variant="secondary"
+              fullWidth
+              disabled={cloudSyncing || !cloudUrl}
+              icon="check_circle"
+            >
+              {cloudSyncing ? "Checking..." : "Check"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Cloud Enable Modal */}
       <Modal

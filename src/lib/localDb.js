@@ -50,7 +50,11 @@ const defaultData = {
   settings: {
     cloudEnabled: false,
     stickyRoundRobinLimit: 3,
-    requireLogin: true
+    requireLogin: true,
+    observabilityMaxRecords: 1000,
+    observabilityBatchSize: 20,
+    observabilityFlushIntervalMs: 5000,
+    observabilityMaxJsonSize: 1024
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -67,6 +71,10 @@ function cloneDefaultData() {
       cloudEnabled: false,
       stickyRoundRobinLimit: 3,
       requireLogin: true,
+      observabilityMaxRecords: 1000,
+      observabilityBatchSize: 20,
+      observabilityFlushIntervalMs: 5000,
+      observabilityMaxJsonSize: 1024
     },
     pricing: {},
   };
@@ -736,6 +744,17 @@ export async function updateSettings(updates) {
 export async function isCloudEnabled() {
   const settings = await getSettings();
   return settings.cloudEnabled === true;
+}
+
+/**
+ * Get cloud URL (UI config > env > default)
+ */
+export async function getCloudUrl() {
+  const settings = await getSettings();
+  return settings.cloudUrl
+    || process.env.CLOUD_URL
+    || process.env.NEXT_PUBLIC_CLOUD_URL
+    || "";
 }
 
 // ============ Pricing ============
