@@ -527,7 +527,7 @@ export async function getUsageStats() {
       }
     }
 
-    if (entry.apiKey) {
+    if (entry.apiKey && typeof entry.apiKey === "string") {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
       const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
