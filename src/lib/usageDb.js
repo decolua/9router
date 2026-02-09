@@ -527,10 +527,11 @@ export async function getUsageStats() {
       }
     }
 
+    // Handle requests with API key
     if (entry.apiKey && typeof entry.apiKey === "string") {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
-      const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
+      const apiKeyKey = entry.apiKey.slice(0, 12);
 
       if (!stats.byApiKey[apiKeyKey]) {
         stats.byApiKey[apiKeyKey] = {
@@ -541,6 +542,31 @@ export async function getUsageStats() {
           rawModel: entry.model,
           provider: entry.provider,
           apiKey: entry.apiKey,
+          keyName: keyName,
+          apiKeyKey: apiKeyKey,
+          lastUsed: entry.timestamp
+        };
+      }
+      stats.byApiKey[apiKeyKey].requests++;
+      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
+      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
+      stats.byApiKey[apiKeyKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
+        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
+      }
+    } else {
+      const apiKeyKey = "local-no-key";
+      const keyName = "Local (No API Key)";
+
+      if (!stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: null,
           keyName: keyName,
           apiKeyKey: apiKeyKey,
           lastUsed: entry.timestamp
