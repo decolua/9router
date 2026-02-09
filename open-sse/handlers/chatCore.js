@@ -706,7 +706,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
-        connectionId: connectionId || undefined
+        connectionId: connectionId || undefined,
+        apiKey: apiKey || undefined
       }).catch(err => {
         console.error("Failed to save streaming usage stats:", err.message);
       });

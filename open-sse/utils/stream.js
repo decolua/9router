@@ -42,7 +42,7 @@ export function createSSEStream(options = {}) {
     model = null,
     connectionId = null,
     body = null,
-    apiKey = null
+    apiKey = null,
     onStreamComplete = null
   } = options;
 
@@ -339,7 +339,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     model,
     connectionId,
     body,
-    apiKey
+    apiKey,
     onStreamComplete
   });
 }
@@ -352,7 +352,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     model,
     connectionId,
     body,
-    apiKey
+    apiKey,
     onStreamComplete
   });
 }
