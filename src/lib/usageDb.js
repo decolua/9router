@@ -144,9 +144,6 @@ export async function getUsageDb() {
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
 
-  // Debug logging for API Key tracking
-  console.log('[DEBUG saveRequestUsage] entry.apiKey:', entry.apiKey ? entry.apiKey.slice(0, 8) + '...' : 'null');
-
   try {
     const db = await getUsageDb();
 
@@ -442,11 +439,6 @@ export async function getUsageStats() {
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
 
-  // Debug logging for API Key tracking
-  console.log('[DEBUG getUsageStats] Total history entries:', history.length);
-  console.log('[DEBUG getUsageStats] apiKeyMap keys count:', Object.keys(apiKeyMap).length);
-  let apiKeyEntryCount = 0;
-
   for (const entry of history) {
     const promptTokens = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
@@ -536,16 +528,12 @@ export async function getUsageStats() {
     }
 
     if (entry.apiKey) {
-      apiKeyEntryCount++;
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
       const apiKeyKey = entry.apiKey.slice(0, 12); // Use partial key as object key for security
-      // Group by API Key + Model + Provider combination to track different models used with the same key
-      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
-      console.log('[DEBUG getUsageStats] Processing entry with apiKey:', entry.apiKey.slice(0, 8) + '...', 'model:', entry.model, 'provider:', entry.provider, 'Found keyInfo:', keyInfo ? 'yes (' + keyInfo.name + ')' : 'no');
 
-      if (!stats.byApiKey[apiKeyModelKey]) {
-        stats.byApiKey[apiKeyModelKey] = {
+      if (!stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey] = {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
@@ -558,19 +546,15 @@ export async function getUsageStats() {
           lastUsed: entry.timestamp
         };
       }
-      stats.byApiKey[apiKeyModelKey].requests++;
-      stats.byApiKey[apiKeyModelKey].promptTokens += promptTokens;
-      stats.byApiKey[apiKeyModelKey].completionTokens += completionTokens;
-      stats.byApiKey[apiKeyModelKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyModelKey].lastUsed)) {
-        stats.byApiKey[apiKeyModelKey].lastUsed = entry.timestamp;
+      stats.byApiKey[apiKeyKey].requests++;
+      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
+      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
+      stats.byApiKey[apiKeyKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
+        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
       }
     }
   }
-
-  // Debug logging summary
-  console.log('[DEBUG getUsageStats] Entries with apiKey:', apiKeyEntryCount);
-  console.log('[DEBUG getUsageStats] byApiKey stats count:', Object.keys(stats.byApiKey).length);
 
   return stats;
 }

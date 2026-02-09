@@ -570,11 +570,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (needsCodexTranslation) {
     // Codex returns openai-responses, translate to openai (Chat Completions) that clients expect
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, apiKey);
-  } else if (provider === 'openai' || provider === 'codex' || provider === 'openrouter') {
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, apiKey);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body);
+  } else if (needsTranslation(targetFormat, sourceFormat)) {
+    // Standard translation for other providers
+    log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body);
   } else {
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, apiKey);
+    log?.debug?.("STREAM", `Standard passthrough mode`);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body);
   }
 
   // Pipe response through transform with disconnect detection
