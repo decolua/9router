@@ -518,7 +518,13 @@ codex "your prompt"
 
 ### OpenClaw
 
-Edit `~/.openclaw/openclaw.json`:
+**Option 1 — Dashboard (recommended):**
+
+```
+Dashboard → CLI Tools → OpenClaw → Select Model → Apply
+```
+
+**Option 2 — Manual:** Edit `~/.openclaw/openclaw.json`:
 
 ```json
 {
@@ -532,8 +538,8 @@ Edit `~/.openclaw/openclaw.json`:
   "models": {
     "providers": {
       "9router": {
-        "baseUrl": "http://localhost:20128/v1",
-        "apiKey": "your-9router-api-key",
+        "baseUrl": "http://127.0.0.1:20128/v1",
+        "apiKey": "sk_9router",
         "api": "openai-completions",
         "models": [
           {
@@ -547,7 +553,7 @@ Edit `~/.openclaw/openclaw.json`:
 }
 ```
 
-**Or use Dashboard:** CLI Tools → OpenClaw → Auto-config
+> **Note:** OpenClaw only works with local 9Router. Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
 
 ### Cline / Continue / RooCode
 
