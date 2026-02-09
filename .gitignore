@@ -19,7 +19,6 @@
 
 # production
 /build
-cloud/*
 
 # misc
 .DS_Store

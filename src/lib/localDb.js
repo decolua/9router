@@ -746,6 +746,17 @@ export async function isCloudEnabled() {
   return settings.cloudEnabled === true;
 }
 
+/**
+ * Get cloud URL (UI config > env > default)
+ */
+export async function getCloudUrl() {
+  const settings = await getSettings();
+  return settings.cloudUrl
+    || process.env.CLOUD_URL
+    || process.env.NEXT_PUBLIC_CLOUD_URL
+    || "";
+}
+
 // ============ Pricing ============
 
 /**
