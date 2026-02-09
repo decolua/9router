@@ -583,14 +583,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
 
-      saveRequestUsage({
+      const usageEntry = {
         provider: provider || "unknown",
         model: model || "unknown",
         tokens: usage,
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
         apiKey: apiKey || undefined
-      }).catch(err => {
+      };
+      saveRequestUsage(usageEntry).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
     }
@@ -669,7 +670,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const onStreamComplete = (contentObj, usage, ttftAt) => {
     // contentObj is object { content, thinking }
     streamUsage = usage;
-    
+
     const updatedDetail = {
       provider: provider || "unknown",
       model: model || "unknown",
@@ -722,13 +723,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   if (needsCodexTranslation) {
     log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, apiKey, onStreamComplete);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
-    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete);
+    transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, apiKey, onStreamComplete);
   } else {
     log?.debug?.("STREAM", `Standard passthrough mode`);
-    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete);
+    transformStream = createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, apiKey, onStreamComplete);
   }
 
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController);
