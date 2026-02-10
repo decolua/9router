@@ -13,10 +13,12 @@
     "selectAll": "Select all",
     "clear": "Clear",
     "add": "Add",
+    "retry": "Retry",
     "confirm": "Confirm",
     "warning": "Warning",
     "copy": "Copy",
     "copied": "Copied!",
+    "saving": "Saving...",
     "done": "Done"
   },
   "nav": {
@@ -510,8 +512,16 @@
       "manualConfigTitle": "Codex CLI - Manual Configuration",
       "manualConfigHeader": "9Router Configuration for Codex CLI"
     }
-  }
-  ,
+  },
+  "modelSelect": {
+    "title": "Select Model",
+    "searchPlaceholder": "Search models...",
+    "combos": "Combos",
+    "loadingProvider": "Loading models...",
+    "loadFailed": "Failed to load models",
+    "noModelsForProvider": "No models available for this provider",
+    "noModelsFound": "No models found"
+  },
   "login": {
     "loading": "Loading...",
     "subtitle": "Enter your password to access the dashboard",

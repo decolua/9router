@@ -13,10 +13,12 @@
     "selectAll": "Chọn tất cả",
     "clear": "Xóa chọn",
     "add": "Thêm",
+    "retry": "Thử lại",
     "confirm": "Xác nhận",
     "warning": "Cảnh báo",
     "copy": "Copy",
     "copied": "Đã copy!",
+    "saving": "Đang lưu...",
     "done": "Xong"
   },
   "nav": {
@@ -510,6 +512,15 @@
       "manualConfigTitle": "Codex CLI - Cấu hình thủ công",
       "manualConfigHeader": "Cấu hình 9Router cho Codex CLI"
     }
+  },
+  "modelSelect": {
+    "title": "Chọn model",
+    "searchPlaceholder": "Tìm model...",
+    "combos": "Combos",
+    "loadingProvider": "Đang tải models...",
+    "loadFailed": "Tải models thất bại",
+    "noModelsForProvider": "Chưa có model cho provider này",
+    "noModelsFound": "Không tìm thấy model"
   },
   "login": {
     "loading": "Đang tải...",
