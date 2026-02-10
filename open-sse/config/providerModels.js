@@ -87,7 +87,7 @@ export const PROVIDER_MODELS = {
     { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
     // GitHub Copilot - Other models
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
-    { id: "raptor-mini", name: "Raptor Mini" },
+    { id: "oswe-vscode-prime", name: "Raptor Mini" },
   ],
   kr: [  // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
