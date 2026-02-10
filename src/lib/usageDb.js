@@ -532,9 +532,11 @@ export async function getUsageStats() {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
       const apiKeyKey = entry.apiKey.slice(0, 12);
+      // Group by API Key + Model + Provider combination to track different models used with the same key
+      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
 
-      if (!stats.byApiKey[apiKeyKey]) {
-        stats.byApiKey[apiKeyKey] = {
+      if (!stats.byApiKey[apiKeyModelKey]) {
+        stats.byApiKey[apiKeyModelKey] = {
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,
@@ -547,12 +549,13 @@ export async function getUsageStats() {
           lastUsed: entry.timestamp
         };
       }
-      stats.byApiKey[apiKeyKey].requests++;
-      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
-      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
-      stats.byApiKey[apiKeyKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
-        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
+      const apiKeyEntry = stats.byApiKey[apiKeyModelKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
       }
     } else {
       const apiKeyKey = "local-no-key";
@@ -572,12 +575,13 @@ export async function getUsageStats() {
           lastUsed: entry.timestamp
         };
       }
-      stats.byApiKey[apiKeyKey].requests++;
-      stats.byApiKey[apiKeyKey].promptTokens += promptTokens;
-      stats.byApiKey[apiKeyKey].completionTokens += completionTokens;
-      stats.byApiKey[apiKeyKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
-        stats.byApiKey[apiKeyKey].lastUsed = entry.timestamp;
+      const apiKeyEntry = stats.byApiKey[apiKeyKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
       }
     }
   }
