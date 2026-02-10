@@ -43,8 +43,12 @@ export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const sortBy = searchParams.get("sortBy") || "rawModel";
-  const sortOrder = searchParams.get("sortOrder") || "asc";
+  const modelSortBy = searchParams.get("modelSortBy") || "rawModel";
+  const modelSortOrder = searchParams.get("modelSortOrder") || "asc";
+  const accountSortBy = searchParams.get("accountSortBy") || "rawModel";
+  const accountSortOrder = searchParams.get("accountSortOrder") || "asc";
+  const apiKeySortBy = searchParams.get("apiKeySortBy") || "keyName";
+  const apiKeySortOrder = searchParams.get("apiKeySortOrder") || "asc";
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -53,25 +57,34 @@ export default function UsageStats() {
   const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
   const [prevTotalRequests, setPrevTotalRequests] = useState(0);
 
-  const toggleSort = (field) => {
+  const toggleSort = (tableType, field) => {
+    const sortKeyMap = {
+      model: { by: "modelSortBy", order: "modelSortOrder" },
+      account: { by: "accountSortBy", order: "accountSortOrder" },
+      apiKey: { by: "apiKeySortBy", order: "apiKeySortOrder" }
+    };
+    const sortKeys = sortKeyMap[tableType];
     const params = new URLSearchParams(searchParams.toString());
-    if (sortBy === field) {
-      params.set("sortOrder", sortOrder === "asc" ? "desc" : "asc");
+    
+    const currentBy = params.get(sortKeys.by);
+    const currentOrder = params.get(sortKeys.order);
+    
+    if (currentBy === field) {
+      params.set(sortKeys.order, currentOrder === "asc" ? "desc" : "asc");
     } else {
-      params.set("sortBy", field);
-      params.set("sortOrder", "asc");
+      params.set(sortKeys.by, field);
+      params.set(sortKeys.order, "asc");
     }
     router.replace(`?${params.toString()}`, { scroll: false });
   };
 
-  const sortData = useCallback((dataMap, pendingMap = {}) => {
+  const sortData = useCallback((dataMap, pendingMap = {}, sortBy, sortOrder) => {
     return Object.entries(dataMap || {})
       .map(([key, data]) => {
         const totalTokens =
           (data.promptTokens || 0) + (data.completionTokens || 0);
         const totalCost = data.cost || 0;
 
-        // Calculate cost breakdown (estimated based on token ratio)
         const inputCost =
           totalTokens > 0
             ? (data.promptTokens || 0) * (totalCost / totalTokens)
@@ -95,7 +108,6 @@ export default function UsageStats() {
         let valA = a[sortBy];
         let valB = b[sortBy];
 
-        // Handle case-insensitive sorting for strings
         if (typeof valA === "string") valA = valA.toLowerCase();
         if (typeof valB === "string") valB = valB.toLowerCase();
 
@@ -103,21 +115,18 @@ export default function UsageStats() {
         if (valA > valB) return sortOrder === "asc" ? 1 : -1;
         return 0;
       });
-  }, [sortBy, sortOrder]);
+  }, []);
 
   const sortedModels = useMemo(
-    () => sortData(stats?.byModel, stats?.pending?.byModel),
-    [stats?.byModel, stats?.pending?.byModel, sortData]
+    () => sortData(stats?.byModel, stats?.pending?.byModel, modelSortBy, modelSortOrder),
+    [stats?.byModel, stats?.pending?.byModel, modelSortBy, modelSortOrder]
   );
   const sortedAccounts = useMemo(() => {
-    // For accounts, pendingMap is by connectionId, but dataMap is by accountKey
-    // We need to map connectionId pending counts to accountKeys
     const accountPendingMap = {};
     if (stats?.pending?.byAccount) {
       Object.entries(stats.byAccount || {}).forEach(([accountKey, data]) => {
         const connPending = stats.pending.byAccount[data.connectionId];
         if (connPending) {
-          // Get modelKey (rawModel (provider))
           const modelKey = data.provider
             ? `${data.rawModel} (${data.provider})`
             : data.rawModel;
@@ -125,9 +134,9 @@ export default function UsageStats() {
         }
       });
     }
-    return sortData(stats?.byAccount, accountPendingMap);
-  }, [stats?.byAccount, stats?.pending?.byAccount, sortData]);
-  const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}), [stats?.byApiKey, sortData]);
+    return sortData(stats?.byAccount, accountPendingMap, accountSortBy, accountSortOrder);
+  }, [stats?.byAccount, stats?.pending?.byAccount, accountSortBy, accountSortOrder]);
+  const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder]);
 
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -372,81 +381,81 @@ export default function UsageStats() {
               <tr>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("rawModel")}
+                  onClick={() => toggleSort("model", "rawModel")}
                 >
                   Model{" "}
                   <SortIcon
                     field="rawModel"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={modelSortBy}
+                    currentOrder={modelSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("provider")}
+                  onClick={() => toggleSort("model", "provider")}
                 >
                   Provider{" "}
                   <SortIcon
                     field="provider"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={modelSortBy}
+                    currentOrder={modelSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("requests")}
+                  onClick={() => toggleSort("model", "requests")}
                 >
                   Requests{" "}
                   <SortIcon
                     field="requests"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={modelSortBy}
+                    currentOrder={modelSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("lastUsed")}
+                  onClick={() => toggleSort("model", "lastUsed")}
                 >
                   Last Used{" "}
                   <SortIcon
                     field="lastUsed"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={modelSortBy}
+                    currentOrder={modelSortOrder}
                   />
                 </th>
                 {viewMode === "tokens" ? (
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("model", "promptTokens")}
                     >
                       Input Tokens{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("model", "completionTokens")}
                     >
                       Output Tokens{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("totalTokens")}
+                      onClick={() => toggleSort("model", "totalTokens")}
                     >
                       Total Tokens{" "}
                       <SortIcon
                         field="totalTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                   </>
@@ -454,35 +463,35 @@ export default function UsageStats() {
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("model", "promptTokens")}
                     >
                       Input Cost{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("model", "completionTokens")}
                     >
                       Output Cost{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("cost")}
+                      onClick={() => toggleSort("model", "cost")}
                     >
                       Total Cost{" "}
                       <SortIcon
                         field="cost"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={modelSortBy}
+                        currentOrder={modelSortOrder}
                       />
                     </th>
                   </>
@@ -564,92 +573,92 @@ export default function UsageStats() {
               <tr>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("rawModel")}
+                  onClick={() => toggleSort("account", "rawModel")}
                 >
                   Model{" "}
                   <SortIcon
                     field="rawModel"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={accountSortBy}
+                    currentOrder={accountSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("provider")}
+                  onClick={() => toggleSort("account", "provider")}
                 >
                   Provider{" "}
                   <SortIcon
                     field="provider"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={accountSortBy}
+                    currentOrder={accountSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("accountName")}
+                  onClick={() => toggleSort("account", "accountName")}
                 >
                   Account{" "}
                   <SortIcon
                     field="accountName"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={accountSortBy}
+                    currentOrder={accountSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("requests")}
+                  onClick={() => toggleSort("account", "requests")}
                 >
                   Requests{" "}
                   <SortIcon
                     field="requests"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={accountSortBy}
+                    currentOrder={accountSortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("lastUsed")}
+                  onClick={() => toggleSort("account", "lastUsed")}
                 >
                   Last Used{" "}
                   <SortIcon
                     field="lastUsed"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={accountSortBy}
+                    currentOrder={accountSortOrder}
                   />
                 </th>
                 {viewMode === "tokens" ? (
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("account", "promptTokens")}
                     >
                       Input Tokens{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("account", "completionTokens")}
                     >
                       Output Tokens{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("totalTokens")}
+                      onClick={() => toggleSort("account", "totalTokens")}
                     >
                       Total Tokens{" "}
                       <SortIcon
                         field="totalTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                   </>
@@ -657,35 +666,35 @@ export default function UsageStats() {
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("account", "promptTokens")}
                     >
                       Input Cost{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("account", "completionTokens")}
                     >
                       Output Cost{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("cost")}
+                      onClick={() => toggleSort("account", "cost")}
                     >
                       Total Cost{" "}
                       <SortIcon
                         field="cost"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={accountSortBy}
+                        currentOrder={accountSortOrder}
                       />
                     </th>
                   </>
@@ -777,92 +786,92 @@ export default function UsageStats() {
               <tr>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("keyName")}
+                  onClick={() => toggleSort("apiKey", "keyName")}
                 >
                   API Key Name{" "}
                   <SortIcon
                     field="keyName"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={apiKeySortBy}
+                    currentOrder={apiKeySortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("rawModel")}
+                  onClick={() => toggleSort("apiKey", "rawModel")}
                 >
                   Model{" "}
                   <SortIcon
                     field="rawModel"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={apiKeySortBy}
+                    currentOrder={apiKeySortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("provider")}
+                  onClick={() => toggleSort("apiKey", "provider")}
                 >
                   Provider{" "}
                   <SortIcon
                     field="provider"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={apiKeySortBy}
+                    currentOrder={apiKeySortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("requests")}
+                  onClick={() => toggleSort("apiKey", "requests")}
                 >
                   Requests{" "}
                   <SortIcon
                     field="requests"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={apiKeySortBy}
+                    currentOrder={apiKeySortOrder}
                   />
                 </th>
                 <th
                   className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                  onClick={() => toggleSort("lastUsed")}
+                  onClick={() => toggleSort("apiKey", "lastUsed")}
                 >
                   Last Used{" "}
                   <SortIcon
                     field="lastUsed"
-                    currentSort={sortBy}
-                    currentOrder={sortOrder}
+                    currentSort={apiKeySortBy}
+                    currentOrder={apiKeySortOrder}
                   />
                 </th>
                 {viewMode === "tokens" ? (
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("apiKey", "promptTokens")}
                     >
                       Input Tokens{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("apiKey", "completionTokens")}
                     >
                       Output Tokens{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("totalTokens")}
+                      onClick={() => toggleSort("apiKey", "totalTokens")}
                     >
                       Total Tokens{" "}
                       <SortIcon
                         field="totalTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                   </>
@@ -870,35 +879,35 @@ export default function UsageStats() {
                   <>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("promptTokens")}
+                      onClick={() => toggleSort("apiKey", "promptTokens")}
                     >
                       Input Cost{" "}
                       <SortIcon
                         field="promptTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("completionTokens")}
+                      onClick={() => toggleSort("apiKey", "completionTokens")}
                     >
                       Output Cost{" "}
                       <SortIcon
                         field="completionTokens"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                     <th
                       className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
-                      onClick={() => toggleSort("cost")}
+                      onClick={() => toggleSort("apiKey", "cost")}
                     >
                       Total Cost{" "}
                       <SortIcon
                         field="cost"
-                        currentSort={sortBy}
-                        currentOrder={sortOrder}
+                        currentSort={apiKeySortBy}
+                        currentOrder={apiKeySortOrder}
                       />
                     </th>
                   </>
@@ -907,7 +916,7 @@ export default function UsageStats() {
             </thead>
             <tbody className="divide-y divide-border">
               {sortedApiKeys.map((data) => (
-                <tr key={data.apiKeyKey} className="hover:bg-bg-subtle/20">
+                <tr key={data.key} className="hover:bg-bg-subtle/20">
                   <td
                     className="px-6 py-3 font-medium"
                   >
