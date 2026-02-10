@@ -81,6 +81,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     // GitHub Copilot - Google models
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
