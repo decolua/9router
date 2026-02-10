@@ -78,8 +78,7 @@ export const PROVIDER_MODELS = {
     // GitHub Copilot - Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
-    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
-    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     // GitHub Copilot - Google models
