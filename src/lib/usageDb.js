@@ -531,7 +531,8 @@ export async function getUsageStats() {
     if (entry.apiKey && typeof entry.apiKey === "string") {
       const keyInfo = apiKeyMap[entry.apiKey];
       const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
-      const apiKeyKey = entry.apiKey.slice(0, 12);
+      // Use full API key to avoid collisions (keys with same prefix)
+      const apiKeyKey = entry.apiKey;
       // Group by API Key + Model + Provider combination to track different models used with the same key
       const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
 
