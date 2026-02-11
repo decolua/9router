@@ -1,15 +1,25 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter, checkFallbackError } from "open-sse/services/accountFallback.js";
+import * as semaphore from "open-sse/services/rateLimitSemaphore.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+// In-memory round-robin counter per provider (resets on server restart)
+const rrCounters = new Map();
+
 /**
  * Get provider credentials from localDb
- * Filters out unavailable accounts and returns the selected account based on strategy
+ * Filters out unavailable accounts and returns the selected account based on strategy.
+ *
+ * When strategy is "round-robin", a semaphore slot is acquired for the selected account.
+ * The caller MUST call `result.release()` when the request finishes (on both success and error).
+ * For "fill-first" strategy, `release` is a no-op.
+ *
  * @param {string} provider - Provider name
  * @param {string|null} excludeConnectionId - Connection ID to exclude (for retry with next account)
+ * @returns {Promise<Object|null>} Credentials object with `release()` function, or null
  */
 export async function getProviderCredentials(provider, excludeConnectionId = null) {
   // Acquire mutex to prevent race conditions
@@ -31,7 +41,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
         const earliest = getEarliestRateLimitedUntil(allConnections);
         if (earliest) {
           log.warn("AUTH", `${provider} | all ${allConnections.length} accounts rate limited (${formatRetryAfter(earliest)})`);
-          return { allRateLimited: true, retryAfter: earliest, retryAfterHuman: formatRetryAfter(earliest) };
+          return { allRateLimited: true, retryAfter: earliest, retryAfterHuman: formatRetryAfter(earliest), release: () => {} };
         }
         log.warn("AUTH", `${provider} | ${allConnections.length} accounts found but none active`);
         allConnections.forEach(c => {
@@ -61,7 +71,6 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     if (availableConnections.length === 0) {
       const earliest = getEarliestRateLimitedUntil(connections);
       if (earliest) {
-        // Find the connection with the earliest rateLimitedUntil to get its error info
         const rateLimitedConns = connections.filter(c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now());
         const earliestConn = rateLimitedConns.sort((a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil))[0];
         log.warn("AUTH", `${provider} | all ${connections.length} active accounts rate limited (${formatRetryAfter(earliest)}) | lastErrorCode=${earliestConn?.errorCode}, lastError=${earliestConn?.lastError?.slice(0, 50)}`);
@@ -70,7 +79,8 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
           retryAfter: earliest,
           retryAfterHuman: formatRetryAfter(earliest),
           lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          lastErrorCode: earliestConn?.errorCode || null,
+          release: () => {}
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -81,44 +91,68 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     const strategy = settings.fallbackStrategy || "fill-first";
 
     let connection;
-    if (strategy === "round-robin") {
-      const stickyLimit = settings.stickyRoundRobinLimit || 3;
+    let releaseFn = () => {};
+    let slotAcquired = false;
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
+    if (strategy === "round-robin" && availableConnections.length > 1) {
+      // Round-robin: circular selection using in-memory counter (no DB writes)
+      const counter = rrCounters.get(provider) || 0;
+      rrCounters.set(provider, counter + 1);
+      const index = counter % availableConnections.length;
+      connection = availableConnections[index];
 
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
+      // Acquire semaphore slot for this account
+      const concurrency = settings.concurrencyPerAccount ?? 3;
+      const queueTimeout = settings.queueTimeoutMs ?? 30000;
 
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+      try {
+        releaseFn = await semaphore.acquire(`account:${connection.id}`, {
+          maxConcurrency: concurrency,
+          timeoutMs: queueTimeout,
         });
-      } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+        slotAcquired = true;
+        log.debug("AUTH", `${provider} | RR #${counter} → account ${connection.id?.slice(0, 8)} (slot acquired)`);
+      } catch (err) {
+        if (err.code === "SEMAPHORE_TIMEOUT") {
+          // Current account is overloaded — try next available
+          log.warn("AUTH", `${provider} | semaphore timeout for account ${connection.id?.slice(0, 8)}, trying next`);
+          for (let offset = 1; offset < availableConnections.length; offset++) {
+            const altIndex = (index + offset) % availableConnections.length;
+            const alt = availableConnections[altIndex];
+            try {
+              releaseFn = await semaphore.acquire(`account:${alt.id}`, {
+                maxConcurrency: concurrency,
+                timeoutMs: Math.min(queueTimeout, 5000), // shorter timeout for fallback attempts
+              });
+              slotAcquired = true;
+              connection = alt;
+              log.debug("AUTH", `${provider} | RR fallback → account ${alt.id?.slice(0, 8)} (slot acquired)`);
+              break;
+            } catch {
+              continue;
+            }
+          }
+          if (!slotAcquired) {
+            log.warn("AUTH", `${provider} | all account semaphores full, proceeding without slot`);
+          }
+        } else {
+          throw err;
+        }
+      }
+    } else if (strategy === "round-robin" && availableConnections.length === 1) {
+      // Only 1 account: no rotation needed, but still apply semaphore
+      connection = availableConnections[0];
+      const concurrency = settings.concurrencyPerAccount ?? 3;
+      const queueTimeout = settings.queueTimeoutMs ?? 30000;
+      try {
+        releaseFn = await semaphore.acquire(`account:${connection.id}`, {
+          maxConcurrency: concurrency,
+          timeoutMs: queueTimeout,
         });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
+        slotAcquired = true;
+      } catch (err) {
+        if (err.code !== "SEMAPHORE_TIMEOUT") throw err;
+        log.warn("AUTH", `${provider} | semaphore timeout for single account, proceeding without slot`);
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
@@ -136,7 +170,9 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
-      rateLimitedUntil: connection.rateLimitedUntil
+      rateLimitedUntil: connection.rateLimitedUntil,
+      // Semaphore release function — caller MUST call this when request finishes
+      release: releaseFn,
     };
   } finally {
     if (resolveMutex) resolveMutex();
@@ -167,6 +203,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
+
+  // Also mark in semaphore so queued requests pause during cooldown
+  if (cooldownMs > 0) {
+    semaphore.markRateLimited(`account:${connectionId}`, cooldownMs);
+  }
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);

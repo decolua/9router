@@ -11,8 +11,8 @@ Core capabilities:
 
 - OpenAI-compatible API surface for CLI/tools
 - Request/response translation across provider formats
-- Model combo fallback (multi-model sequence)
-- Account-level fallback (multi-account per provider)
+- Model combo fallback (multi-model: priority, weighted, round-robin strategies)
+- Account-level fallback with semaphore-based concurrency control
 - OAuth + API-key provider connection management
 - Local persistence for providers, keys, aliases, combos, settings, pricing
 - Usage/cost tracking and request logging
@@ -129,6 +129,11 @@ Main flow modules:
 - Format detection/provider config: `open-sse/services/provider.js`
 - Model parse/resolve: `src/sse/services/model.js`, `open-sse/services/model.js`
 - Account fallback logic: `open-sse/services/accountFallback.js`
+- Combo strategies and orchestration: `open-sse/services/combo.js`
+- Combo config cascade: `open-sse/services/comboConfig.js`
+- Combo metrics tracking: `open-sse/services/comboMetrics.js`
+- Rate-limit semaphore (per-model/account concurrency): `open-sse/services/rateLimitSemaphore.js`
+- Adaptive rate-limit manager (Bottleneck, per-connection RPM): `open-sse/services/rateLimitManager.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
 - Usage extraction/normalization: `open-sse/utils/usageTracking.js`
@@ -235,9 +240,75 @@ flowchart TD
     P -- No --> Q{In combo with next model?}
     Q -- Yes --> E
     Q -- No --> R[Return all unavailable]
+
+    subgraph Combo Strategies
+        S1["Priority: try models 1→2→3"]
+        S2["Weighted: probabilistic + fallback by weight"]
+        S3["Round-Robin: circular #N % count + semaphore queue"]
+    end
+    C --> S1
+    C --> S2
+    C --> S3
+    S1 --> E
+    S2 --> E
+    S3 --> E
 ```
 
 Fallback decisions are driven by `open-sse/services/accountFallback.js` using status codes and error-message heuristics.
+
+## Dual-Layer Rate Limiting Architecture
+
+The system uses two complementary rate-limiting layers that act at different stages of the request lifecycle:
+
+```mermaid
+flowchart TD
+    REQ["Incoming Request"] --> SEM{"Layer 1: Semaphore<br/>(rateLimitSemaphore.js)"}
+    SEM -->|slot available| CORE["chatCore.js"]
+    SEM -->|full| QUEUE["FIFO Queue<br/>(waits or timeout)"]
+    QUEUE --> SEM
+
+    CORE --> BN{"Layer 2: Bottleneck<br/>(rateLimitManager.js)"}
+    BN -->|enabled + slot ok| EXEC["executor.execute()"]
+    BN -->|disabled| EXEC
+    BN -->|reservoir=0| WAIT["Wait for reservoir refresh"]
+    WAIT --> EXEC
+
+    EXEC --> RESP{Response}
+    RESP -->|headers| UPD["updateFromHeaders()<br/>auto-adjust RPM/reservoir"]
+    RESP -->|429| MARK["markRateLimited()<br/>pause semaphore gate"]
+```
+
+### Layer 1 — Semaphore (concurrency gate)
+
+| Aspect     | Details                                                     |
+| ---------- | ----------------------------------------------------------- |
+| File       | `open-sse/services/rateLimitSemaphore.js`                   |
+| Scope      | Per-account (`account:{id}`) and per-model (combo RR)       |
+| Mechanism  | In-memory counter + FIFO queue                              |
+| Controls   | Max **simultaneous** requests per account/model             |
+| Rate-limit | `markRateLimited(key, cooldownMs)` pauses the queue         |
+| Config     | `concurrencyPerAccount` + `queueTimeoutMs` (Settings)       |
+| Used by    | `auth.js` (account selection), `combo.js` (model selection) |
+
+### Layer 2 — Bottleneck (adaptive RPM throttle)
+
+| Aspect      | Details                                                  |
+| ----------- | -------------------------------------------------------- |
+| File        | `open-sse/services/rateLimitManager.js`                  |
+| Library     | `bottleneck` npm (^2.19.5)                               |
+| Scope       | Per-provider+connection                                  |
+| Mechanism   | `maxConcurrent`, `minTime`, `reservoir` + auto-refresh   |
+| Controls    | **Request velocity** (RPM) based on real API headers     |
+| Auto-learns | `x-ratelimit-*`, `anthropic-ratelimit-*`, `retry-after`  |
+| Activation  | **Opt-in** per connection via `rateLimitProtection` flag |
+| Used by     | `chatCore.js` via `withRateLimit()` wrapper              |
+
+### How they complement each other
+
+| Layer      | Question it answers                                           | Example                                  |
+| ---------- | ------------------------------------------------------------- | ---------------------------------------- |
+| Semaphore  | "How many requests can run **at the same time** per account?" | Max 3 simultaneous for Gemini account A  |
+| Bottleneck | "What **rate** does the API actually allow?"                  | Gemini allows 60 RPM → `minTime: 1000ms` |
 
 ## OAuth Onboarding and Token Refresh Lifecycle
 
@@ -315,7 +386,9 @@ erDiagram
 
     SETTINGS {
       boolean cloudEnabled
-      number stickyRoundRobinLimit
+      string fallbackStrategy
+      number concurrencyPerAccount
+      number queueTimeoutMs
       boolean requireLogin
       string password_hash
     }
@@ -354,6 +427,8 @@ erDiagram
     COMBO {
       string id
       string name
+      string strategy
+      json config
       string[] models
     }
 
