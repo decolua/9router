@@ -150,6 +150,9 @@ export const PROVIDER_MODELS = {
   minimax: [
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
+  "minimax-cn": [
+    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+  ],
 };
 
 // Helper functions
@@ -202,7 +205,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   "glm-cn": "glm-cn",
   kimi: "kimi",
   minimax: "minimax",
-  "minimax-cn": "minimax",
+  "minimax-cn": "minimax-cn",
 };
 
 export function getModelsByProviderId(providerId) {
