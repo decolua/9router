@@ -58,6 +58,7 @@ export default function UsageStats() {
   const [prevTotalRequests, setPrevTotalRequests] = useState(0);
   const [expandedModels, setExpandedModels] = useState(new Set());
   const [expandedAccounts, setExpandedAccounts] = useState(new Set());
+  const [expandedApiKeys, setExpandedApiKeys] = useState(new Set());
 
   const toggleSort = (tableType, field) => {
     const sortKeyMap = {
@@ -228,6 +229,11 @@ export default function UsageStats() {
 
   const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder, sortData]);
 
+  const groupedApiKeys = useMemo(
+    () => groupDataByKey(sortedApiKeys, 'keyName'),
+    [sortedApiKeys, groupDataByKey]
+  );
+
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
@@ -296,6 +302,25 @@ export default function UsageStats() {
     }
   }, [expandedAccounts]);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-apikeys');
+      if (saved) {
+        setExpandedApiKeys(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded API keys from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-apikeys', JSON.stringify([...expandedApiKeys]));
+    } catch (error) {
+      console.error("Failed to save expanded API keys to localStorage:", error);
+    }
+  }, [expandedApiKeys]);
+
   const toggleModelGroup = useCallback((groupKey) => {
     setExpandedModels(prev => {
       const next = new Set(prev);
@@ -310,6 +335,18 @@ export default function UsageStats() {
 
   const toggleAccountGroup = useCallback((groupKey) => {
     setExpandedAccounts(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleApiKeyGroup = useCallback((groupKey) => {
+    setExpandedApiKeys(prev => {
       const next = new Set(prev);
       if (next.has(groupKey)) {
         next.delete(groupKey);
@@ -1166,53 +1203,105 @@ export default function UsageStats() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sortedApiKeys.map((data) => (
-                <tr key={data.key} className="hover:bg-bg-subtle/20">
-                  <td
-                    className="px-6 py-3 font-medium"
+              {groupedApiKeys.map((group) => (
+                <>
+                  <tr
+                    key={`summary-${group.groupKey}`}
+                    className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                    onClick={() => toggleApiKeyGroup(group.groupKey)}
                   >
-                    {data.keyName}
-                  </td>
-                  <td className="px-6 py-3">
-                    {data.rawModel}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Badge variant="neutral" size="sm">
-                      {data.provider}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-3 text-right">{fmt(data.requests)}</td>
-                  <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
-                    {fmtTime(data.lastUsed)}
-                  </td>
-                  {viewMode === "tokens" ? (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.promptTokens)}
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expandedApiKeys.has(group.groupKey) ? 'rotate-90' : ''}`}>
+                          chevron_right
+                        </span>
+                        <span className="font-medium">
+                          {group.groupKey}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+                    <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                      {fmtTime(group.summary.lastUsed)}
+                    </td>
+                    {viewMode === "tokens" ? (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.promptTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.completionTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium">
+                          {fmt(group.summary.totalTokens)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.inputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.outputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium text-warning">
+                          {fmtCost(group.summary.totalCost)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {expandedApiKeys.has(group.groupKey) && group.items.map((item) => (
+                    <tr
+                      key={`detail-${item.key}`}
+                      className="group-detail hover:bg-bg-subtle/20 transition-colors"
+                    >
+                      <td className="px-6 py-3 font-medium">
+                        {item.keyName}
                       </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.completionTokens)}
+                      <td className="px-6 py-3">
+                        {item.rawModel}
                       </td>
-                      <td className="px-6 py-3 text-right font-medium">
-                        {fmt(data.totalTokens)}
+                      <td className="px-6 py-3">
+                        <Badge variant="neutral" size="sm">
+                          {item.provider}
+                        </Badge>
                       </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.inputCost)}
+                      <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+                      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                        {fmtTime(item.lastUsed)}
                       </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.outputCost)}
-                      </td>
-                      <td className="px-6 py-3 text-right font-medium text-warning">
-                        {fmtCost(data.totalCost)}
-                      </td>
-                    </>
-                  )}
-                </tr>
+                      {viewMode === "tokens" ? (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.promptTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.completionTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium">
+                            {fmt(item.totalTokens)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.inputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.outputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium text-warning">
+                            {fmtCost(item.totalCost)}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </>
               ))}
-              {sortedApiKeys.length === 0 && (
+              {groupedApiKeys.length === 0 && (
                 <tr>
                   <td
                     colSpan={9}
