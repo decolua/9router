@@ -65,6 +65,7 @@ export const PROVIDER_MODELS = {
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
   gh: [  // GitHub Copilot - OpenAI models
+    { id: "gpt-4o", name: "GPT-4o"},
     { id: "gpt-4.1", name: "GPT-4.1" },
     { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
