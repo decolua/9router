@@ -56,6 +56,7 @@ export default function UsageStats() {
   const [viewMode, setViewMode] = useState("tokens"); // 'tokens' or 'costs'
   const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
   const [prevTotalRequests, setPrevTotalRequests] = useState(0);
+  const [expandedModels, setExpandedModels] = useState(new Set());
 
   const toggleSort = (tableType, field) => {
     const sortKeyMap = {
@@ -117,9 +118,91 @@ export default function UsageStats() {
       });
   }, []);
 
+  /**
+   * Extract grouping key from data item based on field type
+   * @param {object} item - Data item with usage stats
+   * @param {string} keyField - Field to use for grouping ('rawModel', 'accountName', 'keyName')
+   * @returns {string} - Grouping key value
+   */
+  const getGroupKey = useCallback((item, keyField) => {
+    switch (keyField) {
+      case 'rawModel':
+        return item.rawModel || 'Unknown Model';
+      case 'accountName':
+        return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || 'Unknown Account';
+      case 'keyName':
+        return item.keyName || 'Unknown Key';
+      default:
+        return item[keyField] || 'Unknown';
+    }
+  }, []);
+
+  /**
+   * Group flat data array by key field and calculate aggregated values
+   * @param {Array} data - Flat array of data items (output from sortData)
+   * @param {string} keyField - Field to use for grouping ('rawModel', 'accountName', 'keyName')
+   * @returns {Array} - Array of groups with summary and items
+   */
+   const groupDataByKey = useCallback((data, keyField) => {
+    if (!Array.isArray(data)) return [];
+
+    const groups = {};
+
+    data.forEach((item) => {
+      const groupKey = getGroupKey(item, keyField);
+
+      if (!groups[groupKey]) {
+        groups[groupKey] = {
+          groupKey,
+          summary: {
+            requests: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+            cost: 0,
+            inputCost: 0,
+            outputCost: 0,
+            lastUsed: null,
+            pending: 0
+          },
+          items: []
+        };
+      }
+
+      const group = groups[groupKey];
+
+      // Aggregate values: sum for most, max for lastUsed
+      group.summary.requests += item.requests || 0;
+      group.summary.promptTokens += item.promptTokens || 0;
+      group.summary.completionTokens += item.completionTokens || 0;
+      group.summary.totalTokens += item.totalTokens || 0;
+      group.summary.cost += item.cost || 0;
+      group.summary.inputCost += item.inputCost || 0;
+      group.summary.outputCost += item.outputCost || 0;
+      group.summary.pending += item.pending || 0;
+
+      // Take max for lastUsed (most recent timestamp)
+      if (item.lastUsed) {
+        if (!group.summary.lastUsed || new Date(item.lastUsed) > new Date(group.summary.lastUsed)) {
+          group.summary.lastUsed = item.lastUsed;
+        }
+      }
+
+      // Add item to group
+      group.items.push(item);
+    });
+
+    return Object.values(groups);
+  }, [getGroupKey]);
+
   const sortedModels = useMemo(
     () => sortData(stats?.byModel, stats?.pending?.byModel, modelSortBy, modelSortOrder),
-    [stats?.byModel, stats?.pending?.byModel, modelSortBy, modelSortOrder]
+    [stats?.byModel, stats?.pending?.byModel, modelSortBy, modelSortOrder, sortData]
+  );
+
+  const groupedModels = useMemo(
+    () => groupDataByKey(sortedModels, 'rawModel'),
+    [sortedModels, groupDataByKey]
   );
   const sortedAccounts = useMemo(() => {
     const accountPendingMap = {};
@@ -135,8 +218,8 @@ export default function UsageStats() {
       });
     }
     return sortData(stats?.byAccount, accountPendingMap, accountSortBy, accountSortOrder);
-  }, [stats?.byAccount, stats?.pending?.byAccount, accountSortBy, accountSortOrder]);
-  const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder]);
+  }, [stats?.byAccount, stats?.pending?.byAccount, accountSortBy, accountSortOrder, sortData]);
+  const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder, sortData]);
 
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -167,6 +250,37 @@ export default function UsageStats() {
   useEffect(() => {
     fetchStats();
   }, [fetchStats]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-models');
+      if (saved) {
+        setExpandedModels(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded models from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-models', JSON.stringify([...expandedModels]));
+    } catch (error) {
+      console.error("Failed to save expanded models to localStorage:", error);
+    }
+  }, [expandedModels]);
+
+  const toggleModelGroup = useCallback((groupKey) => {
+    setExpandedModels(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let intervalId;
@@ -499,55 +613,108 @@ export default function UsageStats() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sortedModels.map((data) => (
-                <tr key={data.key} className="hover:bg-bg-subtle/20">
-                  <td
-                    className={`px-6 py-3 font-medium transition-colors ${
-                      data.pending > 0 ? "text-primary" : ""
-                    }`}
+              {groupedModels.map((group) => (
+                <>
+                  <tr
+                    key={`summary-${group.groupKey}`}
+                    className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                    onClick={() => toggleModelGroup(group.groupKey)}
                   >
-                    {data.rawModel}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Badge
-                      variant={data.pending > 0 ? "primary" : "neutral"}
-                      size="sm"
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expandedModels.has(group.groupKey) ? 'rotate-90' : ''}`}>
+                          chevron_right
+                        </span>
+                        <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
+                          {group.groupKey}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+                    <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                      {fmtTime(group.summary.lastUsed)}
+                    </td>
+                    {viewMode === "tokens" ? (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.promptTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.completionTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium">
+                          {fmt(group.summary.totalTokens)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.inputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.outputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium text-warning">
+                          {fmtCost(group.summary.totalCost)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {expandedModels.has(group.groupKey) && group.items.map((item) => (
+                    <tr
+                      key={`detail-${item.key}`}
+                      className="group-detail hover:bg-bg-subtle/20 transition-colors"
                     >
-                      {data.provider}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-3 text-right">{fmt(data.requests)}</td>
-                  <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
-                    {fmtTime(data.lastUsed)}
-                  </td>
-                  {viewMode === "tokens" ? (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.promptTokens)}
+                      <td
+                        className={`px-6 py-3 font-medium transition-colors ${
+                          item.pending > 0 ? "text-primary" : ""
+                        }`}
+                      >
+                        {item.rawModel}
                       </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.completionTokens)}
+                      <td className="px-6 py-3">
+                        <Badge
+                          variant={item.pending > 0 ? "primary" : "neutral"}
+                          size="sm"
+                        >
+                          {item.provider}
+                        </Badge>
                       </td>
-                      <td className="px-6 py-3 text-right font-medium">
-                        {fmt(data.totalTokens)}
+                      <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+                      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                        {fmtTime(item.lastUsed)}
                       </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.inputCost)}
-                      </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.outputCost)}
-                      </td>
-                      <td className="px-6 py-3 text-right font-medium text-warning">
-                        {fmtCost(data.totalCost)}
-                      </td>
-                    </>
-                  )}
-                </tr>
+                      {viewMode === "tokens" ? (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.promptTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.completionTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium">
+                            {fmt(item.totalTokens)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.inputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.outputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium text-warning">
+                            {fmtCost(item.totalCost)}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </>
               ))}
-              {sortedModels.length === 0 && (
+              {groupedModels.length === 0 && (
                 <tr>
                   <td
                     colSpan={8}
