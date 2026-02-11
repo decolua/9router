@@ -57,6 +57,7 @@ export default function UsageStats() {
   const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
   const [prevTotalRequests, setPrevTotalRequests] = useState(0);
   const [expandedModels, setExpandedModels] = useState(new Set());
+  const [expandedAccounts, setExpandedAccounts] = useState(new Set());
 
   const toggleSort = (tableType, field) => {
     const sortKeyMap = {
@@ -219,6 +220,12 @@ export default function UsageStats() {
     }
     return sortData(stats?.byAccount, accountPendingMap, accountSortBy, accountSortOrder);
   }, [stats?.byAccount, stats?.pending?.byAccount, accountSortBy, accountSortOrder, sortData]);
+
+  const groupedAccounts = useMemo(
+    () => groupDataByKey(sortedAccounts, 'accountName'),
+    [sortedAccounts, groupDataByKey]
+  );
+
   const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder, sortData]);
 
   const fetchStats = useCallback(async (showLoading = true) => {
@@ -270,8 +277,39 @@ export default function UsageStats() {
     }
   }, [expandedModels]);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-accounts');
+      if (saved) {
+        setExpandedAccounts(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded accounts from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-accounts', JSON.stringify([...expandedAccounts]));
+    } catch (error) {
+      console.error("Failed to save expanded accounts to localStorage:", error);
+    }
+  }, [expandedAccounts]);
+
   const toggleModelGroup = useCallback((groupKey) => {
     setExpandedModels(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAccountGroup = useCallback((groupKey) => {
+    setExpandedAccounts(prev => {
       const next = new Set(prev);
       if (next.has(groupKey)) {
         next.delete(groupKey);
@@ -869,65 +907,111 @@ export default function UsageStats() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {sortedAccounts.map((data) => (
-                <tr key={data.key} className="hover:bg-bg-subtle/20">
-                  <td
-                    className={`px-6 py-3 font-medium transition-colors ${
-                      data.pending > 0 ? "text-primary" : ""
-                    }`}
+              {groupedAccounts.map((group) => (
+                <>
+                  <tr
+                    key={`summary-${group.groupKey}`}
+                    className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                    onClick={() => toggleAccountGroup(group.groupKey)}
                   >
-                    {data.rawModel}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Badge
-                      variant={data.pending > 0 ? "primary" : "neutral"}
-                      size="sm"
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expandedAccounts.has(group.groupKey) ? 'rotate-90' : ''}`}>
+                          chevron_right
+                        </span>
+                        <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
+                          {group.groupKey}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+                    <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                      {fmtTime(group.summary.lastUsed)}
+                    </td>
+                    {viewMode === "tokens" ? (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">—</td>
+                        <td className="px-6 py-3 text-right text-text-muted">—</td>
+                        <td className="px-6 py-3 text-right font-medium">
+                          {fmt(group.summary.totalTokens)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">—</td>
+                        <td className="px-6 py-3 text-right text-text-muted">—</td>
+                        <td className="px-6 py-3 text-right font-medium text-warning">
+                          {fmtCost(group.summary.totalCost)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {expandedAccounts.has(group.groupKey) && group.items.map((item) => (
+                    <tr
+                      key={`detail-${item.key}`}
+                      className="group-detail hover:bg-bg-subtle/20 transition-colors"
                     >
-                      {data.provider}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-3">
-                    <span
-                      className={`font-medium transition-colors ${
-                        data.pending > 0 ? "text-primary" : ""
-                      }`}
-                    >
-                      {data.accountName ||
-                        `Account ${data.connectionId?.slice(0, 8)}...`}
-                    </span>
-                  </td>
-                  <td className="px-6 py-3 text-right">{fmt(data.requests)}</td>
-                  <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
-                    {fmtTime(data.lastUsed)}
-                  </td>
-                  {viewMode === "tokens" ? (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.promptTokens)}
+                      <td
+                        className={`px-6 py-3 font-medium transition-colors ${
+                          item.pending > 0 ? "text-primary" : ""
+                        }`}
+                      >
+                        {item.rawModel}
                       </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmt(data.completionTokens)}
+                      <td className="px-6 py-3">
+                        <Badge
+                          variant={item.pending > 0 ? "primary" : "neutral"}
+                          size="sm"
+                        >
+                          {item.provider}
+                        </Badge>
                       </td>
-                      <td className="px-6 py-3 text-right font-medium">
-                        {fmt(data.totalTokens)}
+                      <td className="px-6 py-3">
+                        <span
+                          className={`font-medium transition-colors ${
+                            item.pending > 0 ? "text-primary" : ""
+                          }`}
+                        >
+                          {item.accountName ||
+                            `Account ${item.connectionId?.slice(0, 8)}...`}
+                        </span>
                       </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.inputCost)}
+                      <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+                      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                        {fmtTime(item.lastUsed)}
                       </td>
-                      <td className="px-6 py-3 text-right text-text-muted">
-                        {fmtCost(data.outputCost)}
-                      </td>
-                      <td className="px-6 py-3 text-right font-medium text-warning">
-                        {fmtCost(data.totalCost)}
-                      </td>
-                    </>
-                  )}
-                </tr>
+                      {viewMode === "tokens" ? (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.promptTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.completionTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium">
+                            {fmt(item.totalTokens)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.inputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.outputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium text-warning">
+                            {fmtCost(item.totalCost)}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </>
               ))}
-              {sortedAccounts.length === 0 && (
+              {groupedAccounts.length === 0 && (
                 <tr>
                   <td
                     colSpan={9}
