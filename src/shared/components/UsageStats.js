@@ -951,8 +951,6 @@ export default function UsageStats() {
                     className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
                     onClick={() => toggleAccountGroup(group.groupKey)}
                   >
-                    <td className="px-6 py-3 text-text-muted">—</td>
-                    <td className="px-6 py-3 text-text-muted">—</td>
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
                         <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expandedAccounts.has(group.groupKey) ? 'rotate-90' : ''}`}>
@@ -963,6 +961,8 @@ export default function UsageStats() {
                         </span>
                       </div>
                     </td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
                     <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
                     <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
                       {fmtTime(group.summary.lastUsed)}
@@ -990,6 +990,16 @@ export default function UsageStats() {
                       key={`detail-${item.key}`}
                       className="group-detail hover:bg-bg-subtle/20 transition-colors"
                     >
+                      <td className="px-6 py-3">
+                        <span
+                          className={`font-medium transition-colors ${
+                            item.pending > 0 ? "text-primary" : ""
+                          }`}
+                        >
+                          {item.accountName ||
+                            `Account ${item.connectionId?.slice(0, 8)}...`}
+                        </span>
+                      </td>
                       <td
                         className={`px-6 py-3 font-medium transition-colors ${
                           item.pending > 0 ? "text-primary" : ""
@@ -1004,16 +1014,6 @@ export default function UsageStats() {
                         >
                           {item.provider}
                         </Badge>
-                      </td>
-                      <td className="px-6 py-3">
-                        <span
-                          className={`font-medium transition-colors ${
-                            item.pending > 0 ? "text-primary" : ""
-                          }`}
-                        >
-                          {item.accountName ||
-                            `Account ${item.connectionId?.slice(0, 8)}...`}
-                        </span>
                       </td>
                       <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
                       <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
