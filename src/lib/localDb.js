@@ -49,7 +49,8 @@ const defaultData = {
   apiKeys: [],
   settings: {
     cloudEnabled: false,
-    stickyRoundRobinLimit: 3,
+    concurrencyPerAccount: 3,
+    queueTimeoutMs: 30000,
     requireLogin: true,
     observabilityMaxRecords: 1000,
     observabilityBatchSize: 20,
@@ -69,7 +70,8 @@ function cloneDefaultData() {
     apiKeys: [],
     settings: {
       cloudEnabled: false,
-      stickyRoundRobinLimit: 3,
+      concurrencyPerAccount: 3,
+      queueTimeoutMs: 30000,
       requireLogin: true,
       observabilityMaxRecords: 1000,
       observabilityBatchSize: 20,

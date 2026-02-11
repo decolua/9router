@@ -5,13 +5,14 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboByName } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { getCombos, getSettings } from "@/lib/localDb.js";
 
 /**
  * Handle chat completion request
@@ -77,14 +78,39 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+  const combo = modelStr.includes("/") ? null : await getComboByName(modelStr);
+  if (combo && combo.models?.length > 0) {
+    log.info("CHAT", `Combo "${modelStr}" [${combo.strategy || "priority"}] with ${combo.models.length} models`);
+
+    // Pre-check function: skip models where all accounts are in cooldown
+    const isModelAvailable = async (modelString) => {
+      const parsed = parseModel(modelString);
+      const provider = parsed.provider;
+      if (!provider) return true; // can't determine provider, let it try
+      const creds = await getProviderCredentials(provider);
+      if (!creds || creds.allRateLimited) {
+        if (creds?.release) creds.release();
+        return false;
+      }
+      // Release the semaphore slot — this is just a pre-check, not a real request
+      if (creds.release) creds.release();
+      return true;
+    };
+
+    // Fetch settings and all combos for config cascade and nested resolution
+    const [settings, allCombos] = await Promise.all([
+      getSettings().catch(() => ({})),
+      getCombos().catch(() => []),
+    ]);
+
     return handleComboChat({
       body,
-      models: comboModels,
+      combo,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request),
-      log
+      isModelAvailable,
+      log,
+      settings,
+      allCombos,
     });
   }
 
@@ -124,6 +150,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.release) credentials.release();
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -166,7 +193,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
     
-    if (result.success) return result.response;
+    if (result.success) {
+      if (credentials.release) credentials.release();
+      return result.response;
+    }
+
+    // Release semaphore slot for failed account before trying next
+    if (credentials.release) credentials.release();
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);
