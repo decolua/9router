@@ -64,9 +64,7 @@ export class IFlowExecutor extends BaseExecutor {
     };
 
     // Add authorization
-    if (credentials.accessToken) {
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-    } else if (credentials.apiKey) {
+    if (credentials.apiKey) {
       headers["Authorization"] = `Bearer ${credentials.apiKey}`;
     }
 
