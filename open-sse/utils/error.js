@@ -110,15 +110,16 @@ export async function parseUpstreamError(response, provider = null) {
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  
+  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+
   // Parse Antigravity-specific retry time from error message
   if (provider === "antigravity" && response.status === 429) {
-    retryAfterMs = parseAntigravityRetryTime(messageStr);
+    retryAfterMs = parseAntigravityRetryTime(finalMessage);
   }
 
   return {
     statusCode: response.status,
-    message: messageStr,
+    message: finalMessage,
     retryAfterMs
   };
 }

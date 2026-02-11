@@ -45,13 +45,14 @@ export const PROVIDER_MODELS = {
   if: [  // iFlow AI
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "kimi-k2", name: "Kimi K2" },
-    { id: "kimi-k2-thinking", name: "Kimi K2 Thinking" },
-    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    // { id: "kimi-k2-thinking", name: "Kimi K2 Thinking" },
+    // { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "deepseek-r1", name: "DeepSeek R1" },
-    { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
-    { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
-    { id: "minimax-m2.1", name: "MiniMax M2.1" },
-    { id: "glm-4.7", name: "GLM 4.7" },
+    // { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
+    // { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
+    // { id: "minimax-m2.1", name: "MiniMax M2.1" },
+    // { id: "glm-4.7", name: "GLM 4.7" },
+    { id: "glm-4.6", name: "GLM 4.6" },
   ],
   ag: [  // Antigravity - special case: models call different backends
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
@@ -64,6 +65,7 @@ export const PROVIDER_MODELS = {
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
   gh: [  // GitHub Copilot - OpenAI models
+    { id: "gpt-4o", name: "GPT-4o"},
     { id: "gpt-4.1", name: "GPT-4.1" },
     { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
@@ -77,17 +79,17 @@ export const PROVIDER_MODELS = {
     // GitHub Copilot - Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
-    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
-    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     // GitHub Copilot - Google models
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash" },
-    { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
+    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
     // GitHub Copilot - Other models
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
-    { id: "raptor-mini", name: "Raptor Mini" },
+    { id: "oswe-vscode-prime", name: "Raptor Mini" },
   ],
   kr: [  // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },

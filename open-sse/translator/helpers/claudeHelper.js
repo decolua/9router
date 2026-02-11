@@ -164,8 +164,13 @@ export function prepareClaudeRequest(body, provider = null) {
     }
   }
 
-  // 3. Tools: remove all cache_control, add only to last tool with ttl 1h
+  // 3. Tools: filter built-in tools for non-Anthropic providers, then handle cache_control
   if (body.tools && Array.isArray(body.tools)) {
+    // Strip built-in tools (e.g. web_search_20250305) for providers that don't support them
+    if (provider !== "claude") {
+      body.tools = body.tools.filter(tool => !tool.type || tool.type === "function");
+    }
+
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
       if (i === body.tools.length - 1) {
@@ -173,6 +178,12 @@ export function prepareClaudeRequest(body, provider = null) {
       }
       return rest;
     });
+
+    // Remove tools array and tool_choice if empty after filtering
+    if (body.tools.length === 0) {
+      delete body.tools;
+      delete body.tool_choice;
+    }
   }
 
   return body;

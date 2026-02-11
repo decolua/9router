@@ -210,5 +210,10 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-process.on("SIGTERM", () => { server.close(() => process.exit(0)); });
-process.on("SIGINT", () => { server.close(() => process.exit(0)); });
+// Graceful shutdown (SIGBREAK for Windows, SIGTERM/SIGINT for Unix)
+const shutdown = () => { server.close(() => process.exit(0)); };
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+if (process.platform === "win32") {
+  process.on("SIGBREAK", shutdown);
+}

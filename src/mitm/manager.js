@@ -1,8 +1,10 @@
-const { spawn } = require("child_process");
+const { spawn, exec } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { addDNSEntry, removeDNSEntry } = require("./dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, checkDNSEntry } = require("./dns/dnsConfig");
+
+const IS_WIN = process.platform === "win32";
 const { generateCert } = require("./cert/generate");
 const { installCert } = require("./cert/install");
 
@@ -23,6 +25,16 @@ function isProcessAlive(pid) {
     return true;
   } catch {
     return false;
+  }
+}
+
+// Cross-platform process kill
+function killProcess(pid, force = false) {
+  if (IS_WIN) {
+    const flag = force ? "/F " : "";
+    exec(`taskkill ${flag}/PID ${pid}`, () => {});
+  } else {
+    process.kill(pid, force ? "SIGKILL" : "SIGTERM");
   }
 }
 
@@ -51,14 +63,8 @@ async function getMitmStatus() {
     }
   }
 
-  // Check DNS configuration
-  let dnsConfigured = false;
-  try {
-    const hostsContent = fs.readFileSync("/etc/hosts", "utf-8");
-    dnsConfigured = hostsContent.includes("daily-cloudcode-pa.googleapis.com");
-  } catch {
-    // Ignore
-  }
+  // Check DNS configuration (cross-platform via dnsConfig)
+  const dnsConfigured = checkDNSEntry();
 
   // Check cert
   const certDir = path.join(os.homedir(), ".9router", "mitm");
@@ -92,18 +98,32 @@ async function startMitm(apiKey, sudoPassword) {
   console.log("Adding DNS entry...");
   await addDNSEntry(sudoPassword);
   
-  // 4. Start MITM server
+  // 4. Start MITM server (port 443 requires elevated privileges)
   console.log("Starting MITM server...");
   const serverPath = path.join(process.cwd(), "src/mitm/server.js");
-  serverProcess = spawn("node", [serverPath], {
-    env: {
-      ...process.env,
-      ROUTER_API_KEY: apiKey,
-      NODE_ENV: "production"
-    },
-    detached: false,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
+
+  if (IS_WIN) {
+    // Windows: spawn via powershell elevated to bind port 443
+    const nodePath = process.execPath;
+    const envArgs = `$env:ROUTER_API_KEY='${apiKey}'; $env:NODE_ENV='production'; & '${nodePath}' '${serverPath}'`;
+    serverProcess = spawn("powershell", [
+      "-Command",
+      `Start-Process powershell -ArgumentList '-NoProfile','-Command','${envArgs.replace(/'/g, "''")}' -Verb RunAs -PassThru`
+    ], {
+      detached: false,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } else {
+    serverProcess = spawn("node", [serverPath], {
+      env: {
+        ...process.env,
+        ROUTER_API_KEY: apiKey,
+        NODE_ENV: "production"
+      },
+      detached: false,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  }
   
   serverPid = serverProcess.pid;
   
@@ -173,10 +193,10 @@ async function stopMitm(sudoPassword) {
   const proc = serverProcess;
   if (proc && !proc.killed) {
     console.log("Stopping MITM server...");
-    proc.kill("SIGTERM");
+    killProcess(proc.pid, false);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    if (!proc.killed) {
-      proc.kill("SIGKILL");
+    if (isProcessAlive(proc.pid)) {
+      killProcess(proc.pid, true);
     }
     serverProcess = null;
     serverPid = null;
@@ -187,10 +207,10 @@ async function stopMitm(sudoPassword) {
         const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
         if (savedPid && isProcessAlive(savedPid)) {
           console.log(`Killing MITM server (PID: ${savedPid})...`);
-          process.kill(savedPid, "SIGTERM");
+          killProcess(savedPid, false);
           await new Promise(resolve => setTimeout(resolve, 1000));
           if (isProcessAlive(savedPid)) {
-            process.kill(savedPid, "SIGKILL");
+            killProcess(savedPid, true);
           }
         }
       }

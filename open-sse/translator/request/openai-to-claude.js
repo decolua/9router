@@ -114,8 +114,16 @@ export function openaiToClaudeRequest(model, body, stream) {
 
   // Tools - convert from OpenAI format to Claude format with prefix for OAuth
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => {
-      const toolData = tool.type === "function" && tool.function ? tool.function : tool;
+    result.tools = [];
+    for (const tool of body.tools) {
+      // Pass-through built-in tools (e.g. web_search_20250305) without prefix or conversion
+      const toolType = tool.type;
+      if (toolType && toolType !== "function") {
+        result.tools.push(tool);
+        continue;
+      }
+
+      const toolData = toolType === "function" && tool.function ? tool.function : tool;
       const originalName = toolData.name;
       
       // Claude OAuth requires prefixed tool names to avoid conflicts
@@ -124,12 +132,12 @@ export function openaiToClaudeRequest(model, body, stream) {
       // Store mapping for response translation (prefixed → original)
       toolNameMap.set(toolName, originalName);
       
-      return {
+      result.tools.push({
         name: toolName,
         description: toolData.description || "",
         input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
-      };
-    });
+      });
+    }
 
     if (result.tools.length > 0) {
       result.tools[result.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };

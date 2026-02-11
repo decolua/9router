@@ -36,8 +36,12 @@ export class AntigravityExecutor extends BaseExecutor {
       if (c.parts?.some(p => p.functionResponse)) {
         role = "user";
       }
-      // Strip thought parts (no valid signature → provider rejects)
-      const parts = c.parts?.filter(p => !p.thought && !p.thoughtSignature);
+      // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
+      const parts = c.parts?.filter(p => {
+        if (p.thought && !p.functionCall) return false;
+        if (p.thoughtSignature && !p.functionCall && !p.text) return false;
+        return true;
+      });
       if (role !== c.role || parts?.length !== c.parts?.length) {
         return { ...c, role, parts };
       }

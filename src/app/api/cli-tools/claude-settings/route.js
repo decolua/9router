@@ -20,7 +20,7 @@ const getClaudeSettingsPath = () => {
 const checkClaudeInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where claude" : "which claude";
+    const command = isWindows ? "where claude" : "command -v claude";
     await execAsync(command);
     return true;
   } catch {
