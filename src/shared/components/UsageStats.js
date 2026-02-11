@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import PropTypes from "prop-types";
 import { useSearchParams, useRouter } from "next/navigation";
 import Card from "./Card";
@@ -689,7 +689,7 @@ export default function UsageStats() {
             </thead>
             <tbody className="divide-y divide-border">
               {groupedModels.map((group) => (
-                <>
+                <Fragment key={group.groupKey}>
                   <tr
                     key={`summary-${group.groupKey}`}
                     className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
@@ -787,7 +787,7 @@ export default function UsageStats() {
                       )}
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
               {groupedModels.length === 0 && (
                 <tr>
@@ -945,7 +945,7 @@ export default function UsageStats() {
             </thead>
             <tbody className="divide-y divide-border">
               {groupedAccounts.map((group) => (
-                <>
+                <Fragment key={group.groupKey}>
                   <tr
                     key={`summary-${group.groupKey}`}
                     className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
@@ -1046,7 +1046,7 @@ export default function UsageStats() {
                       )}
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
               {groupedAccounts.length === 0 && (
                 <tr>
@@ -1204,7 +1204,7 @@ export default function UsageStats() {
             </thead>
             <tbody className="divide-y divide-border">
               {groupedApiKeys.map((group) => (
-                <>
+                <Fragment key={group.groupKey}>
                   <tr
                     key={`summary-${group.groupKey}`}
                     className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
@@ -1299,7 +1299,7 @@ export default function UsageStats() {
                       )}
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
               {groupedApiKeys.length === 0 && (
                 <tr>
