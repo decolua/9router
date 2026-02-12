@@ -24,6 +24,14 @@ export class CodexExecutor extends BaseExecutor {
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    // Ensure input is present and non-empty (Codex API rejects empty input)
+    if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
+      body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }];
+    }
+
+    // Ensure streaming is enabled (Codex API requires it)
+    body.stream = true;
+
     // If no instructions provided, inject default Codex instructions
     if (!body.instructions || body.instructions.trim() === "") {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
