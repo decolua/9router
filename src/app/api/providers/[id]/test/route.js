@@ -17,10 +17,7 @@ const OAUTH_TEST_CONFIG = {
     checkExpiry: true,
   },
   codex: {
-    url: "https://api.openai.com/v1/models",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
+    checkExpiry: true,
     refreshable: true,
   },
   "gemini-cli": {
