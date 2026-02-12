@@ -12,6 +12,15 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   /**
+   * Override headers to add session_id per request
+   */
+  buildHeaders(credentials, stream = true) {
+    const headers = super.buildHeaders(credentials, stream);
+    headers["session_id"] = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    return headers;
+  }
+
+  /**
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
@@ -39,9 +48,16 @@ export class CodexExecutor extends BaseExecutor {
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
       const effort = body.reasoning_effort || modelEffort || 'medium';
-      body.reasoning = { effort };
+      body.reasoning = { effort, summary: "auto" };
+    } else if (!body.reasoning.summary) {
+      body.reasoning.summary = "auto";
     }
     delete body.reasoning_effort;
+
+    // Include reasoning encrypted content (required by Codex backend for reasoning models)
+    if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
+      body.include = ["reasoning.encrypted_content"];
+    }
 
     // Remove unsupported parameters for Codex API
     delete body.temperature;

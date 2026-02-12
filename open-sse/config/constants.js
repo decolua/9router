@@ -39,9 +39,8 @@ export const PROVIDERS = {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
     format: "openai-responses", // Use OpenAI Responses API format (reuse translator)
     headers: {
-      "Version": "0.92.0",
-      "Openai-Beta": "responses=experimental",
-      "User-Agent": "codex-cli/0.92.0 (Windows 10.0.26100; x64)"
+      "originator": "codex-cli",
+      "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     // OpenAI OAuth configuration
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
