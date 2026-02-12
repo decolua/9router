@@ -49,7 +49,7 @@ export function createSSEStream(options = {}) {
   let buffer = "";
   let usage = null;
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
