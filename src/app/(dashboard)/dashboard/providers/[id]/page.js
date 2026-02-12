@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select, DuplicateWarningModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -24,6 +24,9 @@ export default function ProviderDetailPage() {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [pendingConnection, setPendingConnection] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -179,13 +182,91 @@ export default function ProviderDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: providerId, ...formData }),
       });
+      
+      if (res.status === 409) {
+        // Duplicate detected
+        const data = await res.json();
+        setDuplicateInfo({
+          duplicate: data.duplicate,
+          reason: data.reason,
+        });
+        setPendingConnection(formData);
+        setShowDuplicateModal(true);
+        return;
+      }
+      
       if (res.ok) {
         await fetchConnections();
         setShowAddApiKeyModal(false);
+        setPendingConnection(null);
+        setDuplicateInfo(null);
       }
     } catch (error) {
       console.log("Error saving connection:", error);
     }
+  };
+
+  const handleDuplicateReplace = async () => {
+    if (!pendingConnection || !duplicateInfo) return;
+    
+    try {
+      const res = await fetch("/api/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: providerId,
+          ...pendingConnection,
+          replaceDuplicateId: duplicateInfo.duplicate.id,
+        }),
+      });
+      
+      if (res.ok) {
+        await fetchConnections();
+        setShowAddApiKeyModal(false);
+        setShowDuplicateModal(false);
+        setPendingConnection(null);
+        setDuplicateInfo(null);
+      }
+    } catch (error) {
+      console.log("Error replacing connection:", error);
+    }
+  };
+
+  const handleDuplicateKeepBoth = async () => {
+    if (!pendingConnection) return;
+    
+    try {
+      // Get max priority for this provider
+      const maxPriority = connections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
+      
+      const res = await fetch("/api/providers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: providerId,
+          ...pendingConnection,
+          priority: maxPriority + 1,
+          name: `${pendingConnection.name} (Fallback)`,
+          replaceDuplicateId: null, // Force skip duplicate check
+        }),
+      });
+      
+      if (res.ok) {
+        await fetchConnections();
+        setShowAddApiKeyModal(false);
+        setShowDuplicateModal(false);
+        setPendingConnection(null);
+        setDuplicateInfo(null);
+      }
+    } catch (error) {
+      console.log("Error keeping both connections:", error);
+    }
+  };
+
+  const handleDuplicateCancel = () => {
+    setShowDuplicateModal(false);
+    setPendingConnection(null);
+    setDuplicateInfo(null);
   };
 
   const handleUpdateConnection = async (formData) => {
@@ -471,23 +552,31 @@ export default function ProviderDetailPage() {
           <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
             {connections
               .sort((a, b) => (a.priority || 0) - (b.priority || 0))
-              .map((conn, index) => (
-              <ConnectionRow
-                key={conn.id}
-                connection={conn}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
-                onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-              />
-            ))}
+              .map((conn, index) => {
+                // Check if this connection has duplicates
+                const { checkDuplicate: checkDup } = require("@/shared/utils/duplicateDetection");
+                const otherConnections = connections.filter(c => c.id !== conn.id);
+                const dupCheck = checkDup(conn, otherConnections);
+                
+                return (
+                  <ConnectionRow
+                    key={conn.id}
+                    connection={conn}
+                    isOAuth={isOAuth}
+                    isFirst={index === 0}
+                    isLast={index === connections.length - 1}
+                    hasDuplicates={dupCheck.isDuplicate}
+                    onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
+                    onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
+                    onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                    onEdit={() => {
+                      setSelectedConnection(conn);
+                      setShowEditModal(true);
+                    }}
+                    onDelete={() => handleDelete(conn.id)}
+                  />
+                );
+              })}
           </div>
         )}
       </Card>
@@ -548,6 +637,14 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
+      <DuplicateWarningModal
+        isOpen={showDuplicateModal}
+        duplicate={duplicateInfo?.duplicate}
+        reason={duplicateInfo?.reason}
+        onReplace={handleDuplicateReplace}
+        onKeepBoth={handleDuplicateKeepBoth}
+        onCancel={handleDuplicateCancel}
+      />
     </div>
   );
 }
@@ -911,7 +1008,7 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete, hasDuplicates }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
@@ -971,10 +1068,16 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
+            {hasDuplicates && (
+              <Badge variant="warning" size="sm">
+                <span className="material-symbols-outlined text-[10px] mr-1">warning</span>
+                Duplicate
+              </Badge>
+            )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={connection.rateLimitedUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
@@ -1029,6 +1132,7 @@ ConnectionRow.propTypes = {
   onToggleActive: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  hasDuplicates: PropTypes.bool,
 };
 
 function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {
