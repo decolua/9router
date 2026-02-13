@@ -120,7 +120,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionId);
+    const credentials = await getProviderCredentials(provider, excludeConnectionId, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -170,7 +170,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     
     if (shouldFallback) {
       log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
