@@ -218,6 +218,13 @@ export const DEFAULT_PRICING = {
       cached: 0.375,
       reasoning: 4.50,
       cache_creation: 0.75
+    },
+    "glm-5": {
+      input: 1.00,
+      output: 4.00,
+      cached: 0.50,
+      reasoning: 6.00,
+      cache_creation: 1.00
     }
   },
 
