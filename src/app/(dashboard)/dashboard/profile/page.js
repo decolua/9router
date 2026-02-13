@@ -128,6 +128,23 @@ export default function ProfilePage() {
     }
   };
 
+  const updateObservabilityEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observabilityEnabled: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, observabilityEnabled: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update observabilityEnabled:", err);
+    }
+  };
+
+  const observabilityEnabled = settings.observabilityEnabled !== false;
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex flex-col gap-6">
@@ -360,6 +377,21 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
+                <p className="font-medium">Enable Observability</p>
+                <p className="text-sm text-text-muted">
+                  Turn request detail recording on/off globally
+                </p>
+              </div>
+              <Toggle
+                checked={observabilityEnabled}
+                onChange={updateObservabilityEnabled}
+                disabled={loading}
+              />
+            </div>
+
+            <div className={cn("flex flex-col gap-4", !observabilityEnabled && "opacity-60")}>
+            <div className="flex items-center justify-between">
+              <div>
                 <p className="font-medium">Max Records</p>
                 <p className="text-sm text-text-muted">
                   Maximum request detail records to keep (older records are auto-deleted)
@@ -372,7 +404,7 @@ export default function ProfilePage() {
                 step="100"
                 value={settings.observabilityMaxRecords || 1000}
                 onChange={(e) => updateObservabilitySetting("observabilityMaxRecords", parseInt(e.target.value))}
-                disabled={loading}
+                disabled={loading || !observabilityEnabled}
                 className="w-28 text-center"
               />
             </div>
@@ -391,7 +423,7 @@ export default function ProfilePage() {
                 step="5"
                 value={settings.observabilityBatchSize || 20}
                 onChange={(e) => updateObservabilitySetting("observabilityBatchSize", parseInt(e.target.value))}
-                disabled={loading}
+                disabled={loading || !observabilityEnabled}
                 className="w-28 text-center"
               />
             </div>
@@ -410,7 +442,7 @@ export default function ProfilePage() {
                 step="1000"
                 value={settings.observabilityFlushIntervalMs || 5000}
                 onChange={(e) => updateObservabilitySetting("observabilityFlushIntervalMs", parseInt(e.target.value))}
-                disabled={loading}
+                disabled={loading || !observabilityEnabled}
                 className="w-28 text-center"
               />
             </div>
@@ -429,7 +461,7 @@ export default function ProfilePage() {
                 step="100"
                 value={settings.observabilityMaxJsonSize || 1024}
                 onChange={(e) => updateObservabilitySetting("observabilityMaxJsonSize", parseInt(e.target.value))}
-                disabled={loading}
+                disabled={loading || !observabilityEnabled}
                 className="w-28 text-center"
               />
             </div>
@@ -437,6 +469,7 @@ export default function ProfilePage() {
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
             </p>
+            </div>
           </div>
         </Card>
 
