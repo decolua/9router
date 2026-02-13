@@ -12,6 +12,7 @@ import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
+import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 
 /**
  * Translate non-streaming response to OpenAI format
@@ -365,8 +366,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
 
+  // Track if client actually wants streaming (before we force it for providers)
+  const clientRequestedStreaming = body.stream === true;
+  const providerRequiresStreaming = provider === 'openai' || provider === 'codex';
+
   // Force streaming for OpenAI/Codex models (they don't support non-streaming mode properly)
-  const stream = (provider === 'openai' || provider === 'codex') ? true : (body.stream !== false);
+  const stream = providerRequiresStreaming ? true : (body.stream !== false);
 
   // Create request logger for this session: sourceFormat_targetFormat_model
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
@@ -550,6 +555,74 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logError(new Error(message), finalBody || translatedBody);
 
     return createErrorResult(statusCode, errMsg, retryAfterMs);
+  }
+
+  // Provider forced streaming but client wants JSON - convert SSE to JSON
+  if (!clientRequestedStreaming && providerRequiresStreaming) {
+    trackPendingRequest(model, provider, connectionId, false);
+    const contentType = providerResponse.headers.get("content-type") || "";
+
+    if (contentType.includes("text/event-stream")) {
+      const isResponsesApi = sourceFormat === 'openai-responses';
+
+      if (isResponsesApi) {
+        // Responses API SSE → Responses API JSON (for pydantic_ai, OpenAI SDK, etc.)
+        try {
+          const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+          log?.info?.("STREAM", `Converted Responses API SSE → JSON for non-streaming client`);
+
+          if (onRequestSuccess) await onRequestSuccess();
+
+          const usage = jsonResponse.usage || {};
+          appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
+
+          if (usage && typeof usage === 'object') {
+            const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [USAGE] ${provider.toUpperCase()} | in=${usage?.input_tokens || 0} | out=${usage?.output_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
+            console.log(`${COLORS.green}${msg}${COLORS.reset}`);
+
+            saveRequestUsage({
+              provider: provider || "unknown",
+              model: model || "unknown",
+              tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
+              timestamp: new Date().toISOString(),
+              connectionId: connectionId || undefined,
+              apiKey: apiKey || undefined
+            }).catch(() => { });
+          }
+
+          return {
+            success: true,
+            response: new Response(JSON.stringify(jsonResponse), {
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            })
+          };
+        } catch (error) {
+          console.error("[ChatCore] Responses API SSE→JSON conversion failed:", error);
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+        }
+      } else {
+        // Chat Completions SSE → Chat Completions JSON
+        const sseText = await providerResponse.text();
+        const parsed = parseSSEToOpenAIResponse(sseText, model);
+        if (parsed) {
+          if (onRequestSuccess) await onRequestSuccess();
+          appendRequestLog({ model, provider, connectionId, tokens: parsed.usage, status: "200 OK" }).catch(() => { });
+          return {
+            success: true,
+            response: new Response(JSON.stringify(parsed), {
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+              }
+            })
+          };
+        }
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+    }
   }
 
   // Non-streaming response
