@@ -17,7 +17,7 @@ export async function convertResponsesStreamToJson(stream) {
   let responseId = "";
   let output = [];
   let created = Math.floor(Date.now() / 1000);
-  let status = "in_progress";
+  let status = "";
   let usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
 
   // Map of output_index -> item (for ordered output array)
