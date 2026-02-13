@@ -17,8 +17,13 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("@/lib/localDb");
     const settings = await getSettings();
+    const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
+    const enabled = typeof settings.observabilityEnabled === "boolean"
+      ? settings.observabilityEnabled
+      : envEnabled;
 
     return {
+      enabled,
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || '1000', 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || '20', 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || '5000', 10),
@@ -27,6 +32,7 @@ async function getObservabilityConfig() {
   } catch (error) {
     console.error("[requestDetailsDb] Failed to load observability config:", error);
     return {
+      enabled: true,
       maxRecords: 1000,
       batchSize: 20,
       flushIntervalMs: 5000,
@@ -37,6 +43,17 @@ async function getObservabilityConfig() {
 
 // Cache config to avoid repeated database reads
 let cachedConfig = null;
+let cachedConfigTs = 0;
+const CONFIG_CACHE_TTL_MS = 5000;
+
+async function getCachedObservabilityConfig() {
+  if (!cachedConfig || (Date.now() - cachedConfigTs) > CONFIG_CACHE_TTL_MS) {
+    cachedConfig = await getObservabilityConfig();
+    cachedConfigTs = Date.now();
+  }
+
+  return cachedConfig;
+}
 
 let dbInstance = null;
 
@@ -317,13 +334,14 @@ function sanitizeHeaders(headers) {
 export async function saveRequestDetail(detail) {
   if (isCloud) return;
 
-  if (!cachedConfig) {
-    cachedConfig = await getObservabilityConfig();
+  const config = await getCachedObservabilityConfig();
+  if (!config.enabled) {
+    return;
   }
 
   writeBuffer.push(detail);
 
-  if (writeBuffer.length >= cachedConfig.batchSize) {
+  if (writeBuffer.length >= config.batchSize) {
     await flushToDatabase();
 
     if (flushTimer) {
@@ -334,7 +352,7 @@ export async function saveRequestDetail(detail) {
     flushTimer = setTimeout(() => {
       flushToDatabase().catch(() => {});
       flushTimer = null;
-    }, cachedConfig.flushIntervalMs);
+    }, config.flushIntervalMs);
   }
 }
 
