@@ -53,6 +53,7 @@ export const PROVIDER_MODELS = {
     { id: "minimax-m2.1", name: "MiniMax M2.1" },
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6", name: "GLM 4.6" },
+    { id: "glm-5", name: "GLM 5" },
   ],
   ag: [  // Antigravity - special case: models call different backends
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
