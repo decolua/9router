@@ -25,7 +25,21 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
 
-  for (const item of body.input) {
+  // Responses API supports both:
+  // - input: "string"
+  // - input: [ { type: "message", ... }, ... ]
+  const inputItems = typeof body.input === "string"
+    ? [{
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: body.input.trim() === "" ? "..." : body.input }]
+    }]
+    : body.input;
+
+  // If input isn't an array (or string handled above), leave unchanged.
+  if (!Array.isArray(inputItems)) return body;
+
+  for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? "message" : null);
@@ -234,4 +248,3 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 // Register both directions
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, openaiResponsesToOpenAIRequest, null);
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, openaiToOpenAIResponsesRequest, null);
-

@@ -19,7 +19,21 @@ export function convertResponsesApiFormat(body) {
   let pendingToolCalls = [];
   let pendingToolResults = [];
 
-  for (const item of body.input) {
+  // Responses API supports both:
+  // - input: "string"
+  // - input: [ { type: "message", ... }, ... ]
+  const inputItems = typeof body.input === "string"
+    ? [{
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: body.input.trim() === "" ? "..." : body.input }]
+    }]
+    : body.input;
+
+  // If input isn't an array (or string handled above), leave unchanged.
+  if (!Array.isArray(inputItems)) return body;
+
+  for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? "message" : null);

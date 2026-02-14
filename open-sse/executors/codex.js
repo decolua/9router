@@ -24,6 +24,12 @@ export class CodexExecutor extends BaseExecutor {
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    // Convert string input to array format (Codex API requires input as array)
+    if (typeof body.input === "string") {
+      const text = body.input.trim() === "" ? "..." : body.input;
+      body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text }] }];
+    }
+
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];

@@ -562,7 +562,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     trackPendingRequest(model, provider, connectionId, false);
     const contentType = providerResponse.headers.get("content-type") || "";
 
-    if (contentType.includes("text/event-stream")) {
+    // Treat as SSE if content-type says so OR if it's empty/missing
+    // (Codex API doesn't always set Content-Type on streaming responses)
+    const isSSEResponse = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
+    if (isSSEResponse) {
       const isResponsesApi = sourceFormat === 'openai-responses';
 
       if (isResponsesApi) {
