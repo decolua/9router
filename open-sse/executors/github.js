@@ -58,7 +58,7 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
-    const url = "https://api.githubcopilot.com/responses";
+    const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
     
     const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
