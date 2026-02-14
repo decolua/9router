@@ -412,7 +412,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
   // Create stream controller for disconnect detection
-  const streamController = createStreamController({ onDisconnect, log, provider, model });
+  const streamController = createStreamController({ 
+    onDisconnect: (reason) => {
+      // Track request finished (disconnected)
+      trackPendingRequest(model, provider, connectionId, false);
+      if (onDisconnect) onDisconnect(reason);
+    },
+    onError: (error) => {
+      // Track request finished (error/zombie)
+      trackPendingRequest(model, provider, connectionId, false);
+    },
+    log,
+    provider,
+    model
+  });
 
   // Execute request using executor (handles URL building, headers, fallback, transform)
   let providerResponse;
