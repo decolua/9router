@@ -1,4 +1,19 @@
 /**
+ * Normalize Responses API input to array format.
+ * Accepts string or array, returns array of message items.
+ * @param {string|Array} input - raw input from Responses API body
+ * @returns {Array|null} normalized array or null if invalid
+ */
+export function normalizeResponsesInput(input) {
+  if (typeof input === "string") {
+    const text = input.trim() === "" ? "..." : input;
+    return [{ type: "message", role: "user", content: [{ type: "input_text", text }] }];
+  }
+  if (Array.isArray(input)) return input;
+  return null;
+}
+
+/**
  * Convert OpenAI Responses API format to standard chat completions format
  * Responses API uses: { input: [...], instructions: "..." }
  * Chat API uses: { messages: [...] }
@@ -19,7 +34,10 @@ export function convertResponsesApiFormat(body) {
   let pendingToolCalls = [];
   let pendingToolResults = [];
 
-  for (const item of body.input) {
+  const inputItems = normalizeResponsesInput(body.input);
+  if (!inputItems) return body;
+
+  for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? "message" : null);
