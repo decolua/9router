@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/constants.js";
+import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
@@ -24,6 +25,10 @@ export class CodexExecutor extends BaseExecutor {
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    // Convert string input to array format (Codex API requires input as array)
+    const normalized = normalizeResponsesInput(body.input);
+    if (normalized) body.input = normalized;
+
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
