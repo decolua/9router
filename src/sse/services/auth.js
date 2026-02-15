@@ -120,51 +120,53 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
 
     let connection = null;
 
-    if (availableConnections.length === 0) {
-      // FORCE STRATEGY: Controlled by env var (default false)
-      if (process.env.FORCE_FALLBACK_ON_ALL_UNAVAILABLE === "true") {
-        const forcedCandidates = connections.filter(c => !excludeConnectionId || c.id !== excludeConnectionId);
-        if (forcedCandidates.length > 0) {
-          forcedCandidates.sort((a, b) => {
-            const tA = a.rateLimitedUntil ? new Date(a.rateLimitedUntil).getTime() : 0;
-            const tB = b.rateLimitedUntil ? new Date(b.rateLimitedUntil).getTime() : 0;
-            return tA - tB;
-          });
-          connection = forcedCandidates[0];
-          log.warn("AUTH", `${provider} | ALL UNAVAILABLE. Forcing usage of ${connection.id.slice(0, 8)} (cooldown until ${connection.rateLimitedUntil})`);
-        }
-      }
+    const settings = await getSettings();
+    // FORCE STRATEGY: Controlled by settings OR env var (default false)
+    const forceFallback = settings.forceFallback || process.env.FORCE_FALLBACK_ON_ALL_UNAVAILABLE === "true";
 
-      if (!connection) {
-        const earliest = getEarliestRateLimitedUntil(connections);
-        if (earliest) {
-          // Find the connection with the earliest rateLimitedUntil to get its error info
-          const rateLimitedConns = connections.filter(c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now());
-          const earliestConn = rateLimitedConns.sort((a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil))[0];
-          log.warn("AUTH", `${provider} | all ${connections.length} active accounts rate limited (${formatRetryAfter(earliest)}) | lastErrorCode=${earliestConn?.errorCode}, lastError=${earliestConn?.lastError?.slice(0, 50)}`);
-          return {
-            allRateLimited: true,
-            retryAfter: earliest,
-            retryAfterHuman: formatRetryAfter(earliest),
-            lastError: earliestConn?.lastError || null,
-            lastErrorCode: earliestConn?.errorCode || null
-          };
-        }
-        if (multiBucket && model) {
-          log.warn("AUTH", `${provider} | all accounts model-locked for ${model}`);
-          return {
-            allRateLimited: true,
-            retryAfter: new Date(Date.now() + 60000).toISOString(),
-            retryAfterHuman: "reset after 1m",
-            lastError: `All accounts rate limited for model ${model}`
-          };
-        }
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
-        return null;
+    if (availableConnections.length === 0 && forceFallback) {
+      // Filter out explicitly excluded connection to avoid immediate retry loop on same account
+      const forcedCandidates = connections.filter(c => !excludeConnectionId || c.id !== excludeConnectionId);
+      if (forcedCandidates.length > 0) {
+        // Sort by rateLimitedUntil (earliest first)
+        forcedCandidates.sort((a, b) => {
+          const tA = a.rateLimitedUntil ? new Date(a.rateLimitedUntil).getTime() : 0;
+          const tB = b.rateLimitedUntil ? new Date(b.rateLimitedUntil).getTime() : 0;
+          return tA - tB;
+        });
+        connection = forcedCandidates[0];
+        log.warn("AUTH", `${provider} | ALL UNAVAILABLE. Forcing usage of ${connection.id.slice(0, 8)} (cooldown until ${connection.rateLimitedUntil})`);
       }
     }
 
-    const settings = await getSettings();
+    if (availableConnections.length === 0 && !connection) {
+      const earliest = getEarliestRateLimitedUntil(connections);
+      if (earliest) {
+        // Find the connection with the earliest rateLimitedUntil to get its error info
+        const rateLimitedConns = connections.filter(c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now());
+        const earliestConn = rateLimitedConns.sort((a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil))[0];
+        log.warn("AUTH", `${provider} | all ${connections.length} active accounts rate limited (${formatRetryAfter(earliest)}) | lastErrorCode=${earliestConn?.errorCode}, lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        return {
+          allRateLimited: true,
+          retryAfter: earliest,
+          retryAfterHuman: formatRetryAfter(earliest),
+          lastError: earliestConn?.lastError || null,
+          lastErrorCode: earliestConn?.errorCode || null
+        };
+      }
+      if (multiBucket && model) {
+        log.warn("AUTH", `${provider} | all accounts model-locked for ${model}`);
+        return {
+          allRateLimited: true,
+          retryAfter: new Date(Date.now() + 60000).toISOString(),
+          retryAfterHuman: "reset after 1m",
+          lastError: `All accounts rate limited for model ${model}`
+        };
+      }
+      log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      return null;
+    }
+
     const strategy = settings.fallbackStrategy || "fill-first";
 
     // If not forced, select using strategy
