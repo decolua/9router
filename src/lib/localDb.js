@@ -55,7 +55,8 @@ const defaultData = {
     observabilityMaxRecords: 1000,
     observabilityBatchSize: 20,
     observabilityFlushIntervalMs: 5000,
-    observabilityMaxJsonSize: 1024
+    observabilityMaxJsonSize: 1024,
+    forceFallback: false
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -76,7 +77,8 @@ function cloneDefaultData() {
       observabilityMaxRecords: 1000,
       observabilityBatchSize: 20,
       observabilityFlushIntervalMs: 5000,
-      observabilityMaxJsonSize: 1024
+      observabilityMaxJsonSize: 1024,
+      forceFallback: false
     },
     pricing: {},
   };

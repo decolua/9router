@@ -62,6 +62,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateForceFallback = async (force) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forceFallback: force }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, forceFallback: force }));
+      }
+    } catch (err) {
+      console.error("Failed to update force fallback:", err);
+    }
+  };
+
   const updateFallbackStrategy = async (strategy) => {
     try {
       const res = await fetch("/api/settings", {
@@ -257,6 +272,21 @@ export default function ProfilePage() {
             <h3 className="text-lg font-semibold">Routing Strategy</h3>
           </div>
           <div className="flex flex-col gap-4">
+            {/* Force Fallback Toggle */}
+            <div className="flex items-center justify-between pb-4 border-b border-border/50">
+              <div>
+                <p className="font-medium">Force Fallback</p>
+                <p className="text-sm text-text-muted">
+                  If all accounts unavailable, force use of min-cooldown account
+                </p>
+              </div>
+              <Toggle
+                checked={settings.forceFallback === true}
+                onChange={() => updateForceFallback(!settings.forceFallback)}
+                disabled={loading}
+              />
+            </div>
+
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-medium">Round Robin</p>
