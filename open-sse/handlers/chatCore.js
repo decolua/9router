@@ -606,6 +606,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             }).catch(() => { });
           }
 
+          const totalLatency = Date.now() - requestStartTime;
+          saveRequestDetail({
+            provider: provider || "unknown",
+            model: model || "unknown",
+            connectionId: connectionId || undefined,
+            timestamp: new Date().toISOString(),
+            latency: { ttft: totalLatency, total: totalLatency },
+            tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
+            request: extractRequestConfig(body, stream),
+            providerRequest: finalBody || translatedBody || null,
+            providerResponse: null,
+            response: {
+              content: jsonResponse.output?.[0]?.content?.[0]?.text || null,
+              thinking: null,
+              finish_reason: jsonResponse.status || "unknown"
+            },
+            status: "success"
+          }).catch(() => { });
+
           return {
             success: true,
             response: new Response(JSON.stringify(jsonResponse), {
@@ -621,22 +640,60 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         }
       } else {
         // Chat Completions SSE → Chat Completions JSON
-        const sseText = await providerResponse.text();
-        const parsed = parseSSEToOpenAIResponse(sseText, model);
-        if (parsed) {
-          if (onRequestSuccess) await onRequestSuccess();
-          appendRequestLog({ model, provider, connectionId, tokens: parsed.usage, status: "200 OK" }).catch(() => { });
-          return {
-            success: true,
-            response: new Response(JSON.stringify(parsed), {
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*"
-              }
-            })
-          };
+        try {
+          const sseText = await providerResponse.text();
+          const parsed = parseSSEToOpenAIResponse(sseText, model);
+          if (parsed) {
+            if (onRequestSuccess) await onRequestSuccess();
+
+            const usage = parsed.usage || {};
+            appendRequestLog({ model, provider, connectionId, tokens: usage, status: "200 OK" }).catch(() => { });
+
+            if (usage && typeof usage === "object") {
+              saveRequestUsage({
+                provider: provider || "unknown",
+                model: model || "unknown",
+                tokens: usage,
+                timestamp: new Date().toISOString(),
+                connectionId: connectionId || undefined,
+                apiKey: apiKey || undefined
+              }).catch(() => { });
+            }
+
+            const totalLatency = Date.now() - requestStartTime;
+            saveRequestDetail({
+              provider: provider || "unknown",
+              model: model || "unknown",
+              connectionId: connectionId || undefined,
+              timestamp: new Date().toISOString(),
+              latency: { ttft: totalLatency, total: totalLatency },
+              tokens: usage,
+              request: extractRequestConfig(body, stream),
+              providerRequest: finalBody || translatedBody || null,
+              providerResponse: null,
+              response: {
+                content: parsed.choices?.[0]?.message?.content || null,
+                thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
+                finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
+              },
+              status: "success"
+            }).catch(() => { });
+
+            return {
+              success: true,
+              response: new Response(JSON.stringify(parsed), {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*"
+                }
+              })
+            };
+          }
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+        } catch (error) {
+          console.error("[ChatCore] Chat Completions SSE→JSON conversion failed:", error);
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
         }
-        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
       }
     }
   }
@@ -657,7 +714,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
       responseBody = parsedFromSSE;
     } else {
-      responseBody = await providerResponse.json();
+      try {
+        responseBody = await providerResponse.json();
+      } catch (parseError) {
+        appendRequestLog({ model, provider, connectionId, status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+        console.error(`[ChatCore] Failed to parse JSON response from ${provider}:`, parseError.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      }
     }
 
     // Notify success - caller can clear error status if needed

@@ -5,23 +5,63 @@
  */
 
 /**
+ * Process a single SSE message and update state accordingly.
+ */
+function processSSEMessage(msg, state) {
+  if (!msg.trim()) return;
+
+  const eventMatch = msg.match(/^event:\s*(.+)$/m);
+  const dataMatch = msg.match(/^data:\s*(.+)$/m);
+  if (!eventMatch || !dataMatch) return;
+
+  const eventType = eventMatch[1].trim();
+  const dataStr = dataMatch[1].trim();
+  if (dataStr === "[DONE]") return;
+
+  let parsed;
+  try { parsed = JSON.parse(dataStr); }
+  catch { return; }
+
+  if (eventType === "response.created") {
+    state.responseId = parsed.response?.id || state.responseId;
+    state.created = parsed.response?.created_at || state.created;
+  } else if (eventType === "response.output_item.done") {
+    state.items.set(parsed.output_index ?? 0, parsed.item);
+  } else if (eventType === "response.completed") {
+    state.status = "completed";
+    if (parsed.response?.usage) {
+      state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
+      state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
+      state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
+    }
+  } else if (eventType === "response.failed") {
+    state.status = "failed";
+  }
+}
+
+const EMPTY_RESPONSE = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+
+/**
  * Convert Responses API SSE stream to single JSON response
  * @param {ReadableStream} stream - SSE stream from provider
  * @returns {Promise<Object>} Final JSON response in Responses API format
  */
 export async function convertResponsesStreamToJson(stream) {
+  if (!stream || typeof stream.getReader !== "function") {
+    return { id: `resp_${Date.now()}`, object: "response", created_at: Math.floor(Date.now() / 1000), status: "failed", output: [], usage: { ...EMPTY_RESPONSE } };
+  }
+
   const reader = stream.getReader();
   const decoder = new TextDecoder();
-
   let buffer = "";
-  let responseId = "";
-  let output = [];
-  let created = Math.floor(Date.now() / 1000);
-  let status = "in_progress";
-  let usage = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
 
-  // Map of output_index -> item (for ordered output array)
-  const items = new Map();
+  const state = {
+    responseId: "",
+    created: Math.floor(Date.now() / 1000),
+    status: "in_progress",
+    usage: { ...EMPTY_RESPONSE },
+    items: new Map()
+  };
 
   try {
     while (true) {
@@ -29,75 +69,35 @@ export async function convertResponsesStreamToJson(stream) {
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-
-      // Split by double newline (SSE event separator)
       const messages = buffer.split("\n\n");
-      buffer = messages.pop() || ""; // Keep incomplete message in buffer
+      buffer = messages.pop() || "";
 
       for (const msg of messages) {
-        if (!msg.trim()) continue;
-
-        // Parse SSE event
-        const eventMatch = msg.match(/^event:\s*(.+)$/m);
-        const dataMatch = msg.match(/^data:\s*(.+)$/m);
-
-        if (!eventMatch || !dataMatch) continue;
-
-        const eventType = eventMatch[1].trim();
-        const dataStr = dataMatch[1].trim();
-
-        if (dataStr === "[DONE]") continue;
-
-        let parsed;
-        try {
-          parsed = JSON.parse(dataStr);
-        } catch {
-          // Skip malformed JSON
-          continue;
-        }
-
-        // Handle different event types
-        if (eventType === "response.created") {
-          responseId = parsed.response?.id || responseId;
-          created = parsed.response?.created_at || created;
-        }
-        else if (eventType === "response.output_item.done") {
-          const idx = parsed.output_index ?? 0;
-          items.set(idx, parsed.item);
-        }
-        else if (eventType === "response.completed") {
-          status = "completed";
-          if (parsed.response?.usage) {
-            usage.input_tokens = parsed.response.usage.input_tokens || 0;
-            usage.output_tokens = parsed.response.usage.output_tokens || 0;
-            usage.total_tokens = parsed.response.usage.total_tokens || 0;
-          }
-        }
-        else if (eventType === "response.failed") {
-          status = "failed";
-        }
+        processSSEMessage(msg, state);
       }
+    }
+
+    // Flush remaining buffer (last event may not end with \n\n)
+    if (buffer.trim()) {
+      processSSEMessage(buffer, state);
     }
   } finally {
     reader.releaseLock();
   }
 
   // Build output array from accumulated items (ordered by index)
-  const maxIndex = items.size > 0 ? Math.max(...items.keys()) : -1;
+  const output = [];
+  const maxIndex = state.items.size > 0 ? Math.max(...state.items.keys()) : -1;
   for (let i = 0; i <= maxIndex; i++) {
-    output.push(items.get(i) || {
-      type: "message",
-      content: [],
-      role: "assistant"
-    });
+    output.push(state.items.get(i) || { type: "message", content: [], role: "assistant" });
   }
 
   return {
-    id: responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    id: state.responseId || `resp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     object: "response",
-    created_at: created,
-    status: status || "completed",
+    created_at: state.created,
+    status: state.status || "completed",
     output,
-    usage
+    usage: state.usage
   };
 }
