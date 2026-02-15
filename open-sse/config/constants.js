@@ -134,6 +134,7 @@ export const PROVIDERS = {
   },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
+    responsesUrl: "https://api.githubcopilot.com/responses",
     format: "openai", // GitHub Copilot uses OpenAI-compatible format
     headers: {
       "copilot-integration-id": "vscode-chat",
