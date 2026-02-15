@@ -478,6 +478,7 @@ export default function ProviderDetailPage() {
                 isOAuth={isOAuth}
                 isFirst={index === 0}
                 isLast={index === connections.length - 1}
+                providerId={providerId}
                 onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
@@ -911,13 +912,15 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete, providerId }) {
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(null);
 
   useEffect(() => {
     const checkCooldown = () => {
@@ -944,6 +947,37 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
+  };
+
+  const handleSyncUsername = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const response = await fetch(`/api/providers/${connection.id}/sync-username`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSyncMessage({ type: "success", text: `Synced: ${data.username}` });
+        setTimeout(() => setSyncMessage(null), 3000);
+        // Trigger refresh by updating the connection name locally
+        if (onEdit) {
+          window.location.reload();
+        }
+      } else {
+        setSyncMessage({ type: "error", text: data.error || "Failed to sync" });
+        setTimeout(() => setSyncMessage(null), 5000);
+      }
+    } catch (error) {
+      console.error("Error syncing username:", error);
+      setSyncMessage({ type: "error", text: "Failed to sync username" });
+      setTimeout(() => setSyncMessage(null), 5000);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   return (
@@ -989,6 +1023,23 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {syncMessage && (
+          <span className={`text-xs ${syncMessage.type === "success" ? "text-green-500" : "text-red-500"}`}>
+            {syncMessage.text}
+          </span>
+        )}
+        {providerId === "github" && (
+          <button
+            onClick={handleSyncUsername}
+            disabled={syncing}
+            className="p-2 hover:bg-green-500/10 rounded text-green-600 disabled:opacity-50"
+            title="Sync username from GitHub"
+          >
+            <span className={`material-symbols-outlined text-[18px] ${syncing ? "animate-spin" : ""}`}>
+              {syncing ? "progress_activity" : "sync"}
+            </span>
+          </button>
+        )}
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
@@ -1029,6 +1080,7 @@ ConnectionRow.propTypes = {
   onToggleActive: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  providerId: PropTypes.string,
 };
 
 function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {
