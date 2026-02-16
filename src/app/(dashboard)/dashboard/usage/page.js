@@ -7,6 +7,14 @@ import ProviderLimits from "./components/ProviderLimits";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 
 export default function UsagePage() {
+  return (
+    <Suspense fallback={<CardSkeleton />}>
+      <UsagePageContent />
+    </Suspense>
+  );
+}
+
+function UsagePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "overview");
