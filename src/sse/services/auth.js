@@ -118,7 +118,28 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       }
     });
 
-    if (availableConnections.length === 0) {
+    let connection = null;
+
+    const settings = await getSettings();
+    // FORCE STRATEGY: Controlled by settings OR env var (default false)
+    const forceFallback = settings.forceFallback || process.env.FORCE_FALLBACK_ON_ALL_UNAVAILABLE === "true";
+
+    if (availableConnections.length === 0 && forceFallback) {
+      // Filter out explicitly excluded connection to avoid immediate retry loop on same account
+      const forcedCandidates = connections.filter(c => !excludeConnectionId || c.id !== excludeConnectionId);
+      if (forcedCandidates.length > 0) {
+        // Sort by rateLimitedUntil (earliest first)
+        forcedCandidates.sort((a, b) => {
+          const tA = a.rateLimitedUntil ? new Date(a.rateLimitedUntil).getTime() : 0;
+          const tB = b.rateLimitedUntil ? new Date(b.rateLimitedUntil).getTime() : 0;
+          return tA - tB;
+        });
+        connection = forcedCandidates[0];
+        log.warn("AUTH", `${provider} | ALL UNAVAILABLE. Forcing usage of ${connection.id.slice(0, 8)} (cooldown until ${connection.rateLimitedUntil})`);
+      }
+    }
+
+    if (availableConnections.length === 0 && !connection) {
       const earliest = getEarliestRateLimitedUntil(connections);
       if (earliest) {
         // Find the connection with the earliest rateLimitedUntil to get its error info
@@ -146,52 +167,53 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       return null;
     }
 
-    const settings = await getSettings();
     const strategy = settings.fallbackStrategy || "fill-first";
 
-    let connection;
-    if (strategy === "round-robin") {
-      const stickyLimit = settings.stickyRoundRobinLimit || 3;
+    // If not forced, select using strategy
+    if (!connection) {
+      if (strategy === "round-robin") {
+        const stickyLimit = settings.stickyRoundRobinLimit || 3;
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
-      } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        // Sort by lastUsed (most recent first) to find current candidate
+        const byRecency = [...availableConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+          if (!a.lastUsedAt) return 1;
+          if (!b.lastUsedAt) return -1;
+          return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
         });
 
-        connection = sortedByOldest[0];
+        const current = byRecency[0];
+        const currentCount = current?.consecutiveUseCount || 0;
 
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
+        if (current && current.lastUsedAt && currentCount < stickyLimit) {
+          // Stay with current account
+          connection = current;
+          // Update lastUsedAt and increment count (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+          });
+        } else {
+          // Pick the least recently used (excluding current if possible)
+          const sortedByOldest = [...availableConnections].sort((a, b) => {
+            if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+            if (!a.lastUsedAt) return -1;
+            if (!b.lastUsedAt) return 1;
+            return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+          });
+
+          connection = sortedByOldest[0];
+
+          // Update lastUsedAt and reset count to 1 (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: 1
+          });
+        }
+      } else {
+        // Default: fill-first (already sorted by priority in getProviderConnections)
+        connection = availableConnections[0];
       }
-    } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
     }
 
     return {

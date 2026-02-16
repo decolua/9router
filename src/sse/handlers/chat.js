@@ -5,6 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { getProviderConnections } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -119,7 +120,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
 
-  while (true) {
+  // Get total connection count to limit retries (prevent infinite loop with force fallback)
+  const allConnections = await getProviderConnections({ provider, isActive: true });
+  const maxRetries = allConnections.length || 1; // At least 1 retry
+  let retryCount = 0;
+
+  while (retryCount++ < maxRetries) {
     const credentials = await getProviderCredentials(provider, excludeConnectionId, model);
 
     // All accounts unavailable
@@ -136,6 +142,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    }
+
+    // Max retries reached
+    if (retryCount >= maxRetries) {
+      log.warn("CHAT", `Max retries (${maxRetries}) reached for ${provider}/${model}`);
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All retry attempts exhausted");
     }
 
     // Log account selection
