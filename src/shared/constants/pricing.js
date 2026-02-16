@@ -74,6 +74,13 @@ export const DEFAULT_PRICING = {
       reasoning: 18.00,
       cache_creation: 3.00
     },
+    "gpt-5.3-codex-spark": {
+      input: 3.00,
+      output: 12.00,
+      cached: 0.30,
+      reasoning: 12.00,
+      cache_creation: 3.00
+    },
     "gpt-5.2-codex": {
       input: 5.00,
       output: 20.00,
