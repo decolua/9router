@@ -9,9 +9,9 @@ compatibility_flags = ["nodejs_compat"]
 # Step 3: Paste your KV & D1 IDs here
 [[kv_namespaces]]
 binding = "KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "a098a3553ba348b59f32072008e588c4"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "proxy-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "b6798d5b-c09d-4eee-aa65-541660eae223"

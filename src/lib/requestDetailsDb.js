@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -56,6 +55,43 @@ async function getCachedObservabilityConfig() {
 }
 
 let dbInstance = null;
+let DatabaseCtor = null;
+
+async function getDatabaseCtor() {
+  if (DatabaseCtor) return DatabaseCtor;
+
+  if (typeof Bun !== "undefined") {
+    const bunSqlite = await (new Function("return import('bun:sqlite')")());
+    DatabaseCtor = bunSqlite.Database;
+    return DatabaseCtor;
+  }
+
+  const betterSqlite3 = await import("better-sqlite3");
+  DatabaseCtor = betterSqlite3.default;
+  return DatabaseCtor;
+}
+
+function prepareStatement(db, sql) {
+  if (typeof db.prepare === "function") return db.prepare(sql);
+  if (typeof db.query === "function") return db.query(sql);
+  throw new Error("Unsupported SQLite client: missing prepare/query");
+}
+
+function applyPragmas(db) {
+  if (typeof db.pragma === "function") {
+    db.pragma("journal_mode = WAL");
+    db.pragma("synchronous = NORMAL");
+    db.pragma("cache_size = -64000");
+    db.pragma("temp_store = MEMORY");
+    return;
+  }
+
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA synchronous = NORMAL;");
+  db.exec("PRAGMA cache_size = -64000;");
+  db.exec("PRAGMA temp_store = MEMORY;");
+}
+
 
 // Get app name
 function getAppName() {
@@ -145,13 +181,11 @@ export async function getRequestDetailsDb() {
   }
 
   if (!dbInstance) {
-    const db = new Database(DB_FILE);
+    const DbCtor = await getDatabaseCtor();
+    const db = new DbCtor(DB_FILE);
 
     // Configure for better concurrency
-    db.pragma('journal_mode = WAL');        // Write-Ahead Logging for concurrent access
-    db.pragma('synchronous = NORMAL');       // Faster than FULL, still safe
-    db.pragma('cache_size = -64000');        // 64MB cache
-    db.pragma('temp_store = MEMORY');        // Use memory for temp tables
+    applyPragmas(db);
 
     // Create table with indexes
     db.exec(`
@@ -227,14 +261,14 @@ async function flushToDatabase() {
     const config = await getObservabilityConfig();
 
     // Prepare statements outside transaction for better performance
-    const insertStmt = db.prepare(`
+    const insertStmt = prepareStatement(db, `
       INSERT OR REPLACE INTO request_details
       (id, provider, model, connection_id, timestamp, status, latency, tokens,
        request, provider_request, provider_response, response)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const deleteStmt = db.prepare(`
+    const deleteStmt = prepareStatement(db, `
       DELETE FROM request_details
       WHERE id NOT IN (
         SELECT id FROM request_details
@@ -443,10 +477,10 @@ export async function getRequestDetails(filter = {}) {
   }
 
   // Get total count first
-  const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-  const countStmt = db.prepare(countQuery);
+  const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) AS total_count');
+  const countStmt = prepareStatement(db, countQuery);
   const totalResult = countStmt.get(...params);
-  const total = totalResult['COUNT(*)'];
+  const total = totalResult?.total_count || 0;
 
   // Add pagination
   query += ' ORDER BY timestamp DESC';
@@ -456,7 +490,7 @@ export async function getRequestDetails(filter = {}) {
   params.push(pageSize, (page - 1) * pageSize);
 
   // Execute query
-  const stmt = db.prepare(query);
+  const stmt = prepareStatement(db, query);
   const rows = stmt.all(...params);
 
   // Safe JSON parse — returns fallback on corrupt/truncated data
@@ -504,7 +538,7 @@ export async function getRequestDetailById(id) {
 
   if (isCloud) return null;
 
-  const stmt = db.prepare('SELECT * FROM request_details WHERE id = ?');
+  const stmt = prepareStatement(db, 'SELECT * FROM request_details WHERE id = ?');
   const row = stmt.get(id);
 
   if (!row) return null;

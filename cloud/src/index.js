@@ -9,7 +9,6 @@ import { handleCacheClear } from "./handlers/cache.js";
 import { handleSync } from "./handlers/sync.js";
 import { handleChat } from "./handlers/chat.js";
 import { handleVerify } from "./handlers/verify.js";
-import { handleTestClaude } from "./handlers/testClaude.js";
 import { handleForward } from "./handlers/forward.js";
 import { handleForwardRaw } from "./handlers/forwardRaw.js";
 import { handleEmbeddings } from "./handlers/embeddings.js";
@@ -64,7 +63,7 @@ const worker = {
 
     try {
       // Routes
-      
+
       // Landing page
       if (path === "/" && request.method === "GET") {
         const response = createLandingPageResponse();
@@ -101,7 +100,7 @@ const worker = {
       }
 
       // ========== NEW FORMAT: /v1/... (machineId in API key) ==========
-      
+
       // New format: /v1/chat/completions
       if (path === "/v1/chat/completions" && request.method === "POST") {
         const response = await handleChat(request, env, ctx, null);
@@ -188,13 +187,6 @@ const worker = {
       if (path.match(/^\/[^\/]+\/v1\/verify$/) && request.method === "GET") {
         const machineId = path.split("/")[1];
         const response = await handleVerify(request, env, machineId);
-        log.response(response.status, Date.now() - startTime);
-        return response;
-      }
-
-      // Test Claude - forward to Anthropic API
-      if (path === "/testClaude" && request.method === "POST") {
-        const response = await handleTestClaude(request);
         log.response(response.status, Date.now() - startTime);
         return response;
       }
