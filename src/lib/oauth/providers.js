@@ -297,7 +297,7 @@ const PROVIDERS = {
             const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
               method: "POST",
               headers,
-              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId }),
+              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
             });
             if (onboardRes.ok) {
               const result = await onboardRes.json();

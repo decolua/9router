@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import open from "open";
-import { GEMINI_CONFIG } from "../constants/oauth.js";
+import { GEMINI_CONFIG, getOAuthClientMetadata } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
@@ -71,18 +71,11 @@ export class GeminiCLIService {
           "Content-Type": "application/json",
           "User-Agent": "google-api-nodejs-client/9.15.1",
           "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-          "Client-Metadata": JSON.stringify({
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI"
-          })
+          "Client-Metadata": JSON.stringify(getOAuthClientMetadata())
         },
         body: JSON.stringify({
-          metadata: {
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI"
-          }
+          metadata: getOAuthClientMetadata(),
+          mode: 1
         })
       }
     );
@@ -93,7 +86,7 @@ export class GeminiCLIService {
     }
 
     const data = await response.json();
-    
+
     // Extract project ID
     let projectId = "";
     if (typeof data.cloudaicompanionProject === "string") {
