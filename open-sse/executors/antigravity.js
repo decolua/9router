@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, ANTIGRAVITY_HEADERS } from "../config/constants.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 
 const MAX_RETRY_AFTER_MS = 10000;
@@ -17,12 +17,13 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, sessionId = null) {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || "antigravity/1.104.0 darwin/arm64",
-      "X-9Router-Source": "9router",
+      ...ANTIGRAVITY_HEADERS,
+      ...(sessionId && { "X-Machine-Session-Id": sessionId }),
       ...(stream && { "Accept": "text/event-stream" })
     };
   }
@@ -168,8 +169,9 @@ export class AntigravityExecutor extends BaseExecutor {
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex);
-      const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
+      const sessionId = transformedBody.request?.sessionId;
+      const headers = this.buildHeaders(credentials, stream, sessionId);
 
       // Initialize retry counter for this URL
       if (!retryAttemptsByUrl[urlIndex]) {

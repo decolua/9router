@@ -64,6 +64,13 @@ export const CLIENT_METADATA = {
   pluginType: PLUGIN_TYPE.GEMINI    // 2
 };
 
+// Antigravity headers
+export const ANTIGRAVITY_HEADERS = {
+  "X-Client-Name": "antigravity",
+  "X-Client-Version": "1.107.0",
+  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x"
+};
+
 // Provider configurations
 export const PROVIDERS = {
   claude: {
