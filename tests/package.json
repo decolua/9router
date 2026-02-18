@@ -1,0 +1,17 @@
+{
+  "name": "9router-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Unit tests for 9router embeddings endpoint",
+  "scripts": {
+    "test": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose",
+    "test:watch": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest --reporter=verbose"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
