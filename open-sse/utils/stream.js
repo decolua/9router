@@ -96,6 +96,20 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // Strip Azure-specific non-standard fields from streaming chunks
+              if (parsed.prompt_filter_results !== undefined) {
+                delete parsed.prompt_filter_results;
+                fieldsInjected = true;
+              }
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice.content_filter_results !== undefined) {
+                    delete choice.content_filter_results;
+                    fieldsInjected = true;
+                  }
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }

@@ -768,6 +768,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     }
 
+    // Strip Azure-specific non-standard fields
+    if (translatedResponse.prompt_filter_results !== undefined) {
+      delete translatedResponse.prompt_filter_results;
+    }
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) {
+        if (choice.content_filter_results !== undefined) {
+          delete choice.content_filter_results;
+        }
+      }
+    }
+
     // Add buffer and filter usage for client (to prevent CLI context errors)
     if (translatedResponse?.usage) {
       const buffered = addBufferToUsage(translatedResponse.usage);
