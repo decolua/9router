@@ -12,6 +12,7 @@ import { handleVerify } from "./handlers/verify.js";
 import { handleTestClaude } from "./handlers/testClaude.js";
 import { handleForward } from "./handlers/forward.js";
 import { handleForwardRaw } from "./handlers/forwardRaw.js";
+import { handleEmbeddings } from "./handlers/embeddings.js";
 import { createLandingPageResponse } from "./services/landingPage.js";
 
 // Initialize translators at module load (static imports)
@@ -115,6 +116,13 @@ const worker = {
         return addCorsHeaders(response);
       }
 
+      // New format: /v1/embeddings
+      if (path === "/v1/embeddings" && request.method === "POST") {
+        const response = await handleEmbeddings(request, env, ctx, null);
+        log.response(response.status, Date.now() - startTime);
+        return addCorsHeaders(response);
+      }
+
       // New format: /v1/responses (OpenAI Responses API - Codex CLI)
       if (path === "/v1/responses" && request.method === "POST") {
         const response = await handleChat(request, env, ctx, null);
@@ -147,6 +155,14 @@ const worker = {
         const response = await handleChat(request, env, ctx, machineId);
         log.response(response.status, Date.now() - startTime);
         return response;
+      }
+
+      // Machine ID based embeddings endpoint
+      if (path.match(/^\/[^\/]+\/v1\/embeddings$/) && request.method === "POST") {
+        const machineId = path.split("/")[1];
+        const response = await handleEmbeddings(request, env, ctx, machineId);
+        log.response(response.status, Date.now() - startTime);
+        return addCorsHeaders(response);
       }
 
       // Machine ID based messages endpoint (Claude format)
