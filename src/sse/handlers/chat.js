@@ -15,6 +15,61 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 
 /**
+ * Sanitize a non-streaming JSON response for Letta / strict OpenAI clients.
+ * - Injects `object` and `created` if missing
+ * - Strips `padding` and other non-standard message fields
+ * - Strips Azure `content_filter_results` from choices
+ * - Strips Azure `prompt_filter_results` from root
+ *
+ * Only applies to responses whose Content-Type is application/json.
+ * Streaming (text/event-stream) is handled inside open-sse/utils/stream.js.
+ */
+async function sanitizeJsonResponse(response) {
+  const ct = response.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) return response;
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    return response; // Not valid JSON – pass through unchanged
+  }
+
+  // Inject required OpenAI fields if absent
+  if (!body.object) body.object = "chat.completion";
+  if (!body.created) body.created = Math.floor(Date.now() / 1000);
+
+  // Strip non-standard fields from message objects
+  const allowedMsgFields = new Set(['role', 'content', 'tool_calls', 'tool_call_id', 'name', 'reasoning_content', 'refusal']);
+  if (Array.isArray(body.choices)) {
+    for (const choice of body.choices) {
+      if (choice.message && typeof choice.message === 'object') {
+        for (const key of Object.keys(choice.message)) {
+          if (!allowedMsgFields.has(key)) delete choice.message[key];
+        }
+      }
+      // Strip Azure content filter results
+      if (choice.content_filter_results !== undefined) {
+        delete choice.content_filter_results;
+      }
+    }
+  }
+
+  // Strip Azure prompt filter results from root
+  if (body.prompt_filter_results !== undefined) {
+    delete body.prompt_filter_results;
+  }
+
+  return new Response(JSON.stringify(body), {
+    status: response.status,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*"
+    }
+  });
+}
+
+/**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
@@ -168,7 +223,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
     
-    if (result.success) return result.response;
+    if (result.success) return sanitizeJsonResponse(result.response);
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
