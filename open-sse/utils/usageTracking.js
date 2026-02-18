@@ -3,7 +3,6 @@
  */
 
 import { saveRequestUsage, appendRequestLog } from "@/lib/usageDb.js";
-import { recordApiKeyTokenUsage } from "@/shared/services/apiKeyQuota.js";
 import { FORMATS } from "../translator/formats.js";
 
 // ANSI color codes
@@ -247,20 +246,20 @@ export function estimateOutputTokens(contentLength) {
 export function formatUsage(inputTokens, outputTokens, targetFormat) {
   // Claude format uses input_tokens/output_tokens
   if (targetFormat === FORMATS.CLAUDE) {
-    return {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      estimated: true
-    };
+    return addBufferToUsage({ 
+      input_tokens: inputTokens, 
+      output_tokens: outputTokens, 
+      estimated: true 
+    });
   }
 
   // Default: OpenAI format (works for openai, gemini, responses, etc.)
-  return {
+  return addBufferToUsage({
     prompt_tokens: inputTokens,
     completion_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
     estimated: true
-  };
+  });
 }
 
 /**
@@ -280,7 +279,7 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
 /**
  * Log usage with cache info (green color)
  */
-export function logUsage(provider, usage, model = null, connectionId = null, apiKeyId = null) {
+export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null) {
   if (!usage || typeof usage !== "object") return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
@@ -315,21 +314,10 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
   const tokens = {
     prompt_tokens: inTokens,
     completion_tokens: outTokens,
-    total_tokens: inTokens + outTokens,
-    cached_tokens: cacheRead || 0,
-    reasoning_tokens: reasoning || 0,
-    estimated: usage.estimated === true
+    cache_read_input_tokens: cacheRead || 0,
+    cache_creation_input_tokens: cacheCreation || 0,
+    reasoning_tokens: reasoning || 0
   };
-
-  if (cacheRead !== undefined) {
-    tokens.cache_read_input_tokens = cacheRead || 0;
-  }
-
-  if (cacheCreation !== undefined) {
-    tokens.cache_creation_input_tokens = cacheCreation || 0;
-  }
-
-  saveRequestUsage({ model, provider, connectionId, tokens, apiKeyId: apiKeyId || undefined }).catch(() => { });
+  saveRequestUsage({ model, provider, connectionId, tokens, apiKey: apiKey || undefined }).catch(() => { });
   appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
-  recordApiKeyTokenUsage(apiKeyId, tokens).catch(() => { });
 }

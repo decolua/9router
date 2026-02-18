@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, getProviderConnections, getModelAliases } from "@/models";
-import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 // Verify API key and return provider credentials
 export async function POST(request) {
   try {
-    const quota = await enforceApiKeyQuota(request, { consumeRequest: false });
-    if (!quota.ok) {
-      return quota.response;
-    }
-
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return NextResponse.json({ error: "Missing API key" }, { status: 401 });
@@ -18,10 +12,8 @@ export async function POST(request) {
     const apiKey = authHeader.slice(7);
 
     // Validate API key
-    const apiKey = authHeader?.slice(7);
     const isValid = await validateApiKey(apiKey);
     if (!isValid) {
-      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 

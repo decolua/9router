@@ -32,7 +32,6 @@ export async function POST(request) {
       const useSecureCookie = forceSecureCookie || isHttpsRequest;
 
       const token = await new SignJWT({ authenticated: true })
-      const token = await new SignJWT({ authenticated: true, authType: "admin" })
         .setProtectedHeader({ alg: "HS256" })
         .setExpirationTime("24h")
         .sign(SECRET);

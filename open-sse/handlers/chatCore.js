@@ -10,8 +10,6 @@ import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerMo
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { saveRequestUsage, trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { recordApiKeyTokenUsage } from "@/shared/services/apiKeyQuota.js";
 import { saveRequestUsage, trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
@@ -746,10 +744,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         apiKey: apiKey || undefined
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
-      });
-
-      recordApiKeyTokenUsage(apiKeyId, usage).catch(err => {
-        console.error("Failed to update API key token usage:", err.message);
       });
     }
 

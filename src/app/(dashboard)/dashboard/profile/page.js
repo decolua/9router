@@ -1,24 +1,18 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
-import { useTranslations } from "next-intl";
 
 export default function ProfilePage() {
-  const t = useTranslations();
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
-  const [dbExporting, setDbExporting] = useState(false);
-  const [dbImporting, setDbImporting] = useState(false);
-  const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
-  const dbFileInputRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -36,7 +30,7 @@ export default function ProfilePage() {
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
-      setPassStatus({ type: "error", message: t("profile.security.passwordMismatch") });
+      setPassStatus({ type: "error", message: "Passwords do not match" });
       return;
     }
 
@@ -56,13 +50,13 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: t("profile.security.passwordUpdated") });
+        setPassStatus({ type: "success", message: "Password updated successfully" });
         setPasswords({ current: "", new: "", confirm: "" });
       } else {
-        setPassStatus({ type: "error", message: data.error || t("profile.security.passwordUpdateFailed") });
+        setPassStatus({ type: "error", message: data.error || "Failed to update password" });
       }
     } catch (err) {
-      setPassStatus({ type: "error", message: t("profile.common.genericError") });
+      setPassStatus({ type: "error", message: "An error occurred" });
     } finally {
       setPassLoading(false);
     }
@@ -116,68 +110,40 @@ export default function ProfilePage() {
     }
   };
 
-  const handleExportDb = async () => {
-    setDbExporting(true);
-    setDbStatus({ type: "", message: "" });
-    try {
-      const res = await fetch("/api/db?download=1");
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setDbStatus({ type: "error", message: data.error || t("profile.data.exportFailed") });
-        return;
-      }
+  const updateObservabilitySetting = async (key, value) => {
+    const numValue = parseInt(value);
+    if (isNaN(numValue) || numValue < 1) return;
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      const header = res.headers.get("content-disposition") || "";
-      const match = header.match(/filename="?([^";]+)"?/i);
-      anchor.href = url;
-      anchor.download = match?.[1] || "9router-db.json";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setDbStatus({ type: "success", message: t("profile.data.exportSuccess") });
-    } catch (error) {
-      setDbStatus({ type: "error", message: t("profile.data.exportFailed") });
-    } finally {
-      setDbExporting(false);
-    }
-  };
-
-  const handleImportDb = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setDbImporting(true);
-    setDbStatus({ type: "", message: "" });
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const res = await fetch("/api/db", {
-        method: "POST",
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: parsed }),
+        body: JSON.stringify({ [key]: numValue }),
       });
-      const result = await res.json();
-      if (!res.ok) {
-        setDbStatus({ type: "error", message: result.error || t("profile.data.importFailed") });
-        return;
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: numValue }));
       }
-
-      setDbStatus({ type: "success", message: t("profile.data.importSuccess") });
-    } catch (error) {
-      setDbStatus({ type: "error", message: t("profile.data.invalidJson") });
-    } finally {
-      setDbImporting(false);
-      event.target.value = "";
+    } catch (err) {
+      console.error(`Failed to update ${key}:`, err);
     }
   };
 
-  const handleImportClick = () => {
-    if (dbImporting) return;
-    dbFileInputRef.current?.click();
+  const updateObservabilityEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observabilityEnabled: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, observabilityEnabled: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update observabilityEnabled:", err);
+    }
   };
+
+  const observabilityEnabled = settings.observabilityEnabled !== false;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -189,13 +155,13 @@ export default function ProfilePage() {
               <span className="material-symbols-outlined text-2xl">computer</span>
             </div>
             <div>
-              <h2 className="text-xl font-semibold">{t("profile.localMode.title")}</h2>
-              <p className="text-text-muted">{t("profile.localMode.subtitle")}</p>
+              <h2 className="text-xl font-semibold">Local Mode</h2>
+              <p className="text-text-muted">Running on your machine</p>
             </div>
           </div>
           <div className="pt-4 border-t border-border">
             <p className="text-sm text-text-muted">
-              {t("profile.localMode.desc")} <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> {t("profile.localMode.descSuffix")}
+              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
             </p>
           </div>
         </Card>
@@ -206,13 +172,15 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
               <span className="material-symbols-outlined text-[20px]">shield</span>
             </div>
-            <h3 className="text-lg font-semibold">{t("profile.security.title")}</h3>
+            <h3 className="text-lg font-semibold">Security</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">{t("profile.security.requireLogin")}</p>
-                <p className="text-sm text-text-muted">{t("profile.security.requireLoginDesc")}</p>
+                <p className="font-medium">Require login</p>
+                <p className="text-sm text-text-muted">
+                  When ON, dashboard requires password. When OFF, access without login.
+                </p>
               </div>
               <Toggle
                 checked={settings.requireLogin === true}
@@ -224,10 +192,10 @@ export default function ProfilePage() {
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">{t("profile.security.currentPassword")}</label>
+                    <label className="text-sm font-medium">Current Password</label>
                     <Input
                       type="password"
-                      placeholder={t("profile.security.currentPasswordPlaceholder")}
+                      placeholder="Enter current password"
                       value={passwords.current}
                       onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
                       required
@@ -243,20 +211,20 @@ export default function ProfilePage() {
                 )} */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">{t("profile.security.newPassword")}</label>
+                    <label className="text-sm font-medium">New Password</label>
                     <Input
                       type="password"
-                      placeholder={t("profile.security.newPasswordPlaceholder")}
+                      placeholder="Enter new password"
                       value={passwords.new}
                       onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
                       required
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">{t("profile.security.confirmPassword")}</label>
+                    <label className="text-sm font-medium">Confirm New Password</label>
                     <Input
                       type="password"
-                      placeholder={t("profile.security.confirmPasswordPlaceholder")}
+                      placeholder="Confirm new password"
                       value={passwords.confirm}
                       onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
                       required
@@ -272,7 +240,7 @@ export default function ProfilePage() {
 
                 <div className="pt-2">
                   <Button type="submit" variant="primary" loading={passLoading}>
-                    {settings.hasPassword ? t("profile.security.updatePassword") : t("profile.security.setPassword")}
+                    {settings.hasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>
               </form>
@@ -286,13 +254,15 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <h3 className="text-lg font-semibold">{t("profile.routing.title")}</h3>
+            <h3 className="text-lg font-semibold">Routing Strategy</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">{t("profile.routing.roundRobin")}</p>
-                <p className="text-sm text-text-muted">{t("profile.routing.roundRobinDesc")}</p>
+                <p className="font-medium">Round Robin</p>
+                <p className="text-sm text-text-muted">
+                  Cycle through accounts to distribute load
+                </p>
               </div>
               <Toggle
                 checked={settings.fallbackStrategy === "round-robin"}
@@ -305,8 +275,10 @@ export default function ProfilePage() {
             {settings.fallbackStrategy === "round-robin" && (
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
-                  <p className="font-medium">{t("profile.routing.stickyLimit")}</p>
-                  <p className="text-sm text-text-muted">{t("profile.routing.stickyLimitDesc")}</p>
+                  <p className="font-medium">Sticky Limit</p>
+                  <p className="text-sm text-text-muted">
+                    Calls per account before switching
+                  </p>
                 </div>
                 <Input
                   type="number"
@@ -322,8 +294,8 @@ export default function ProfilePage() {
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
-                ? t("profile.routing.roundRobinStatus", { count: settings.stickyRoundRobinLimit || 3 })
-                : t("profile.routing.fillFirstStatus")}
+                ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
+                : "Currently using accounts in priority order (Fill First)."}
             </p>
           </div>
         </Card>
@@ -334,13 +306,15 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
               <span className="material-symbols-outlined text-[20px]">palette</span>
             </div>
-            <h3 className="text-lg font-semibold">{t("profile.appearance.title")}</h3>
+            <h3 className="text-lg font-semibold">Appearance</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">{t("profile.appearance.darkMode")}</p>
-                <p className="text-sm text-text-muted">{t("profile.appearance.darkModeDesc")}</p>
+                <p className="font-medium">Dark Mode</p>
+                <p className="text-sm text-text-muted">
+                  Switch between light and dark themes
+                </p>
               </div>
               <Toggle
                 checked={isDark}
@@ -366,7 +340,7 @@ export default function ProfilePage() {
                     <span className="material-symbols-outlined text-[20px]">
                       {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
                     </span>
-                    <span className="capitalize">{t(`profile.appearance.theme.${option}`)}</span>
+                    <span className="capitalize">{option}</span>
                   </button>
                 ))}
               </div>
@@ -380,44 +354,129 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
               <span className="material-symbols-outlined text-[20px]">database</span>
             </div>
-            <h3 className="text-lg font-semibold">{t("profile.data.title")}</h3>
+            <h3 className="text-lg font-semibold">Data</h3>
           </div>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
               <div>
-                <p className="font-medium">{t("profile.data.location")}</p>
+                <p className="font-medium">Database Location</p>
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="secondary" icon="download" onClick={handleExportDb} loading={dbExporting}>
-                {t("profile.data.export")}
-              </Button>
-              <input
-                ref={dbFileInputRef}
-                type="file"
-                accept="application/json,.json"
-                onChange={handleImportDb}
-                className="hidden"
-                disabled={dbImporting}
-              />
-              <Button variant="outline" icon="upload" onClick={handleImportClick} disabled={dbImporting}>
-                {t("profile.data.import")}
-              </Button>
-              <span className="text-xs text-text-muted">{t("profile.data.importHint")}</span>
+          </div>
+        </Card>
+
+        {/* Observability Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+              <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
-            {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
-                {dbStatus.message}
-              </p>
-            )}
+            <h3 className="text-lg font-semibold">Observability</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Enable Observability</p>
+                <p className="text-sm text-text-muted">
+                  Turn request detail recording on/off globally
+                </p>
+              </div>
+              <Toggle
+                checked={observabilityEnabled}
+                onChange={updateObservabilityEnabled}
+                disabled={loading}
+              />
+            </div>
+
+            <div className={cn("flex flex-col gap-4", !observabilityEnabled && "opacity-60")}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max Records</p>
+                <p className="text-sm text-text-muted">
+                  Maximum request detail records to keep (older records are auto-deleted)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10000"
+                step="100"
+                value={settings.observabilityMaxRecords || 1000}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxRecords", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Batch Size</p>
+                <p className="text-sm text-text-muted">
+                  Number of items to accumulate before writing to database (higher = better performance)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="5"
+                max="100"
+                step="5"
+                value={settings.observabilityBatchSize || 20}
+                onChange={(e) => updateObservabilitySetting("observabilityBatchSize", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Flush Interval (ms)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum time to wait before flushing buffer (prevents data loss during low traffic)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1000"
+                max="30000"
+                step="1000"
+                value={settings.observabilityFlushIntervalMs || 5000}
+                onChange={(e) => updateObservabilitySetting("observabilityFlushIntervalMs", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max JSON Size (KB)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum size for each JSON field (request/response) before truncation
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10240"
+                step="100"
+                value={settings.observabilityMaxJsonSize || 1024}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxJsonSize", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
+            </p>
+            </div>
           </div>
         </Card>
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">{t("profile.localMode.footer")}</p>
+          <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>
     </div>

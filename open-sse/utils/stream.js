@@ -106,8 +106,7 @@ export function createSSEStream(options = {}) {
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                const buffered = addBufferToUsage(estimated);
-                parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
+                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
@@ -212,8 +211,7 @@ export function createSSEStream(options = {}) {
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              const buffered = addBufferToUsage(estimated);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
+              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
