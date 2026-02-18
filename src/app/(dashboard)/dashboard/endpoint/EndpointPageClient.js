@@ -906,6 +906,10 @@ export default function APIPageClient({ machineId }) {
                 </div>
               ))}
             </div>
+          </div>
+        </Card>
+      )}
+
       {/* Setup Cloud Modal */}
       <Modal
         isOpen={showSetupModal}
