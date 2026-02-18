@@ -45,12 +45,18 @@ const defaultData = {
   providerConnections: [],
   providerNodes: [],
   modelAliases: {},
+  mitmAlias: {},
   combos: [],
   apiKeys: [],
   settings: {
     cloudEnabled: false,
     stickyRoundRobinLimit: 3,
-    requireLogin: true
+    requireLogin: true,
+    observabilityEnabled: true,
+    observabilityMaxRecords: 1000,
+    observabilityBatchSize: 20,
+    observabilityFlushIntervalMs: 5000,
+    observabilityMaxJsonSize: 1024
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -60,12 +66,18 @@ function cloneDefaultData() {
     providerConnections: [],
     providerNodes: [],
     modelAliases: {},
+    mitmAlias: {},
     combos: [],
     apiKeys: [],
     settings: {
       cloudEnabled: false,
       stickyRoundRobinLimit: 3,
       requireLogin: true,
+      observabilityEnabled: true,
+      observabilityMaxRecords: 1000,
+      observabilityBatchSize: 20,
+      observabilityFlushIntervalMs: 5000,
+      observabilityMaxJsonSize: 1024
     },
     pricing: {},
   };
@@ -493,6 +505,22 @@ export async function setModelAlias(alias, model) {
 export async function deleteModelAlias(alias) {
   const db = await getDb();
   delete db.data.modelAliases[alias];
+  await db.write();
+}
+
+// ============ MITM Alias ============
+
+export async function getMitmAlias(toolName) {
+  const db = await getDb();
+  const all = db.data.mitmAlias || {};
+  if (toolName) return all[toolName] || {};
+  return all;
+}
+
+export async function setMitmAliasAll(toolName, mappings) {
+  const db = await getDb();
+  if (!db.data.mitmAlias) db.data.mitmAlias = {};
+  db.data.mitmAlias[toolName] = mappings || {};
   await db.write();
 }
 
@@ -1186,6 +1214,17 @@ export async function isCloudEnabled() {
   return settings.cloudEnabled === true;
 }
 
+/**
+ * Get cloud URL (UI config > env > default)
+ */
+export async function getCloudUrl() {
+  const settings = await getSettings();
+  return settings.cloudUrl
+    || process.env.CLOUD_URL
+    || process.env.NEXT_PUBLIC_CLOUD_URL
+    || "";
+}
+
 // ============ Pricing ============
 
 /**
@@ -1257,6 +1296,7 @@ export async function getPricingForModel(provider, model) {
     iflow: "if",
     antigravity: "ag",
     github: "gh",
+    kiro: "kr",
     openai: "openai",
     anthropic: "anthropic",
     gemini: "gemini",

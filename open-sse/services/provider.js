@@ -36,9 +36,15 @@ function buildAnthropicCompatibleUrl(baseUrl) {
 
 // Detect request format from body structure
 export function detectFormat(body) {
-  // OpenAI Responses API: has input[] array instead of messages[]
-  if (body.input && Array.isArray(body.input)) {
+  // OpenAI Responses API: has input (array or string) instead of messages[]
+  // The Responses API accepts both input as array and input as a plain string
+  if (body.input && (Array.isArray(body.input) || typeof body.input === "string") && !body.messages) {
     return "openai-responses";
+  }
+
+  // Antigravity format: Gemini wrapped in body.request
+  if (body.request?.contents && body.userAgent === "antigravity") {
+    return "antigravity";
   }
 
   // Gemini format: has contents array

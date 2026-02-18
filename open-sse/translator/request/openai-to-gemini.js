@@ -86,6 +86,18 @@ function openaiToGeminiBase(model, body, stream) {
       } else if (role === "assistant") {
         const parts = [];
 
+        // Thinking/reasoning → thought part with signature
+        if (msg.reasoning_content) {
+          parts.push({
+            thought: true,
+            text: msg.reasoning_content
+          });
+          parts.push({
+            thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+            text: ""
+          });
+        }
+
         if (content) {
           const text = typeof content === "string" ? content : extractTextContent(content);
           if (text) {

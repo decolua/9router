@@ -101,7 +101,7 @@ export default function ProviderDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [providerId]);
+  }, [providerId, isCompatible]);
 
   const handleUpdateNode = async (formData) => {
     try {

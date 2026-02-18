@@ -1,0 +1,17 @@
+name = "9router"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[alias]
+"@/lib/usageDb.js" = "./src/stubs/usageDb.js"
+
+# Step 3: Paste your KV & D1 IDs here
+[[kv_namespaces]]
+binding = "KV"
+id = "YOUR_KV_NAMESPACE_ID"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "proxy-db"
+database_id = "YOUR_D1_DATABASE_ID"

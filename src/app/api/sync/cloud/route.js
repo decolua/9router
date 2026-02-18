@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, getModelAliases, getCombos, getApiKeys, createApiKey, updateProviderConnection, updateSettings } from "@/lib/localDb";
+import { getProviderConnections, getModelAliases, getCombos, getApiKeys, createApiKey, updateProviderConnection, updateSettings, getCloudUrl } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
 
-const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+const CLOUD_SYNC_TIMEOUT_MS = Number(process.env.CLOUD_SYNC_TIMEOUT_MS || 12000);
+
+async function getResolvedCloudUrl() {
+  return await getCloudUrl();
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = CLOUD_SYNC_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 /**
  * POST /api/sync/cloud
@@ -39,6 +53,8 @@ export async function POST(request) {
       case "disable":
         await updateSettings({ cloudEnabled: false });
         return handleDisable(machineId, request);
+      case "check":
+        return handleCheck();
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
@@ -54,28 +70,39 @@ export async function POST(request) {
  * @param {string|null} createdKey - Key created during enable
  */
 export async function syncToCloud(machineId, createdKey = null) {
+  const cloudUrl = await getResolvedCloudUrl();
+  if (!cloudUrl) {
+    return { error: "Cloud URL is not configured" };
+  }
+
   // Get current data from db
   const providers = await getProviderConnections();
   const modelAliases = await getModelAliases();
   const combos = await getCombos();
   const apiKeys = await getApiKeys();
 
-  // Send to Cloud
-  const response = await fetch(`${CLOUD_URL}/sync/${machineId}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      providers,
-      modelAliases,
-      combos,
-      apiKeys
-    })
-  });
+  let response;
+  try {
+    // Send to Cloud
+    response = await fetchWithTimeout(`${cloudUrl}/sync/${machineId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providers,
+        modelAliases,
+        combos,
+        apiKeys
+      })
+    });
+  } catch (error) {
+    const isTimeout = error?.name === "AbortError";
+    return { error: isTimeout ? "Cloud sync timeout" : "Cloud sync request failed" };
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
     console.log("Cloud sync failed:", errorText);
-    return NextResponse.json({ error: "Cloud sync failed" }, { status: 502 });
+    return { error: "Cloud sync failed" };
   }
 
   const result = await response.json();
@@ -119,7 +146,8 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
   }
 
   try {
-    const pingResponse = await fetch(`${CLOUD_URL}/${machineId}/v1/verify`, {
+    const cloudUrl = await getResolvedCloudUrl();
+    const pingResponse = await fetchWithTimeout(`${cloudUrl}/${machineId}/v1/verify`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
@@ -152,9 +180,23 @@ async function syncAndVerify(machineId, createdKey, existingKeys) {
  * Disable Cloud - delete cache and update Claude CLI settings
  */
 async function handleDisable(machineId, request) {
-  const response = await fetch(`${CLOUD_URL}/sync/${machineId}`, {
-    method: "DELETE"
-  });
+  const cloudUrl = await getResolvedCloudUrl();
+  if (!cloudUrl) {
+    return NextResponse.json({ error: "Cloud URL is not configured" }, { status: 500 });
+  }
+
+  let response;
+  try {
+    response = await fetchWithTimeout(`${cloudUrl}/sync/${machineId}`, {
+      method: "DELETE"
+    });
+  } catch (error) {
+    const isTimeout = error?.name === "AbortError";
+    return NextResponse.json(
+      { error: isTimeout ? "Cloud disable timeout" : "Failed to reach cloud service" },
+      { status: 502 }
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -164,7 +206,7 @@ async function handleDisable(machineId, request) {
 
   // Update Claude CLI settings to use local endpoint
   const host = request.headers.get("host") || "localhost:20128";
-  await updateClaudeSettingsToLocal(machineId, host);
+  await updateClaudeSettingsToLocal(machineId, host, cloudUrl);
 
   return NextResponse.json({
     success: true,
@@ -175,10 +217,10 @@ async function handleDisable(machineId, request) {
 /**
  * Update Claude CLI settings to use local endpoint (only if currently using cloud)
  */
-async function updateClaudeSettingsToLocal(machineId, host) {
+async function updateClaudeSettingsToLocal(machineId, host, cloudUrl) {
   try {
     const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
-    const cloudUrl = `${CLOUD_URL}/${machineId}`;
+    const cloudEndpoint = `${cloudUrl}/${machineId}`;
     const localUrl = `http://${host}`;
 
     // Read current settings
@@ -195,16 +237,40 @@ async function updateClaudeSettingsToLocal(machineId, host) {
 
     // Check if ANTHROPIC_BASE_URL matches cloud URL
     const currentUrl = settings.env?.ANTHROPIC_BASE_URL;
-    if (!currentUrl || currentUrl !== cloudUrl) {
+    if (!currentUrl || currentUrl !== cloudEndpoint) {
       return; // Not using cloud URL, don't modify
     }
 
     // Update to local URL
     settings.env.ANTHROPIC_BASE_URL = localUrl;
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
-    console.log(`Updated Claude CLI settings: ${cloudUrl} → ${localUrl}`);
+    console.log(`Updated Claude CLI settings: ${cloudEndpoint} → ${localUrl}`);
   } catch (error) {
     console.log("Failed to update Claude CLI settings:", error.message);
+  }
+}
+
+/**
+ * Check if cloud worker is reachable
+ */
+async function handleCheck() {
+  const cloudUrl = await getResolvedCloudUrl();
+  if (!cloudUrl) {
+    return NextResponse.json({ error: "Cloud URL is not configured" }, { status: 400 });
+  }
+
+  try {
+    const res = await fetchWithTimeout(`${cloudUrl}/health`, { method: "GET" }, 5000);
+    if (res.ok) {
+      return NextResponse.json({ success: true, message: "Worker is running" });
+    }
+    return NextResponse.json({ error: `Worker responded with ${res.status}` }, { status: 502 });
+  } catch (error) {
+    const isTimeout = error?.name === "AbortError";
+    return NextResponse.json(
+      { error: isTimeout ? "Worker request timeout" : "Cannot reach worker" },
+      { status: 502 }
+    );
   }
 }
 

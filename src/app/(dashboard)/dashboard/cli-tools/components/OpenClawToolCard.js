@@ -4,8 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
-const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
-
 export default function OpenClawToolCard({
   tool,
   isExpanded,
@@ -33,9 +31,8 @@ export default function OpenClawToolCard({
     if (!openclawStatus?.installed) return null;
     const currentProvider = openclawStatus.settings?.models?.providers?.["9router"];
     if (!currentProvider) return "not_configured";
-    const localMatch = currentProvider.baseUrl?.includes("localhost") || currentProvider.baseUrl?.includes("127.0.0.1");
-    const cloudMatch = cloudEnabled && CLOUD_URL && currentProvider.baseUrl?.startsWith(CLOUD_URL);
-    if (localMatch || cloudMatch) return "configured";
+    const localMatch = currentProvider.baseUrl?.includes("localhost") || currentProvider.baseUrl?.includes("127.0.0.1") || currentProvider.baseUrl?.includes("0.0.0.0");
+    if (localMatch) return "configured";
     return "other";
   };
 
@@ -94,13 +91,22 @@ export default function OpenClawToolCard({
     }
   };
 
+  const normalizeLocalhost = (url) => url.replace("://localhost", "://127.0.0.1");
+
+  const getLocalBaseUrl = () => {
+    if (typeof window !== "undefined") {
+      return normalizeLocalhost(window.location.origin);
+    }
+    return "http://127.0.0.1:20128";
+  };
+
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || baseUrl;
+    const url = customBaseUrl || getLocalBaseUrl();
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
   const getDisplayUrl = () => {
-    const url = customBaseUrl || baseUrl;
+    const url = customBaseUrl || getLocalBaseUrl();
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 

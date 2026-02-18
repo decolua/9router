@@ -360,6 +360,7 @@ export default function ProfilePage() {
                 {["light", "dark", "system"].map((option) => (
                   <button
                     key={option}
+                    type="button"
                     onClick={() => setTheme(option)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all",

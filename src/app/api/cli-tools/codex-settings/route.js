@@ -75,7 +75,7 @@ const toToml = (parsed) => {
 const checkCodexInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where codex" : "which codex";
+    const command = isWindows ? "where codex" : "command -v codex";
     await execAsync(command);
     return true;
   } catch {

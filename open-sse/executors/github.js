@@ -1,9 +1,15 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS } from "../config/constants.js";
+import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
+import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
+import { initState } from "../translator/index.js";
+import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
+import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
   constructor() {
     super("github", PROVIDERS.github);
+    this.knownCodexModels = new Set();
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -25,6 +31,107 @@ export class GithubExecutor extends BaseExecutor {
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
       "Accept": stream ? "text/event-stream" : "application/json"
+    };
+  }
+
+  async execute(options) {
+    const { model, log } = options;
+
+    if (this.knownCodexModels.has(model)) {
+      log?.debug("GITHUB", `Using cached /responses route for ${model}`);
+      return this.executeWithResponsesEndpoint(options);
+    }
+
+    const result = await super.execute(options);
+
+    if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
+      const errorBody = await result.response.clone().text();
+      
+      if (errorBody.includes("not accessible via the /chat/completions endpoint")) {
+        log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
+        this.knownCodexModels.add(model);
+        return this.executeWithResponsesEndpoint(options);
+      }
+    }
+
+    return result;
+  }
+
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
+    const url = this.config.responsesUrl;
+    const headers = this.buildHeaders(credentials, stream);
+    
+    const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
+
+    log?.debug("GITHUB", "Sending translated request to /responses");
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(transformedBody),
+      signal
+    });
+
+    if (!response.ok) {
+      return { response, url, headers, transformedBody };
+    }
+
+    const state = initState("openai-responses");
+    state.model = model;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const transformStream = new TransformStream({
+      async transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+        
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          const parsed = parseSSELine(trimmed);
+          if (!parsed) continue;
+
+          if (parsed.done) {
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            continue;
+          }
+
+          const converted = openaiResponsesToOpenAIResponse(parsed, state);
+          if (converted) {
+            const sseString = formatSSE(converted, "openai");
+            controller.enqueue(new TextEncoder().encode(sseString));
+          }
+        }
+      },
+      flush(controller) {
+        if (buffer.trim()) {
+           const parsed = parseSSELine(buffer.trim());
+           if (parsed && !parsed.done) {
+             const converted = openaiResponsesToOpenAIResponse(parsed, state);
+             if (converted) {
+               controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
+             }
+           }
+        }
+      }
+    });
+
+    const convertedStream = response.body.pipeThrough(transformStream);
+
+    return {
+      response: new Response(convertedStream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      }),
+      url,
+      headers,
+      transformedBody
     };
   }
 

@@ -99,29 +99,49 @@ export async function POST(request) {
           break;
 
         case "glm":
+        case "glm-cn":
         case "kimi":
         case "minimax":
         case "minimax-cn": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
+            "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
             kimi: "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
             "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
           };
-          const claudeRes = await fetch(claudeBaseUrls[provider], {
-            method: "POST",
-            headers: {
-              "x-api-key": apiKey,
-              "anthropic-version": "2023-06-01",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 1,
-              messages: [{ role: "user", content: "test" }],
-            }),
-          });
-          isValid = claudeRes.status !== 401;
+
+          // glm-cn uses OpenAI format
+          if (provider === "glm-cn") {
+            const glmCnRes = await fetch(claudeBaseUrls[provider], {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${apiKey}`,
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "glm-4.7",
+                max_tokens: 1,
+                messages: [{ role: "user", content: "test" }],
+              }),
+            });
+            isValid = glmCnRes.status !== 401 && glmCnRes.status !== 403;
+          } else {
+            const claudeRes = await fetch(claudeBaseUrls[provider], {
+              method: "POST",
+              headers: {
+                "x-api-key": apiKey,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1,
+                messages: [{ role: "user", content: "test" }],
+              }),
+            });
+            isValid = claudeRes.status !== 401;
+          }
           break;
         }
 

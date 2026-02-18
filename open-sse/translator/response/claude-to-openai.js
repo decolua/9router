@@ -34,6 +34,11 @@ export function claudeToOpenAIResponse(chunk, state) {
 
     case "content_block_start": {
       const block = chunk.content_block;
+      if (block?.type === "server_tool_use") {
+        // Built-in tool (web search) - Claude handles internally, skip
+        state.serverToolBlockIndex = chunk.index;
+        break;
+      }
       if (block?.type === "text") {
         state.textBlockStarted = true;
       } else if (block?.type === "thinking") {
@@ -60,11 +65,13 @@ export function claudeToOpenAIResponse(chunk, state) {
     }
 
     case "content_block_delta": {
+      // Skip deltas for built-in server tool blocks (web search)
+      if (chunk.index === state.serverToolBlockIndex) break;
       const delta = chunk.delta;
       if (delta?.type === "text_delta" && delta.text) {
         results.push(createChunk(state, { content: delta.text }));
       } else if (delta?.type === "thinking_delta" && delta.thinking) {
-        results.push(createChunk(state, { content: delta.thinking }));
+        results.push(createChunk(state, { reasoning_content: delta.thinking }));
       } else if (delta?.type === "input_json_delta" && delta.partial_json) {
         const toolCall = state.toolCalls.get(chunk.index);
         if (toolCall) {
@@ -82,8 +89,13 @@ export function claudeToOpenAIResponse(chunk, state) {
     }
 
     case "content_block_stop": {
+      // Skip stop for built-in server tool blocks (web search)
+      if (chunk.index === state.serverToolBlockIndex) {
+        state.serverToolBlockIndex = -1;
+        break;
+      }
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
+        results.push(createChunk(state, { reasoning_content: "" }));
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;

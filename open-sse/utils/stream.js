@@ -28,6 +28,8 @@ const STREAM_MODE = {
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {object} options.body - Request body (for input token estimation)
+ * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
+ * @param {string} options.apiKey - API key for usage tracking
  */
 export function createSSEStream(options = {}) {
   const {
@@ -40,20 +42,25 @@ export function createSSEStream(options = {}) {
     model = null,
     connectionId = null,
     body = null,
-    apiKeyId = null,
+    onStreamComplete = null,
+    apiKey = null
   } = options;
 
   let buffer = "";
   let usage = null;
 
-  // State for translate mode
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap } : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
-  // Track content length for usage estimation (both modes)
   let totalContentLength = 0;
+  let accumulatedContent = "";
+  let accumulatedThinking = "";
+  let ttftAt = null;
 
   return new TransformStream({
     transform(chunk, controller) {
+      if (!ttftAt) {
+        ttftAt = Date.now();
+      }
       const text = sharedDecoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -80,9 +87,15 @@ export function createSSEStream(options = {}) {
               }
 
               const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content || delta?.reasoning_content;
+              const content = delta?.content;
+              const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
+                accumulatedContent += content;
+              }
+              if (reasoning && typeof reasoning === "string") {
+                totalContentLength += reasoning.length;
+                accumulatedThinking += reasoning;
               }
 
               const extracted = extractUsage(parsed);
@@ -136,30 +149,39 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
-        // Track content length for estimation (from various formats)
-        // Include both regular content and reasoning/thinking content
-        
-        // Claude format
+        // Claude format - content
         if (parsed.delta?.text) {
           totalContentLength += parsed.delta.text.length;
+          accumulatedContent += parsed.delta.text;
         }
+        // Claude format - thinking
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
+          accumulatedThinking += parsed.delta.thinking;
         }
         
-        // OpenAI format
+        // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
+          accumulatedContent += parsed.choices[0].delta.content;
         }
+        // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
+          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format - may have multiple parts
+        // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
+              // Check if this is thinking content
+              if (part.thought === true) {
+                accumulatedThinking += part.text;
+              } else {
+                accumulatedContent += part.text;
+              }
             }
           }
         }
@@ -223,26 +245,30 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
           }
 
-          // Estimate usage if provider didn't return valid usage (PASSTHROUGH is always OpenAI format)
           if (!hasValidUsage(usage) && totalContentLength > 0) {
             usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
           }
 
           if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId, apiKeyId);
+            logUsage(provider, usage, model, connectionId, apiKey);
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          }
+          
+          if (onStreamComplete) {
+            onStreamComplete({
+              content: accumulatedContent,
+              thinking: accumulatedThinking
+            }, usage, ttftAt);
           }
           return;
         }
 
-        // Translate mode: process remaining buffer
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
-            // Log OpenAI intermediate chunks
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
                 const openaiOutput = formatSSE(item, FORMATS.OPENAI);
@@ -260,10 +286,8 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        // Flush remaining events (only once at stream end)
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
 
-        // Log OpenAI intermediate chunks for flushed events
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
             const openaiOutput = formatSSE(item, FORMATS.OPENAI);
@@ -279,20 +303,25 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        // Send [DONE] and log usage
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
 
-        // Estimate usage if provider didn't return valid usage (for translate mode)
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
         if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKeyId);
+          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+        }
+        
+        if (onStreamComplete) {
+          onStreamComplete({
+            content: accumulatedContent,
+            thinking: accumulatedThinking
+          }, state?.usage, ttftAt);
         }
       } catch (error) {
         console.log("Error in flush:", error);
@@ -301,8 +330,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-// Convenience functions for backward compatibility
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, apiKeyId = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -313,11 +341,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     model,
     connectionId,
     body,
-    apiKeyId,
+    onStreamComplete,
+    apiKey
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, apiKeyId = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -325,6 +354,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     model,
     connectionId,
     body,
-    apiKeyId,
+    onStreamComplete,
+    apiKey
   });
 }

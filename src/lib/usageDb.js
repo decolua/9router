@@ -139,7 +139,7 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId? }
+ * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
@@ -418,7 +418,7 @@ export async function getUsageStats(filter = {}) {
     totalRequests: history.length,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
-    totalCost: 0, // NEW
+    totalCost: 0,
     byProvider: {},
     byModel: {},
     byAccount: {},
@@ -605,7 +605,69 @@ export async function getUsageStats(filter = {}) {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
       }
     }
+
+    // Handle requests with API key
+    if (entry.apiKey && typeof entry.apiKey === "string") {
+      const keyInfo = apiKeyMap[entry.apiKey];
+      const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
+      // Use full API key to avoid collisions (keys with same prefix)
+      const apiKeyKey = entry.apiKey;
+      // Group by API Key + Model + Provider combination to track different models used with the same key
+      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
+
+      if (!stats.byApiKey[apiKeyModelKey]) {
+        stats.byApiKey[apiKeyModelKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: entry.apiKey,
+          keyName: keyName,
+          apiKeyKey: apiKeyKey,
+          lastUsed: entry.timestamp
+        };
+      }
+      const apiKeyEntry = stats.byApiKey[apiKeyModelKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
+      }
+    } else {
+      const apiKeyKey = "local-no-key";
+      const keyName = "Local (No API Key)";
+
+      if (!stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: null,
+          keyName: keyName,
+          apiKeyKey: apiKeyKey,
+          lastUsed: entry.timestamp
+        };
+      }
+      const apiKeyEntry = stats.byApiKey[apiKeyKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
+      }
+    }
   }
 
   return stats;
 }
+
+// Re-export request details functions from new SQLite-based module
+export { saveRequestDetail, getRequestDetails, getRequestDetailById } from "./requestDetailsDb.js";
