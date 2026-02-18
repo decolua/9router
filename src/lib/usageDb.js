@@ -26,6 +26,8 @@ function getAppName() {
 function getUserDataDir() {
   if (isCloud) return "/tmp"; // Fallback for Workers
 
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+
   try {
     const platform = process.platform;
     const homeDir = os.homedir();
@@ -139,7 +141,7 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId? }
+ * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
@@ -157,12 +159,7 @@ export async function saveRequestUsage(entry) {
       db.data.history = [];
     }
 
-    const cleanedEntry = { ...entry };
-    if (cleanedEntry.apiKeyId === undefined) {
-      delete cleanedEntry.apiKeyId;
-    }
-
-    db.data.history.push(cleanedEntry);
+    db.data.history.push(entry);
 
     // Optional: Limit history size if needed in future
     // if (db.data.history.length > 10000) db.data.history.shift();
@@ -198,10 +195,6 @@ export async function getUsageHistory(filter = {}) {
   if (filter.endDate) {
     const end = new Date(filter.endDate).getTime();
     history = history.filter(h => new Date(h.timestamp).getTime() <= end);
-  }
-
-  if (filter.apiKeyId) {
-    history = history.filter(h => h.apiKeyId === filter.apiKeyId);
   }
 
   return history;
@@ -354,29 +347,11 @@ async function calculateCost(provider, model, tokens) {
 /**
  * Get aggregated usage stats
  */
-export async function getUsageStats(filter = {}) {
+export async function getUsageStats() {
   const db = await getUsageDb();
-  let history = db.data.history || [];
+  const history = db.data.history || [];
 
-  if (filter.apiKeyId) {
-    history = history.filter((entry) => entry.apiKeyId === filter.apiKeyId);
-  }
-
-  if (filter.startDate) {
-    const startMs = new Date(filter.startDate).getTime();
-    if (Number.isFinite(startMs)) {
-      history = history.filter((entry) => new Date(entry.timestamp).getTime() >= startMs);
-    }
-  }
-
-  if (filter.endDate) {
-    const endMs = new Date(filter.endDate).getTime();
-    if (Number.isFinite(endMs)) {
-      history = history.filter((entry) => new Date(entry.timestamp).getTime() <= endMs);
-    }
-  }
-
-  // Import localDb to get provider connection names
+  // Import localDb to get provider connection names and API keys
   const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
 
   // Fetch all provider connections to get account names
@@ -394,6 +369,7 @@ export async function getUsageStats(filter = {}) {
     connectionMap[conn.id] = conn.name || conn.email || conn.id;
   }
 
+  // Fetch all API keys to get key names
   let allApiKeys = [];
   try {
     allApiKeys = await getApiKeys();
@@ -401,16 +377,13 @@ export async function getUsageStats(filter = {}) {
     console.warn("Could not fetch API keys for usage stats:", error.message);
   }
 
+  // Create a map from API key to key info
   const apiKeyMap = {};
   for (const key of allApiKeys) {
-    apiKeyMap[key.id] = {
-      name: key.name || key.id,
-      requestLimit: key.requestLimit || 0,
-      tokenLimit: key.tokenLimit || 0,
-      requestUsed: key.requestUsed || 0,
-      tokenUsed: key.tokenUsed || 0,
-      requestRemaining: key.requestRemaining ?? null,
-      tokenRemaining: key.tokenRemaining ?? null,
+    apiKeyMap[key.key] = {
+      name: key.name,
+      id: key.id,
+      createdAt: key.createdAt
     };
   }
 
@@ -418,12 +391,11 @@ export async function getUsageStats(filter = {}) {
     totalRequests: history.length,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
-    totalCost: 0, // NEW
+    totalCost: 0,
     byProvider: {},
     byModel: {},
     byAccount: {},
     byApiKey: {},
-    byApiKeyByModel: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: []
@@ -529,55 +501,6 @@ export async function getUsageStats(filter = {}) {
       stats.byModel[modelKey].lastUsed = entry.timestamp;
     }
 
-    if (entry.apiKeyId) {
-      const apiKeyId = entry.apiKeyId;
-      if (!stats.byApiKey[apiKeyId]) {
-        const meta = apiKeyMap[apiKeyId] || {};
-        stats.byApiKey[apiKeyId] = {
-          apiKeyId,
-          name: meta.name || apiKeyId,
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cost: 0,
-          lastUsed: entry.timestamp,
-          requestLimit: meta.requestLimit || 0,
-          tokenLimit: meta.tokenLimit || 0,
-          requestRemaining: meta.requestRemaining ?? null,
-          tokenRemaining: meta.tokenRemaining ?? null,
-        };
-      }
-
-      stats.byApiKey[apiKeyId].requests++;
-      stats.byApiKey[apiKeyId].promptTokens += promptTokens;
-      stats.byApiKey[apiKeyId].completionTokens += completionTokens;
-      stats.byApiKey[apiKeyId].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byApiKey[apiKeyId].lastUsed)) {
-        stats.byApiKey[apiKeyId].lastUsed = entry.timestamp;
-      }
-
-      const modelMap = stats.byApiKeyByModel[apiKeyId] || {};
-      if (!modelMap[modelKey]) {
-        modelMap[modelKey] = {
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cost: 0,
-          rawModel: entry.model,
-          provider: entry.provider,
-          lastUsed: entry.timestamp,
-        };
-      }
-      modelMap[modelKey].requests++;
-      modelMap[modelKey].promptTokens += promptTokens;
-      modelMap[modelKey].completionTokens += completionTokens;
-      modelMap[modelKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(modelMap[modelKey].lastUsed)) {
-        modelMap[modelKey].lastUsed = entry.timestamp;
-      }
-      stats.byApiKeyByModel[apiKeyId] = modelMap;
-    }
-
     // By Account (model + oauth account)
     // Use connectionId if available, otherwise fallback to provider name
     if (entry.connectionId) {
@@ -605,7 +528,69 @@ export async function getUsageStats(filter = {}) {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
       }
     }
+
+    // Handle requests with API key
+    if (entry.apiKey && typeof entry.apiKey === "string") {
+      const keyInfo = apiKeyMap[entry.apiKey];
+      const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
+      // Use full API key to avoid collisions (keys with same prefix)
+      const apiKeyKey = entry.apiKey;
+      // Group by API Key + Model + Provider combination to track different models used with the same key
+      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
+
+      if (!stats.byApiKey[apiKeyModelKey]) {
+        stats.byApiKey[apiKeyModelKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: entry.apiKey,
+          keyName: keyName,
+          apiKeyKey: apiKeyKey,
+          lastUsed: entry.timestamp
+        };
+      }
+      const apiKeyEntry = stats.byApiKey[apiKeyModelKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
+      }
+    } else {
+      const apiKeyKey = "local-no-key";
+      const keyName = "Local (No API Key)";
+
+      if (!stats.byApiKey[apiKeyKey]) {
+        stats.byApiKey[apiKeyKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          apiKey: null,
+          keyName: keyName,
+          apiKeyKey: apiKeyKey,
+          lastUsed: entry.timestamp
+        };
+      }
+      const apiKeyEntry = stats.byApiKey[apiKeyKey];
+      apiKeyEntry.requests++;
+      apiKeyEntry.promptTokens += promptTokens;
+      apiKeyEntry.completionTokens += completionTokens;
+      apiKeyEntry.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+        apiKeyEntry.lastUsed = entry.timestamp;
+      }
+    }
   }
 
   return stats;
 }
+
+// Re-export request details functions from new SQLite-based module
+export { saveRequestDetail, getRequestDetails, getRequestDetailById } from "./requestDetailsDb.js";

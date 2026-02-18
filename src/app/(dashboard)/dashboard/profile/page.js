@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
@@ -13,10 +13,6 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
-  const [dbExporting, setDbExporting] = useState(false);
-  const [dbImporting, setDbImporting] = useState(false);
-  const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
-  const dbFileInputRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -114,68 +110,40 @@ export default function ProfilePage() {
     }
   };
 
-  const handleExportDb = async () => {
-    setDbExporting(true);
-    setDbStatus({ type: "", message: "" });
-    try {
-      const res = await fetch("/api/db?download=1");
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setDbStatus({ type: "error", message: data.error || "Failed to export database" });
-        return;
-      }
+  const updateObservabilitySetting = async (key, value) => {
+    const numValue = parseInt(value);
+    if (isNaN(numValue) || numValue < 1) return;
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      const header = res.headers.get("content-disposition") || "";
-      const match = header.match(/filename="?([^";]+)"?/i);
-      anchor.href = url;
-      anchor.download = match?.[1] || "9router-db.json";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-      setDbStatus({ type: "success", message: "Database exported" });
-    } catch (error) {
-      setDbStatus({ type: "error", message: "Failed to export database" });
-    } finally {
-      setDbExporting(false);
-    }
-  };
-
-  const handleImportDb = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setDbImporting(true);
-    setDbStatus({ type: "", message: "" });
     try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const res = await fetch("/api/db", {
-        method: "POST",
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ data: parsed }),
+        body: JSON.stringify({ [key]: numValue }),
       });
-      const result = await res.json();
-      if (!res.ok) {
-        setDbStatus({ type: "error", message: result.error || "Failed to import database" });
-        return;
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: numValue }));
       }
-
-      setDbStatus({ type: "success", message: "Database imported. Reload to apply." });
-    } catch (error) {
-      setDbStatus({ type: "error", message: "Invalid JSON file" });
-    } finally {
-      setDbImporting(false);
-      event.target.value = "";
+    } catch (err) {
+      console.error(`Failed to update ${key}:`, err);
     }
   };
 
-  const handleImportClick = () => {
-    if (dbImporting) return;
-    dbFileInputRef.current?.click();
+  const updateObservabilityEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observabilityEnabled: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, observabilityEnabled: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update observabilityEnabled:", err);
+    }
   };
+
+  const observabilityEnabled = settings.observabilityEnabled !== false;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -360,6 +328,7 @@ export default function ProfilePage() {
                 {["light", "dark", "system"].map((option) => (
                   <button
                     key={option}
+                    type="button"
                     onClick={() => setTheme(option)}
                     className={cn(
                       "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all",
@@ -394,28 +363,113 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="secondary" icon="download" onClick={handleExportDb} loading={dbExporting}>
-                Export Database
-              </Button>
-              <input
-                ref={dbFileInputRef}
-                type="file"
-                accept="application/json,.json"
-                onChange={handleImportDb}
-                className="hidden"
-                disabled={dbImporting}
-              />
-              <Button variant="outline" icon="upload" onClick={handleImportClick} disabled={dbImporting}>
-                Import Database
-              </Button>
-              <span className="text-xs text-text-muted">Import replaces all local data.</span>
+          </div>
+        </Card>
+
+        {/* Observability Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+              <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
-            {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
-                {dbStatus.message}
-              </p>
-            )}
+            <h3 className="text-lg font-semibold">Observability</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Enable Observability</p>
+                <p className="text-sm text-text-muted">
+                  Turn request detail recording on/off globally
+                </p>
+              </div>
+              <Toggle
+                checked={observabilityEnabled}
+                onChange={updateObservabilityEnabled}
+                disabled={loading}
+              />
+            </div>
+
+            <div className={cn("flex flex-col gap-4", !observabilityEnabled && "opacity-60")}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max Records</p>
+                <p className="text-sm text-text-muted">
+                  Maximum request detail records to keep (older records are auto-deleted)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10000"
+                step="100"
+                value={settings.observabilityMaxRecords || 1000}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxRecords", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Batch Size</p>
+                <p className="text-sm text-text-muted">
+                  Number of items to accumulate before writing to database (higher = better performance)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="5"
+                max="100"
+                step="5"
+                value={settings.observabilityBatchSize || 20}
+                onChange={(e) => updateObservabilitySetting("observabilityBatchSize", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Flush Interval (ms)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum time to wait before flushing buffer (prevents data loss during low traffic)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1000"
+                max="30000"
+                step="1000"
+                value={settings.observabilityFlushIntervalMs || 5000}
+                onChange={(e) => updateObservabilitySetting("observabilityFlushIntervalMs", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Max JSON Size (KB)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum size for each JSON field (request/response) before truncation
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="100"
+                max="10240"
+                step="100"
+                value={settings.observabilityMaxJsonSize || 1024}
+                onChange={(e) => updateObservabilitySetting("observabilityMaxJsonSize", parseInt(e.target.value))}
+                disabled={loading || !observabilityEnabled}
+                className="w-28 text-center"
+              />
+            </div>
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
+            </p>
+            </div>
           </div>
         </Card>
 

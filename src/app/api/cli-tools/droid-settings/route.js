@@ -16,7 +16,7 @@ const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 const checkDroidInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "which droid";
+    const command = isWindows ? "where droid" : "command -v droid";
     await execAsync(command);
     return true;
   } catch {

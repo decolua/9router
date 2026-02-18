@@ -1,4 +1,11 @@
-import { getProviderCredentials, markAccountUnavailable, clearAccountError } from "../services/auth.js";
+import {
+  getProviderCredentials,
+  markAccountUnavailable,
+  clearAccountError,
+  extractApiKey,
+  isValidApiKey,
+} from "../services/auth.js";
+import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -12,7 +19,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null, context = {}) {
+export async function handleChat(request, clientRawRequest = null) {
   let body;
   try {
     body = await request.json();
@@ -42,12 +49,27 @@ export async function handleChat(request, clientRawRequest = null, context = {})
   log.request("POST", `${url.pathname} | ${modelStr} | ${msgCount} msgs${toolCount ? ` | ${toolCount} tools` : ""}${effort ? ` | effort=${effort}` : ""}`);
 
   // Log API key (masked)
-  const apiKey = request.headers.get("Authorization");
-  if (apiKey) {
-    const masked = log.maskKey(apiKey.replace("Bearer ", ""));
+  const authHeader = request.headers.get("Authorization");
+  const apiKey = extractApiKey(request);
+  if (authHeader && apiKey) {
+    const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
+  }
+
+  // Enforce API key if enabled in settings
+  const settings = await getSettings();
+  if (settings.requireApiKey) {
+    if (!apiKey) {
+      log.warn("AUTH", "Missing API key (requireApiKey=true)");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
   }
 
   if (!modelStr) {
@@ -62,19 +84,19 @@ export async function handleChat(request, clientRawRequest = null, context = {})
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, context),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
       log
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, context);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, context = {}) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -99,7 +121,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionId);
+    const credentials = await getProviderCredentials(provider, excludeConnectionId, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -132,6 +154,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       clientRawRequest,
       connectionId: credentials.connectionId,
       userAgent,
+      apiKey,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
@@ -142,14 +165,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials);
-      },
-      apiKeyId: context.apiKeyId || null
+      }
     });
     
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider);
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     
     if (shouldFallback) {
       log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);

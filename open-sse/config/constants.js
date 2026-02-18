@@ -39,9 +39,8 @@ export const PROVIDERS = {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
     format: "openai-responses", // Use OpenAI Responses API format (reuse translator)
     headers: {
-      "Version": "0.92.0",
-      "Openai-Beta": "responses=experimental",
-      "User-Agent": "codex-cli/0.92.0 (Windows 10.0.26100; x64)"
+      "originator": "codex-cli",
+      "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     // OpenAI OAuth configuration
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
@@ -104,6 +103,11 @@ export const PROVIDERS = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
+  "glm-cn": {
+    baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   kimi: {
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
@@ -130,6 +134,7 @@ export const PROVIDERS = {
   },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
+    responsesUrl: "https://api.githubcopilot.com/responses",
     format: "openai", // GitHub Copilot uses OpenAI-compatible format
     headers: {
       "copilot-integration-id": "vscode-chat",
@@ -241,6 +246,7 @@ export const ERROR_TYPES = {
   [HTTP_STATUS.UNAUTHORIZED]: { type: "authentication_error", code: "invalid_api_key" },
   [HTTP_STATUS.FORBIDDEN]: { type: "permission_error", code: "insufficient_quota" },
   [HTTP_STATUS.NOT_FOUND]: { type: "invalid_request_error", code: "model_not_found" },
+  [HTTP_STATUS.NOT_ACCEPTABLE]: { type: "invalid_request_error", code: "model_not_supported" },
   [HTTP_STATUS.RATE_LIMITED]: { type: "rate_limit_error", code: "rate_limit_exceeded" },
   [HTTP_STATUS.SERVER_ERROR]: { type: "server_error", code: "internal_server_error" },
   [HTTP_STATUS.BAD_GATEWAY]: { type: "server_error", code: "bad_gateway" },
@@ -254,6 +260,7 @@ export const DEFAULT_ERROR_MESSAGES = {
   [HTTP_STATUS.UNAUTHORIZED]: "Invalid API key provided",
   [HTTP_STATUS.FORBIDDEN]: "You exceeded your current quota",
   [HTTP_STATUS.NOT_FOUND]: "Model not found",
+  [HTTP_STATUS.NOT_ACCEPTABLE]: "Model not supported",
   [HTTP_STATUS.RATE_LIMITED]: "Rate limit exceeded",
   [HTTP_STATUS.SERVER_ERROR]: "Internal server error",
   [HTTP_STATUS.BAD_GATEWAY]: "Bad gateway - upstream provider error",

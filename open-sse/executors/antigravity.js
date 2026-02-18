@@ -12,8 +12,8 @@ export class AntigravityExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0) {
     const baseUrls = this.getBaseUrls();
     const baseUrl = baseUrls[urlIndex] || baseUrls[0];
-    const path = stream ? "/v1internal:streamGenerateContent?alt=sse" : "/v1internal:generateContent";
-    return `${baseUrl}${path}`;
+    const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
+    return `${baseUrl}/v1internal:${action}`;
   }
 
   buildHeaders(credentials, stream = true) {
@@ -21,6 +21,7 @@ export class AntigravityExecutor extends BaseExecutor {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || "antigravity/1.104.0 darwin/arm64",
+      "X-9Router-Source": "9router",
       ...(stream && { "Accept": "text/event-stream" })
     };
   }
@@ -28,8 +29,28 @@ export class AntigravityExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
     
+    // Fix contents for Claude models via Antigravity
+    const contents = body.request?.contents?.map(c => {
+      let role = c.role;
+      // functionResponse must be role "user" for Claude models
+      if (c.parts?.some(p => p.functionResponse)) {
+        role = "user";
+      }
+      // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
+      const parts = c.parts?.filter(p => {
+        if (p.thought && !p.functionCall) return false;
+        if (p.thoughtSignature && !p.functionCall && !p.text) return false;
+        return true;
+      });
+      if (role !== c.role || parts?.length !== c.parts?.length) {
+        return { ...c, role, parts };
+      }
+      return c;
+    });
+
     const transformedRequest = {
       ...body.request,
+      ...(contents && { contents }),
       sessionId: body.request?.sessionId || this.generateSessionId(),
       safetySettings: undefined,
       toolConfig: body.request?.tools?.length > 0 

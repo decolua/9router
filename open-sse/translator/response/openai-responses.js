@@ -368,7 +368,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         id: state.chatId || `chatcmpl-${Date.now()}`,
         object: "chat.completion.chunk",
         created: state.created || Math.floor(Date.now() / 1000),
-        model: state.model || "gpt-4",
+        model: state.model || "unknown",
         choices: [{
           index: 0,
           delta: {},
@@ -401,7 +401,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       id: state.chatId,
       object: "chat.completion.chunk",
       created: state.created,
-      model: state.model || "gpt-4",
+      model: state.model || "unknown",
       choices: [{
         index: 0,
         delta: { content: delta },
@@ -424,7 +424,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       id: state.chatId,
       object: "chat.completion.chunk",
       created: state.created,
-      model: state.model || "gpt-4",
+      model: state.model || "unknown",
       choices: [{
         index: 0,
         delta: {
@@ -452,7 +452,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       id: state.chatId,
       object: "chat.completion.chunk",
       created: state.created,
-      model: state.model || "gpt-4",
+      model: state.model || "unknown",
       choices: [{
         index: 0,
         delta: {
@@ -511,7 +511,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         id: state.chatId,
         object: "chat.completion.chunk",
         created: state.created,
-        model: state.model || "gpt-4",
+        model: state.model || "unknown",
         choices: [{
           index: 0,
           delta: {},
@@ -525,6 +525,32 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       }
       
       return finalChunk;
+    }
+    return null;
+  }
+
+  // Error events from Responses API (e.g. model_not_found)
+  if (eventType === "error" || eventType === "response.failed") {
+    // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
+    if (state.finishReasonSent) return null;
+
+    const error = data.error || data.response?.error;
+    if (error) {
+      state.error = error;
+      state.finishReasonSent = true;
+
+      // Surface the error as an OpenAI-compatible error chunk
+      return {
+        id: state.chatId || `chatcmpl-${Date.now()}`,
+        object: "chat.completion.chunk",
+        created: state.created || Math.floor(Date.now() / 1000),
+        model: state.model || "unknown",
+        choices: [{
+          index: 0,
+          delta: { content: `[Error] ${error.message || JSON.stringify(error)}` },
+          finish_reason: "stop"
+        }]
+      };
     }
     return null;
   }

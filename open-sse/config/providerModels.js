@@ -6,6 +6,7 @@ export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4-5-20251101", name: "Claude 4.5 Opus" },
     { id: "claude-sonnet-4-5-20250929", name: "Claude 4.5 Sonnet" },
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
@@ -17,6 +18,7 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.3-codex-high", name: "GPT 5.3 Codex (High)" },
     { id: "gpt-5.3-codex-low", name: "GPT 5.3 Codex (Low)" },
     { id: "gpt-5.3-codex-none", name: "GPT 5.3 Codex (None)" },
+    { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
     // Mini - medium and high only
     { id: "gpt-5.1-codex-mini", name: "GPT 5.1 Codex Mini" },
     { id: "gpt-5.1-codex-mini-high", name: "GPT 5.1 Codex Mini (High)" },
@@ -49,9 +51,12 @@ export const PROVIDER_MODELS = {
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "deepseek-r1", name: "DeepSeek R1" },
     { id: "deepseek-v3.2-chat", name: "DeepSeek V3.2 Chat" },
-    { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
+    // { id: "deepseek-v3.2-reasoner", name: "DeepSeek V3.2 Reasoner" },
     { id: "minimax-m2.1", name: "MiniMax M2.1" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5" },
     { id: "glm-4.7", name: "GLM 4.7" },
+    { id: "glm-4.6", name: "GLM 4.6" },
+    { id: "glm-5", name: "GLM 5" },
   ],
   ag: [  // Antigravity - special case: models call different backends
     { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking" },
@@ -64,6 +69,10 @@ export const PROVIDER_MODELS = {
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
   gh: [  // GitHub Copilot - OpenAI models
+    { id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo" },
+    { id: "gpt-4", name: "GPT-4" },
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o mini" },
     { id: "gpt-4.1", name: "GPT-4.1" },
     { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
@@ -77,17 +86,17 @@ export const PROVIDER_MODELS = {
     // GitHub Copilot - Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
-    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
-    { id: "claude-opus-4-5-20251101", name: "Claude Opus 4.5 (Full ID)" },
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     // GitHub Copilot - Google models
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash" },
-    { id: "gemini-3-pro", name: "Gemini 3 Pro" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
+    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
     // GitHub Copilot - Other models
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
-    { id: "raptor-mini", name: "Raptor Mini" },
+    { id: "oswe-vscode-prime", name: "Raptor Mini" },
   ],
   kr: [  // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
@@ -131,12 +140,21 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
+  "glm-cn": [
+    { id: "glm-4.7", name: "GLM-4.7" },
+    { id: "glm-4.6", name: "GLM-4.6" },
+    { id: "glm-4.5", name: "GLM-4.5" },
+    { id: "glm-4.5-air", name: "GLM-4.5-Air" },
+  ],
   kimi: [
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
     { id: "kimi-latest", name: "Kimi Latest" },
   ],
   minimax: [
+    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+  ],
+  "minimax-cn": [
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
 };
@@ -188,9 +206,10 @@ export const PROVIDER_ID_TO_ALIAS = {
   gemini: "gemini",
   openrouter: "openrouter",
   glm: "glm",
+  "glm-cn": "glm-cn",
   kimi: "kimi",
   minimax: "minimax",
-  "minimax-cn": "minimax",
+  "minimax-cn": "minimax-cn",
 };
 
 export function getModelsByProviderId(providerId) {

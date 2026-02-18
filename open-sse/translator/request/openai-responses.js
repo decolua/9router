@@ -6,6 +6,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -25,7 +26,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
 
-  for (const item of body.input) {
+  const inputItems = normalizeResponsesInput(body.input);
+  if (!inputItems) return body;
+
+  for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? "message" : null);
@@ -234,4 +238,3 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 // Register both directions
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, openaiResponsesToOpenAIRequest, null);
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, openaiToOpenAIResponsesRequest, null);
-

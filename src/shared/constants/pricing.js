@@ -7,11 +7,18 @@ export const DEFAULT_PRICING = {
 
   // Claude Code (cc)
   cc: {
+    "claude-opus-4-6": {
+      input: 15.00,
+      output: 25.00,
+      cached: 2.50,
+      reasoning: 15.00,
+      cache_creation: 15.00
+    },
     "claude-opus-4-5-20251101": {
       input: 15.00,
-      output: 75.00,
-      cached: 7.50,
-      reasoning: 75.00,
+      output: 25.00,
+      cached: 2.50,
+      reasoning: 15.00,
       cache_creation: 15.00
     },
     "claude-sonnet-4-5-20250929": {
@@ -32,6 +39,48 @@ export const DEFAULT_PRICING = {
 
   // OpenAI Codex (cx)
   cx: {
+    "gpt-5.3-codex": {
+      input: 6.00,
+      output: 24.00,
+      cached: 3.00,
+      reasoning: 36.00,
+      cache_creation: 6.00
+    },
+    "gpt-5.3-codex-xhigh": {
+      input: 10.00,
+      output: 40.00,
+      cached: 5.00,
+      reasoning: 60.00,
+      cache_creation: 10.00
+    },
+    "gpt-5.3-codex-high": {
+      input: 8.00,
+      output: 32.00,
+      cached: 4.00,
+      reasoning: 48.00,
+      cache_creation: 8.00
+    },
+    "gpt-5.3-codex-low": {
+      input: 4.00,
+      output: 16.00,
+      cached: 2.00,
+      reasoning: 24.00,
+      cache_creation: 4.00
+    },
+    "gpt-5.3-codex-none": {
+      input: 3.00,
+      output: 12.00,
+      cached: 1.50,
+      reasoning: 18.00,
+      cache_creation: 3.00
+    },
+    "gpt-5.3-codex-spark": {
+      input: 3.00,
+      output: 12.00,
+      cached: 0.30,
+      reasoning: 12.00,
+      cache_creation: 3.00
+    },
     "gpt-5.2-codex": {
       input: 5.00,
       output: 20.00,
@@ -66,6 +115,13 @@ export const DEFAULT_PRICING = {
       cached: 0.75,
       reasoning: 9.00,
       cache_creation: 1.50
+    },
+    "gpt-5.1-codex-mini-high": {
+      input: 2.00,
+      output: 8.00,
+      cached: 1.00,
+      reasoning: 12.00,
+      cache_creation: 2.00
     },
     "gpt-5.1": {
       input: 4.00,
@@ -177,6 +233,13 @@ export const DEFAULT_PRICING = {
       reasoning: 9.00,
       cache_creation: 1.50
     },
+    "kimi-k2.5": {
+      input: 1.20,
+      output: 4.80,
+      cached: 0.60,
+      reasoning: 7.20,
+      cache_creation: 1.20
+    },
     "deepseek-r1": {
       input: 0.75,
       output: 3.00,
@@ -198,12 +261,19 @@ export const DEFAULT_PRICING = {
       reasoning: 4.50,
       cache_creation: 0.75
     },
-    "minimax-m2": {
+    "minimax-m2.1": {
       input: 0.50,
       output: 2.00,
       cached: 0.25,
       reasoning: 3.00,
       cache_creation: 0.50
+    },
+    "minimax-m2.5": {
+      input: 0.60,
+      output: 2.40,
+      cached: 0.30,
+      reasoning: 3.60,
+      cache_creation: 0.60
     },
     "glm-4.6": {
       input: 0.50,
@@ -218,6 +288,13 @@ export const DEFAULT_PRICING = {
       cached: 0.375,
       reasoning: 4.50,
       cache_creation: 0.75
+    },
+    "glm-5": {
+      input: 1.00,
+      output: 4.00,
+      cached: 0.50,
+      reasoning: 6.00,
+      cache_creation: 1.00
     }
   },
 
@@ -271,11 +348,53 @@ export const DEFAULT_PRICING = {
       cached: 0.50,
       reasoning: 37.50,
       cache_creation: 5.00
+    },
+    "claude-opus-4-6-thinking": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
     }
   },
 
   // GitHub Copilot (gh)
   gh: {
+    "gpt-3.5-turbo": {
+      input: 0.50,
+      output: 1.50,
+      cached: 0.25,
+      reasoning: 2.25,
+      cache_creation: 0.50
+    },
+    "gpt-4": {
+      input: 2.50,
+      output: 10.00,
+      cached: 1.25,
+      reasoning: 15.00,
+      cache_creation: 2.50
+    },
+    "gpt-4o": {
+      input: 2.50,
+      output: 10.00,
+      cached: 1.25,
+      reasoning: 15.00,
+      cache_creation: 2.50
+    },
+    "gpt-4o-mini": {
+      input: 0.15,
+      output: 0.60,
+      cached: 0.075,
+      reasoning: 0.90,
+      cache_creation: 0.15
+    },
+    "gpt-4.1": {
+      input: 2.50,
+      output: 10.00,
+      cached: 1.25,
+      reasoning: 15.00,
+      cache_creation: 2.50
+    },
     "gpt-5": {
       input: 3.00,
       output: 12.00,
@@ -290,12 +409,33 @@ export const DEFAULT_PRICING = {
       reasoning: 4.50,
       cache_creation: 0.75
     },
+    "gpt-5-codex": {
+      input: 3.00,
+      output: 12.00,
+      cached: 1.50,
+      reasoning: 18.00,
+      cache_creation: 3.00
+    },
+    "gpt-5.1": {
+      input: 4.00,
+      output: 16.00,
+      cached: 2.00,
+      reasoning: 24.00,
+      cache_creation: 4.00
+    },
     "gpt-5.1-codex": {
       input: 4.00,
       output: 16.00,
       cached: 2.00,
       reasoning: 24.00,
       cache_creation: 4.00
+    },
+    "gpt-5.1-codex-mini": {
+      input: 1.50,
+      output: 6.00,
+      cached: 0.75,
+      reasoning: 9.00,
+      cache_creation: 1.50
     },
     "gpt-5.1-codex-max": {
       input: 8.00,
@@ -304,49 +444,77 @@ export const DEFAULT_PRICING = {
       reasoning: 48.00,
       cache_creation: 8.00
     },
-    "gpt-4.1": {
-      input: 2.50,
-      output: 10.00,
-      cached: 1.25,
-      reasoning: 15.00,
-      cache_creation: 2.50
-    },
-    "claude-4.5-sonnet": {
-      input: 3.00,
-      output: 15.00,
-      cached: 0.30,
-      reasoning: 22.50,
-      cache_creation: 3.00
-    },
-    "claude-4.5-opus": {
+    "gpt-5.2": {
       input: 5.00,
-      output: 25.00,
-      cached: 0.50,
-      reasoning: 37.50,
+      output: 20.00,
+      cached: 2.50,
+      reasoning: 30.00,
       cache_creation: 5.00
     },
-    "claude-4.5-haiku": {
+    "gpt-5.2-codex": {
+      input: 5.00,
+      output: 20.00,
+      cached: 2.50,
+      reasoning: 30.00,
+      cache_creation: 5.00
+    },
+    "claude-haiku-4.5": {
       input: 0.50,
       output: 2.50,
       cached: 0.05,
       reasoning: 3.75,
       cache_creation: 0.50
     },
-    "gemini-3-pro": {
+    "claude-opus-4.1": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
+    },
+    "claude-opus-4.5": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
+    },
+    "claude-sonnet-4": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "claude-sonnet-4.5": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "claude-opus-4.6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
+    },
+    "gemini-2.5-pro": {
       input: 2.00,
       output: 12.00,
       cached: 0.25,
       reasoning: 18.00,
       cache_creation: 2.00
     },
-    "gemini-3-flash": {
+    "gemini-3-flash-preview": {
       input: 0.50,
       output: 3.00,
       cached: 0.03,
       reasoning: 4.50,
       cache_creation: 0.50
     },
-    "gemini-2.5-pro": {
+    "gemini-3-pro-preview": {
       input: 2.00,
       output: 12.00,
       cached: 0.25,
@@ -358,6 +526,31 @@ export const DEFAULT_PRICING = {
       output: 2.00,
       cached: 0.25,
       reasoning: 3.00,
+      cache_creation: 0.50
+    },
+    "oswe-vscode-prime": {
+      input: 1.00,
+      output: 4.00,
+      cached: 0.50,
+      reasoning: 6.00,
+      cache_creation: 1.00
+    }
+  },
+
+  // Kiro AI (kr) - AWS CodeWhisperer
+  kr: {
+    "claude-sonnet-4.5": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "claude-haiku-4.5": {
+      input: 0.50,
+      output: 2.50,
+      cached: 0.05,
+      reasoning: 3.75,
       cache_creation: 0.50
     }
   },
@@ -414,7 +607,7 @@ export const DEFAULT_PRICING = {
     },
     "claude-opus-4-20250514": {
       input: 15.00,
-      output: 75.00,
+      output: 25.00,
       cached: 7.50,
       reasoning: 112.50,
       cache_creation: 15.00
@@ -498,6 +691,20 @@ export const DEFAULT_PRICING = {
 
   // Kimi
   kimi: {
+    "kimi-k2.5": {
+      input: 1.20,
+      output: 4.80,
+      cached: 0.60,
+      reasoning: 7.20,
+      cache_creation: 1.20
+    },
+    "kimi-k2.5-thinking": {
+      input: 1.80,
+      output: 7.20,
+      cached: 0.90,
+      reasoning: 10.80,
+      cache_creation: 1.80
+    },
     "kimi-latest": {
       input: 1.00,
       output: 4.00,

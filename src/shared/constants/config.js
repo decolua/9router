@@ -33,6 +33,7 @@ export const API_ENDPOINTS = {
 export const PROVIDER_ENDPOINTS = {
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
   glm: "https://api.z.ai/api/anthropic/v1/messages",
+  "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
   kimi: "https://api.kimi.com/coding/v1/messages",
   minimax: "https://api.minimax.io/anthropic/v1/messages",
   "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
