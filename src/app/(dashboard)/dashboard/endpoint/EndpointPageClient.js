@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -16,6 +16,7 @@ export default function APIPageClient({ machineId }) {
   const [createdKey, setCreatedKey] = useState(null);
 
   // Cloud sync state
+  const [requireApiKey, setRequireApiKey] = useState(false);
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [cloudUrl, setCloudUrl] = useState(DEFAULT_CLOUD_URL);
   const [cloudUrlInput, setCloudUrlInput] = useState(DEFAULT_CLOUD_URL);
@@ -63,12 +64,26 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         const data = await res.json();
         setCloudEnabled(data.cloudEnabled || false);
+        setRequireApiKey(data.requireApiKey || false);
         const url = data.cloudUrl || DEFAULT_CLOUD_URL;
         setCloudUrl(url);
         setCloudUrlInput(url);
       }
     } catch (error) {
       console.log("Error loading cloud settings:", error);
+    }
+  };
+
+  const handleRequireApiKey = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireApiKey: value }),
+      });
+      if (res.ok) setRequireApiKey(value);
+    } catch (error) {
+      console.log("Error updating requireApiKey:", error);
     }
   };
 
@@ -359,6 +374,19 @@ export default function APIPageClient({ machineId }) {
           <Button icon="add" onClick={() => setShowAddModal(true)}>
             Create Key
           </Button>
+        </div>
+
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+          <div>
+            <p className="font-medium">Require API key</p>
+            <p className="text-sm text-text-muted">
+              Requests without a valid key will be rejected
+            </p>
+          </div>
+          <Toggle
+            checked={requireApiKey}
+            onChange={() => handleRequireApiKey(!requireApiKey)}
+          />
         </div>
 
         {keys.length === 0 ? (
