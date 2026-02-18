@@ -26,6 +26,8 @@ function getAppName() {
 function getUserDataDir() {
   if (isCloud) return "/tmp"; // Fallback for Workers
 
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+
   try {
     const platform = process.platform;
     const homeDir = os.homedir();
