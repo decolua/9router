@@ -4,6 +4,7 @@ import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { checkDuplicate } from "@/shared/utils/duplicateDetection";
 
 // GET /api/providers - List all connections
 export async function GET() {
@@ -30,7 +31,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
+    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus, replaceDuplicateId } = body;
 
     // Validation
     const isValidProvider = APIKEY_PROVIDERS[provider] || 
@@ -45,6 +46,33 @@ export async function POST(request) {
     }
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
+    // Get existing connections for duplicate check
+    const existingConnections = await getProviderConnections({ provider });
+
+    // Check for duplicates
+    const tempConnection = {
+      provider,
+      authType: "apikey",
+      apiKey,
+      name,
+    };
+    const duplicateCheck = checkDuplicate(tempConnection, existingConnections);
+
+    if (duplicateCheck.isDuplicate && !replaceDuplicateId) {
+      return NextResponse.json(
+        {
+          error: "duplicate",
+          duplicate: {
+            id: duplicateCheck.duplicate.id,
+            name: duplicateCheck.duplicate.name,
+            priority: duplicateCheck.duplicate.priority,
+          },
+          reason: duplicateCheck.reason,
+        },
+        { status: 409 }
+      );
     }
 
     let providerSpecificData = null;
@@ -66,6 +94,8 @@ export async function POST(request) {
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };
+
+      // For OpenAI Compatible, don't check duplicates since only 1 connection allowed
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
@@ -82,6 +112,14 @@ export async function POST(request) {
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };
+
+      // For Anthropic Compatible, don't check duplicates since only 1 connection allowed
+    }
+
+    // If replacing duplicate, delete the old one first
+    if (replaceDuplicateId && duplicateCheck.isDuplicate) {
+      const { deleteProviderConnection } = await import("@/models");
+      await deleteProviderConnection(replaceDuplicateId);
     }
 
     const newConnection = await createProviderConnection({
