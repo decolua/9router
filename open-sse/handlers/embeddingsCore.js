@@ -4,16 +4,49 @@ import { HTTP_STATUS } from "../config/constants.js";
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 
+// Google AI (Gemini) provider aliases / identifiers
+const GEMINI_PROVIDERS = new Set(["gemini", "google_ai_studio"]);
+
+/**
+ * Check whether a provider targets the Google AI (Gemini) embeddings API.
+ * @param {string} provider
+ */
+function isGeminiProvider(provider) {
+  return GEMINI_PROVIDERS.has(provider);
+}
+
 /**
  * Build the embeddings request body for the target provider.
- * Most OpenAI-compatible providers accept the same format.
- * For providers that don't support embeddings natively (chat-only), we return an error.
+ *
+ * - OpenAI / openai-compatible / openrouter: standard { model, input } format.
+ * - Google AI (Gemini): different format per API spec.
+ *   - Single input  → embedContent  body: { model, content: { parts: [{ text }] } }
+ *   - Batch input   → batchEmbedContents body: { requests: [{ model, content: { parts: [{ text }] } }] }
  */
-function buildEmbeddingsBody(model, input, encodingFormat) {
-  const body = {
-    model,
-    input
-  };
+function buildEmbeddingsBody(provider, model, input, encodingFormat) {
+  if (isGeminiProvider(provider)) {
+    // Normalize model name: Gemini API expects "models/<model>" prefix
+    const geminiModel = model.startsWith("models/") ? model : `models/${model}`;
+
+    if (Array.isArray(input)) {
+      // Batch request
+      return {
+        requests: input.map((text) => ({
+          model: geminiModel,
+          content: { parts: [{ text: String(text) }] }
+        }))
+      };
+    } else {
+      // Single request
+      return {
+        model: geminiModel,
+        content: { parts: [{ text: String(input) }] }
+      };
+    }
+  }
+
+  // Default: OpenAI format
+  const body = { model, input };
   if (encodingFormat) {
     body.encoding_format = encodingFormat;
   }
@@ -22,8 +55,24 @@ function buildEmbeddingsBody(model, input, encodingFormat) {
 
 /**
  * Build the URL for the embeddings endpoint based on the provider.
+ * @param {string} provider
+ * @param {string} model
+ * @param {object} credentials
+ * @param {string|string[]} input - The embeddings input (used to select single vs batch endpoint for Gemini)
  */
-function buildEmbeddingsUrl(provider, credentials) {
+function buildEmbeddingsUrl(provider, model, credentials, input) {
+  if (isGeminiProvider(provider)) {
+    const apiKey = credentials.apiKey || credentials.accessToken;
+    // Normalize model name for path
+    const modelPath = model.startsWith("models/") ? model : `models/${model}`;
+
+    if (Array.isArray(input)) {
+      // Use batchEmbedContents for array input (even length=1 keeps response format consistent)
+      return `https://generativelanguage.googleapis.com/v1beta/${modelPath}:batchEmbedContents?key=${encodeURIComponent(apiKey)}`;
+    }
+    return `https://generativelanguage.googleapis.com/v1beta/${modelPath}:embedContent?key=${encodeURIComponent(apiKey)}`;
+  }
+
   switch (provider) {
     case "openai":
       return "https://api.openai.com/v1/embeddings";
@@ -46,6 +95,11 @@ function buildEmbeddingsUrl(provider, credentials) {
 function buildEmbeddingsHeaders(provider, credentials) {
   const headers = { "Content-Type": "application/json" };
 
+  if (isGeminiProvider(provider)) {
+    // Gemini API uses API key as query param — no Authorization header needed
+    return headers;
+  }
+
   switch (provider) {
     case "openai":
     case "openrouter":
@@ -56,11 +110,7 @@ function buildEmbeddingsHeaders(provider, credentials) {
       }
       break;
     default:
-      if (provider?.startsWith?.("openai-compatible-")) {
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-      } else {
-        headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
-      }
+      headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
   }
 
   return headers;
@@ -68,12 +118,50 @@ function buildEmbeddingsHeaders(provider, credentials) {
 
 /**
  * Normalize the embeddings response to OpenAI format.
- * Most OpenAI-compatible providers already return this format.
+ *
+ * Gemini single response:
+ *   { embedding: { values: [0.1, 0.2, ...] } }
+ *
+ * Gemini batch response:
+ *   { embeddings: [{ values: [...] }, ...] }
+ *
+ * Target OpenAI format:
+ *   { object: "list", data: [{ object: "embedding", index: 0, embedding: [...] }], model, usage: {...} }
  */
-function normalizeEmbeddingsResponse(responseBody, model) {
+function normalizeEmbeddingsResponse(responseBody, model, provider) {
   // Already in OpenAI format
   if (responseBody.object === "list" && Array.isArray(responseBody.data)) {
     return responseBody;
+  }
+
+  if (isGeminiProvider(provider)) {
+    let embeddingItems = [];
+
+    if (Array.isArray(responseBody.embeddings)) {
+      // Batch response
+      embeddingItems = responseBody.embeddings.map((emb, idx) => ({
+        object: "embedding",
+        index: idx,
+        embedding: emb.values || []
+      }));
+    } else if (responseBody.embedding?.values) {
+      // Single response
+      embeddingItems = [{
+        object: "embedding",
+        index: 0,
+        embedding: responseBody.embedding.values
+      }];
+    }
+
+    return {
+      object: "list",
+      data: embeddingItems,
+      model,
+      usage: {
+        prompt_tokens: 0,
+        total_tokens: 0
+      }
+    };
   }
 
   // Try to handle alternate formats gracefully
@@ -114,16 +202,17 @@ export async function handleEmbeddingsCore({
   const encodingFormat = body.encoding_format || "float";
 
   // Determine embeddings URL
-  const url = buildEmbeddingsUrl(provider, credentials);
+  const url = buildEmbeddingsUrl(provider, model, credentials, input);
+
   if (!url) {
     return createErrorResult(
       HTTP_STATUS.BAD_REQUEST,
-      `Provider '${provider}' does not support embeddings. Use openai, openrouter, or an openai-compatible provider.`
+      `Provider '${provider}' does not support embeddings. Use openai, openrouter, gemini, or an openai-compatible provider.`
     );
   }
 
   const headers = buildEmbeddingsHeaders(provider, credentials);
-  const requestBody = buildEmbeddingsBody(model, input, encodingFormat);
+  const requestBody = buildEmbeddingsBody(provider, model, input, encodingFormat);
 
   log?.debug?.("EMBEDDINGS", `${provider.toUpperCase()} | ${model} | input_type=${Array.isArray(input) ? `array[${input.length}]` : "string"}`);
 
@@ -162,7 +251,12 @@ export async function handleEmbeddingsCore({
       // Retry with refreshed credentials
       try {
         const retryHeaders = buildEmbeddingsHeaders(provider, credentials);
-        providerResponse = await fetch(url, {
+        // Rebuild URL with new API key for Gemini (key is in query param)
+        const retryUrl = isGeminiProvider(provider)
+          ? buildEmbeddingsUrl(provider, model, credentials, input)
+          : url;
+
+        providerResponse = await fetch(retryUrl, {
           method: "POST",
           headers: retryHeaders,
           body: JSON.stringify(requestBody)
@@ -193,7 +287,7 @@ export async function handleEmbeddingsCore({
     await onRequestSuccess();
   }
 
-  const normalized = normalizeEmbeddingsResponse(responseBody, model);
+  const normalized = normalizeEmbeddingsResponse(responseBody, model, provider);
 
   log?.debug?.("EMBEDDINGS", `Success | usage=${JSON.stringify(normalized.usage || {})}`);
 
