@@ -25,7 +25,10 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
  */
 async function sanitizeJsonResponse(response) {
   const ct = response.headers.get("content-type") || "";
-  
+
+  // Never consume streaming bodies — they must be piped through intact
+  if (ct.includes("text/event-stream")) return response;
+
   let bodyText;
   try {
     bodyText = await response.text();
