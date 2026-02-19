@@ -408,6 +408,18 @@
         "name": "OpenAI Codex CLI",
         "description": "OpenAI Codex CLI"
       },
+      "droid": {
+        "name": "Factory Droid",
+        "description": "Factory Droid AI Assistant"
+      },
+      "openclaw": {
+        "name": "Open Claw",
+        "description": "Open Claw AI Assistant"
+      },
+      "antigravity": {
+        "name": "Antigravity",
+        "description": "Google Antigravity IDE with MITM"
+      },
       "cursor": {
         "name": "Cursor",
         "description": "Cursor AI Code Editor",
@@ -567,6 +579,13 @@
         "apiKey": "<API_KEY_FROM_DASHBOARD>",
         "model": "provider/model-id"
       }
+    },
+    "antigravity": {
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "step3": "3. Maps Antigravity models to any provider via 9Router"
     }
   },
   "modelSelect": {

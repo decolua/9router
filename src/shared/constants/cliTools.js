@@ -32,18 +32,18 @@ export const CLI_TOOLS = {
   },
   droid: {
     id: "droid",
-    name: "Factory Droid",
+    name: "cliTools.tools.droid.name",
     image: "/providers/droid.png",
     color: "#00D4FF",
-    description: "Factory Droid AI Assistant",
+    description: "cliTools.tools.droid.description",
     configType: "custom",
   },
   openclaw: {
     id: "openclaw",
-    name: "Open Claw",
+    name: "cliTools.tools.openclaw.name",
     image: "/providers/openclaw.png",
     color: "#FF6B35",
-    description: "Open Claw AI Assistant",
+    description: "cliTools.tools.openclaw.description",
     configType: "custom",
   },
   cursor: {
@@ -123,10 +123,10 @@ export const CLI_TOOLS = {
   },
   antigravity: {
     id: "antigravity",
-    name: "Antigravity",
+    name: "cliTools.tools.antigravity.name",
     image: "/providers/antigravity.png",
     color: "#4285F4",
-    description: "Google Antigravity IDE with MITM",
+    description: "cliTools.tools.antigravity.description",
     configType: "mitm",
     modelAliases: ["claude-opus-4-5-thinking", "claude-sonnet-4-5-thinking", "claude-sonnet-4-5", "gemini-3-pro-high"],
     defaultModels: [

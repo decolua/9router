@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
@@ -13,6 +13,10 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [dbExporting, setDbExporting] = useState(false);
+  const [dbImporting, setDbImporting] = useState(false);
+  const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const dbFileInputRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -141,6 +145,70 @@ export default function ProfilePage() {
     } catch (err) {
       console.error("Failed to update observabilityEnabled:", err);
     }
+  };
+
+  const handleExportDb = async () => {
+    setDbExporting(true);
+    setDbStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/db?download=1");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setDbStatus({ type: "error", message: data.error || "Failed to export database" });
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const header = res.headers.get("content-disposition") || "";
+      const match = header.match(/filename="?([^";]+)"?/i);
+      anchor.href = url;
+      anchor.download = match?.[1] || "9router-db.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setDbStatus({ type: "success", message: "Database exported" });
+    } catch {
+      setDbStatus({ type: "error", message: "Failed to export database" });
+    } finally {
+      setDbExporting(false);
+    }
+  };
+
+  const handleImportDb = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setDbImporting(true);
+    setDbStatus({ type: "", message: "" });
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch("/api/db", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: parsed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDbStatus({ type: "error", message: data.error || "Failed to import database" });
+        return;
+      }
+
+      setDbStatus({ type: "success", message: "Database imported. Reload to apply." });
+    } catch {
+      setDbStatus({ type: "error", message: "Invalid JSON file" });
+    } finally {
+      setDbImporting(false);
+      event.target.value = "";
+    }
+  };
+
+  const handleImportClick = () => {
+    if (dbImporting) return;
+    dbFileInputRef.current?.click();
   };
 
   const observabilityEnabled = settings.observabilityEnabled !== false;
@@ -363,6 +431,28 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="secondary" icon="download" onClick={handleExportDb} loading={dbExporting}>
+                Export Database
+              </Button>
+              <input
+                ref={dbFileInputRef}
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportDb}
+                className="hidden"
+                disabled={dbImporting}
+              />
+              <Button variant="outline" icon="upload" onClick={handleImportClick} disabled={dbImporting}>
+                Import Database
+              </Button>
+              <span className="text-xs text-text-muted">Import replaces all local data.</span>
+            </div>
+            {dbStatus.message && (
+              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {dbStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 

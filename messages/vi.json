@@ -408,6 +408,18 @@
         "name": "OpenAI Codex CLI",
         "description": "OpenAI Codex CLI"
       },
+      "droid": {
+        "name": "Factory Droid",
+        "description": "Factory Droid AI Assistant"
+      },
+      "openclaw": {
+        "name": "Open Claw",
+        "description": "Open Claw AI Assistant"
+      },
+      "antigravity": {
+        "name": "Antigravity",
+        "description": "Google Antigravity IDE with MITM"
+      },
       "cursor": {
         "name": "Cursor",
         "description": "Cursor AI Code Editor",
@@ -524,50 +536,57 @@
       },
       "selectModelTitle": "Chọn model cho Codex",
       "manualConfigTitle": "Codex CLI - Cấu hình thủ công",
-       "manualConfigHeader": "Cấu hình 9Router cho Codex CLI",
-       "openclaw": {
-         "status": {
-           "checking": "Đang kiểm tra Open Claw CLI..."
-         },
-         "install": {
-           "title": "Chưa cài Open Claw CLI",
-           "subtitle": "Vui lòng cài Open Claw CLI để dùng tính năng này."
-         },
-         "messages": {
-           "applySuccess": "Áp dụng cấu hình thành công!",
-           "applyFailed": "Áp dụng cấu hình thất bại",
-           "resetSuccess": "Đã khôi phục cấu hình!",
-           "resetFailed": "Khôi phục cấu hình thất bại"
-         },
-         "selectModelTitle": "Chọn model cho Open Claw",
-         "manualConfigTitle": "Open Claw - Cấu hình thủ công",
-         "placeholders": {
-           "apiKey": "<API_KEY_FROM_DASHBOARD>",
-           "model": "provider/model-id"
-         }
-       },
-       "droid": {
-         "status": {
-           "checking": "Đang kiểm tra Factory Droid CLI..."
-         },
-         "install": {
-           "title": "Chưa cài Factory Droid CLI",
-           "subtitle": "Vui lòng cài Factory Droid CLI để dùng tính năng này."
-         },
-         "messages": {
-           "applySuccess": "Áp dụng cấu hình thành công!",
-           "applyFailed": "Áp dụng cấu hình thất bại",
-           "resetSuccess": "Đã khôi phục cấu hình!",
-           "resetFailed": "Khôi phục cấu hình thất bại"
-         },
-         "selectModelTitle": "Chọn model cho Factory Droid",
-         "manualConfigTitle": "Factory Droid - Cấu hình thủ công",
-         "placeholders": {
-           "apiKey": "<API_KEY_FROM_DASHBOARD>",
-           "model": "provider/model-id"
-         }
-       }
-     }
+      "manualConfigHeader": "Cấu hình 9Router cho Codex CLI"
+    },
+    "openclaw": {
+      "status": {
+        "checking": "Đang kiểm tra Open Claw CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Open Claw CLI",
+        "subtitle": "Vui lòng cài Open Claw CLI để dùng tính năng này."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Đã khôi phục cấu hình!",
+        "resetFailed": "Khôi phục cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Open Claw",
+      "manualConfigTitle": "Open Claw - Cấu hình thủ công",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "droid": {
+      "status": {
+        "checking": "Đang kiểm tra Factory Droid CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Factory Droid CLI",
+        "subtitle": "Vui lòng cài Factory Droid CLI để dùng tính năng này."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Đã khôi phục cấu hình!",
+        "resetFailed": "Khôi phục cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Factory Droid",
+      "manualConfigTitle": "Factory Droid - Cấu hình thủ công",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "antigravity": {
+      "status": {
+        "active": "Đang chạy",
+        "inactive": "Không chạy"
+      },
+      "step3": "3. Map model Antigravity tới bất kỳ provider nào qua 9Router"
+    }
   },
   "modelSelect": {
     "title": "Chọn model",

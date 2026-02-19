@@ -236,7 +236,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       return (
         <Image
           src={tool.image}
-          alt={tool.name}
+          alt={t(tool.name)}
           width={32}
           height={32}
           className="size-8 object-contain rounded-lg"
@@ -251,7 +251,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return (
       <Image
         src={`/providers/${toolId}.png`}
-        alt={tool.name}
+        alt={t(tool.name)}
         width={32}
         height={32}
         className="size-8 object-contain rounded-lg"
@@ -269,8 +269,8 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
             {renderIcon()}
           </div>
           <div className="min-w-0">
-            <h3 className="font-medium text-sm">{tool.name}</h3>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <h3 className="font-medium text-sm">{t(tool.name)}</h3>
+            <p className="text-xs text-text-muted truncate">{t(tool.description)}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
