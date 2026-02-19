@@ -115,6 +115,16 @@ function ensureDbShape(data) {
         }
       }
     }
+
+    // Migrate existing API keys to have isActive
+    if (key === "apiKeys" && Array.isArray(next.apiKeys)) {
+      for (const apiKey of next.apiKeys) {
+        if (apiKey.isActive === undefined || apiKey.isActive === null) {
+          apiKey.isActive = true;
+          changed = true;
+        }
+      }
+    }
   }
 
   return { data: next, changed };
@@ -649,6 +659,7 @@ export async function createApiKey(name, machineId) {
     name: name,
     key: result.key,
     machineId: machineId,
+    isActive: true,
     createdAt: now,
   };
   
@@ -674,11 +685,35 @@ export async function deleteApiKey(id) {
 }
 
 /**
+ * Get API key by ID
+ */
+export async function getApiKeyById(id) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.id === id) || null;
+}
+
+/**
+ * Update API key
+ */
+export async function updateApiKey(id, data) {
+  const db = await getDb();
+  const index = db.data.apiKeys.findIndex(k => k.id === id);
+  if (index === -1) return null;
+  db.data.apiKeys[index] = {
+    ...db.data.apiKeys[index],
+    ...data,
+  };
+  await db.write();
+  return db.data.apiKeys[index];
+}
+
+/**
  * Validate API key
  */
 export async function validateApiKey(key) {
   const db = await getDb();
-  return db.data.apiKeys.some(k => k.key === key);
+  const found = db.data.apiKeys.find(k => k.key === key);
+  return found && found.isActive !== false;
 }
 
 // ============ Data Cleanup ============
