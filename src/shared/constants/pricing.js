@@ -207,6 +207,13 @@ export const DEFAULT_PRICING = {
       cached: 0.75,
       reasoning: 9.00,
       cache_creation: 1.50
+    },
+    "coder-model": {
+      input: 1.50,
+      output: 6.00,
+      cached: 0.75,
+      reasoning: 9.00,
+      cache_creation: 1.50
     }
   },
 

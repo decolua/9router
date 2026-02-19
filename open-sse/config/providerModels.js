@@ -43,6 +43,7 @@ export const PROVIDER_MODELS = {
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "qwen3-coder-flash", name: "Qwen3 Coder Flash" },
     { id: "vision-model", name: "Qwen3 Vision Model" },
+    { id: "coder-model", name: "Qwen3.5 Coder Model" },
   ],
   if: [  // iFlow AI
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
