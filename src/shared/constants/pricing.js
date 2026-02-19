@@ -458,6 +458,13 @@ export const DEFAULT_PRICING = {
       reasoning: 30.00,
       cache_creation: 5.00
     },
+    "gpt-5.3-codex": {
+      input: 1.75,
+      output: 14.00,
+      cached: 0.175,
+      reasoning: 14.00,
+      cache_creation: 1.75
+    },
     "claude-haiku-4.5": {
       input: 0.50,
       output: 2.50,
