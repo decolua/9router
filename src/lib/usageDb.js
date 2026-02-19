@@ -394,6 +394,7 @@ export async function getUsageStats() {
     byModel: {},
     byAccount: {},
     byApiKey: {},
+    byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: []
@@ -584,6 +585,31 @@ export async function getUsageStats() {
       if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
         apiKeyEntry.lastUsed = entry.timestamp;
       }
+    }
+
+    // By Endpoint (endpoint + model + provider combination)
+    const endpoint = entry.endpoint || "Unknown";
+    const endpointModelKey = `${endpoint}|${entry.model}|${entry.provider || 'unknown'}`;
+
+    if (!stats.byEndpoint[endpointModelKey]) {
+      stats.byEndpoint[endpointModelKey] = {
+        requests: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cost: 0,
+        endpoint: endpoint,
+        rawModel: entry.model,
+        provider: entry.provider,
+        lastUsed: entry.timestamp
+      };
+    }
+    const endpointEntry = stats.byEndpoint[endpointModelKey];
+    endpointEntry.requests++;
+    endpointEntry.promptTokens += promptTokens;
+    endpointEntry.completionTokens += completionTokens;
+    endpointEntry.cost += entryCost;
+    if (new Date(entry.timestamp) > new Date(endpointEntry.lastUsed)) {
+      endpointEntry.lastUsed = entry.timestamp;
     }
   }
 

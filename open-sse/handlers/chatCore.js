@@ -622,7 +622,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
               thinking: null,
               finish_reason: jsonResponse.status || "unknown"
             },
-            status: "success"
+            status: "success",
+            endpoint: clientRawRequest?.endpoint || null
           }).catch(() => { });
 
           return {
@@ -656,7 +657,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                 tokens: usage,
                 timestamp: new Date().toISOString(),
                 connectionId: connectionId || undefined,
-                apiKey: apiKey || undefined
+                apiKey: apiKey || undefined,
+                endpoint: clientRawRequest?.endpoint || null
               }).catch(() => { });
             }
 
@@ -676,7 +678,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                 thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
                 finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
               },
-              status: "success"
+              status: "success",
+              endpoint: clientRawRequest?.endpoint || null
             }).catch(() => { });
 
             return {
@@ -741,7 +744,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         tokens: usage,
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
-        apiKey: apiKey || undefined
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || null
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
@@ -781,7 +785,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                   null,
         finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
       },
-      status: "success"
+      status: "success",
+      endpoint: clientRawRequest?.endpoint || null
     };
 
     // Async save (don't block response)
@@ -859,7 +864,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         tokens: usage,
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
-        apiKey: apiKey || undefined
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || null
       }).catch(err => {
         console.error("Failed to save streaming usage stats:", err.message);
       });
