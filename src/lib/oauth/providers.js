@@ -14,6 +14,7 @@ import {
   GITHUB_CONFIG,
   KIRO_CONFIG,
   CURSOR_CONFIG,
+  getOAuthClientMetadata,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -184,7 +185,8 @@ const PROVIDERS = {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              metadata: { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
+              metadata: getOAuthClientMetadata(),
+              mode: 1,
             }),
           }
         );
@@ -254,7 +256,7 @@ const PROVIDERS = {
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
       };
-      const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
+      const metadata = getOAuthClientMetadata();
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
@@ -269,7 +271,7 @@ const PROVIDERS = {
         const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
           method: "POST",
           headers,
-          body: JSON.stringify({ metadata }),
+          body: JSON.stringify({ metadata, mode: 1 }),
         });
         if (loadRes.ok) {
           const data = await loadRes.json();
@@ -295,7 +297,7 @@ const PROVIDERS = {
             const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
               method: "POST",
               headers,
-              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId }),
+              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
             });
             if (onboardRes.ok) {
               const result = await onboardRes.json();
@@ -727,9 +729,9 @@ export function generateAuthData(providerName, redirectUri) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state) {
   const provider = getProvider(providerName);
-  
+
   const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state);
-  
+
   let extra = null;
   if (provider.postExchange) {
     extra = await provider.postExchange(tokens);
@@ -761,9 +763,9 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  
+
   const result = await provider.pollToken(provider.config, deviceCode, codeVerifier, extraData);
-  
+
   if (result.ok) {
     // For device code flows, success is only when we have an access token
     if (result.data.access_token) {
@@ -777,23 +779,23 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       // Check if it's still pending authorization
       if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {
         // This is not a failure, just still waiting
-        return { 
-          success: false, 
-          error: result.data.error, 
+        return {
+          success: false,
+          error: result.data.error,
           errorDescription: result.data.error_description || result.data.message,
           pending: result.data.error === 'authorization_pending'
         };
       } else {
         // Actual error
-        return { 
-          success: false, 
-          error: result.data.error || 'no_access_token', 
-          errorDescription: result.data.error_description || result.data.message || 'No access token received' 
+        return {
+          success: false,
+          error: result.data.error || 'no_access_token',
+          errorDescription: result.data.error_description || result.data.message || 'No access token received'
         };
       }
     }
   }
-  
+
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
 

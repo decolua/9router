@@ -1,5 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { cacheSignature } from "../../utils/sessionManager.js";
 
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
@@ -39,6 +40,13 @@ export function geminiToOpenAIResponse(chunk, state) {
       
       // Handle thought signature (thinking mode)
       if (hasThoughtSig) {
+        // Cache signature if session ID is available
+        const signature = part.thoughtSignature || part.thought_signature;
+        if (state.sessionId && signature) {
+          // DEBUG LOG
+          console.log(`[GeminiToOpenAI] Found signature for session ${state.sessionId.substring(0, 8)}...`);
+          cacheSignature(state.sessionId, signature);
+        }
         const hasTextContent = part.text !== undefined && part.text !== "";
         const hasFunctionCall = !!part.functionCall;
         

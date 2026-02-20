@@ -3,6 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { deriveSessionId } from "./sessionManager.js";
 
 export { COLORS, formatSSE };
 
@@ -49,7 +50,15 @@ export function createSSEStream(options = {}) {
   let buffer = "";
   let usage = null;
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  // Derive session ID for signature caching (if connectionId is available)
+  const sessionId = connectionId ? deriveSessionId(connectionId) : null;
+
+  // DEBUG LOG
+  if (sessionId) {
+    console.log(`[Stream] Associated stream with sessionId: ${sessionId.substring(0, 8)}...`);
+  }
+
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model, sessionId } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";

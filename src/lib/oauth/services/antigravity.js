@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { platform, arch } from "os";
 import open from "open";
 import { ANTIGRAVITY_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
@@ -92,12 +93,20 @@ export class AntigravityService {
 
   /**
    * Get metadata object for API calls
+   * Uses numeric enum values matching Antigravity binary specifications
    */
   getMetadata() {
+    const os = platform();
+    const architecture = arch();
+    let platformEnum = 0; // UNSPECIFIED
+    if (os === "darwin") platformEnum = architecture === "arm64" ? 2 : 1;
+    else if (os === "linux") platformEnum = architecture === "arm64" ? 4 : 3;
+    else if (os === "win32") platformEnum = 5;
+
     return {
-      ideType: "IDE_UNSPECIFIED",
-      platform: "PLATFORM_UNSPECIFIED",
-      pluginType: "GEMINI",
+      ideType: 9,        // ANTIGRAVITY
+      platform: platformEnum,
+      pluginType: 2,     // GEMINI
     };
   }
 
@@ -108,7 +117,7 @@ export class AntigravityService {
     const response = await fetch(this.config.loadCodeAssistEndpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
-      body: JSON.stringify({ metadata: this.getMetadata() }),
+      body: JSON.stringify({ metadata: this.getMetadata(), mode: 1 }),
     });
 
     if (!response.ok) {
@@ -117,7 +126,7 @@ export class AntigravityService {
     }
 
     const data = await response.json();
-    
+
     // Extract project ID
     let projectId = data.cloudaicompanionProject;
     if (typeof projectId === 'object' && projectId !== null && projectId.id) {
@@ -149,6 +158,7 @@ export class AntigravityService {
         tierId,
         metadata: this.getMetadata(),
         cloudaicompanionProject: projectId,
+        mode: 1,
       }),
     });
 
@@ -166,7 +176,7 @@ export class AntigravityService {
   async completeOnboarding(accessToken, projectId, tierId, maxRetries = 10) {
     for (let i = 0; i < maxRetries; i++) {
       const result = await this.onboardUser(accessToken, projectId, tierId);
-      
+
       if (result.done === true) {
         // Extract final project ID from response
         let finalProjectId = projectId;
@@ -301,7 +311,7 @@ export class AntigravityService {
 
       // Load Code Assist to get project ID and tier
       const { projectId, tierId } = await this.loadCodeAssist(tokens.access_token);
-      
+
       if (!projectId) {
         throw new Error("No Google Cloud Project found. Please ensure you have a GCP project with Gemini Code Assist enabled.");
       }
