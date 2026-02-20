@@ -1,6 +1,7 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 import { transformToOllama } from "open-sse/utils/ollamaTransform.js";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 let initialized = false;
 
@@ -23,6 +24,18 @@ export async function OPTIONS() {
 }
 
 export async function POST(request) {
+  const requestForChat = request.clone();
+  let bodyForQuota = null;
+  try {
+    const cloned = request.clone();
+    bodyForQuota = await cloned.json();
+  } catch {}
+
+  const quota = await enforceApiKeyQuota(request, { model: bodyForQuota?.model || null });
+  if (!quota.ok) {
+    return quota.response;
+  }
+
   await ensureInitialized();
   
   const clonedReq = request.clone();
@@ -32,7 +45,7 @@ export async function POST(request) {
     modelName = body.model || "llama3.2";
   } catch {}
 
-  const response = await handleChat(request);
+  const response = await handleChat(requestForChat, null, { apiKeyId: quota.apiKeyId });
   return transformToOllama(response, modelName);
 }
 

@@ -3,37 +3,38 @@
 import { useState, useRef, useEffect } from "react";
 import { Card, Button, Select } from "@/shared/components";
 import dynamic from "next/dynamic";
+import { useTranslations } from "next-intl";
 
 // Dynamically import Monaco Editor (client-side only)
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-const PROVIDERS = [
-  { value: "antigravity", label: "Antigravity" },
-  { value: "gemini-cli", label: "Gemini CLI" },
-  { value: "claude", label: "Claude" },
-  { value: "codex", label: "Codex" },
-  { value: "github", label: "GitHub" },
-  { value: "qwen", label: "Qwen" },
-  { value: "iflow", label: "iFlow AI" },
-  { value: "kiro", label: "Kiro AI" },
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "glm", label: "GLM" },
-  { value: "kimi", label: "Kimi" },
-  { value: "minimax", label: "MiniMax" },
-];
-
-const STEPS = [
-  { id: 1, name: "Client Request", file: "1_req_client.json" },
-  { id: 2, name: "Source Format", file: "2_req_source.json" },
-  { id: 3, name: "OpenAI Intermediate", file: "3_req_openai.json" },
-  { id: 4, name: "Target Format", file: "4_req_target.json" },
-  { id: 5, name: "Provider Response", file: "5_res_provider.txt" },
-];
-
 export default function TranslatorPage() {
+  const t = useTranslations();
+  const PROVIDERS = [
+    { value: "antigravity", label: t("translator.providers.antigravity") },
+    { value: "gemini-cli", label: t("translator.providers.geminiCli") },
+    { value: "claude", label: t("translator.providers.claude") },
+    { value: "codex", label: t("translator.providers.codex") },
+    { value: "github", label: t("translator.providers.github") },
+    { value: "qwen", label: t("translator.providers.qwen") },
+    { value: "iflow", label: t("translator.providers.iflow") },
+    { value: "kiro", label: t("translator.providers.kiro") },
+    { value: "openai", label: t("translator.providers.openai") },
+    { value: "anthropic", label: t("translator.providers.anthropic") },
+    { value: "gemini", label: t("translator.providers.gemini") },
+    { value: "openrouter", label: t("translator.providers.openrouter") },
+    { value: "glm", label: t("translator.providers.glm") },
+    { value: "kimi", label: t("translator.providers.kimi") },
+    { value: "minimax", label: t("translator.providers.minimax") },
+  ];
+
+  const STEPS = [
+    { id: 1, name: t("translator.steps.clientRequest"), file: "1_req_client.json" },
+    { id: 2, name: t("translator.steps.sourceFormat"), file: "2_req_source.json" },
+    { id: 3, name: t("translator.steps.openaiIntermediate"), file: "3_req_openai.json" },
+    { id: 4, name: t("translator.steps.targetFormat"), file: "4_req_target.json" },
+    { id: 5, name: t("translator.steps.providerResponse"), file: "5_res_provider.txt" },
+  ];
   const [provider, setProvider] = useState("antigravity");
   const [steps, setSteps] = useState({
     1: "",
@@ -60,7 +61,7 @@ export default function TranslatorPage() {
     try {
       const step4Content = steps[4];
       if (!step4Content) {
-        alert("Please load or generate step 4 content first");
+        alert(t("translator.errors.step4Required"));
         return;
       }
 
@@ -68,8 +69,8 @@ export default function TranslatorPage() {
       
       // Get credentials (you may need to prompt user or use stored credentials)
       const credentials = {
-        accessToken: prompt("Enter access token (or leave empty):") || undefined,
-        apiKey: prompt("Enter API key (or leave empty):") || undefined
+        accessToken: prompt(t("translator.prompts.accessToken")) || undefined,
+        apiKey: prompt(t("translator.prompts.apiKey")) || undefined,
       };
 
       const res = await fetch("/api/translator/send", {
@@ -101,12 +102,12 @@ export default function TranslatorPage() {
         // Expand step 5
         setExpanded({ ...expanded, 4: false, 5: true });
         
-        alert(`Request sent! Status: ${data.status} ${data.statusText}`);
+        alert(t("translator.messages.requestSent", { status: data.status, statusText: data.statusText }));
       } else {
-        alert(data.error || "Failed to send request");
+        alert(data.error || t("translator.errors.sendFailed"));
       }
     } catch (err) {
-      alert("Error sending request: " + err.message);
+      alert(t("translator.errors.sendError", { message: err.message }));
     }
     setLoading({ ...loading, "send-provider": false });
   };
@@ -120,10 +121,10 @@ export default function TranslatorPage() {
       if (data.success) {
         setSteps({ ...steps, [stepId]: data.content });
       } else {
-        alert(data.error || "Failed to load file");
+        alert(data.error || t("translator.errors.loadFailed"));
       }
     } catch (err) {
-      alert("Error loading file: " + err.message);
+      alert(t("translator.errors.loadError", { message: err.message }));
     }
     setLoading({ ...loading, [`load-${stepId}`]: false });
   };
@@ -137,7 +138,7 @@ export default function TranslatorPage() {
       const leaned = leanJSON(obj);
       setSteps({ ...steps, [stepId]: JSON.stringify(leaned, null, 2) });
     } catch (err) {
-      alert("Error parsing JSON: " + err.message);
+      alert(t("translator.errors.jsonParse", { message: err.message }));
     }
   };
 
@@ -149,7 +150,7 @@ export default function TranslatorPage() {
       const obj = JSON.parse(content);
       setSteps({ ...steps, [stepId]: JSON.stringify(obj, null, 2) });
     } catch (err) {
-      alert("Error parsing JSON: " + err.message);
+      alert(t("translator.errors.jsonParse", { message: err.message }));
     }
   };
 
@@ -159,9 +160,9 @@ export default function TranslatorPage() {
       if (!content) return;
       
       await navigator.clipboard.writeText(content);
-      alert("Copied to clipboard!");
+      alert(t("translator.messages.copied"));
     } catch (err) {
-      alert("Error copying: " + err.message);
+      alert(t("translator.errors.copy", { message: err.message }));
     }
   };
 
@@ -179,12 +180,12 @@ export default function TranslatorPage() {
       });
       const data = await res.json();
       if (data.success) {
-        alert("File saved successfully");
+        alert(t("translator.messages.saved"));
       } else {
-        alert(data.error || "Failed to save file");
+        alert(data.error || t("translator.errors.saveFailed"));
       }
     } catch (err) {
-      alert("Error saving file: " + err.message);
+      alert(t("translator.errors.saveError", { message: err.message }));
     }
     setLoading({ ...loading, [`update-${stepId}`]: false });
   };
@@ -216,7 +217,7 @@ export default function TranslatorPage() {
         
         if (!res.ok) {
           const errorData = await res.json();
-          alert(errorData.error || "Failed to send request");
+          alert(errorData.error || t("translator.errors.sendFailed"));
           setLoading({ ...loading, [`submit-${stepId}`]: false });
           return;
         }
@@ -247,7 +248,7 @@ export default function TranslatorPage() {
         });
         
         setExpanded({ ...expanded, [stepId]: false, 5: true });
-        alert("Request sent to provider successfully!");
+        alert(t("translator.messages.requestSentSuccess"));
       } else {
         // Steps 1-3: Translate to next step
         const res = await fetch("/api/translator/translate", {
@@ -279,11 +280,11 @@ export default function TranslatorPage() {
           
           setExpanded({ ...expanded, [stepId]: false, [nextStepId]: true });
         } else {
-          alert(data.error || "Translation failed");
+          alert(data.error || t("translator.errors.translateFailed"));
         }
       }
     } catch (err) {
-      alert("Error: " + err.message);
+      alert(t("translator.errors.generic", { message: err.message }));
     }
     setLoading({ ...loading, [`submit-${stepId}`]: false });
   };
@@ -292,9 +293,9 @@ export default function TranslatorPage() {
     <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
+          <h1 className="text-2xl font-bold text-text-main">{t("translator.title")}</h1>
           <p className="text-sm text-text-muted mt-1">
-            Debug translation flow between formats
+            {t("translator.subtitle")}
           </p>
         </div>
       </div>
@@ -304,7 +305,7 @@ export default function TranslatorPage() {
         <div className="p-4 flex items-center gap-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-text-main mb-2">
-              Provider
+              {t("translator.providerLabel")}
             </label>
             <Select
               value={provider}
@@ -319,7 +320,7 @@ export default function TranslatorPage() {
               onClick={handleSendToProvider}
               loading={loading["send-provider"]}
             >
-              Send to Provider
+              {t("translator.sendToProvider")}
             </Button>
           </div>
         </div>
@@ -344,7 +345,7 @@ export default function TranslatorPage() {
                 <span className="text-xs text-text-muted ml-2">{step.file}</span>
                 {steps[step.id] && (
                   <span className="text-xs text-green-500 ml-2">
-                    ({steps[step.id].length} chars)
+                    ({t("translator.chars", { count: steps[step.id].length })})
                   </span>
                 )}
               </button>
@@ -403,7 +404,7 @@ export default function TranslatorPage() {
                     onClick={() => handleLoad(step.id)}
                     loading={loading[`load-${step.id}`]}
                   >
-                    Load
+                    {t("translator.actions.load")}
                   </Button>
                   <Button
                     size="sm"
@@ -411,7 +412,7 @@ export default function TranslatorPage() {
                     icon="compress"
                     onClick={() => handleLean(step.id)}
                   >
-                    Lean
+                    {t("translator.actions.lean")}
                   </Button>
                   <Button
                     size="sm"
@@ -419,7 +420,7 @@ export default function TranslatorPage() {
                     icon="content_copy"
                     onClick={() => handleCopy(step.id)}
                   >
-                    Copy
+                    {t("translator.actions.copy")}
                   </Button>
                   <Button
                     size="sm"
@@ -428,7 +429,7 @@ export default function TranslatorPage() {
                     onClick={() => handleUpdate(step.id)}
                     loading={loading[`update-${step.id}`]}
                   >
-                    Update
+                    {t("translator.actions.update")}
                   </Button>
                   {step.id <= 4 && (
                     <Button
@@ -437,7 +438,7 @@ export default function TranslatorPage() {
                       onClick={() => handleSubmit(step.id)}
                       loading={loading[`submit-${step.id}`]}
                     >
-                      {step.id === 4 ? "Send to Provider" : "Submit"}
+                      {step.id === 4 ? t("translator.sendToProvider") : t("translator.actions.submit")}
                     </Button>
                   )}
                 </div>

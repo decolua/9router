@@ -1,0 +1,970 @@
+{
+  "common": {
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "close": "Đóng",
+    "create": "Tạo mới",
+    "edit": "Chỉnh sửa",
+    "delete": "Xóa",
+    "loading": "Đang tải",
+    "search": "Tìm kiếm",
+    "all": "Tất cả",
+    "allowAll": "Cho phép tất cả",
+    "selectAll": "Chọn tất cả",
+    "clear": "Xóa chọn",
+    "add": "Thêm",
+    "retry": "Thử lại",
+    "confirm": "Xác nhận",
+    "warning": "Cảnh báo",
+    "copy": "Copy",
+    "copied": "Đã copy!",
+    "saving": "Đang lưu...",
+    "done": "Xong"
+  },
+  "nav": {
+    "endpoint": "Endpoint",
+    "providers": "Nhà cung cấp",
+    "combos": "Combos",
+    "usage": "Sử dụng",
+    "cliTools": "CLI Tools",
+    "translator": "Translator",
+    "settings": "Cài đặt",
+    "debug": "Debug",
+    "system": "Hệ thống",
+    "myKey": "Khóa của tôi"
+  },
+  "header": {
+    "logout": "Đăng xuất",
+    "providersDesc": "Quản lý kết nối nhà cung cấp AI",
+    "combosDesc": "Kết hợp model có fallback",
+    "usageDesc": "Theo dõi usage, tokens và logs",
+    "cliToolsDesc": "Cấu hình CLI tools",
+    "endpointDesc": "Cấu hình API endpoint",
+    "settingsDesc": "Quản lý tùy chọn"
+  },
+  "endpoint": {
+    "title": "API Endpoint",
+    "usingCloud": "Đang dùng Cloud Proxy",
+    "usingLocal": "Đang dùng Local Server",
+    "enableCloud": "Bật Cloud",
+    "disableCloud": "Tắt Cloud",
+    "keysTitle": "API Keys",
+    "createKey": "Tạo key",
+    "emptyTitle": "Chưa có API key",
+    "emptySubtitle": "Tạo API key đầu tiên để bắt đầu",
+    "statusActive": "Đang hoạt động",
+    "statusDisabled": "Đã tắt",
+    "enableKey": "Bật key",
+    "disableKey": "Tắt key",
+    "history": "Lịch sử",
+    "owner": "Chủ sở hữu",
+    "created": "Tạo lúc",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "remaining": "còn lại",
+    "unlimited": "không giới hạn",
+    "allowedModels": "Allowed models",
+    "editKey": "Chỉnh sửa key",
+    "rotateKey": "Tạo lại key",
+    "deleteKey": "Xóa key",
+    "deleteConfirm": "Xóa API key này?",
+    "createTitle": "Tạo API Key",
+    "editTitle": "Chỉnh sửa API Key",
+    "keyName": "Tên key",
+    "keyNamePlaceholder": "Production Key",
+    "ownerName": "Tên chủ sở hữu",
+    "ownerNamePlaceholder": "Nguyen Van A",
+    "ownerEmail": "Email chủ sở hữu",
+    "ownerEmailPlaceholder": "owner@example.com",
+    "ownerAge": "Tuổi chủ sở hữu",
+    "ownerAgePlaceholder": "30",
+    "requestLimit": "Request limit (tùy chọn)",
+    "tokenLimit": "Token limit (tùy chọn)",
+    "limitHint": "0 hoặc để trống = không giới hạn",
+    "requestLimitPlaceholder": "1000",
+    "tokenLimitPlaceholder": "1000000",
+    "selectedCount": "Đã chọn {selected} / {total}",
+    "searchModels": "Tìm model...",
+    "allProviders": "Tất cả providers",
+    "selectFiltered": "Chọn theo filter",
+    "loadingModels": "Đang tải models...",
+    "noModels": "Không tìm thấy model.",
+    "noModelsFilter": "Không có model phù hợp filter.",
+    "allowAllHint": "Allow all = cho phép tất cả model",
+    "createdTitle": "API Key đã tạo",
+    "createdWarningTitle": "Lưu key ngay!",
+    "createdWarningDesc": "Đây là lần duy nhất bạn thấy key này. Hãy lưu an toàn.",
+    "rotateTitle": "Tạo lại API Key",
+    "rotateAction": "Tạo lại",
+    "rotateDesc": "Sẽ tạo key mới cho API key ID này. Usage/quota và metadata (owner/limits/allowed models) được giữ nguyên.",
+    "rotateGrace": "Thời gian grace",
+    "rotateGrace0": "0h (ngay lập tức)",
+    "rotateGrace1": "1h",
+    "rotateGrace2": "2h (mặc định)",
+    "rotateGrace24": "24h",
+    "rotateExpires": "Key cũ hết hạn lúc {time}.",
+    "rotateHint": "Client dùng key cũ sẽ hoạt động đến khi hết hạn. Tắt hoặc xóa key nếu cần revoke ngay.",
+    "rotateImmediately": "ngay lập tức",
+    "historyTitle": "Lịch sử API Key",
+    "historyCurrent": "Key hiện tại",
+    "historyPrevious": "Key cũ (grace)",
+    "historyKeysCount": "{count} keys",
+    "historyRotated": "Đã rotate {time}",
+    "historyExpires": "Hết hạn {time}",
+    "historyNone": "Không có key cũ trong grace.",
+    "historyRotation": "Lịch sử rotate",
+    "historyGrace": "Grace {hours}",
+    "historyRotationNone": "Chưa có lịch sử rotate.",
+    "revokeNow": "Revoke ngay",
+    "revokeTitle": "Revoke key cũ",
+    "revokeDesc": "Key cũ sẽ dừng hoạt động ngay. Không xóa API key hoặc reset usage.",
+    "revokeConfirm": "Revoke",
+    "disableCloudTitle": "Tắt Cloud Proxy",
+    "disableCloudWarning": "Tất cả auth session sẽ bị xóa khỏi cloud.",
+    "syncingLatest": "Đang đồng bộ dữ liệu mới nhất...",
+    "disablingCloud": "Đang tắt cloud...",
+    "disableCloudConfirm": "Bạn chắc chắn muốn tắt cloud proxy?",
+    "syncing": "Đang đồng bộ...",
+    "disabling": "Đang tắt...",
+    "cloudBenefitAccess": "Truy cập mọi nơi",
+    "cloudBenefitNoPort": "Không cần port forwarding",
+    "cloudBenefitShare": "Chia sẻ endpoint",
+    "cloudBenefitCollab": "Dễ dàng hợp tác",
+    "cloudBenefitAlways": "Luôn online",
+    "cloudBenefitAvailability": "Hoạt động 24/7",
+    "cloudBenefitEdge": "Global Edge",
+    "cloudBenefitFast": "Truy cập nhanh toàn cầu",
+    "cloudConnected": "Đã kết nối & sẵn sàng",
+    "cloudAccess": "Truy cập API từ mọi nơi",
+    "enableCloudTitle": "Bật Cloud Proxy",
+    "cloudBenefitsTitle": "Bạn sẽ nhận được",
+    "cloudBenefitAccessWorld": "Truy cập API từ mọi nơi",
+    "cloudBenefitShareTeam": "Chia sẻ endpoint với team",
+    "cloudBenefitNoFirewall": "Không cần mở port hay firewall",
+    "cloudBenefitFastEdge": "Mạng edge toàn cầu nhanh",
+    "cloudNoteTitle": "Lưu ý",
+    "cloudNoteSession": "Cloud giữ auth session trong 1 ngày. Nếu không dùng sẽ tự xóa.",
+    "cloudNoteClaude": "Cloud có thể không ổn định với Claude Code OAuth trong một số trường hợp.",
+    "cloudSyncing": "Đang đồng bộ dữ liệu lên cloud...",
+    "cloudVerifying": "Đang xác thực kết nối...",
+    "verifying": "Đang xác thực..."
+  },
+  "language": {
+    "label": "Ngôn ngữ",
+    "vi": "Tiếng Việt",
+    "en": "English"
+  },
+  "sidebar": {
+    "serviceRunning": "Dịch vụ đang chạy trong terminal. Bạn có thể đóng trang này. Shutdown sẽ dừng dịch vụ.",
+    "shutdown": "Shutdown",
+    "closeProxyTitle": "Đóng Proxy",
+    "closeProxyMessage": "Bạn chắc chắn muốn đóng proxy server?",
+    "close": "Đóng",
+    "serverDisconnected": "Server đã ngắt kết nối",
+    "serverStopped": "Proxy server đã dừng.",
+    "reloadPage": "Tải lại trang"
+  },
+  "usage": {
+    "allApiKeys": "Tất cả API keys",
+    "overviewTitle": "Tổng quan sử dụng",
+    "days": "{count} ngày",
+    "tokens": "Tokens",
+    "costs": "Chi phí",
+    "autoRefresh": "Tự động làm mới ({seconds}s)",
+    "toggleAutoRefresh": "Bật/tắt tự động làm mới",
+    "activeRequests": "Request đang chạy",
+    "apiKey": "API Key",
+    "requests": "Requests",
+    "remaining": "còn lại {value}",
+    "byModel": "Usage theo model",
+    "filteredByApiKey": "Đang lọc theo API key",
+    "model": "Model",
+    "provider": "Provider",
+    "lastUsed": "Lần dùng gần nhất",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "totalTokens": "Total Tokens",
+    "inputCost": "Chi phí input",
+    "outputCost": "Chi phí output",
+    "totalCost": "Tổng chi phí",
+    "noUsageYet": "Chưa có dữ liệu usage. Hãy gửi request để xem thống kê.",
+    "byAccount": "Usage theo account",
+    "account": "Account",
+    "noAccountUsage": "Chưa có usage theo account. Hãy gửi request qua OAuth accounts để xem dữ liệu.",
+    "never": "Chưa dùng",
+    "justNow": "Vừa xong",
+    "minutesAgo": "{count} phút trước",
+    "hoursAgo": "{count} giờ trước",
+    "failed": "Không tải được thống kê usage.",
+    "tabOverview": "Tổng quan",
+    "tabLogs": "Logs",
+    "tabLimits": "Giới hạn"
+  },
+  "providers": {
+    "oauthTitle": "OAuth Providers",
+    "apiKeyTitle": "API Key Providers",
+    "freeTitle": "Nhà cung cấp miễn phí",
+    "addOpenAI": "Thêm OpenAI Compatible",
+    "addAnthropic": "Thêm Anthropic Compatible",
+    "openaiCompatible": "OpenAI Compatible",
+    "anthropicCompatible": "Anthropic Compatible",
+    "apiTypeChat": "Chat",
+    "apiTypeResponses": "Responses",
+    "apiTypeMessages": "Messages",
+    "apiTypeChatCompletions": "Chat Completions",
+    "openaiCompatibleDetails": "Chi tiết OpenAI Compatible",
+    "anthropicCompatibleDetails": "Chi tiết Anthropic Compatible",
+    "apiTypeResponsesApi": "Responses API",
+    "connected": "{count} kết nối",
+    "error": "{count} lỗi",
+    "errorWithCode": "{count} lỗi ({code})",
+    "noConnections": "Chưa có kết nối",
+    "time": {
+      "justNow": "vừa xong",
+      "minutesAgo": "{count} phút trước",
+      "hoursAgo": "{count} giờ trước",
+      "daysAgo": "{count} ngày trước"
+    },
+    "addOpenAITitle": "Thêm OpenAI Compatible",
+    "addAnthropicTitle": "Thêm Anthropic Compatible",
+    "form": {
+      "name": "Tên",
+      "prefix": "Prefix",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "checkKey": "API Key (để kiểm tra)",
+      "check": "Kiểm tra",
+      "checking": "Đang kiểm tra...",
+      "valid": "Hợp lệ",
+      "invalid": "Không hợp lệ",
+      "create": "Tạo",
+      "creating": "Đang tạo...",
+      "requiredLabel": "Bắt buộc. Nhãn hiển thị cho node.",
+      "prefixHint": "Bắt buộc. Dùng làm prefix cho model IDs.",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "openaiBaseUrlHint": "Dùng base URL (kết thúc /v1) cho OpenAI-compatible API.",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "anthropicBaseUrlHint": "Dùng base URL (kết thúc /v1) cho Anthropic-compatible API. Hệ thống sẽ thêm /messages."
+    },
+    "messages": {
+      "setAliasFailed": "Thiết lập alias thất bại",
+      "deleteConnectionConfirm": "Xóa kết nối này?",
+      "noModelsConfigured": "Chưa có model cấu hình",
+      "notFound": "Không tìm thấy provider",
+      "backToProviders": "Quay lại Providers",
+      "connectionCount": "{count} kết nối",
+      "apiTypeMessages": "Messages API",
+      "apiTypeResponses": "Responses API",
+      "apiTypeChatCompletions": "Chat Completions",
+      "endpointMessages": "messages",
+      "endpointResponses": "responses",
+      "endpointChatCompletions": "chat/completions",
+      "deleteCompatibleConfirm": "Xóa node {type} này?",
+      "oneConnectionLimit": "Mỗi compatible node chỉ cho phép một kết nối. Thêm node khác nếu cần nhiều kết nối.",
+      "connectionsTitle": "Kết nối",
+      "import": "Nhập",
+      "emptyConnectionsTitle": "Chưa có kết nối",
+      "emptyConnectionsSubtitle": "Thêm kết nối đầu tiên để bắt đầu",
+      "importJson": "Nhập JSON",
+      "addConnection": "Thêm kết nối",
+      "modelAliases": "Alias model",
+      "availableModels": "Model có sẵn",
+      "copyModel": "Copy model",
+      "aliasExists": "Alias \"{alias}\" đã tồn tại. Vui lòng chọn model khác hoặc sửa alias hiện có.",
+      "passthroughHint": "OpenRouter hỗ trợ mọi model. Thêm model và tạo alias để truy cập nhanh.",
+      "modelIdFromOpenRouter": "Model ID (từ OpenRouter)",
+      "modelIdPlaceholder": "anthropic/claude-3-opus",
+      "adding": "Đang thêm...",
+      "removeModel": "Xóa model",
+      "aliasSuggestionsUsed": "Các alias gợi ý đã tồn tại. Vui lòng chọn model khác hoặc xóa alias bị trùng.",
+      "importModelsFailed": "Nhập models thất bại",
+      "noModelsReturned": "Không có models trả về từ /models.",
+      "noNewModels": "Không có model mới được thêm.",
+      "addCompatibleModels": "Thêm model tương thích {type} thủ công hoặc import từ /models.",
+      "modelId": "Model ID",
+      "anthropicModelPlaceholder": "claude-3-opus-20240229",
+      "openaiModelPlaceholder": "gpt-4o",
+      "importing": "Đang nhập...",
+      "importFromModels": "Import từ /models",
+      "addConnectionToImport": "Thêm kết nối để bật import models.",
+      "oauthAccount": "Tài khoản OAuth",
+      "statusDisabled": "Đã tắt",
+      "statusUnknown": "Không rõ",
+      "statusActive": "Hoạt động",
+      "statusSuccess": "Thành công",
+      "statusError": "Lỗi",
+      "statusExpired": "Hết hạn",
+      "statusUnavailable": "Không khả dụng",
+      "autoPriority": "Auto: {value}",
+      "disableConnection": "Tắt kết nối",
+      "enableConnection": "Bật kết nối",
+      "name": "Tên",
+      "namePlaceholder": "Production Key",
+      "apiKey": "API Key",
+      "check": "Kiểm tra",
+      "checking": "Đang kiểm tra...",
+      "valid": "Hợp lệ",
+      "invalid": "Không hợp lệ",
+      "validateAnthropic": "Kiểm tra {name} bằng cách xác thực API key.",
+      "validateOpenAI": "Kiểm tra {name} qua /models trên base URL của bạn.",
+      "priority": "Ưu tiên",
+      "invalidJson": "JSON không hợp lệ. Vui lòng kiểm tra định dạng.",
+      "jsonFormatHint": "JSON phải là mảng hoặc { connections: [...] }.",
+      "importRowInvalid": "Dòng {row}: Object không hợp lệ",
+      "importRowProvider": "Dòng {row}: provider phải là {provider}",
+      "importRowMissing": "Dòng {row}: cần name và apiKey",
+      "importRowPriority": "Dòng {row}: priority phải là số",
+      "importRowGlobalPriority": "Dòng {row}: globalPriority phải là số",
+      "importRowMore": "{head} (+{count} dòng)",
+      "readFileFailed": "Đọc file thất bại.",
+      "importFailed": "Nhập thất bại",
+      "importTitle": "Nhập API Keys cho {name}",
+      "importDesc": "Tải lên file JSON chứa mảng API keys. Mỗi item cần có name và apiKey.",
+      "example": "Ví dụ",
+      "jsonFile": "File JSON",
+      "parseLocalOnly": "File được parse tại máy và không lưu lại.",
+      "pasteJson": "Dán JSON (tùy chọn)",
+      "pasteJsonPlaceholder": "Dán JSON vào đây",
+      "preview": "Xem trước ({count})",
+      "moreItems": "+{count} mục",
+      "importResult": "Kết quả nhập",
+      "importResultSummary": "Đã nhập {success}/{total}",
+      "editConnection": "Chỉnh sửa kết nối",
+      "accountNamePlaceholder": "Tên tài khoản",
+      "email": "Email",
+      "newApiKeyPlaceholder": "Nhập API key mới",
+      "keepApiKeyHint": "Để trống để giữ API key hiện tại.",
+      "testing": "Đang test...",
+      "testConnection": "Test kết nối",
+      "failed": "Thất bại",
+      "editCompatibleTitle": "Chỉnh sửa {type}",
+      "requiredLabel": "Bắt buộc. Nhãn hiển thị cho node.",
+      "prefix": "Prefix",
+      "prefixHint": "Bắt buộc. Dùng làm prefix cho model IDs.",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "apiKeyCheck": "API Key (để kiểm tra)",
+      "saving": "Đang lưu...",
+      "cooldownSeconds": "{count}s",
+      "cooldownMinutes": "{minutes}m {seconds}s",
+      "cooldownHours": "{hours}h {minutes}m",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "anthropicBaseUrlHint": "Dùng base URL (kết thúc /v1) cho Anthropic-compatible API. Hệ thống sẽ thêm /messages.",
+      "openaiBaseUrlHint": "Dùng base URL (kết thúc /v1) cho OpenAI-compatible API."
+    }
+  },
+  "cliTools": {
+    "common": {
+      "comingSoon": "Sắp có...",
+      "noApiKeysCloud": "Chưa có API key - Tạo trong trang Keys",
+      "apiKeyDefault": "sk_9router",
+      "apiKeyDefaultFull": "sk_9router (mặc định)",
+      "noActiveProviders": "Chưa có provider hoạt động",
+      "noActiveProvidersDesc": "Hãy thêm và kết nối providers trước khi cấu hình CLI tools."
+    },
+    "actions": {
+      "selectModel": "Chọn model",
+      "apply": "Áp dụng",
+      "reset": "Reset",
+      "manualConfig": "Cấu hình thủ công",
+      "resetToDefault": "Khôi phục mặc định",
+      "howToInstall": "Cách cài",
+      "hide": "Ẩn"
+    },
+    "fields": {
+      "current": "Hiện tại",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://...",
+      "baseUrlPlaceholderV1": "https://.../v1",
+      "apiKey": "API Key",
+      "model": "Model",
+      "modelPlaceholder": "provider/model-id"
+    },
+    "status": {
+      "connected": "Đã kết nối",
+      "notConfigured": "Chưa cấu hình",
+      "other": "Khác"
+    },
+    "tools": {
+      "claude": {
+        "name": "Claude Code",
+        "description": "Anthropic Claude Code CLI",
+        "models": {
+          "opus": "Claude Opus",
+          "sonnet": "Claude Sonnet",
+          "haiku": "Claude Haiku"
+        }
+      },
+      "codex": {
+        "name": "OpenAI Codex CLI",
+        "description": "OpenAI Codex CLI"
+      },
+      "droid": {
+        "name": "Factory Droid",
+        "description": "Factory Droid AI Assistant"
+      },
+      "openclaw": {
+        "name": "Open Claw",
+        "description": "Open Claw AI Assistant"
+      },
+      "antigravity": {
+        "name": "Antigravity",
+        "description": "Google Antigravity IDE with MITM"
+      },
+      "cursor": {
+        "name": "Cursor",
+        "description": "Cursor AI Code Editor",
+        "notes": {
+          "requiresPro": "Cần tài khoản Cursor Pro để dùng tính năng này.",
+          "cloudOnly": "Cursor đi qua server riêng nên local endpoint không hỗ trợ. Vui lòng bật Cloud Endpoint trong Settings."
+        },
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào Settings → Models"
+          },
+          "enableOpenAI": {
+            "title": "Bật OpenAI API",
+            "desc": "Bật tùy chọn \"OpenAI API key\""
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "addCustomModel": {
+            "title": "Thêm Custom Model",
+            "desc": "Chọn \"View All Model\" → \"Add Custom Model\""
+          },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "cline": {
+        "name": "Cline",
+        "description": "CLINE AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào panel CLINE Settings"
+          },
+          "selectProvider": {
+            "title": "Chọn Provider",
+            "desc": "Chọn API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "roo": {
+        "name": "Roo",
+        "description": "Roo AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Mở Settings",
+            "desc": "Vào panel Roo Settings"
+          },
+          "selectProvider": {
+            "title": "Chọn Provider",
+            "desc": "Chọn API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" }
+        }
+      },
+      "continue": {
+        "name": "Continue",
+        "description": "Continue AI Assistant",
+        "steps": {
+          "openConfig": {
+            "title": "Mở Config",
+            "desc": "Mở file cấu hình Continue"
+          },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Chọn model" },
+          "addModelConfig": {
+            "title": "Thêm cấu hình model",
+            "desc": "Thêm cấu hình sau vào mảng models của bạn:"
+          }
+        }
+      }
+    },
+    "claude": {
+      "status": {
+        "checking": "Đang kiểm tra Claude CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Claude CLI",
+        "subtitle": "Vui lòng cài Claude CLI để dùng tính năng này.",
+        "guideTitle": "Hướng dẫn cài đặt",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "Sau khi cài, chạy claude để kiểm tra."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Reset cấu hình thành công!",
+        "resetFailed": "Reset cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho {alias}",
+      "manualConfigTitle": "Claude CLI - Cấu hình thủ công"
+    },
+    "codex": {
+      "status": {
+        "checking": "Đang kiểm tra Codex CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Codex CLI",
+        "subtitle": "Vui lòng cài Codex CLI để dùng auto-apply.",
+        "guideTitle": "Hướng dẫn cài đặt",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "Sau khi cài, chạy codex để kiểm tra.",
+        "details": "Codex dùng ~/.codex/auth.json với OPENAI_API_KEY. Bấm Apply để tự cấu hình."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Reset cấu hình thành công!",
+        "resetFailed": "Reset cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Codex",
+      "manualConfigTitle": "Codex CLI - Cấu hình thủ công",
+      "manualConfigHeader": "Cấu hình 9Router cho Codex CLI"
+    },
+    "openclaw": {
+      "status": {
+        "checking": "Đang kiểm tra Open Claw CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Open Claw CLI",
+        "subtitle": "Vui lòng cài Open Claw CLI để dùng tính năng này."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Đã khôi phục cấu hình!",
+        "resetFailed": "Khôi phục cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Open Claw",
+      "manualConfigTitle": "Open Claw - Cấu hình thủ công",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "droid": {
+      "status": {
+        "checking": "Đang kiểm tra Factory Droid CLI..."
+      },
+      "install": {
+        "title": "Chưa cài Factory Droid CLI",
+        "subtitle": "Vui lòng cài Factory Droid CLI để dùng tính năng này."
+      },
+      "messages": {
+        "applySuccess": "Áp dụng cấu hình thành công!",
+        "applyFailed": "Áp dụng cấu hình thất bại",
+        "resetSuccess": "Đã khôi phục cấu hình!",
+        "resetFailed": "Khôi phục cấu hình thất bại"
+      },
+      "selectModelTitle": "Chọn model cho Factory Droid",
+      "manualConfigTitle": "Factory Droid - Cấu hình thủ công",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "antigravity": {
+      "status": {
+        "active": "Đang chạy",
+        "inactive": "Không chạy"
+      },
+      "step3": "3. Map model Antigravity tới bất kỳ provider nào qua 9Router"
+    }
+  },
+  "modelSelect": {
+    "title": "Chọn model",
+    "searchPlaceholder": "Tìm model...",
+    "combos": "Combos",
+    "loadingProvider": "Đang tải models...",
+    "loadFailed": "Tải models thất bại",
+    "noModelsForProvider": "Chưa có model cho provider này",
+    "noModelsFound": "Không tìm thấy model"
+  },
+  "login": {
+    "loading": "Đang tải...",
+    "subtitle": "Nhập mật khẩu để vào dashboard",
+    "tabPassword": "Mật khẩu",
+    "tabApiKey": "API Key",
+    "passwordLabel": "Mật khẩu",
+    "passwordPlaceholder": "Nhập mật khẩu",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "sk-xxxxxxxxxxxxxxxx",
+    "login": "Đăng nhập",
+    "loginWithApiKey": "Đăng nhập bằng API Key",
+    "defaultPasswordPrefix": "Mật khẩu mặc định là",
+    "quotaPrefix": "Chỉ muốn kiểm tra quota? Dùng",
+    "invalidApiKey": "API key không hợp lệ",
+    "invalidPassword": "Mật khẩu không đúng",
+    "error": "Có lỗi xảy ra. Vui lòng thử lại."
+  },
+  "keyStatus": {
+    "badge": "Trạng thái API Key",
+    "title": "Kiểm tra usage API key trong vài giây",
+    "subtitle": "Dán API key để xem request/token còn lại. Chúng tôi không lưu key hoặc chia sẻ dữ liệu cá nhân.",
+    "dashboardLogin": "Đăng nhập dashboard",
+    "dashboardHint": "Cần full dashboard? Đăng nhập bằng mật khẩu hoặc API key.",
+    "lookupTitle": "Tra cứu quota",
+    "lookupSubtitle": "Chỉ đọc cho chủ API key",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "sk-xxxxxxxxxxxxxxxx",
+    "checking": "Đang kiểm tra...",
+    "checkUsage": "Kiểm tra usage",
+    "tips": "Mẹo: Dùng key đúng như đã cấp. Trang này chỉ đọc.",
+    "viewTitle": "Bạn có thể xem",
+    "viewSubtitle": "Dữ liệu an toàn, giới hạn",
+    "viewRequestsTitle": "Usage request và token",
+    "viewRequestsDesc": "Theo dõi quota đã dùng và còn lại.",
+    "viewModelsTitle": "Model được phép",
+    "viewModelsDesc": "Xem model đang được phép cho key của bạn.",
+    "viewPrivacyTitle": "Ưu tiên bảo mật",
+    "viewPrivacyDesc": "Không lộ hoặc lưu key/sensitive metadata.",
+    "summaryWithName": "Tóm tắt usage cho {name}",
+    "summaryTitle": "Tóm tắt usage",
+    "summarySubtitle": "Key tạo lúc {date}",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "lastAccessed": "Truy cập gần nhất",
+    "allowedModels": "Allowed models",
+    "allowedAll": "Key này cho phép tất cả models.",
+    "percentUsed": "Đã dùng {percent}%",
+    "unlimited": "Không giới hạn",
+    "used": "Đã dùng",
+    "remaining": "Còn lại",
+    "limit": "Giới hạn",
+    "enterKey": "Vui lòng nhập API key.",
+    "invalidKey": "API key không hợp lệ.",
+    "serverError": "Không kết nối được server. Vui lòng thử lại.",
+    "apiKeyAccess": "API Key Access",
+    "logsTitle": "Request logs",
+    "logsSubtitle": "200 requests gần nhất của key",
+    "filterLabel": "Lọc theo connectionId",
+    "filterPlaceholder": "connectionId (tuỳ chọn)",
+    "applyFilter": "Áp dụng",
+    "loading": "Đang tải",
+    "time": "Thời gian",
+    "provider": "Provider",
+    "model": "Model",
+    "connection": "Kết nối",
+    "input": "Input",
+    "output": "Output",
+    "noLogs": "Chưa có logs cho key này."
+  },
+  "keyDashboard": {
+    "badge": "API Key Access",
+    "title": "Usage API key của bạn",
+    "subtitle": "Chỉ đọc cho key của bạn. Tính năng admin đã ẩn.",
+    "titleWithName": "Key: {name}",
+    "summaryTitle": "Tóm tắt key",
+    "createdAt": "Tạo lúc {date}",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "lastAccessed": "Truy cập gần nhất",
+    "allowedModels": "Allowed models",
+    "allowedAll": "Key này cho phép tất cả models.",
+    "percentUsed": "Đã dùng {percent}%",
+    "unlimited": "Không giới hạn",
+    "used": "Đã dùng",
+    "remaining": "Còn lại",
+    "limit": "Giới hạn",
+    "failedUsage": "Không tải được usage",
+    "failedLogs": "Không tải được logs",
+    "logsTitle": "Request logs",
+    "logsSubtitle": "200 requests gần nhất của key",
+    "filterLabel": "Lọc theo connectionId",
+    "filterPlaceholder": "connectionId (tuỳ chọn)",
+    "applyFilter": "Áp dụng",
+    "loading": "Đang tải",
+    "time": "Thời gian",
+    "provider": "Provider",
+    "model": "Model",
+    "connection": "Kết nối",
+    "input": "Input",
+    "output": "Output",
+    "noLogs": "Chưa có logs cho key này.",
+    "refresh": "Làm mới"
+  },
+  "providersNew": {
+    "backToProviders": "Quay lại Providers",
+    "title": "Thêm provider mới",
+    "subtitle": "Cấu hình nhà cung cấp AI cho ứng dụng của bạn.",
+    "providerLabel": "Provider",
+    "providerPlaceholder": "Chọn provider",
+    "selectedProvider": "Provider đã chọn",
+    "authMethod": "Phương thức xác thực",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "Nhập API key",
+    "apiKeyHint": "API key sẽ được mã hóa và lưu an toàn.",
+    "oauthDesc": "Kết nối tài khoản bằng OAuth2.",
+    "oauthConnect": "Kết nối OAuth2",
+    "displayName": "Tên hiển thị",
+    "displayNamePlaceholder": "vd: Production API, Dev Environment",
+    "displayNameHint": "Tùy chọn. Tên dễ nhận biết cho cấu hình này.",
+    "active": "Kích hoạt",
+    "activeDesc": "Cho phép provider này dùng trong ứng dụng",
+    "createProvider": "Tạo provider",
+    "errorSelectProvider": "Vui lòng chọn provider",
+    "errorApiKeyRequired": "Cần nhập API Key",
+    "errorCreate": "Tạo provider thất bại",
+    "errorGeneric": "Có lỗi xảy ra. Vui lòng thử lại."
+  },
+  "combos": {
+    "title": "Combos",
+    "subtitle": "Tạo combo model có fallback",
+    "create": "Tạo combo",
+    "emptyTitle": "Chưa có combo",
+    "emptySubtitle": "Tạo combo model có fallback",
+    "deleteConfirm": "Xóa combo này?",
+    "createError": "Tạo combo thất bại",
+    "updateError": "Cập nhật combo thất bại",
+    "copyName": "Copy tên combo",
+    "more": "nữa",
+    "editTitle": "Chỉnh sửa combo",
+    "createTitle": "Tạo combo",
+    "nameLabel": "Tên combo",
+    "namePlaceholder": "my-combo",
+    "nameHint": "Chỉ cho phép chữ, số, - và _",
+    "nameRequired": "Cần nhập tên combo",
+    "modelsLabel": "Models",
+    "noModels": "Chưa có model",
+    "moveUp": "Di chuyển lên",
+    "moveDown": "Di chuyển xuống",
+    "remove": "Xóa",
+    "addModel": "Thêm model",
+    "saving": "Đang lưu...",
+    "addModelTitle": "Thêm model vào combo"
+  }
+  ,
+  "profile": {
+    "common": {
+      "genericError": "Đã xảy ra lỗi"
+    },
+    "localMode": {
+      "title": "Chế độ Local",
+      "subtitle": "Đang chạy trên máy của bạn",
+      "desc": "Tất cả dữ liệu được lưu cục bộ trong",
+      "descSuffix": "tệp.",
+      "footer": "Chế độ Local - Mọi dữ liệu lưu trên máy của bạn"
+    },
+    "security": {
+      "title": "Bảo mật",
+      "requireLogin": "Yêu cầu đăng nhập",
+      "requireLoginDesc": "Bật: dashboard yêu cầu mật khẩu. Tắt: truy cập không cần đăng nhập.",
+      "currentPassword": "Mật khẩu hiện tại",
+      "currentPasswordPlaceholder": "Nhập mật khẩu hiện tại",
+      "newPassword": "Mật khẩu mới",
+      "newPasswordPlaceholder": "Nhập mật khẩu mới",
+      "confirmPassword": "Xác nhận mật khẩu mới",
+      "confirmPasswordPlaceholder": "Nhập lại mật khẩu mới",
+      "updatePassword": "Cập nhật mật khẩu",
+      "setPassword": "Đặt mật khẩu",
+      "passwordMismatch": "Mật khẩu không khớp",
+      "passwordUpdated": "Đã cập nhật mật khẩu",
+      "passwordUpdateFailed": "Cập nhật mật khẩu thất bại"
+    },
+    "routing": {
+      "title": "Chiến lược định tuyến",
+      "roundRobin": "Round Robin",
+      "roundRobinDesc": "Luân phiên account để phân phối tải",
+      "stickyLimit": "Giới hạn Sticky",
+      "stickyLimitDesc": "Số lần gọi mỗi account trước khi đổi",
+      "roundRobinStatus": "Đang phân phối request qua các account với {count} lần gọi mỗi account.",
+      "fillFirstStatus": "Đang ưu tiên account theo thứ tự (Fill First)."
+    },
+    "appearance": {
+      "title": "Giao diện",
+      "darkMode": "Chế độ tối",
+      "darkModeDesc": "Chuyển đổi giữa sáng và tối",
+      "theme": {
+        "light": "sáng",
+        "dark": "tối",
+        "system": "hệ thống"
+      }
+    },
+    "data": {
+      "title": "Dữ liệu",
+      "location": "Vị trí database",
+      "export": "Xuất database",
+      "import": "Nhập database",
+      "importHint": "Nhập sẽ thay thế toàn bộ dữ liệu cục bộ.",
+      "exportSuccess": "Đã xuất database",
+      "exportFailed": "Xuất database thất bại",
+      "importSuccess": "Đã nhập database. Tải lại để áp dụng.",
+      "importFailed": "Nhập database thất bại",
+      "invalidJson": "File JSON không hợp lệ"
+    }
+  },
+  "translator": {
+    "title": "Translator Debug",
+    "subtitle": "Gỡ lỗi luồng dịch giữa các định dạng",
+    "providerLabel": "Provider",
+    "sendToProvider": "Gửi tới Provider",
+    "chars": "{count} ký tự",
+    "actions": {
+      "load": "Tải",
+      "lean": "Rút gọn",
+      "copy": "Copy",
+      "update": "Cập nhật",
+      "submit": "Gửi"
+    },
+    "steps": {
+      "clientRequest": "Yêu cầu client",
+      "sourceFormat": "Định dạng nguồn",
+      "openaiIntermediate": "Trung gian OpenAI",
+      "targetFormat": "Định dạng đích",
+      "providerResponse": "Phản hồi provider"
+    },
+    "providers": {
+      "antigravity": "Antigravity",
+      "geminiCli": "Gemini CLI",
+      "claude": "Claude",
+      "codex": "Codex",
+      "github": "GitHub",
+      "qwen": "Qwen",
+      "iflow": "iFlow AI",
+      "kiro": "Kiro AI",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini",
+      "openrouter": "OpenRouter",
+      "glm": "GLM",
+      "kimi": "Kimi",
+      "minimax": "MiniMax"
+    },
+    "prompts": {
+      "accessToken": "Nhập access token (hoặc để trống):",
+      "apiKey": "Nhập API key (hoặc để trống):"
+    },
+    "messages": {
+      "requestSent": "Đã gửi! Trạng thái: {status} {statusText}",
+      "requestSentSuccess": "Gửi request tới provider thành công!",
+      "saved": "Đã lưu file",
+      "copied": "Đã copy vào clipboard!"
+    },
+    "errors": {
+      "step4Required": "Vui lòng tải hoặc tạo nội dung bước 4 trước",
+      "sendFailed": "Gửi request thất bại",
+      "sendError": "Lỗi gửi request: {message}",
+      "loadFailed": "Tải file thất bại",
+      "loadError": "Lỗi tải file: {message}",
+      "jsonParse": "Lỗi parse JSON: {message}",
+      "copy": "Lỗi copy: {message}",
+      "saveFailed": "Lưu file thất bại",
+      "saveError": "Lỗi lưu file: {message}",
+      "translateFailed": "Dịch thất bại",
+      "generic": "Lỗi: {message}"
+    }
+  },
+  "landing": {
+    "ctaTitle": "Sẵn sàng đơn giản hóa hạ tầng AI?",
+    "ctaSubtitle": "Tham gia cùng các dev đang tối ưu tích hợp AI với 9Router. Mã nguồn mở và miễn phí để bắt đầu.",
+    "ctaPrimary": "Bắt đầu miễn phí",
+    "ctaSecondary": "Đọc tài liệu",
+    "nav": {
+      "home": "Về trang chủ",
+      "features": "Tính năng",
+      "howItWorks": "Cách hoạt động",
+      "docs": "Tài liệu",
+      "github": "GitHub",
+      "getStarted": "Bắt đầu"
+    },
+    "hero": {
+      "badge": "v1.0 đã phát hành",
+      "titleLine1": "Một endpoint cho",
+      "titleLine2": "Mọi AI Provider",
+      "subtitle": "Proxy endpoint AI với dashboard - bản JavaScript của CLIProxyAPI. Hoạt động mượt với Claude Code, OpenAI Codex, Cline, RooCode và nhiều CLI tool khác.",
+      "primary": "Bắt đầu",
+      "secondary": "Xem trên GitHub"
+    },
+    "features": {
+      "title": "Tính năng nổi bật",
+      "subtitle": "Tất cả những gì bạn cần để quản lý hạ tầng AI ở một nơi, sẵn sàng cho scale.",
+      "items": {
+        "unified": { "title": "Endpoint hợp nhất", "desc": "Truy cập tất cả provider qua một URL API tiêu chuẩn." },
+        "setup": { "title": "Thiết lập nhanh", "desc": "Khởi chạy trong vài phút với lệnh npx." },
+        "fallback": { "title": "Fallback model", "desc": "Tự động chuyển provider khi lỗi hoặc độ trễ cao." },
+        "usage": { "title": "Theo dõi usage", "desc": "Phân tích chi tiết và theo dõi chi phí trên mọi model." },
+        "oauth": { "title": "OAuth & API Keys", "desc": "Quản lý credential an toàn trong một nơi." },
+        "cloud": { "title": "Cloud Sync", "desc": "Đồng bộ cấu hình giữa các thiết bị ngay lập tức." },
+        "cli": { "title": "Hỗ trợ CLI", "desc": "Dùng tốt với Claude Code, Codex, Cline, Cursor và nhiều hơn." },
+        "dashboard": { "title": "Dashboard", "desc": "Dashboard trực quan để theo dõi traffic realtime." }
+      }
+    },
+    "getStarted": {
+      "title": "Bắt đầu trong 30 giây",
+      "subtitle": "Cài 9Router, cấu hình provider qua dashboard và bắt đầu route request AI.",
+      "steps": {
+        "install": { "title": "Cài 9Router", "desc": "Chạy lệnh npx để khởi động server ngay" },
+        "dashboard": { "title": "Mở Dashboard", "desc": "Cấu hình provider và API key qua web" },
+        "route": { "title": "Route Request", "desc": "Trỏ CLI tool tới http://localhost:20128" }
+      },
+      "copy": "Copy",
+      "copied": "✓ Đã copy",
+      "terminal": {
+        "starting": "Đang khởi chạy 9Router...",
+        "server": "Server đang chạy tại",
+        "dashboard": "Dashboard:",
+        "ready": "Sẵn sàng route! ✓"
+      },
+      "note": "📝 Cấu hình provider trong dashboard hoặc dùng biến môi trường",
+      "terminalLabel": "terminal",
+      "dataLocation": "Vị trí dữ liệu:",
+      "platforms": {
+        "unix": "macOS/Linux",
+        "windows": "Windows"
+      }
+    },
+    "howItWorks": {
+      "title": "9Router hoạt động thế nào",
+      "subtitle": "Dữ liệu đi từ ứng dụng qua lớp định tuyến thông minh tới provider phù hợp nhất.",
+      "step1": { "title": "1. CLI & SDKs", "desc": "Request bắt đầu từ tool yêu thích hoặc SDK chung. Chỉ cần đổi base URL." },
+      "step2": { "title": "2. 9Router Hub", "desc": "Engine phân tích prompt, kiểm tra sức khỏe provider và route theo latency/chi phí thấp nhất." },
+      "step3": { "title": "3. AI Providers", "desc": "Request được xử lý bởi OpenAI, Anthropic, Gemini hoặc các provider khác ngay lập tức." }
+    },
+    "footer": {
+      "brandDesc": "Endpoint hợp nhất cho AI. Kết nối, định tuyến và quản lý provider dễ dàng.",
+      "product": "Sản phẩm",
+      "features": "Tính năng",
+      "dashboard": "Dashboard",
+      "changelog": "Changelog",
+      "resources": "Tài nguyên",
+      "documentation": "Tài liệu",
+      "github": "GitHub",
+      "npm": "NPM",
+      "legal": "Pháp lý",
+      "license": "Giấy phép MIT",
+      "copyright": "© {year} 9Router. Mọi quyền được bảo lưu."
+    },
+    "flow": {
+      "mobileHint": "Sơ đồ tương tác chỉ hiển thị trên desktop",
+      "cli": {
+        "claude": "Claude Code",
+        "codex": "OpenAI Codex",
+        "cline": "Cline",
+        "cursor": "Cursor"
+      },
+      "providers": {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "github": "GitHub Copilot"
+      }
+    }
+  }
+}

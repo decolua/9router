@@ -1,8 +1,20 @@
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { createRequire } = require("module");
 
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
+const requireFromHere = createRequire(__filename);
+
+function loadSelfsigned() {
+  try {
+    const moduleName = "self" + "signed";
+    return requireFromHere(moduleName);
+  } catch (error) {
+    const reason = error && error.message ? error.message : String(error);
+    throw new Error(`Missing dependency \"selfsigned\". Run \"npm install selfsigned\". ${reason}`);
+  }
+}
 
 /**
  * Generate self-signed SSL certificate using selfsigned (pure JS, no openssl needed)
@@ -21,7 +33,7 @@ async function generateCert() {
     fs.mkdirSync(certDir, { recursive: true });
   }
 
-  const selfsigned = require("selfsigned");
+  const selfsigned = loadSelfsigned();
   const attrs = [{ name: "commonName", value: TARGET_HOST }];
   const notAfter = new Date();
   notAfter.setFullYear(notAfter.getFullYear() + 1);

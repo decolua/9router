@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 
 export default function OpenClawToolCard({
   tool,
@@ -14,6 +15,7 @@ export default function OpenClawToolCard({
   activeProviders,
   cloudEnabled,
 }) {
+  const t = useTranslations();
   const [openclawStatus, setOpenclawStatus] = useState(null);
   const [checkingOpenclaw, setCheckingOpenclaw] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -114,9 +116,9 @@ export default function OpenClawToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim() 
+      const keyToUse = selectedApiKey?.trim()
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+        || (!cloudEnabled ? t("cliTools.common.apiKeyDefault") : null);
 
       const res = await fetch("/api/cli-tools/openclaw-settings", {
         method: "POST",
@@ -129,13 +131,13 @@ export default function OpenClawToolCard({
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings applied successfully!" });
+        setMessage({ type: "success", text: t("cliTools.openclaw.messages.applySuccess") });
         checkOpenclawStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+        setMessage({ type: "error", text: data.error || t("cliTools.openclaw.messages.applyFailed") });
       }
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: error.message || t("cliTools.openclaw.messages.applyFailed") });
     } finally {
       setApplying(false);
     }
@@ -148,15 +150,15 @@ export default function OpenClawToolCard({
       const res = await fetch("/api/cli-tools/openclaw-settings", { method: "DELETE" });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings reset successfully!" });
+        setMessage({ type: "success", text: t("cliTools.openclaw.messages.resetSuccess") });
         setSelectedModel("");
         setSelectedApiKey("");
         checkOpenclawStatus();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to reset settings" });
+        setMessage({ type: "error", text: data.error || t("cliTools.openclaw.messages.resetFailed") });
       }
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: error.message || t("cliTools.openclaw.messages.resetFailed") });
     } finally {
       setRestoring(false);
     }
@@ -168,15 +170,15 @@ export default function OpenClawToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
+      const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? t("cliTools.common.apiKeyDefault") : t("cliTools.openclaw.placeholders.apiKey"));
 
     const settingsContent = {
       agents: {
         defaults: {
           model: {
-            primary: `9router/${selectedModel || "provider/model-id"}`,
+            primary: `9router/${selectedModel || t("cliTools.openclaw.placeholders.model")}`,
           },
         },
       },
@@ -188,8 +190,8 @@ export default function OpenClawToolCard({
             api: "openai-completions",
             models: [
               {
-                id: selectedModel || "provider/model-id",
-                name: (selectedModel || "provider/model-id").split("/").pop(),
+                id: selectedModel || t("cliTools.openclaw.placeholders.model"),
+                name: (selectedModel || t("cliTools.openclaw.placeholders.model")).split("/").pop(),
               },
             ],
           },
@@ -210,16 +212,16 @@ export default function OpenClawToolCard({
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/openclaw.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/openclaw.png" alt={t(tool.name)} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="font-medium text-sm">{tool.name}</h3>
-              {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">Connected</span>}
-              {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">Not configured</span>}
-              {configStatus === "other" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">Other</span>}
+              <h3 className="font-medium text-sm">{t(tool.name)}</h3>
+              {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">{t("cliTools.status.connected")}</span>}
+              {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">{t("cliTools.status.notConfigured")}</span>}
+              {configStatus === "other" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">{t("cliTools.status.other")}</span>}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted truncate">{t(tool.description)}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -230,7 +232,7 @@ export default function OpenClawToolCard({
           {checkingOpenclaw && (
             <div className="flex items-center gap-2 text-text-muted">
               <span className="material-symbols-outlined animate-spin">progress_activity</span>
-              <span>Checking Open Claw CLI...</span>
+              <span>{t("cliTools.openclaw.status.checking")}</span>
             </div>
           )}
 
@@ -238,8 +240,8 @@ export default function OpenClawToolCard({
             <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500">warning</span>
               <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Open Claw CLI to use this feature.</p>
+                <p className="font-medium text-yellow-600 dark:text-yellow-400">{t("cliTools.openclaw.install.title")}</p>
+                <p className="text-sm text-text-muted">{t("cliTools.openclaw.install.subtitle")}</p>
               </div>
             </div>
           )}
@@ -250,7 +252,7 @@ export default function OpenClawToolCard({
                 {/* Current Base URL */}
                 {openclawStatus?.settings?.models?.providers?.["9router"]?.baseUrl && (
                   <div className="flex items-center gap-2">
-                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
+                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.current")}</span>
                     <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                     <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
                       {openclawStatus.settings.models.providers["9router"].baseUrl}
@@ -260,17 +262,17 @@ export default function OpenClawToolCard({
 
                 {/* Base URL */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Base URL</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.baseUrl")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <input 
                     type="text" 
                     value={getDisplayUrl()} 
                     onChange={(e) => setCustomBaseUrl(e.target.value)} 
-                    placeholder="https://.../v1" 
+                    placeholder={t("cliTools.fields.baseUrlPlaceholderV1")} 
                     className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
                   />
                   {customBaseUrl && customBaseUrl !== baseUrl && (
-                    <button onClick={() => setCustomBaseUrl("")} className="p-1 text-text-muted hover:text-primary rounded transition-colors" title="Reset to default">
+                    <button onClick={() => setCustomBaseUrl("")} className="p-1 text-text-muted hover:text-primary rounded transition-colors" title={t("cliTools.actions.resetToDefault")}>
                       <span className="material-symbols-outlined text-[14px]">restart_alt</span>
                     </button>
                   )}
@@ -278,7 +280,7 @@ export default function OpenClawToolCard({
 
                 {/* API Key */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.apiKey")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   {apiKeys.length > 0 ? (
                     <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
@@ -286,18 +288,18 @@ export default function OpenClawToolCard({
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? t("cliTools.common.noApiKeysCloud") : t("cliTools.common.apiKeyDefaultFull")}
                     </span>
                   )}
                 </div>
 
                 {/* Model */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{t("cliTools.fields.model")}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
-                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder={t("cliTools.fields.modelPlaceholder")} className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>{t("cliTools.actions.selectModel")}</button>
+                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title={t("common.clear")}><span className="material-symbols-outlined text-[14px]">close</span></button>}
                 </div>
               </div>
 
@@ -310,13 +312,13 @@ export default function OpenClawToolCard({
 
               <div className="flex items-center gap-2">
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
+                  <span className="material-symbols-outlined text-[14px] mr-1">save</span>{t("cliTools.actions.apply")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!openclawStatus?.has9Router} loading={restoring}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
+                  <span className="material-symbols-outlined text-[14px] mr-1">restore</span>{t("cliTools.actions.reset")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
-                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
+                  <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>{t("cliTools.actions.manualConfig")}
                 </Button>
               </div>
             </>
@@ -331,13 +333,13 @@ export default function OpenClawToolCard({
         selectedModel={selectedModel}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for Open Claw"
+        title={t("cliTools.openclaw.selectModelTitle")}
       />
 
       <ManualConfigModal
         isOpen={showManualConfigModal}
         onClose={() => setShowManualConfigModal(false)}
-        title="Open Claw - Manual Configuration"
+        title={t("cliTools.openclaw.manualConfigTitle")}
         configs={getManualConfigs()}
       />
     </Card>

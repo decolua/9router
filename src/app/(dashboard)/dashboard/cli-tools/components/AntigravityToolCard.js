@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 
 export default function AntigravityToolCard({
   tool,
@@ -14,6 +15,7 @@ export default function AntigravityToolCard({
   hasActiveProviders,
   cloudEnabled,
 }) {
+  const t = useTranslations();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -209,7 +211,7 @@ export default function AntigravityToolCard({
           <div className="size-8 flex items-center justify-center shrink-0">
             <Image 
               src="/providers/antigravity.png" 
-              alt={tool.name} 
+              alt={t(tool.name)} 
               width={32} 
               height={32} 
               className="size-8 object-contain rounded-lg" 
@@ -219,14 +221,14 @@ export default function AntigravityToolCard({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="font-medium text-sm">{tool.name}</h3>
+              <h3 className="font-medium text-sm">{t(tool.name)}</h3>
               {isRunning ? (
-                <Badge variant="success" size="sm">Active</Badge>
+                <Badge variant="success" size="sm">{t("cliTools.antigravity.status.active")}</Badge>
               ) : (
-                <Badge variant="default" size="sm">Inactive</Badge>
+                <Badge variant="default" size="sm">{t("cliTools.antigravity.status.inactive")}</Badge>
               )}
             </div>
-            <p className="text-xs text-text-muted truncate">{tool.description}</p>
+            <p className="text-xs text-text-muted truncate">{t(tool.description)}</p>
           </div>
         </div>
         <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>expand_more</span>
@@ -338,7 +340,7 @@ export default function AntigravityToolCard({
               <div className="flex flex-col gap-0.5 text-[11px] text-text-muted">
                 <span>1. Generates SSL cert & adds to system keychain</span>
                 <span>2. Redirects <code className="text-[10px] bg-surface px-1 rounded">daily-cloudcode-pa.googleapis.com</code> → localhost</span>
-                <span>3. Maps Antigravity models to any provider via 9Router</span>
+                <span>{t("cliTools.antigravity.step3")}</span>
               </div>
             </div>
           )}

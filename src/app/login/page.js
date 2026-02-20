@@ -3,12 +3,16 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export default function LoginPage() {
+  const t = useTranslations();
   const [password, setPassword] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
+  const [activeTab, setActiveTab] = useState("password");
   const router = useRouter();
 
   useEffect(() => {
@@ -49,10 +53,14 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const isApiKeyLogin = activeTab === "apiKey";
+      const endpoint = isApiKeyLogin ? "/api/auth/api-key-login" : "/api/auth/login";
+      const payload = isApiKeyLogin ? { apiKey } : { password };
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -60,10 +68,10 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || (isApiKeyLogin ? t("login.invalidApiKey") : t("login.invalidPassword")));
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError(t("login.error"));
     } finally {
       setLoading(false);
     }
@@ -75,7 +83,7 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
+          <p className="text-text-muted mt-4">{t("login.loading")}</p>
         </div>
       </div>
     );
@@ -86,21 +94,62 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">Enter your password to access the dashboard</p>
+          <p className="text-text-muted">{t("login.subtitle")}</p>
         </div>
 
         <Card>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            <div className="flex gap-2 rounded-lg bg-bg-subtle p-1 border border-border">
+              <button
+                type="button"
+                onClick={() => setActiveTab("password")}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === "password"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                {t("login.tabPassword")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("apiKey")}
+                className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === "apiKey"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text hover:bg-bg-hover"
+                }`}
+              >
+                {t("login.tabApiKey")}
+              </button>
+            </div>
+
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Password</label>
-              <Input
-                type="password"
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoFocus
-              />
+              {activeTab === "password" ? (
+                <>
+                  <label className="text-sm font-medium">{t("login.passwordLabel")}</label>
+                  <Input
+                    type="password"
+                    placeholder={t("login.passwordPlaceholder")}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </>
+              ) : (
+                <>
+                  <label className="text-sm font-medium">{t("login.apiKeyLabel")}</label>
+                  <Input
+                    type="text"
+                    placeholder={t("login.apiKeyPlaceholder")}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </>
+              )}
               {error && <p className="text-xs text-red-500">{error}</p>}
             </div>
 
@@ -110,12 +159,18 @@ export default function LoginPage() {
               className="w-full"
               loading={loading}
             >
-              Login
+              {activeTab === "apiKey" ? t("login.loginWithApiKey") : t("login.login")}
             </Button>
 
-            <p className="text-xs text-center text-text-muted mt-2">
-              Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-            </p>
+            {activeTab === "password" ? (
+              <p className="text-xs text-center text-text-muted mt-2">
+                {t("login.defaultPasswordPrefix")} <code className="bg-sidebar px-1 rounded">123456</code>
+              </p>
+            ) : (
+              <p className="text-xs text-center text-text-muted mt-2">
+                {t("login.quotaPrefix")} <a className="text-primary hover:underline" href="/key-status">/key-status</a>.
+              </p>
+            )}
           </form>
         </Card>
       </div>

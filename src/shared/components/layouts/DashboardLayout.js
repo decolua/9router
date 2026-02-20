@@ -4,7 +4,7 @@ import { useState } from "react";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({ children, authType }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
@@ -19,7 +19,7 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar - Desktop */}
       <div className="hidden lg:flex">
-        <Sidebar />
+        <Sidebar authType={authType} />
       </div>
 
       {/* Sidebar - Mobile */}
@@ -28,7 +28,7 @@ export default function DashboardLayout({ children }) {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar authType={authType} onClose={() => setSidebarOpen(false)} />
       </div>
 
       {/* Main content */}

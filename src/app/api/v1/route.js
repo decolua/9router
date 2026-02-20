@@ -1,3 +1,5 @@
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
+
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -14,7 +16,12 @@ export async function OPTIONS() {
 /**
  * GET /v1 - Return models list (OpenAI compatible)
  */
-export async function GET() {
+export async function GET(request) {
+  const quota = await enforceApiKeyQuota(request);
+  if (!quota.ok) {
+    return quota.response;
+  }
+
   const models = [
     { id: "claude-sonnet-4-20250514", object: "model", owned_by: "anthropic" },
     { id: "claude-3-5-sonnet-20241022", object: "model", owned_by: "anthropic" },

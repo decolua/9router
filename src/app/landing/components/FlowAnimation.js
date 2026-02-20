@@ -1,22 +1,23 @@
 "use client";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-
-const CLI_TOOLS = [
-  { id: "claude", name: "Claude Code", image: "/providers/claude.png" },
-  { id: "codex", name: "OpenAI Codex", image: "/providers/codex.png" },
-  { id: "cline", name: "Cline", image: "/providers/cline.png" },
-  { id: "cursor", name: "Cursor", image: "/providers/cursor.png" },
-];
-
-const PROVIDERS = [
-  { id: "openai", name: "OpenAI", color: "bg-emerald-500", textColor: "text-white" },
-  { id: "anthropic", name: "Anthropic", color: "bg-orange-400", textColor: "text-white" },
-  { id: "gemini", name: "Gemini", color: "bg-blue-500", textColor: "text-white" },
-  { id: "github", name: "GitHub Copilot", color: "bg-gray-700", textColor: "text-white" },
-];
+import { useTranslations } from "next-intl";
 
 export default function FlowAnimation() {
+  const t = useTranslations();
+  const CLI_TOOLS = [
+    { id: "claude", name: t("landing.flow.cli.claude"), image: "/providers/claude.png" },
+    { id: "codex", name: t("landing.flow.cli.codex"), image: "/providers/codex.png" },
+    { id: "cline", name: t("landing.flow.cli.cline"), image: "/providers/cline.png" },
+    { id: "cursor", name: t("landing.flow.cli.cursor"), image: "/providers/cursor.png" },
+  ];
+
+  const PROVIDERS = [
+    { id: "openai", name: t("landing.flow.providers.openai"), color: "bg-emerald-500", textColor: "text-white" },
+    { id: "anthropic", name: t("landing.flow.providers.anthropic"), color: "bg-orange-400", textColor: "text-white" },
+    { id: "gemini", name: t("landing.flow.providers.gemini"), color: "bg-blue-500", textColor: "text-white" },
+    { id: "github", name: t("landing.flow.providers.github"), color: "bg-gray-700", textColor: "text-white" },
+  ];
   const [activeFlow, setActiveFlow] = useState(0);
 
   useEffect(() => {
@@ -113,7 +114,7 @@ export default function FlowAnimation() {
 
       {/* Mobile fallback */}
       <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-[#23180f] border border-[#3a2f27]">
-        <p className="text-sm text-center text-gray-400">Interactive diagram visible on desktop</p>
+        <p className="text-sm text-center text-gray-400">{t("landing.flow.mobileHint")}</p>
       </div>
     </div>
   );

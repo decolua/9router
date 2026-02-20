@@ -1,13 +1,16 @@
 "use client";
 
+import { useTranslations } from "next-intl";
+
 export default function HowItWorks() {
+  const t = useTranslations();
   return (
     <section className="py-24 border-y border-[#3a2f27] bg-[#23180f]/30" id="how-it-works">
       <div className="max-w-7xl mx-auto px-6">
         <div className="mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">How 9Router Works</h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">{t("landing.howItWorks.title")}</h2>
           <p className="text-gray-400 max-w-xl text-lg">
-            Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.
+            {t("landing.howItWorks.subtitle")}
           </p>
         </div>
         
@@ -21,9 +24,9 @@ export default function HowItWorks() {
               <span className="material-symbols-outlined text-4xl text-gray-300">terminal</span>
             </div>
             <div>
-              <h3 className="text-xl font-bold mb-2">1. CLI &amp; SDKs</h3>
+              <h3 className="text-xl font-bold mb-2">{t("landing.howItWorks.step1.title")}</h3>
               <p className="text-sm text-gray-400">
-                Your requests start from your favorite tools or our unified SDK. Just change the base URL.
+                {t("landing.howItWorks.step1.desc")}
               </p>
             </div>
           </div>
@@ -34,9 +37,9 @@ export default function HowItWorks() {
               <span className="material-symbols-outlined text-4xl text-[#f97815] animate-pulse">hub</span>
             </div>
             <div>
-              <h3 className="text-xl font-bold mb-2 text-[#f97815]">2. 9Router Hub</h3>
+              <h3 className="text-xl font-bold mb-2 text-[#f97815]">{t("landing.howItWorks.step2.title")}</h3>
               <p className="text-sm text-gray-400">
-                Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost.
+                {t("landing.howItWorks.step2.desc")}
               </p>
             </div>
           </div>
@@ -52,9 +55,9 @@ export default function HowItWorks() {
               </div>
             </div>
             <div>
-              <h3 className="text-xl font-bold mb-2">3. AI Providers</h3>
+              <h3 className="text-xl font-bold mb-2">{t("landing.howItWorks.step3.title")}</h3>
               <p className="text-sm text-gray-400">
-                The request is fulfilled by OpenAI, Anthropic, Gemini, or others instantly.
+                {t("landing.howItWorks.step3.desc")}
               </p>
             </div>
           </div>

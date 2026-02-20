@@ -1,0 +1,973 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "create": "Create",
+    "edit": "Edit",
+    "delete": "Delete",
+    "loading": "Loading",
+    "search": "Search",
+    "all": "All",
+    "allowAll": "Allow all",
+    "selectAll": "Select all",
+    "clear": "Clear",
+    "add": "Add",
+    "retry": "Retry",
+    "confirm": "Confirm",
+    "warning": "Warning",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "saving": "Saving...",
+    "done": "Done"
+  },
+  "nav": {
+    "endpoint": "Endpoint",
+    "providers": "Providers",
+    "combos": "Combos",
+    "usage": "Usage",
+    "cliTools": "CLI Tools",
+    "translator": "Translator",
+    "settings": "Settings",
+    "debug": "Debug",
+    "system": "System",
+    "myKey": "My Key"
+  },
+  "header": {
+    "logout": "Logout",
+    "providersDesc": "Manage your AI provider connections",
+    "combosDesc": "Model combos with fallback",
+    "usageDesc": "Monitor usage, tokens, and logs",
+    "cliToolsDesc": "Configure CLI tools",
+    "endpointDesc": "API endpoint configuration",
+    "settingsDesc": "Manage your preferences"
+  },
+  "endpoint": {
+    "title": "API Endpoint",
+    "usingCloud": "Using Cloud Proxy",
+    "usingLocal": "Using Local Server",
+    "enableCloud": "Enable Cloud",
+    "disableCloud": "Disable Cloud",
+    "keysTitle": "API Keys",
+    "createKey": "Create Key",
+    "emptyTitle": "No API keys yet",
+    "emptySubtitle": "Create your first API key to get started",
+    "statusActive": "Active",
+    "statusDisabled": "Disabled",
+    "enableKey": "Enable key",
+    "disableKey": "Disable key",
+    "history": "History",
+    "owner": "Owner",
+    "created": "Created",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "remaining": "remaining",
+    "unlimited": "unlimited",
+    "allowedModels": "Allowed models",
+    "editKey": "Edit key",
+    "rotateKey": "Regenerate key",
+    "deleteKey": "Delete key",
+    "deleteConfirm": "Delete this API key?",
+    "createTitle": "Create API Key",
+    "editTitle": "Edit API Key",
+    "keyName": "Key Name",
+    "keyNamePlaceholder": "Production Key",
+    "ownerName": "Owner Name",
+    "ownerNamePlaceholder": "Nguyen Van A",
+    "ownerEmail": "Owner Email",
+    "ownerEmailPlaceholder": "owner@example.com",
+    "ownerAge": "Owner Age",
+    "ownerAgePlaceholder": "30",
+    "requestLimit": "Request Limit (optional)",
+    "tokenLimit": "Token Limit (optional)",
+    "limitHint": "0 or empty = unlimited",
+    "requestLimitPlaceholder": "1000",
+    "tokenLimitPlaceholder": "1000000",
+    "selectedCount": "Selected {selected} / {total}",
+    "searchModels": "Search models...",
+    "allProviders": "All providers",
+    "selectFiltered": "Select filtered",
+    "loadingModels": "Loading models...",
+    "noModels": "No models found.",
+    "noModelsFilter": "No models match your filter.",
+    "allowAllHint": "Allow all = allow all models",
+    "createdTitle": "API Key Created",
+    "createdWarningTitle": "Save this key now!",
+    "createdWarningDesc": "This is the only time you will see this key. Store it securely.",
+    "rotateTitle": "Regenerate API Key",
+    "rotateAction": "Regenerate",
+    "rotateDesc": "This will generate a new key value for this API key ID. Usage/quota and metadata (owner/limits/allowed models) will be kept.",
+    "rotateGrace": "Grace period",
+    "rotateGrace0": "0h (immediate)",
+    "rotateGrace1": "1h",
+    "rotateGrace2": "2h (default)",
+    "rotateGrace24": "24h",
+    "rotateExpires": "Old key expires {time}.",
+    "rotateHint": "Clients using the old key will continue to work until it expires. Disable or delete the key if you need to revoke access immediately.",
+    "rotateImmediately": "immediately",
+    "historyTitle": "API Key History",
+    "historyCurrent": "Current key",
+    "historyPrevious": "Previous keys (grace)",
+    "historyKeysCount": "{count} keys",
+    "historyRotated": "Rotated {time}",
+    "historyExpires": "Expires {time}",
+    "historyNone": "No previous keys in grace period.",
+    "historyRotation": "Rotation history",
+    "historyGrace": "Grace {hours}",
+    "historyRotationNone": "No rotation history yet.",
+    "revokeNow": "Revoke now",
+    "revokeTitle": "Revoke previous key",
+    "revokeDesc": "This previous key will stop working immediately. This does not delete the API key or reset usage.",
+    "revokeConfirm": "Revoke",
+    "disableCloudTitle": "Disable Cloud Proxy",
+    "disableCloudWarning": "All auth sessions will be deleted from cloud.",
+    "syncingLatest": "Syncing latest data...",
+    "disablingCloud": "Disabling cloud...",
+    "disableCloudConfirm": "Are you sure you want to disable cloud proxy?",
+    "syncing": "Syncing...",
+    "disabling": "Disabling...",
+    "cloudBenefitAccess": "Access Anywhere",
+    "cloudBenefitNoPort": "No port forwarding needed",
+    "cloudBenefitShare": "Share Endpoint",
+    "cloudBenefitCollab": "Easy team collaboration",
+    "cloudBenefitAlways": "Always Online",
+    "cloudBenefitAvailability": "24/7 availability",
+    "cloudBenefitEdge": "Global Edge",
+    "cloudBenefitFast": "Fast worldwide access",
+    "cloudConnected": "Connected & Ready",
+    "cloudAccess": "Access your API from anywhere",
+    "enableCloudTitle": "Enable Cloud Proxy",
+    "cloudBenefitsTitle": "What you will get",
+    "cloudBenefitAccessWorld": "Access your API from anywhere in the world",
+    "cloudBenefitShareTeam": "Share endpoint with your team easily",
+    "cloudBenefitNoFirewall": "No need to open ports or configure firewall",
+    "cloudBenefitFastEdge": "Fast global edge network",
+    "cloudNoteTitle": "Note",
+    "cloudNoteSession": "Cloud will keep your auth session for 1 day. If not used, it will be automatically deleted.",
+    "cloudNoteClaude": "Cloud is currently unstable with Claude Code OAuth in some cases.",
+    "cloudSyncing": "Syncing data to cloud...",
+    "cloudVerifying": "Verifying connection...",
+    "verifying": "Verifying..."
+  },
+  "language": {
+    "label": "Language",
+    "vi": "Vietnamese",
+    "en": "English"
+  },
+  "sidebar": {
+    "serviceRunning": "Service is running in terminal. You can close this web page. Shutdown will stop the service.",
+    "shutdown": "Shutdown",
+    "closeProxyTitle": "Close Proxy",
+    "closeProxyMessage": "Are you sure you want to close the proxy server?",
+    "close": "Close",
+    "serverDisconnected": "Server Disconnected",
+    "serverStopped": "The proxy server has been stopped.",
+    "reloadPage": "Reload Page"
+  },
+  "usage": {
+    "allApiKeys": "All API keys",
+    "overviewTitle": "Usage Overview",
+    "days": "{count}d",
+    "tokens": "Tokens",
+    "costs": "Costs",
+    "autoRefresh": "Auto Refresh ({seconds}s)",
+    "toggleAutoRefresh": "Toggle auto refresh",
+    "activeRequests": "Active Requests",
+    "apiKey": "API Key",
+    "requests": "Requests",
+    "remaining": "{value} remaining",
+    "byModel": "Usage by Model",
+    "filteredByApiKey": "Filtered by API key",
+    "model": "Model",
+    "provider": "Provider",
+    "lastUsed": "Last Used",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "totalTokens": "Total Tokens",
+    "inputCost": "Input Cost",
+    "outputCost": "Output Cost",
+    "totalCost": "Total Cost",
+    "noUsageYet": "No usage recorded yet. Make some requests to see data here.",
+    "byAccount": "Usage by Account",
+    "account": "Account",
+    "noAccountUsage": "No account-specific usage recorded yet. Make requests using OAuth accounts to see data here.",
+    "never": "Never",
+    "justNow": "Just now",
+    "minutesAgo": "{count}m ago",
+    "hoursAgo": "{count}h ago",
+    "failed": "Failed to load usage statistics.",
+    "tabOverview": "Overview",
+    "tabLogs": "Logger",
+    "tabLimits": "Limits"
+  },
+  "providers": {
+    "oauthTitle": "OAuth Providers",
+    "apiKeyTitle": "API Key Providers",
+    "freeTitle": "Free Providers",
+    "addOpenAI": "Add OpenAI Compatible",
+    "addAnthropic": "Add Anthropic Compatible",
+    "openaiCompatible": "OpenAI Compatible",
+    "anthropicCompatible": "Anthropic Compatible",
+    "apiTypeChat": "Chat",
+    "apiTypeResponses": "Responses",
+    "apiTypeMessages": "Messages",
+    "apiTypeChatCompletions": "Chat Completions",
+    "openaiCompatibleDetails": "OpenAI Compatible Details",
+    "anthropicCompatibleDetails": "Anthropic Compatible Details",
+    "apiTypeResponsesApi": "Responses API",
+    "connected": "{count} Connected",
+    "error": "{count} Error",
+    "errorWithCode": "{count} Error ({code})",
+    "noConnections": "No connections",
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{count}m ago",
+      "hoursAgo": "{count}h ago",
+      "daysAgo": "{count}d ago"
+    },
+    "addOpenAITitle": "Add OpenAI Compatible",
+    "addAnthropicTitle": "Add Anthropic Compatible",
+    "form": {
+      "name": "Name",
+      "prefix": "Prefix",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "checkKey": "API Key (for Check)",
+      "check": "Check",
+      "checking": "Checking...",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "create": "Create",
+      "creating": "Creating...",
+      "requiredLabel": "Required. A friendly label for this node.",
+      "prefixHint": "Required. Used as the provider prefix for model IDs.",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "openaiBaseUrlHint": "Use the base URL (ending in /v1) for your OpenAI-compatible API.",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "anthropicBaseUrlHint": "Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
+    },
+    "messages": {
+      "setAliasFailed": "Failed to set alias",
+      "deleteConnectionConfirm": "Delete this connection?",
+      "noModelsConfigured": "No models configured",
+      "notFound": "Provider not found",
+      "backToProviders": "Back to Providers",
+      "connectionCount": "{count} connection(s)",
+      "apiTypeMessages": "Messages API",
+      "apiTypeResponses": "Responses API",
+      "apiTypeChatCompletions": "Chat Completions",
+      "endpointMessages": "messages",
+      "endpointResponses": "responses",
+      "endpointChatCompletions": "chat/completions",
+      "deleteCompatibleConfirm": "Delete this {type} node?",
+      "oneConnectionLimit": "Only one connection is allowed per compatible node. Add another node if you need more connections.",
+      "connectionsTitle": "Connections",
+      "import": "Import",
+      "emptyConnectionsTitle": "No connections yet",
+      "emptyConnectionsSubtitle": "Add your first connection to get started",
+      "importJson": "Import JSON",
+      "addConnection": "Add Connection",
+      "modelAliases": "Model Aliases",
+      "availableModels": "Available Models",
+      "copyModel": "Copy model",
+      "aliasExists": "Alias \"{alias}\" already exists. Please use a different model or edit existing alias.",
+      "passthroughHint": "OpenRouter supports any model. Add models and create aliases for quick access.",
+      "modelIdFromOpenRouter": "Model ID (from OpenRouter)",
+      "modelIdPlaceholder": "anthropic/claude-3-opus",
+      "adding": "Adding...",
+      "removeModel": "Remove model",
+      "aliasSuggestionsUsed": "All suggested aliases already exist. Please choose a different model or remove conflicting aliases.",
+      "importModelsFailed": "Failed to import models",
+      "noModelsReturned": "No models returned from /models.",
+      "noNewModels": "No new models were added.",
+      "addCompatibleModels": "Add {type}-compatible models manually or import them from the /models endpoint.",
+      "modelId": "Model ID",
+      "anthropicModelPlaceholder": "claude-3-opus-20240229",
+      "openaiModelPlaceholder": "gpt-4o",
+      "importing": "Importing...",
+      "importFromModels": "Import from /models",
+      "addConnectionToImport": "Add a connection to enable importing models.",
+      "oauthAccount": "OAuth Account",
+      "statusDisabled": "Disabled",
+      "statusUnknown": "Unknown",
+      "statusActive": "Active",
+      "statusSuccess": "Success",
+      "statusError": "Error",
+      "statusExpired": "Expired",
+      "statusUnavailable": "Unavailable",
+      "autoPriority": "Auto: {value}",
+      "disableConnection": "Disable connection",
+      "enableConnection": "Enable connection",
+      "name": "Name",
+      "namePlaceholder": "Production Key",
+      "apiKey": "API Key",
+      "check": "Check",
+      "checking": "Checking...",
+      "valid": "Valid",
+      "invalid": "Invalid",
+      "validateAnthropic": "Validation checks {name} by verifying the API key.",
+      "validateOpenAI": "Validation checks {name} via /models on your base URL.",
+      "priority": "Priority",
+      "invalidJson": "Invalid JSON. Please check formatting.",
+      "jsonFormatHint": "JSON must be an array or { connections: [...] }.",
+      "importRowInvalid": "Row {row}: Invalid object",
+      "importRowProvider": "Row {row}: provider must be {provider}",
+      "importRowMissing": "Row {row}: name and apiKey are required",
+      "importRowPriority": "Row {row}: priority must be a number",
+      "importRowGlobalPriority": "Row {row}: globalPriority must be a number",
+      "importRowMore": "{head} (+{count} more)",
+      "readFileFailed": "Failed to read file.",
+      "importFailed": "Failed to import",
+      "importTitle": "Import {name} API Keys",
+      "importDesc": "Upload a JSON file with an array of API keys. Each item should include name and apiKey.",
+      "example": "Example",
+      "jsonFile": "JSON File",
+      "parseLocalOnly": "We parse this file locally and never store it.",
+      "pasteJson": "Paste JSON (optional)",
+      "pasteJsonPlaceholder": "Paste JSON here",
+      "preview": "Preview ({count})",
+      "moreItems": "+{count} more",
+      "importResult": "Import Result",
+      "importResultSummary": "Imported {success} of {total}",
+      "editConnection": "Edit Connection",
+      "accountNamePlaceholder": "Account name",
+      "email": "Email",
+      "newApiKeyPlaceholder": "Enter new API key",
+      "keepApiKeyHint": "Leave blank to keep the current API key.",
+      "testing": "Testing...",
+      "testConnection": "Test Connection",
+      "failed": "Failed",
+      "editCompatibleTitle": "Edit {type}",
+      "requiredLabel": "Required. A friendly label for this node.",
+      "prefix": "Prefix",
+      "prefixHint": "Required. Used as the provider prefix for model IDs.",
+      "apiType": "API Type",
+      "baseUrl": "Base URL",
+      "apiKeyCheck": "API Key (for Check)",
+      "saving": "Saving...",
+      "cooldownSeconds": "{count}s",
+      "cooldownMinutes": "{minutes}m {seconds}s",
+      "cooldownHours": "{hours}h {minutes}m",
+      "anthropicNamePlaceholder": "Anthropic Compatible (Prod)",
+      "openaiNamePlaceholder": "OpenAI Compatible (Prod)",
+      "anthropicPrefixPlaceholder": "ac-prod",
+      "openaiPrefixPlaceholder": "oc-prod",
+      "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
+      "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
+      "anthropicBaseUrlHint": "Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages.",
+      "openaiBaseUrlHint": "Use the base URL (ending in /v1) for your OpenAI-compatible API."
+    }
+  },
+  "cliTools": {
+    "common": {
+      "comingSoon": "Coming soon...",
+      "noApiKeysCloud": "No API keys - Create one in Keys page",
+      "apiKeyDefault": "sk_9router",
+      "apiKeyDefaultFull": "sk_9router (default)",
+      "noActiveProviders": "No active providers",
+      "noActiveProvidersDesc": "Please add and connect providers first to configure CLI tools."
+    },
+    "actions": {
+      "selectModel": "Select Model",
+      "apply": "Apply",
+      "reset": "Reset",
+      "manualConfig": "Manual Config",
+      "resetToDefault": "Reset to default",
+      "howToInstall": "How to Install",
+      "hide": "Hide"
+    },
+    "fields": {
+      "current": "Current",
+      "baseUrl": "Base URL",
+      "baseUrlPlaceholder": "https://...",
+      "baseUrlPlaceholderV1": "https://.../v1",
+      "apiKey": "API Key",
+      "model": "Model",
+      "modelPlaceholder": "provider/model-id"
+    },
+    "status": {
+      "connected": "Connected",
+      "notConfigured": "Not configured",
+      "other": "Other"
+    },
+    "tools": {
+      "claude": {
+        "name": "Claude Code",
+        "description": "Anthropic Claude Code CLI",
+        "models": {
+          "opus": "Claude Opus",
+          "sonnet": "Claude Sonnet",
+          "haiku": "Claude Haiku"
+        }
+      },
+      "codex": {
+        "name": "OpenAI Codex CLI",
+        "description": "OpenAI Codex CLI"
+      },
+      "droid": {
+        "name": "Factory Droid",
+        "description": "Factory Droid AI Assistant"
+      },
+      "openclaw": {
+        "name": "Open Claw",
+        "description": "Open Claw AI Assistant"
+      },
+      "antigravity": {
+        "name": "Antigravity",
+        "description": "Google Antigravity IDE with MITM"
+      },
+      "cursor": {
+        "name": "Cursor",
+        "description": "Cursor AI Code Editor",
+        "notes": {
+          "requiresPro": "Requires Cursor Pro account to use this feature.",
+          "cloudOnly": "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Cloud Endpoint in Settings."
+        },
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to Settings → Models"
+          },
+          "enableOpenAI": {
+            "title": "Enable OpenAI API",
+            "desc": "Enable \"OpenAI API key\" option"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "addCustomModel": {
+            "title": "Add Custom Model",
+            "desc": "Click \"View All Model\" → \"Add Custom Model\""
+          },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "cline": {
+        "name": "Cline",
+        "description": "CLINE AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to CLINE Settings panel"
+          },
+          "selectProvider": {
+            "title": "Select Provider",
+            "desc": "Choose API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "roo": {
+        "name": "Roo",
+        "description": "Roo AI Assistant",
+        "steps": {
+          "openSettings": {
+            "title": "Open Settings",
+            "desc": "Go to Roo Settings panel"
+          },
+          "selectProvider": {
+            "title": "Select Provider",
+            "desc": "Choose API Provider → Ollama"
+          },
+          "baseUrl": { "title": "Base URL" },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" }
+        }
+      },
+      "continue": {
+        "name": "Continue",
+        "description": "Continue AI Assistant",
+        "steps": {
+          "openConfig": {
+            "title": "Open Config",
+            "desc": "Open Continue configuration file"
+          },
+          "apiKey": { "title": "API Key" },
+          "selectModel": { "title": "Select Model" },
+          "addModelConfig": {
+            "title": "Add Model Config",
+            "desc": "Add the following configuration to your models array:"
+          }
+        }
+      }
+    },
+    "claude": {
+      "status": {
+        "checking": "Checking Claude CLI..."
+      },
+      "install": {
+        "title": "Claude CLI not installed",
+        "subtitle": "Please install Claude CLI to use this feature.",
+        "guideTitle": "Installation Guide",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "After installation, run claude to verify."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select model for {alias}",
+      "manualConfigTitle": "Claude CLI - Manual Configuration"
+    },
+    "codex": {
+      "status": {
+        "checking": "Checking Codex CLI..."
+      },
+      "install": {
+        "title": "Codex CLI not installed",
+        "subtitle": "Please install Codex CLI to use auto-apply feature.",
+        "guideTitle": "Installation Guide",
+        "platforms": "macOS / Linux / Windows:",
+        "verify": "After installation, run codex to verify.",
+        "details": "Codex uses ~/.codex/auth.json with OPENAI_API_KEY. Click Apply to auto-configure."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Codex",
+      "manualConfigTitle": "Codex CLI - Manual Configuration",
+      "manualConfigHeader": "9Router Configuration for Codex CLI"
+    },
+    "openclaw": {
+      "status": {
+        "checking": "Checking Open Claw CLI..."
+      },
+      "install": {
+        "title": "Open Claw CLI not installed",
+        "subtitle": "Please install Open Claw CLI to use this feature."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Open Claw",
+      "manualConfigTitle": "Open Claw - Manual Configuration",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "droid": {
+      "status": {
+        "checking": "Checking Factory Droid CLI..."
+      },
+      "install": {
+        "title": "Factory Droid CLI not installed",
+        "subtitle": "Please install Factory Droid CLI to use this feature."
+      },
+      "messages": {
+        "applySuccess": "Settings applied successfully!",
+        "applyFailed": "Failed to apply settings",
+        "resetSuccess": "Settings reset successfully!",
+        "resetFailed": "Failed to reset settings"
+      },
+      "selectModelTitle": "Select Model for Factory Droid",
+      "manualConfigTitle": "Factory Droid - Manual Configuration",
+      "placeholders": {
+        "apiKey": "<API_KEY_FROM_DASHBOARD>",
+        "model": "provider/model-id"
+      }
+    },
+    "antigravity": {
+      "status": {
+        "active": "Active",
+        "inactive": "Inactive"
+      },
+      "step3": "3. Maps Antigravity models to any provider via 9Router"
+    }
+  },
+  "modelSelect": {
+    "title": "Select Model",
+    "searchPlaceholder": "Search models...",
+    "combos": "Combos",
+    "loadingProvider": "Loading models...",
+    "loadFailed": "Failed to load models",
+    "noModelsForProvider": "No models available for this provider",
+    "noModelsFound": "No models found"
+  },
+  "login": {
+    "loading": "Loading...",
+    "subtitle": "Enter your password to access the dashboard",
+    "tabPassword": "Password",
+    "tabApiKey": "API Key",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "Enter password",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "sk-xxxxxxxxxxxxxxxx",
+    "login": "Login",
+    "loginWithApiKey": "Login with API Key",
+    "defaultPasswordPrefix": "Default password is",
+    "quotaPrefix": "Only want to check quota? Use",
+    "invalidApiKey": "Invalid API key",
+    "invalidPassword": "Invalid password",
+    "error": "An error occurred. Please try again."
+  },
+  "keyStatus": {
+    "badge": "API Key Status",
+    "title": "Check your API key usage in seconds",
+    "subtitle": "Paste your API key to see remaining request and token limits. We do not store your key or share any personal data.",
+    "dashboardLogin": "Dashboard login",
+    "dashboardHint": "Need full dashboard access? Sign in with password or API key.",
+    "lookupTitle": "Look up your quota",
+    "lookupSubtitle": "Read-only view for API key owners",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "sk-xxxxxxxxxxxxxxxx",
+    "checking": "Checking...",
+    "checkUsage": "Check usage",
+    "tips": "Tips: Use the key exactly as provided. This page is read-only.",
+    "viewTitle": "What you can view",
+    "viewSubtitle": "Safe, limited data only",
+    "viewRequestsTitle": "Request and token usage",
+    "viewRequestsDesc": "Track how much quota has been used and what is remaining.",
+    "viewModelsTitle": "Allowed models",
+    "viewModelsDesc": "See which models are currently allowed for your key.",
+    "viewPrivacyTitle": "Privacy-first",
+    "viewPrivacyDesc": "No key values or sensitive metadata are exposed or stored.",
+    "summaryWithName": "Usage summary for {name}",
+    "summaryTitle": "Usage summary",
+    "summarySubtitle": "Key created {date}",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "lastAccessed": "Last accessed",
+    "allowedModels": "Allowed models",
+    "allowedAll": "All models are allowed for this key.",
+    "percentUsed": "{percent}% used",
+    "unlimited": "Unlimited",
+    "used": "Used",
+    "remaining": "Remaining",
+    "limit": "Limit",
+    "enterKey": "Please enter your API key.",
+    "invalidKey": "Invalid API key.",
+    "serverError": "Could not reach the server. Please try again.",
+    "recheck": "Check",
+    "apiKeyAccess": "API Key Access",
+    "keyTitle": "Your API key usage",
+    "keySubtitle": "Read-only access for your key. Admin features are hidden by design.",
+    "logsTitle": "Request logs",
+    "logsSubtitle": "Latest 200 requests for this key",
+    "filterLabel": "Filter by connectionId",
+    "filterPlaceholder": "Optional connectionId",
+    "applyFilter": "Apply filter",
+    "loading": "Loading",
+    "time": "Time",
+    "provider": "Provider",
+    "model": "Model",
+    "connection": "Connection",
+    "input": "Input",
+    "output": "Output",
+    "noLogs": "No logs yet for this key."
+  },
+  "keyDashboard": {
+    "badge": "API Key Access",
+    "title": "Your API key usage",
+    "subtitle": "Read-only access for your key. Admin features are hidden by design.",
+    "titleWithName": "Key: {name}",
+    "summaryTitle": "Key summary",
+    "createdAt": "Created {date}",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "lastAccessed": "Last accessed",
+    "allowedModels": "Allowed models",
+    "allowedAll": "All models are allowed for this key.",
+    "percentUsed": "{percent}% used",
+    "unlimited": "Unlimited",
+    "used": "Used",
+    "remaining": "Remaining",
+    "limit": "Limit",
+    "failedUsage": "Failed to load usage",
+    "failedLogs": "Failed to load logs",
+    "logsTitle": "Request logs",
+    "logsSubtitle": "Latest 200 requests for this key",
+    "filterLabel": "Filter by connectionId",
+    "filterPlaceholder": "Optional connectionId",
+    "applyFilter": "Apply filter",
+    "loading": "Loading",
+    "time": "Time",
+    "provider": "Provider",
+    "model": "Model",
+    "connection": "Connection",
+    "input": "Input",
+    "output": "Output",
+    "noLogs": "No logs yet for this key.",
+    "refresh": "Refresh"
+  },
+  "providersNew": {
+    "backToProviders": "Back to Providers",
+    "title": "Add New Provider",
+    "subtitle": "Configure a new AI provider to use with your applications.",
+    "providerLabel": "Provider",
+    "providerPlaceholder": "Select a provider",
+    "selectedProvider": "Selected provider",
+    "authMethod": "Authentication Method",
+    "apiKeyLabel": "API Key",
+    "apiKeyPlaceholder": "Enter your API key",
+    "apiKeyHint": "Your API key will be encrypted and stored securely.",
+    "oauthDesc": "Connect your account using OAuth2 authentication.",
+    "oauthConnect": "Connect with OAuth2",
+    "displayName": "Display Name",
+    "displayNamePlaceholder": "e.g., Production API, Dev Environment",
+    "displayNameHint": "Optional. A friendly name to identify this configuration.",
+    "active": "Active",
+    "activeDesc": "Enable this provider for use in your applications",
+    "createProvider": "Create Provider",
+    "errorSelectProvider": "Please select a provider",
+    "errorApiKeyRequired": "API Key is required",
+    "errorCreate": "Failed to create provider",
+    "errorGeneric": "An error occurred. Please try again."
+  },
+  "combos": {
+    "title": "Combos",
+    "subtitle": "Create model combos with fallback support",
+    "create": "Create Combo",
+    "emptyTitle": "No combos yet",
+    "emptySubtitle": "Create model combos with fallback support",
+    "deleteConfirm": "Delete this combo?",
+    "createError": "Failed to create combo",
+    "updateError": "Failed to update combo",
+    "copyName": "Copy combo name",
+    "more": "more",
+    "editTitle": "Edit Combo",
+    "createTitle": "Create Combo",
+    "nameLabel": "Combo Name",
+    "namePlaceholder": "my-combo",
+    "nameHint": "Only letters, numbers, - and _ allowed",
+    "nameRequired": "Name is required",
+    "modelsLabel": "Models",
+    "noModels": "No models added yet",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "remove": "Remove",
+    "addModel": "Add Model",
+    "saving": "Saving...",
+    "addModelTitle": "Add Model to Combo"
+  }
+  ,
+  "profile": {
+    "common": {
+      "genericError": "An error occurred"
+    },
+    "localMode": {
+      "title": "Local Mode",
+      "subtitle": "Running on your machine",
+      "desc": "All data is stored locally in the",
+      "descSuffix": "file.",
+      "footer": "Local Mode - All data stored on your machine"
+    },
+    "security": {
+      "title": "Security",
+      "requireLogin": "Require login",
+      "requireLoginDesc": "When ON, dashboard requires password. When OFF, access without login.",
+      "currentPassword": "Current Password",
+      "currentPasswordPlaceholder": "Enter current password",
+      "newPassword": "New Password",
+      "newPasswordPlaceholder": "Enter new password",
+      "confirmPassword": "Confirm New Password",
+      "confirmPasswordPlaceholder": "Confirm new password",
+      "updatePassword": "Update Password",
+      "setPassword": "Set Password",
+      "passwordMismatch": "Passwords do not match",
+      "passwordUpdated": "Password updated successfully",
+      "passwordUpdateFailed": "Failed to update password"
+    },
+    "routing": {
+      "title": "Routing Strategy",
+      "roundRobin": "Round Robin",
+      "roundRobinDesc": "Cycle through accounts to distribute load",
+      "stickyLimit": "Sticky Limit",
+      "stickyLimitDesc": "Calls per account before switching",
+      "roundRobinStatus": "Currently distributing requests across all available accounts with {count} calls per account.",
+      "fillFirstStatus": "Currently using accounts in priority order (Fill First)."
+    },
+    "appearance": {
+      "title": "Appearance",
+      "darkMode": "Dark Mode",
+      "darkModeDesc": "Switch between light and dark themes",
+      "theme": {
+        "light": "light",
+        "dark": "dark",
+        "system": "system"
+      }
+    },
+    "data": {
+      "title": "Data",
+      "location": "Database Location",
+      "export": "Export Database",
+      "import": "Import Database",
+      "importHint": "Import replaces all local data.",
+      "exportSuccess": "Database exported",
+      "exportFailed": "Failed to export database",
+      "importSuccess": "Database imported. Reload to apply.",
+      "importFailed": "Failed to import database",
+      "invalidJson": "Invalid JSON file"
+    }
+  },
+  "translator": {
+    "title": "Translator Debug",
+    "subtitle": "Debug translation flow between formats",
+    "providerLabel": "Provider",
+    "sendToProvider": "Send to Provider",
+    "chars": "{count} chars",
+    "actions": {
+      "load": "Load",
+      "lean": "Lean",
+      "copy": "Copy",
+      "update": "Update",
+      "submit": "Submit"
+    },
+    "steps": {
+      "clientRequest": "Client Request",
+      "sourceFormat": "Source Format",
+      "openaiIntermediate": "OpenAI Intermediate",
+      "targetFormat": "Target Format",
+      "providerResponse": "Provider Response"
+    },
+    "providers": {
+      "antigravity": "Antigravity",
+      "geminiCli": "Gemini CLI",
+      "claude": "Claude",
+      "codex": "Codex",
+      "github": "GitHub",
+      "qwen": "Qwen",
+      "iflow": "iFlow AI",
+      "kiro": "Kiro AI",
+      "openai": "OpenAI",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini",
+      "openrouter": "OpenRouter",
+      "glm": "GLM",
+      "kimi": "Kimi",
+      "minimax": "MiniMax"
+    },
+    "prompts": {
+      "accessToken": "Enter access token (or leave empty):",
+      "apiKey": "Enter API key (or leave empty):"
+    },
+    "messages": {
+      "requestSent": "Request sent! Status: {status} {statusText}",
+      "requestSentSuccess": "Request sent to provider successfully!",
+      "saved": "File saved successfully",
+      "copied": "Copied to clipboard!"
+    },
+    "errors": {
+      "step4Required": "Please load or generate step 4 content first",
+      "sendFailed": "Failed to send request",
+      "sendError": "Error sending request: {message}",
+      "loadFailed": "Failed to load file",
+      "loadError": "Error loading file: {message}",
+      "jsonParse": "Error parsing JSON: {message}",
+      "copy": "Error copying: {message}",
+      "saveFailed": "Failed to save file",
+      "saveError": "Error saving file: {message}",
+      "translateFailed": "Translation failed",
+      "generic": "Error: {message}"
+    }
+  },
+  "landing": {
+    "ctaTitle": "Ready to Simplify Your AI Infrastructure?",
+    "ctaSubtitle": "Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.",
+    "ctaPrimary": "Start Free",
+    "ctaSecondary": "Read Documentation",
+    "nav": {
+      "home": "Navigate to home",
+      "features": "Features",
+      "howItWorks": "How it Works",
+      "docs": "Docs",
+      "github": "GitHub",
+      "getStarted": "Get Started"
+    },
+    "hero": {
+      "badge": "v1.0 is now live",
+      "titleLine1": "One Endpoint for",
+      "titleLine2": "All AI Providers",
+      "subtitle": "AI endpoint proxy with web dashboard - A JavaScript port of CLIProxyAPI. Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, and other CLI tools.",
+      "primary": "Get Started",
+      "secondary": "View on GitHub"
+    },
+    "features": {
+      "title": "Powerful Features",
+      "subtitle": "Everything you need to manage your AI infrastructure in one place, built for scale.",
+      "items": {
+        "unified": { "title": "Unified Endpoint", "desc": "Access all providers via a single standard API URL." },
+        "setup": { "title": "Easy Setup", "desc": "Get up and running in minutes with npx command." },
+        "fallback": { "title": "Model Fallback", "desc": "Automatically switch providers on failure or high latency." },
+        "usage": { "title": "Usage Tracking", "desc": "Detailed analytics and cost monitoring across all models." },
+        "oauth": { "title": "OAuth & API Keys", "desc": "Securely manage credentials in one vault." },
+        "cloud": { "title": "Cloud Sync", "desc": "Sync your configurations across devices instantly." },
+        "cli": { "title": "CLI Support", "desc": "Works with Claude Code, Codex, Cline, Cursor, and more." },
+        "dashboard": { "title": "Dashboard", "desc": "Visual dashboard for real-time traffic analysis." }
+      }
+    },
+    "getStarted": {
+      "title": "Get Started in 30 Seconds",
+      "subtitle": "Install 9Router, configure your providers via web dashboard, and start routing AI requests.",
+      "steps": {
+        "install": { "title": "Install 9Router", "desc": "Run npx command to start the server instantly" },
+        "dashboard": { "title": "Open Dashboard", "desc": "Configure providers and API keys via web interface" },
+        "route": { "title": "Route Requests", "desc": "Point your CLI tools to http://localhost:20128" }
+      },
+      "copy": "Copy",
+      "copied": "✓ Copied",
+      "terminal": {
+        "starting": "Starting 9Router...",
+        "server": "Server running on",
+        "dashboard": "Dashboard:",
+        "ready": "Ready to route! ✓"
+      },
+      "note": "📝 Configure providers in dashboard or use environment variables",
+      "terminalLabel": "terminal",
+      "dataLocation": "Data Location:",
+      "platforms": {
+        "unix": "macOS/Linux",
+        "windows": "Windows"
+      }
+    },
+    "howItWorks": {
+      "title": "How 9Router Works",
+      "subtitle": "Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.",
+      "step1": { "title": "1. CLI & SDKs", "desc": "Your requests start from your favorite tools or our unified SDK. Just change the base URL." },
+      "step2": { "title": "2. 9Router Hub", "desc": "Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost." },
+      "step3": { "title": "3. AI Providers", "desc": "The request is fulfilled by OpenAI, Anthropic, Gemini, or others instantly." }
+    },
+    "footer": {
+      "brandDesc": "The unified endpoint for AI generation. Connect, route, and manage your AI providers with ease.",
+      "product": "Product",
+      "features": "Features",
+      "dashboard": "Dashboard",
+      "changelog": "Changelog",
+      "resources": "Resources",
+      "documentation": "Documentation",
+      "github": "GitHub",
+      "npm": "NPM",
+      "legal": "Legal",
+      "license": "MIT License",
+      "copyright": "© {year} 9Router. All rights reserved."
+    },
+    "flow": {
+      "mobileHint": "Interactive diagram visible on desktop",
+      "cli": {
+        "claude": "Claude Code",
+        "codex": "OpenAI Codex",
+        "cline": "Cline",
+        "cursor": "Cursor"
+      },
+      "providers": {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "github": "GitHub Copilot"
+      }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { enforceApiKeyQuota } from "@/shared/services/apiKeyQuota";
 
 /**
  * Handle CORS preflight
@@ -17,8 +18,13 @@ export async function OPTIONS() {
  * GET /v1beta/models - Gemini compatible models list
  * Returns models in Gemini API format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const quota = await enforceApiKeyQuota(request);
+    if (!quota.ok) {
+      return quota.response;
+    }
+
     // Collect all models from all providers
     const models = [];
     

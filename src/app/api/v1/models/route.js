@@ -1,5 +1,6 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { enforceApiKeyQuota, isModelAllowed, normalizeAllowedModels } from "@/shared/services/apiKeyQuota";
 
 /**
  * Handle CORS preflight
@@ -18,8 +19,14 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list
  * Returns models from all active providers and combos in OpenAI format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const quota = await enforceApiKeyQuota(request);
+    if (!quota.ok) {
+      return quota.response;
+    }
+    const allowedModels = normalizeAllowedModels(quota.apiKey?.allowedModels);
+
     // Get active provider connections
     let connections = [];
     try {
@@ -52,6 +59,10 @@ export async function GET() {
 
     // Add combos first (they appear at the top)
     for (const combo of combos) {
+      if (!isModelAllowed(combo.name, allowedModels)) {
+        continue;
+      }
+
       models.push({
         id: combo.name,
         object: "model",
@@ -71,8 +82,13 @@ export async function GET() {
       }
 
       for (const model of providerModels) {
+        const modelId = `${alias}/${model.id}`;
+        if (!isModelAllowed(modelId, allowedModels)) {
+          continue;
+        }
+
         models.push({
-          id: `${alias}/${model.id}`,
+          id: modelId,
           object: "model",
           created: timestamp,
           owned_by: alias,
