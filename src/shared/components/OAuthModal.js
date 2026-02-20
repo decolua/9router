@@ -114,8 +114,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow (GitHub, Qwen, Kiro)
-      if (provider === "github" || provider === "qwen" || provider === "kiro") {
+      // Device code flow providers
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode"];
+      if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
 
@@ -129,7 +130,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
-        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
+        // Pass extraData for Kiro (contains _clientId, _clientSecret)
         const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
@@ -212,7 +213,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
     // Method 1: postMessage from popup
     const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
+      // Allow messages from same origin or localhost (any port)
+      const isLocalhost = event.origin.includes("localhost") || event.origin.includes("127.0.0.1");
+      const isSameOrigin = event.origin === window.location.origin;
+      if (!isLocalhost && !isSameOrigin) return;
+      
       if (event.data?.type === "oauth_callback") {
         handleCallback(event.data.data);
       }

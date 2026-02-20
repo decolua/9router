@@ -250,6 +250,33 @@ export const PROVIDERS = {
       "User-Agent": "connect-es/1.6.1"
     },
     clientVersion: "1.1.3"
+  },
+  "kimi-coding": {
+    baseUrl: "https://api.kimi.com/coding/v1/messages",
+    format: "claude",
+    headers: {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    },
+    clientId: "17e5f671-d194-4dfb-9706-5516cb48c098",
+    tokenUrl: "https://auth.kimi.com/api/oauth/token",
+    refreshUrl: "https://auth.kimi.com/api/oauth/token"
+  },
+  kilocode: {
+    baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
+    format: "openrouter",
+    headers: {}
+  },
+  cline: {
+    baseUrl: "https://api.cline.bot/api/v1/messages",
+    format: "claude",
+    headers: {
+      "HTTP-Referer": "https://cline.bot",
+      "X-Title": "Cline",
+      "Anthropic-Version": "2023-06-01"
+    },
+    tokenUrl: "https://api.cline.bot/api/v1/auth/token",
+    refreshUrl: "https://api.cline.bot/api/v1/auth/refresh"
   }
 };
 

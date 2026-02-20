@@ -192,6 +192,29 @@ export const CURSOR_CONFIG = {
   },
 };
 
+// Kimi Coding OAuth Configuration (Device Code Flow)
+export const KIMI_CODING_CONFIG = {
+  clientId: process.env.KIMI_CODING_OAUTH_CLIENT_ID || "17e5f671-d194-4dfb-9706-5516cb48c098",
+  deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
+  tokenUrl: "https://auth.kimi.com/api/oauth/token",
+};
+
+// KiloCode OAuth Configuration (Custom Device Auth Flow)
+export const KILOCODE_CONFIG = {
+  apiBaseUrl: "https://api.kilo.ai",
+  initiateUrl: "https://api.kilo.ai/api/device-auth/codes",
+  pollUrlBase: "https://api.kilo.ai/api/device-auth/codes",
+};
+
+// Cline OAuth Configuration (Local Callback Flow via app.cline.bot)
+export const CLINE_CONFIG = {
+  appBaseUrl: "https://app.cline.bot",
+  apiBaseUrl: "https://api.cline.bot",
+  authorizeUrl: "https://api.cline.bot/api/v1/auth/authorize",
+  tokenExchangeUrl: "https://api.cline.bot/api/v1/auth/token",
+  refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -207,4 +230,7 @@ export const PROVIDERS = {
   GITHUB: "github",
   KIRO: "kiro",
   CURSOR: "cursor",
+  KIMI_CODING: "kimi-coding",
+  KILOCODE: "kilocode",
+  CLINE: "cline",
 };

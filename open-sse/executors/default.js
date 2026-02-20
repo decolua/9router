@@ -22,6 +22,8 @@ export class DefaultExecutor extends BaseExecutor {
       case "claude":
       case "glm":
       case "kimi":
+      case "kimi-coding":
+      case "cline":
       case "minimax":
       case "minimax-cn":
         return `${this.config.baseUrl}?beta=true`;
@@ -44,9 +46,11 @@ export class DefaultExecutor extends BaseExecutor {
         break;
       case "glm":
       case "kimi":
+      case "kimi-coding":
+      case "cline":
       case "minimax":
       case "minimax-cn":
-        headers["x-api-key"] = credentials.apiKey;
+        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
         break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -76,7 +80,10 @@ export class DefaultExecutor extends BaseExecutor {
       qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }),
       iflow: () => this.refreshIflow(credentials.refreshToken),
       gemini: () => this.refreshGoogle(credentials.refreshToken),
-      kiro: () => this.refreshKiro(credentials.refreshToken)
+      kiro: () => this.refreshKiro(credentials.refreshToken),
+      cline: () => this.refreshCline(credentials.refreshToken),
+      "kimi-coding": () => this.refreshKimiCoding(credentials.refreshToken),
+      kilocode: () => this.refreshKilocode(credentials.refreshToken)
     };
 
     const refresher = refreshers[this.provider];
@@ -146,6 +153,44 @@ export class DefaultExecutor extends BaseExecutor {
     if (!response.ok) return null;
     const tokens = await response.json();
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
+  }
+
+  async refreshCline(refreshToken) {
+    console.log('[DEBUG] Refreshing Cline token, refreshToken length:', refreshToken?.length);
+    const response = await fetch("https://api.cline.bot/api/v1/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" })
+    });
+    console.log('[DEBUG] Cline refresh response status:', response.status);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log('[DEBUG] Cline refresh error:', errorText);
+      return null;
+    }
+    const payload = await response.json();
+    console.log('[DEBUG] Cline refresh payload:', JSON.stringify(payload).substring(0, 200));
+    const data = payload?.data || payload;
+    const expiresAtIso = data?.expiresAt;
+    const expiresIn = expiresAtIso ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000)) : undefined;
+    console.log('[DEBUG] Cline refresh success, expiresIn:', expiresIn);
+    return { accessToken: data?.accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
+  }
+
+  async refreshKimiCoding(refreshToken) {
+    const response = await fetch("https://auth.kimi.com/api/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
+    });
+    if (!response.ok) return null;
+    const tokens = await response.json();
+    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
+  }
+
+  async refreshKilocode(refreshToken) {
+    // Kilocode uses device code flow, no refresh token support
+    return null;
   }
 }
 

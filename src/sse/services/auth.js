@@ -1,5 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter, checkFallbackError } from "open-sse/services/accountFallback.js";
+import { resolveProviderId } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -77,12 +78,15 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
   try {
     await currentMutex;
 
-    const connections = await getProviderConnections({ provider, isActive: true });
+    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
+    const providerId = resolveProviderId(provider);
+
+    const connections = await getProviderConnections({ provider: providerId, isActive: true });
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeId: ${excludeConnectionId || "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
       // Check all connections (including inactive) to see if rate limited
-      const allConnections = await getProviderConnections({ provider });
+      const allConnections = await getProviderConnections({ provider: providerId });
       log.debug("AUTH", `${provider} | all connections (incl inactive): ${allConnections.length}`);
       if (allConnections.length > 0) {
         const earliest = getEarliestRateLimitedUntil(allConnections);
