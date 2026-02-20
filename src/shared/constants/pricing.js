@@ -335,14 +335,7 @@ export const DEFAULT_PRICING = {
       reasoning: 3.75,
       cache_creation: 0.30
     },
-    "claude-sonnet-4-5": {
-      input: 3.00,
-      output: 15.00,
-      cached: 0.30,
-      reasoning: 22.50,
-      cache_creation: 3.00
-    },
-    "claude-sonnet-4-5-thinking": {
+    "claude-sonnet-4-6": {
       input: 3.00,
       output: 15.00,
       cached: 0.30,
