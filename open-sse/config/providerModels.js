@@ -135,6 +135,10 @@ export const PROVIDER_MODELS = {
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
     { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
+    // Embedding models
+    { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
+    { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
+    { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
   ],
   openrouter: [
     { id: "auto", name: "Auto (Best Available)" },

@@ -760,6 +760,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
       : responseBody;
 
+    // Ensure OpenAI-required fields are present (needed for Letta and other strict clients)
+    if (!translatedResponse.object) translatedResponse.object = "chat.completion";
+    if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);
+
+    // Strip Azure-specific non-standard fields
+    if (translatedResponse.prompt_filter_results !== undefined) {
+      delete translatedResponse.prompt_filter_results;
+    }
+    if (translatedResponse?.choices) {
+      for (const choice of translatedResponse.choices) {
+        if (choice.content_filter_results !== undefined) {
+          delete choice.content_filter_results;
+        }
+      }
+    }
+
     // Add buffer and filter usage for client (to prevent CLI context errors)
     if (translatedResponse?.usage) {
       const buffered = addBufferToUsage(translatedResponse.usage);

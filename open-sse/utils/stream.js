@@ -82,6 +82,25 @@ export function createSSEStream(options = {}) {
 
               const idFixed = fixInvalidId(parsed);
 
+              // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
+              let fieldsInjected = false;
+              if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
+              if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+
+              // Strip Azure-specific non-standard fields from streaming chunks
+              if (parsed.prompt_filter_results !== undefined) {
+                delete parsed.prompt_filter_results;
+                fieldsInjected = true;
+              }
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice.content_filter_results !== undefined) {
+                    delete choice.content_filter_results;
+                    fieldsInjected = true;
+                  }
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -115,7 +134,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed) {
+              } else if (idFixed || fieldsInjected) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
