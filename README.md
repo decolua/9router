@@ -913,6 +913,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ---
 
+## 🔀 Forks
+
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
+
+---
+
 ## 🙏 Acknowledgments
 
 Special thanks to **CLIProxyAPI** - the original Go implementation that inspired this JavaScript port.
