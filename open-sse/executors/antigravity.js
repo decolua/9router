@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/constants.js";
+import { deriveSessionId } from "../utils/sessionManager.js";
 
 const MAX_RETRY_AFTER_MS = 10000;
 
@@ -16,19 +17,21 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, sessionId = null) {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || "antigravity/1.104.0 darwin/arm64",
-      "X-9Router-Source": "9router",
+      [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
+      ...ANTIGRAVITY_HEADERS,
+      ...(sessionId && { "X-Machine-Session-Id": sessionId }),
       ...(stream && { "Accept": "text/event-stream" })
     };
   }
 
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
-    
+
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
       let role = c.role;
@@ -51,13 +54,13 @@ export class AntigravityExecutor extends BaseExecutor {
     const transformedRequest = {
       ...body.request,
       ...(contents && { contents }),
-      sessionId: body.request?.sessionId || this.generateSessionId(),
+      sessionId: body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId),
       safetySettings: undefined,
-      toolConfig: body.request?.tools?.length > 0 
+      toolConfig: body.request?.tools?.length > 0
         ? { functionCallingConfig: { mode: "VALIDATED" } }
         : body.request?.toolConfig
     };
-    
+
     return {
       ...body,
       project: projectId,
@@ -108,7 +111,7 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   generateSessionId() {
-    return `-${Math.floor(Math.random() * 9_000_000_000_000_000_000)}`;
+    return crypto.randomUUID() + Date.now().toString();
   }
 
   parseRetryHeaders(headers) {
@@ -118,7 +121,7 @@ export class AntigravityExecutor extends BaseExecutor {
     if (retryAfter) {
       const seconds = parseInt(retryAfter, 10);
       if (!isNaN(seconds) && seconds > 0) return seconds * 1000;
-      
+
       const date = new Date(retryAfter);
       if (!isNaN(date.getTime())) {
         const diff = date.getTime() - Date.now();
@@ -167,9 +170,10 @@ export class AntigravityExecutor extends BaseExecutor {
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex);
-      const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      
+      const sessionId = transformedBody.request?.sessionId;
+      const headers = this.buildHeaders(credentials, stream, sessionId);
+
       // Initialize retry counter for this URL
       if (!retryAttemptsByUrl[urlIndex]) {
         retryAttemptsByUrl[urlIndex] = 0;
@@ -200,7 +204,7 @@ export class AntigravityExecutor extends BaseExecutor {
           }
 
           if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs/1000)}s, waiting...`);
+            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`);
             await new Promise(resolve => setTimeout(resolve, retryMs));
             urlIndex--;
             continue;
@@ -211,15 +215,15 @@ export class AntigravityExecutor extends BaseExecutor {
             retryAttemptsByUrl[urlIndex]++;
             // Exponential backoff: 2s, 4s, 8s...
             const backoffMs = Math.min(1000 * (2 ** retryAttemptsByUrl[urlIndex]), MAX_RETRY_AFTER_MS);
-            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs/1000}s`);
+            log?.debug?.("RETRY", `429 auto retry ${retryAttemptsByUrl[urlIndex]}/${MAX_AUTO_RETRIES} after ${backoffMs / 1000}s`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
             urlIndex--;
             continue;
           }
 
-          log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs/1000)}s)` : 'missing'}, trying fallback`);
+          log?.debug?.("RETRY", `${response.status}, Retry-After ${retryMs ? `too long (${Math.ceil(retryMs / 1000)}s)` : 'missing'}, trying fallback`);
           lastStatus = response.status;
-          
+
           if (urlIndex + 1 < fallbackCount) {
             continue;
           }

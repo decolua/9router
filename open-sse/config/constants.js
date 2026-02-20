@@ -1,3 +1,79 @@
+import { platform, arch } from "os";
+
+// === Antigravity Binary Alignment: Numeric Enums ===
+// Reference: Antigravity binary analysis - google.internal.cloud.code.v1internal.ClientMetadata
+
+// IDE Type enum (numeric values as expected by Cloud Code API)
+export const IDE_TYPE = {
+  UNSPECIFIED: 0,
+  JETSKI: 10,        // Internal codename for Gemini CLI
+  ANTIGRAVITY: 9,
+  PLUGINS: 7
+};
+
+// Platform enum (as specified in Antigravity binary)
+export const PLATFORM = {
+  UNSPECIFIED: 0,
+  DARWIN_AMD64: 1,
+  DARWIN_ARM64: 2,
+  LINUX_AMD64: 3,
+  LINUX_ARM64: 4,
+  WINDOWS_AMD64: 5
+};
+
+// Plugin type enum (as specified in Antigravity binary)
+export const PLUGIN_TYPE = {
+  UNSPECIFIED: 0,
+  CLOUD_CODE: 1,
+  GEMINI: 2
+};
+
+/**
+ * Get the platform enum value based on the current OS.
+ * @returns {number} Platform enum value
+ */
+export function getPlatformEnum() {
+  const os = platform();
+  const architecture = arch();
+
+  if (os === "darwin") {
+    return architecture === "arm64" ? PLATFORM.DARWIN_ARM64 : PLATFORM.DARWIN_AMD64;
+  } else if (os === "linux") {
+    return architecture === "arm64" ? PLATFORM.LINUX_ARM64 : PLATFORM.LINUX_AMD64;
+  } else if (os === "win32") {
+    return PLATFORM.WINDOWS_AMD64;
+  }
+  return PLATFORM.UNSPECIFIED;
+}
+
+/**
+ * Generate platform-specific User-Agent string.
+ * @returns {string} User-Agent in format "antigravity/version os/arch"
+ */
+export function getPlatformUserAgent() {
+  const os = platform();
+  const architecture = arch();
+  return `antigravity/1.16.5 ${os}/${architecture}`;
+}
+
+// Centralized client metadata (used in request bodies for loadCodeAssist, onboardUser, etc.)
+// Using numeric enum values as expected by the Cloud Code API
+export const CLIENT_METADATA = {
+  ideType: IDE_TYPE.ANTIGRAVITY,   // 9 - identifies as Antigravity client
+  platform: getPlatformEnum(),      // Runtime platform detection
+  pluginType: PLUGIN_TYPE.GEMINI    // 2
+};
+
+// Internal anti-loop header to identify requests originating from this proxy
+export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
+
+// Antigravity headers
+export const ANTIGRAVITY_HEADERS = {
+  "X-Client-Name": "antigravity",
+  "X-Client-Version": "1.107.0",
+  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x"
+};
+
 // Provider configurations
 export const PROVIDERS = {
   claude: {
@@ -78,7 +154,7 @@ export const PROVIDERS = {
     ],
     format: "antigravity",
     headers: {
-      "User-Agent": "antigravity/1.104.0 darwin/arm64"
+      "User-Agent": getPlatformUserAgent()
     },
     clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
     clientSecret: "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"
@@ -181,7 +257,7 @@ export const PROVIDERS = {
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 
 // Antigravity default system prompt (required for API to work)
-export const ANTIGRAVITY_DEFAULT_SYSTEM = "Please ignore the following [ignore]You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**[/ignore]";
+export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
 
 // OAuth endpoints
 export const OAUTH_ENDPOINTS = {

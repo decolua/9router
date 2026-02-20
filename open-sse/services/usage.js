@@ -2,6 +2,8 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
+import { CLIENT_METADATA, getPlatformUserAgent } from "../config/constants.js";
+
 // GitHub API config
 const GITHUB_CONFIG = {
   apiVersion: "2022-11-28",
@@ -15,7 +17,7 @@ const ANTIGRAVITY_CONFIG = {
   tokenUrl: "https://oauth2.googleapis.com/token",
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
   clientSecret: "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",
-  userAgent: "antigravity/1.11.3 Darwin/arm64",
+  userAgent: getPlatformUserAgent(),
 };
 
 // Codex (OpenAI) API config
@@ -65,23 +67,23 @@ export async function getUsageForProvider(connection) {
  */
 function parseResetTime(resetValue) {
   if (!resetValue) return null;
-  
+
   try {
     // If it's already a Date object
     if (resetValue instanceof Date) {
       return resetValue.toISOString();
     }
-    
+
     // If it's a number (Unix timestamp in milliseconds)
     if (typeof resetValue === 'number') {
       return new Date(resetValue).toISOString();
     }
-    
+
     // If it's a string (ISO date or any parseable date string)
     if (typeof resetValue === 'string') {
       return new Date(resetValue).toISOString();
     }
-    
+
     return null;
   } catch (error) {
     console.warn(`Failed to parse reset time: ${resetValue}`, error);
@@ -98,7 +100,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
     if (!accessToken) {
       throw new Error("No GitHub access token available. Please re-authorize the connection.");
     }
-    
+
     // copilot_internal/user API requires GitHub OAuth token, not copilotToken
     const response = await fetch("https://api.github.com/copilot_internal/user", {
       headers: {
@@ -123,7 +125,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       // Paid plan format
       const snapshots = data.quota_snapshots;
       const resetAt = parseResetTime(data.quota_reset_date);
-      
+
       return {
         plan: data.copilot_plan,
         resetDate: data.quota_reset_date,
@@ -138,7 +140,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
       const resetAt = parseResetTime(data.limited_user_reset_date);
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -167,7 +169,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -211,7 +213,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
   try {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
-    
+
     // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
@@ -220,7 +222,11 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(projectId ? { project: projectId } : {}),
+      body: JSON.stringify({
+        ...(projectId ? { project: projectId } : {}),
+        metadata: CLIENT_METADATA,
+        mode: 1
+      }),
     });
 
     if (response.status === 403) {
@@ -233,7 +239,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
 
     const data = await response.json();
     const quotas = {};
-    
+
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
     if (data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
@@ -248,26 +254,26 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
         'gemini-3-flash',
         'gemini-2.5-flash',
       ];
-      
+
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
         if (!info.quotaInfo) {
           continue;
         }
-        
+
         // Skip internal models and non-important models
         if (info.isInternal || !importantModels.includes(modelKey)) {
           continue;
         }
-        
+
         const remainingFraction = info.quotaInfo.remainingFraction || 0;
         const remainingPercentage = remainingFraction * 100;
-        
+
         // Convert percentage to used/total for UI compatibility
         const total = 1000; // Normalized base
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
-        
+
         // Use modelKey as key (matches PROVIDER_MODELS id)
         quotas[modelKey] = {
           used,
@@ -317,7 +323,7 @@ async function getAntigravitySubscriptionInfo(accessToken) {
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
+      body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     });
 
     if (!response.ok) return null;
@@ -345,7 +351,7 @@ async function getClaudeUsage(accessToken) {
 
     if (settingsResponse.ok) {
       const settings = await settingsResponse.json();
-      
+
       // Try usage endpoint if we have org info
       if (settings.organization_id) {
         const usageResponse = await fetch(
@@ -402,7 +408,7 @@ async function getCodexUsage(accessToken) {
     }
 
     const data = await response.json();
-    
+
     // Parse rate limit info
     const rateLimit = data.rate_limit || {};
     const primaryWindow = rateLimit.primary_window || {};
@@ -475,7 +481,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     // Parse usage data from usageBreakdownList
     const usageList = data.usageBreakdownList || [];
     const quotaInfo = {};
-    
+
     // Parse reset time - supports multiple formats (nextDateReset, resetDate, etc.)
     const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
 
@@ -483,7 +489,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
       const used = breakdown.currentUsageWithPrecision || 0;
       const total = breakdown.usageLimitWithPrecision || 0;
-      
+
       quotaInfo[resourceType] = {
         used,
         total,
@@ -496,7 +502,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       if (breakdown.freeTrialInfo) {
         const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
         const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-        
+
         quotaInfo[`${resourceType}_freetrial`] = {
           used: freeUsed,
           total: freeTotal,

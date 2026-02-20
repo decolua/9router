@@ -35,7 +35,7 @@ export const DEFAULT_SAFETY_SETTINGS = [
 // Convert OpenAI content to Gemini parts
 export function convertOpenAIContentToParts(content) {
   const parts = [];
-  
+
   if (typeof content === "string") {
     parts.push({ text: content });
   } else if (Array.isArray(content)) {
@@ -57,7 +57,7 @@ export function convertOpenAIContentToParts(content) {
       }
     }
   }
-  
+
   return parts;
 }
 
@@ -85,9 +85,9 @@ export function generateRequestId() {
   return `agent-${crypto.randomUUID()}`;
 }
 
-// Generate session ID
+// Generate session ID (binary-compatible format: UUID + timestamp)
 export function generateSessionId() {
-  return `-${Math.floor(Math.random() * 9000000000000000000)}`;
+  return crypto.randomUUID() + Date.now().toString();
 }
 
 // Generate project ID
@@ -102,7 +102,7 @@ export function generateProjectId() {
 // Helper: Remove unsupported keywords recursively from object/array
 function removeUnsupportedKeywords(obj, keywords) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (Array.isArray(obj)) {
     for (const item of obj) {
       removeUnsupportedKeywords(item, keywords);
@@ -126,12 +126,12 @@ function removeUnsupportedKeywords(obj, keywords) {
 // Convert const to enum
 function convertConstToEnum(obj) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (obj.const !== undefined && !obj.enum) {
     obj.enum = [obj.const];
     delete obj.const;
   }
-  
+
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
       convertConstToEnum(value);
@@ -142,11 +142,11 @@ function convertConstToEnum(obj) {
 // Convert enum values to strings (Gemini requires string enum values)
 function convertEnumValuesToStrings(obj) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (obj.enum && Array.isArray(obj.enum)) {
     obj.enum = obj.enum.map(v => String(v));
   }
-  
+
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
       convertEnumValuesToStrings(value);
@@ -157,10 +157,10 @@ function convertEnumValuesToStrings(obj) {
 // Merge allOf schemas
 function mergeAllOf(obj) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (obj.allOf && Array.isArray(obj.allOf)) {
     const merged = {};
-    
+
     for (const item of obj.allOf) {
       if (item.properties) {
         if (!merged.properties) merged.properties = {};
@@ -175,12 +175,12 @@ function mergeAllOf(obj) {
         }
       }
     }
-    
+
     delete obj.allOf;
     if (merged.properties) obj.properties = { ...obj.properties, ...merged.properties };
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
-  
+
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
       mergeAllOf(value);
@@ -192,12 +192,12 @@ function mergeAllOf(obj) {
 function selectBest(items) {
   let bestIdx = 0;
   let bestScore = -1;
-  
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     let score = 0;
     const type = item.type;
-    
+
     if (type === "object" || item.properties) {
       score = 3;
     } else if (type === "array" || item.items) {
@@ -205,20 +205,20 @@ function selectBest(items) {
     } else if (type && type !== "null") {
       score = 1;
     }
-    
+
     if (score > bestScore) {
       bestScore = score;
       bestIdx = i;
     }
   }
-  
+
   return bestIdx;
 }
 
 // Flatten anyOf/oneOf
 function flattenAnyOfOneOf(obj) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (obj.anyOf && Array.isArray(obj.anyOf) && obj.anyOf.length > 0) {
     const nonNullSchemas = obj.anyOf.filter(s => s && s.type !== "null");
     if (nonNullSchemas.length > 0) {
@@ -228,7 +228,7 @@ function flattenAnyOfOneOf(obj) {
       Object.assign(obj, selected);
     }
   }
-  
+
   if (obj.oneOf && Array.isArray(obj.oneOf) && obj.oneOf.length > 0) {
     const nonNullSchemas = obj.oneOf.filter(s => s && s.type !== "null");
     if (nonNullSchemas.length > 0) {
@@ -238,7 +238,7 @@ function flattenAnyOfOneOf(obj) {
       Object.assign(obj, selected);
     }
   }
-  
+
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
       flattenAnyOfOneOf(value);
@@ -249,12 +249,12 @@ function flattenAnyOfOneOf(obj) {
 // Flatten type arrays
 function flattenTypeArrays(obj) {
   if (!obj || typeof obj !== "object") return;
-  
+
   if (obj.type && Array.isArray(obj.type)) {
     const nonNullTypes = obj.type.filter(t => t !== "null");
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
-  
+
   for (const value of Object.values(obj)) {
     if (value && typeof value === "object") {
       flattenTypeArrays(value);
@@ -266,28 +266,28 @@ function flattenTypeArrays(obj) {
 // Reference: CLIProxyAPI/internal/util/gemini_schema.go
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
-  
+
   // Mutate directly (schema is only used once per request)
   let cleaned = schema;
-  
+
   // Phase 1: Convert and prepare
   convertConstToEnum(cleaned);
   convertEnumValuesToStrings(cleaned);
-  
+
   // Phase 2: Flatten complex structures
   mergeAllOf(cleaned);
   flattenAnyOfOneOf(cleaned);
   flattenTypeArrays(cleaned);
-  
+
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
-  
+
   // Phase 4: Cleanup required fields recursively
   function cleanupRequired(obj) {
     if (!obj || typeof obj !== "object") return;
-    
+
     if (obj.required && Array.isArray(obj.required) && obj.properties) {
-      const validRequired = obj.required.filter(field => 
+      const validRequired = obj.required.filter(field =>
         Object.prototype.hasOwnProperty.call(obj.properties, field)
       );
       if (validRequired.length === 0) {
@@ -296,7 +296,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
         obj.required = validRequired;
       }
     }
-    
+
     // Recurse into nested objects
     for (const value of Object.values(obj)) {
       if (value && typeof value === "object") {
@@ -304,13 +304,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
       }
     }
   }
-  
+
   cleanupRequired(cleaned);
-  
+
   // Phase 5: Add placeholder for empty object schemas (Antigravity requirement)
   function addPlaceholders(obj) {
     if (!obj || typeof obj !== "object") return;
-    
+
     if (obj.type === "object") {
       if (!obj.properties || Object.keys(obj.properties).length === 0) {
         obj.properties = {
@@ -322,7 +322,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
         obj.required = ["reason"];
       }
     }
-    
+
     // Recurse into nested objects
     for (const value of Object.values(obj)) {
       if (value && typeof value === "object") {
@@ -330,9 +330,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
       }
     }
   }
-  
+
   addPlaceholders(cleaned);
-  
+
   return cleaned;
 }
 

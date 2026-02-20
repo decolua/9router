@@ -1,6 +1,20 @@
 /**
  * OAuth Configuration Constants
  */
+import { platform, arch } from "os";
+
+/**
+ * Get the platform enum value based on the current OS.
+ * Matches Antigravity binary's ClientMetadata.Platform enum.
+ */
+function getOAuthPlatformEnum() {
+  const os = platform();
+  const architecture = arch();
+  if (os === "darwin") return architecture === "arm64" ? 2 : 1;
+  if (os === "linux") return architecture === "arm64" ? 4 : 3;
+  if (os === "win32") return 5;
+  return 0;
+}
 
 // Claude OAuth Configuration (Authorization Code Flow with PKCE)
 export const CLAUDE_CONFIG = {
@@ -83,8 +97,16 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  loadCodeAssistClientMetadata: `{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}`,
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
 };
+
+/**
+ * Get client metadata using numeric enum values for API calls.
+ * @returns {{ ideType: number, platform: number, pluginType: number }}
+ */
+export function getOAuthClientMetadata() {
+  return { ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 };
+}
 
 // OpenAI OAuth Configuration (Authorization Code Flow with PKCE)
 export const OPENAI_CONFIG = {

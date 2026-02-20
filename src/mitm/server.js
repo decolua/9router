@@ -6,6 +6,7 @@ const { promisify } = require("util");
 const os = require("os");
 
 // Configuration
+const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
@@ -174,7 +175,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
   if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
 
   // Anti-loop: requests from 9Router bypass interception
-  if (req.headers["x-9router-source"] === "9router") {
+  if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
     return passthrough(req, res, bodyBuffer);
   }
 
