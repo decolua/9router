@@ -194,23 +194,23 @@ function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
 function extractUsageFromResponse(responseBody, provider) {
   if (!responseBody || typeof responseBody !== 'object') return null;
 
-  // OpenAI format
-  if (responseBody.usage && typeof responseBody.usage === 'object') {
-    return {
-      prompt_tokens: responseBody.usage.prompt_tokens || 0,
-      completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
-    };
-  }
-
-  // Claude format
-  if (responseBody.usage && typeof responseBody.usage === 'object' && (responseBody.usage.input_tokens !== undefined || responseBody.usage.output_tokens !== undefined)) {
+  // Claude format - check first to avoid conflict with OpenAI check
+  if (responseBody.usage && typeof responseBody.usage === 'object' && responseBody.usage.input_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
       cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+    };
+  }
+
+  // OpenAI format
+  if (responseBody.usage && typeof responseBody.usage === 'object' && responseBody.usage.prompt_tokens !== undefined) {
+    return {
+      prompt_tokens: responseBody.usage.prompt_tokens || 0,
+      completion_tokens: responseBody.usage.completion_tokens || 0,
+      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
 
@@ -723,6 +723,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     }
 
+    // Log provider response (raw response from provider)
+    reqLogger.logProviderResponse(
+      providerResponse.status,
+      providerResponse.statusText,
+      providerResponse.headers,
+      responseBody
+    );
+
     // Notify success - caller can clear error status if needed
     if (onRequestSuccess) {
       await onRequestSuccess();
@@ -757,6 +765,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const buffered = addBufferToUsage(translatedResponse.usage);
       translatedResponse.usage = filterUsageForFormat(buffered, sourceFormat);
     }
+
+    // Log converted response (final response to client)
+    reqLogger.logConvertedResponse(translatedResponse);
 
     const totalLatency = Date.now() - requestStartTime;
     const requestDetail = {
