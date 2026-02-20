@@ -272,6 +272,21 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleToggleKey = async (id, isActive) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive }),
+      });
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, isActive } : k));
+      }
+    } catch (error) {
+      console.log("Error toggling key:", error);
+    }
+  };
+
   const [baseUrl, setBaseUrl] = useState("/v1");
   const cloudEndpointNew = cloudUrl ? `${cloudUrl}/v1` : "";
 
@@ -405,7 +420,7 @@ export default function APIPageClient({ machineId }) {
             {keys.map((key) => (
               <div
                 key={key.id}
-                className="group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0"
+                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{key.name}</p>
@@ -423,13 +438,32 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  {key.isActive === false && (
+                    <p className="text-xs text-orange-500 mt-1">Paused</p>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleDeleteKey(key.id)}
-                  className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                >
-                  <span className="material-symbols-outlined text-[18px]">delete</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <Toggle
+                    size="sm"
+                    checked={key.isActive ?? true}
+                    onChange={(checked) => {
+                      if (key.isActive && !checked) {
+                        if (confirm(`Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`)) {
+                          handleToggleKey(key.id, checked);
+                        }
+                      } else {
+                        handleToggleKey(key.id, checked);
+                      }
+                    }}
+                    title={key.isActive ? "Pause key" : "Resume key"}
+                  />
+                  <button
+                    onClick={() => handleDeleteKey(key.id)}
+                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
