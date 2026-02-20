@@ -321,6 +321,13 @@ export const DEFAULT_PRICING = {
       reasoning: 27.00,
       cache_creation: 4.00
     },
+    "gemini-3.1-pro-high": {
+      input: 4.00,
+      output: 18.00,
+      cached: 0.50,
+      reasoning: 27.00,
+      cache_creation: 4.00
+    },
     "gemini-3-flash": {
       input: 0.50,
       output: 3.00,

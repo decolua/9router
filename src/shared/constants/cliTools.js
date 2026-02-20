@@ -128,7 +128,15 @@ export const CLI_TOOLS = {
     color: "#4285F4",
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
-    modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low"],
+    modelAliases: [
+      "claude-opus-4-6-thinking",
+      "claude-sonnet-4-6",
+      "gemini-3.1-pro-high",
+      "gemini-3-flash",
+      "gpt-oss-120b-medium",
+      "gemini-3-pro-high",
+      "gemini-3-pro-low",
+    ],
     defaultModels: [
       { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high" },
       { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", alias: "gemini-3.1-pro-low" },

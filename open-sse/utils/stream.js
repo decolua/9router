@@ -10,6 +10,62 @@ const sharedDecoder = new TextDecoder();
 const sharedEncoder = new TextEncoder();
 
 /**
+ * Detect actual response format from a parsed SSE chunk.
+ * Used to auto-correct when upstream returns a different format than expected
+ * (e.g. anthropic-compatible endpoint that actually returns OpenAI responses,
+ *  or openai-compatible endpoint that actually returns Claude SSE events).
+ */
+function detectResponseFormat(chunk) {
+  if (!chunk) return null;
+
+  // OpenAI chat-completion format: has "choices" array with delta
+  if (chunk.choices !== undefined) {
+    return FORMATS.OPENAI;
+  }
+
+  // Claude format: has "type" field (message_start, content_block_delta, etc.)
+  if (chunk.type !== undefined) {
+    return FORMATS.CLAUDE;
+  }
+
+  // Gemini / Antigravity format: has "candidates" array
+  if (chunk.candidates !== undefined) {
+    return FORMATS.GEMINI;
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the *effective* targetFormat for translation.
+ *
+ * Normally `targetFormat` (what we asked the provider for) equals the format
+ * the provider actually returns.  But some "compatible" endpoints (e.g. an
+ * anthropic-compatible proxy that internally uses OpenAI, or vice-versa)
+ * return a *different* wire format.
+ *
+ * When we detect that the actual chunk format differs from `targetFormat` we
+ * return the detected format so the translator pipeline picks the correct
+ * converters.  The detected format is cached in `state.detectedFormat` so we
+ * don't have to sniff every chunk.
+ */
+function resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state) {
+  // Fast path: if we already detected a mismatch earlier, reuse it
+  if (state?.detectedFormat) return state.detectedFormat;
+
+  const detected = detectResponseFormat(parsed);
+  if (!detected) return targetFormat; // could not detect, assume config is right
+
+  // If the detected format matches what we expected, nothing to do
+  if (detected === targetFormat) return targetFormat;
+
+  // The upstream is sending a different format than configured.
+  // Store in state so subsequent chunks & flush reuse the same decision.
+  if (state) state.detectedFormat = detected;
+  return detected;
+}
+
+/**
  * Stream modes
  */
 const STREAM_MODE = {
@@ -210,8 +266,12 @@ export function createSSEStream(options = {}) {
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = extracted; // Keep original usage for logging
 
-        // Translate: targetFormat -> openai -> sourceFormat
-        const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        // Resolve actual upstream format – auto-detects mismatches between
+        // the configured targetFormat and what the provider really returns
+        const actualTargetFormat = resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state);
+
+        // Translate: actualTargetFormat -> openai -> sourceFormat
+        const translated = translateResponse(actualTargetFormat, sourceFormat, parsed, state);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -294,7 +354,8 @@ export function createSSEStream(options = {}) {
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const actualTargetFormat = resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state);
+            const translated = translateResponse(actualTargetFormat, sourceFormat, parsed, state);
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -313,7 +374,9 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+        // Use detected format for flush (cached in state from transform loop)
+        const actualTargetFormatFlush = state?.detectedFormat || targetFormat;
+        const flushed = translateResponse(actualTargetFormatFlush, sourceFormat, null, state);
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {

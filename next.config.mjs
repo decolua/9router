@@ -16,7 +16,6 @@ const nextConfig = {
     }
     // Stop watching logs directory to prevent HMR during streaming
     config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
-    return config;
   },
   async rewrites() {
     return [

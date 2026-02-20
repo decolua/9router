@@ -28,10 +28,11 @@ export async function OPTIONS() {
 }
 
 /**
- * POST /v1/messages - Claude format (auto convert via handleChat)
+ * POST /v1/messages - Claude/Anthropic format endpoint
+ * Forces sourceFormat to "claude" so responses are always in Claude format
  */
 export async function POST(request) {
   await ensureInitialized();
-  return await handleChat(request);
+  return await handleChat(request, null, "claude");
 }
 
