@@ -49,6 +49,8 @@ export default function UsageStats() {
   const accountSortOrder = searchParams.get("accountSortOrder") || "asc";
   const apiKeySortBy = searchParams.get("apiKeySortBy") || "keyName";
   const apiKeySortOrder = searchParams.get("apiKeySortOrder") || "asc";
+  const endpointSortBy = searchParams.get("endpointSortBy") || "endpoint";
+  const endpointSortOrder = searchParams.get("endpointSortOrder") || "asc";
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -59,12 +61,14 @@ export default function UsageStats() {
   const [expandedModels, setExpandedModels] = useState(new Set());
   const [expandedAccounts, setExpandedAccounts] = useState(new Set());
   const [expandedApiKeys, setExpandedApiKeys] = useState(new Set());
+  const [expandedEndpoints, setExpandedEndpoints] = useState(new Set());
 
   const toggleSort = (tableType, field) => {
     const sortKeyMap = {
       model: { by: "modelSortBy", order: "modelSortOrder" },
       account: { by: "accountSortBy", order: "accountSortOrder" },
-      apiKey: { by: "apiKeySortBy", order: "apiKeySortOrder" }
+      apiKey: { by: "apiKeySortBy", order: "apiKeySortOrder" },
+      endpoint: { by: "endpointSortBy", order: "endpointSortOrder" }
     };
     const sortKeys = sortKeyMap[tableType];
     const params = new URLSearchParams(searchParams.toString());
@@ -134,6 +138,8 @@ export default function UsageStats() {
         return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || 'Unknown Account';
       case 'keyName':
         return item.keyName || 'Unknown Key';
+      case 'endpoint':
+        return item.endpoint || 'Unknown Endpoint';
       default:
         return item[keyField] || 'Unknown';
     }
@@ -234,6 +240,16 @@ export default function UsageStats() {
     [sortedApiKeys, groupDataByKey]
   );
 
+  const sortedEndpoints = useMemo(
+    () => sortData(stats?.byEndpoint, {}, endpointSortBy, endpointSortOrder),
+    [stats?.byEndpoint, endpointSortBy, endpointSortOrder, sortData]
+  );
+
+  const groupedEndpoints = useMemo(
+    () => groupDataByKey(sortedEndpoints, 'endpoint'),
+    [sortedEndpoints, groupDataByKey]
+  );
+
   const fetchStats = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
@@ -321,6 +337,25 @@ export default function UsageStats() {
     }
   }, [expandedApiKeys]);
 
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-endpoints');
+      if (saved) {
+        setExpandedEndpoints(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded endpoints from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-endpoints', JSON.stringify([...expandedEndpoints]));
+    } catch (error) {
+      console.error("Failed to save expanded endpoints to localStorage:", error);
+    }
+  }, [expandedEndpoints]);
+
   const toggleModelGroup = useCallback((groupKey) => {
     setExpandedModels(prev => {
       const next = new Set(prev);
@@ -347,6 +382,18 @@ export default function UsageStats() {
 
   const toggleApiKeyGroup = useCallback((groupKey) => {
     setExpandedApiKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleEndpointGroup = useCallback((groupKey) => {
+    setExpandedEndpoints(prev => {
       const next = new Set(prev);
       if (next.has(groupKey)) {
         next.delete(groupKey);
@@ -1308,6 +1355,259 @@ export default function UsageStats() {
                     className="px-6 py-8 text-center text-text-muted"
                   >
                     No API key usage recorded yet. Make requests using API keys to see data here.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Usage by API Endpoint Table */}
+      <Card className="overflow-hidden">
+        <div className="p-4 border-b border-border bg-bg-subtle/50">
+          <h3 className="font-semibold">Usage by API Endpoint</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-bg-subtle/30 text-text-muted uppercase text-xs">
+              <tr>
+                <th
+                  className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("endpoint", "endpoint")}
+                >
+                  Endpoint{" "}
+                  <SortIcon
+                    field="endpoint"
+                    currentSort={endpointSortBy}
+                    currentOrder={endpointSortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("endpoint", "rawModel")}
+                >
+                  Model{" "}
+                  <SortIcon
+                    field="rawModel"
+                    currentSort={endpointSortBy}
+                    currentOrder={endpointSortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("endpoint", "provider")}
+                >
+                  Provider{" "}
+                  <SortIcon
+                    field="provider"
+                    currentSort={endpointSortBy}
+                    currentOrder={endpointSortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("endpoint", "requests")}
+                >
+                  Requests{" "}
+                  <SortIcon
+                    field="requests"
+                    currentSort={endpointSortBy}
+                    currentOrder={endpointSortOrder}
+                  />
+                </th>
+                <th
+                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  onClick={() => toggleSort("endpoint", "lastUsed")}
+                >
+                  Last Used{" "}
+                  <SortIcon
+                    field="lastUsed"
+                    currentSort={endpointSortBy}
+                    currentOrder={endpointSortOrder}
+                  />
+                </th>
+                {viewMode === "tokens" ? (
+                  <>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "promptTokens")}
+                    >
+                      Input Tokens{" "}
+                      <SortIcon
+                        field="promptTokens"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "completionTokens")}
+                    >
+                      Output Tokens{" "}
+                      <SortIcon
+                        field="completionTokens"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "totalTokens")}
+                    >
+                      Total Tokens{" "}
+                      <SortIcon
+                        field="totalTokens"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "promptTokens")}
+                    >
+                      Input Cost{" "}
+                      <SortIcon
+                        field="promptTokens"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "completionTokens")}
+                    >
+                      Output Cost{" "}
+                      <SortIcon
+                        field="completionTokens"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                    <th
+                      className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                      onClick={() => toggleSort("endpoint", "cost")}
+                    >
+                      Total Cost{" "}
+                      <SortIcon
+                        field="cost"
+                        currentSort={endpointSortBy}
+                        currentOrder={endpointSortOrder}
+                      />
+                    </th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {groupedEndpoints.map((group) => (
+                <Fragment key={group.groupKey}>
+                  <tr
+                    key={`summary-${group.groupKey}`}
+                    className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                    onClick={() => toggleEndpointGroup(group.groupKey)}
+                  >
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expandedEndpoints.has(group.groupKey) ? 'rotate-90' : ''}`}>
+                          chevron_right
+                        </span>
+                        <span className="font-medium font-mono text-sm">
+                          {group.groupKey}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-text-muted">—</td>
+                    <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+                    <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                      {fmtTime(group.summary.lastUsed)}
+                    </td>
+                    {viewMode === "tokens" ? (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.promptTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmt(group.summary.completionTokens)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium">
+                          {fmt(group.summary.totalTokens)}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.inputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right text-text-muted">
+                          {fmtCost(group.summary.outputCost)}
+                        </td>
+                        <td className="px-6 py-3 text-right font-medium text-warning">
+                          {fmtCost(group.summary.totalCost)}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                  {expandedEndpoints.has(group.groupKey) && group.items.map((item) => (
+                    <tr
+                      key={`detail-${item.key}`}
+                      className="group-detail hover:bg-bg-subtle/20 transition-colors"
+                    >
+                      <td className="px-6 py-3 font-medium font-mono text-sm">
+                        {item.endpoint}
+                      </td>
+                      <td className="px-6 py-3">
+                        {item.rawModel}
+                      </td>
+                      <td className="px-6 py-3">
+                        <Badge variant="neutral" size="sm">
+                          {item.provider}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+                      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                        {fmtTime(item.lastUsed)}
+                      </td>
+                      {viewMode === "tokens" ? (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.promptTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmt(item.completionTokens)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium">
+                            {fmt(item.totalTokens)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.inputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right text-text-muted">
+                            {fmtCost(item.outputCost)}
+                          </td>
+                          <td className="px-6 py-3 text-right font-medium text-warning">
+                            {fmtCost(item.totalCost)}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+              {groupedEndpoints.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="px-6 py-8 text-center text-text-muted"
+                  >
+                    No endpoint usage recorded yet. Make requests to see data here.
                   </td>
                 </tr>
               )}
