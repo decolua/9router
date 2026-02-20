@@ -132,6 +132,8 @@ export const CLI_TOOLS = {
     defaultModels: [
       { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", alias: "claude-opus-4-6-thinking" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
+      { id: "gemini-3-1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3-1-pro-high" },
+      { id: "gemini-3-1-pro-low", name: "Gemini 3.1 Pro Low", alias: "gemini-3-1-pro-low" },
       { id: "gemini-3-pro-high", name: "Gemini 3 Pro High", alias: "gemini-3-pro-high" },
       { id: "gemini-3-flash", name: "Gemini 3 Flash", alias: "gemini-3-flash" },
     ],

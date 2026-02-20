@@ -246,6 +246,8 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
       const importantModels = [
         'claude-opus-4-6-thinking',
         'claude-sonnet-4-6',
+        'gemini-3-1-pro-high',
+        'gemini-3-1-pro-low',
         'gemini-3-pro-high',
         'gemini-3-pro-low',
         'gemini-3-flash',
