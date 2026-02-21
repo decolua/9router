@@ -13,6 +13,7 @@ import { handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/constants.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
 /**
  * Handle chat completion request
@@ -144,7 +145,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("AUTH", `Using ${provider} account: ${accountId}...`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-    
+
+    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
+      if (pid) {
+        refreshedCredentials.projectId = pid;
+        // Persist to DB in background so subsequent requests have it immediately
+        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      }
+    }
+
     // Use shared chatCore
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
