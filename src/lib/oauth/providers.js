@@ -529,19 +529,30 @@ const PROVIDERS = {
 
       return { copilotToken, userInfo };
     },
-    mapTokens: (tokens, extra) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      providerSpecificData: {
-        copilotToken: extra?.copilotToken?.token,
-        copilotTokenExpiresAt: extra?.copilotToken?.expires_at,
-        githubUserId: extra?.userInfo?.id,
-        githubLogin: extra?.userInfo?.login,
-        githubName: extra?.userInfo?.name,
-        githubEmail: extra?.userInfo?.email,
-      },
-    }),
+    mapTokens: (tokens, extra) => {
+      const username = extra?.userInfo?.login;
+      const email = extra?.userInfo?.email;
+      const displayName = extra?.userInfo?.name;
+      
+      console.log('[GitHub OAuth] Creating connection - username:', username, 'email:', email, 'name:', displayName);
+      
+      return {
+        name: username || email || `Account ${Date.now()}`,
+        email: email,
+        displayName: displayName,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        providerSpecificData: {
+          copilotToken: extra?.copilotToken?.token,
+          copilotTokenExpiresAt: extra?.copilotToken?.expires_at,
+          githubUserId: extra?.userInfo?.id,
+          githubLogin: extra?.userInfo?.login,
+          githubName: extra?.userInfo?.name,
+          githubEmail: extra?.userInfo?.email,
+        },
+      };
+    },
   },
 
   kiro: {
