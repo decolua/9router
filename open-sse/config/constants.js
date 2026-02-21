@@ -74,6 +74,12 @@ export const ANTIGRAVITY_HEADERS = {
   "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x"
 };
 
+// Cloud Code Assist API endpoints (for Project ID discovery)
+export const CLOUD_CODE_API = {
+  loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+  onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+};
+
 // Provider configurations
 export const PROVIDERS = {
   claude: {
