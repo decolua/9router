@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection, isCloudEnabled } from "@/models";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection } from "@/models";
 
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
@@ -59,9 +57,6 @@ export async function PUT(request, { params }) {
     delete result.refreshToken;
     delete result.idToken;
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({ connection: result });
   } catch (error) {
     console.log("Error updating connection:", error);
@@ -79,27 +74,9 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
     console.log("Error deleting connection:", error);
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
-  }
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing providers to cloud:", error);
   }
 }

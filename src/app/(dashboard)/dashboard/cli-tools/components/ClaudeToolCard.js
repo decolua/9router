@@ -38,7 +38,8 @@ export default function ClaudeToolCard({
     if (!currentUrl) return "not_configured";
     const localMatch = currentUrl.includes("localhost") || currentUrl.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentUrl.startsWith(CLOUD_URL);
-    if (localMatch || cloudMatch) return "configured";
+    const tunnelMatch = baseUrl && currentUrl.startsWith(baseUrl);
+    if (localMatch || cloudMatch || tunnelMatch) return "configured";
     return "other";
   };
 

@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById, isCloudEnabled } from "@/models";
+import { getProviderConnections, createProviderConnection, getProviderNodeById } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
 
 // GET /api/providers - List all connections
 export async function GET() {
@@ -101,27 +99,9 @@ export async function POST(request) {
     const result = { ...newConnection };
     delete result.apiKey;
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
     console.log("Error creating provider:", error);
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
-  }
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing providers to cloud:", error);
   }
 }

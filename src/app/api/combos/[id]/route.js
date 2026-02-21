@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName, isCloudEnabled } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
@@ -48,9 +46,6 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-    
     return NextResponse.json(combo);
   } catch (error) {
     console.log("Error updating combo:", error);
@@ -67,28 +62,10 @@ export async function DELETE(request, { params }) {
     if (!success) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
     }
-
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
     
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting combo:", error);
     return NextResponse.json({ error: "Failed to delete combo" }, { status: 500 });
-  }
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing to cloud:", error);
   }
 }

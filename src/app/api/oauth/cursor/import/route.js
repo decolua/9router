@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
-import { createProviderConnection, isCloudEnabled } from "@/models";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { createProviderConnection } from "@/models";
 
 /**
  * POST /api/oauth/cursor/import
@@ -58,9 +56,6 @@ export async function POST(request) {
       testStatus: "active",
     });
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({
       success: true,
       connection: {
@@ -102,19 +97,4 @@ export async function GET() {
       },
     ],
   });
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing to cloud after Cursor import:", error);
-  }
 }

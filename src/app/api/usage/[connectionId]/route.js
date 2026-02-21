@@ -1,22 +1,6 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { getMachineId } from "@/shared/utils/machine";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
-
-/**
- * Sync to cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const machineId = await getMachineId();
-    if (!machineId) return;
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.error("[Usage API] Error syncing to cloud:", error);
-  }
-}
-
 /**
  * Refresh credentials using executor and update database
  * @returns {{ connection, refreshed: boolean }}
@@ -119,16 +103,9 @@ export async function GET(request, { params }) {
     }
 
     // Refresh credentials if needed using executor
-    let refreshed = false;
     try {
       const result = await refreshAndUpdateCredentials(connection);
       connection = result.connection;
-      refreshed = result.refreshed;
-      
-      // Sync to cloud only if token was refreshed
-      if (refreshed) {
-        await syncToCloudIfEnabled();
-      }
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
       return Response.json({ 

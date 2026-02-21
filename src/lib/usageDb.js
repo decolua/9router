@@ -78,6 +78,12 @@ if (!global._pendingRequests) {
 }
 const pendingRequests = global._pendingRequests;
 
+// Track last error provider for UI edge coloring (auto-clears after 10s)
+if (!global._lastErrorProvider) {
+  global._lastErrorProvider = { provider: "", ts: 0 };
+}
+const lastErrorProvider = global._lastErrorProvider;
+
 // Use global to share singleton across Next.js route modules
 if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();
@@ -91,8 +97,9 @@ export const statsEmitter = global._statsEmitter;
  * @param {string} provider
  * @param {string} connectionId
  * @param {boolean} started - true if started, false if finished
+ * @param {boolean} [error] - true if ended with error
  */
-export function trackPendingRequest(model, provider, connectionId, started) {
+export function trackPendingRequest(model, provider, connectionId, started, error = false) {
   const modelKey = provider ? `${model} (${provider})` : model;
 
   // Track by model
@@ -107,8 +114,71 @@ export function trackPendingRequest(model, provider, connectionId, started) {
     pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
   }
 
-  console.log(`[PENDING] ${started ? "START" : "END"} | provider=${provider} | model=${model} | emitter listeners=${statsEmitter.listenerCount("update")}`);
-  statsEmitter.emit("update");
+  // Track error provider (auto-clears after 10s)
+  if (!started && error && provider) {
+    lastErrorProvider.provider = provider.toLowerCase();
+    lastErrorProvider.ts = Date.now();
+  }
+
+  console.log(`[PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model} | emitter listeners=${statsEmitter.listenerCount("pending")}`);
+  statsEmitter.emit("pending");
+}
+
+/**
+ * Lightweight: get only activeRequests + recentRequests without full stats recalc
+ */
+export async function getActiveRequests() {
+  const activeRequests = [];
+
+  // Build active requests from pending state
+  let connectionMap = {};
+  try {
+    const { getProviderConnections } = await import("@/lib/localDb.js");
+    const allConnections = await getProviderConnections();
+    for (const conn of allConnections) {
+      connectionMap[conn.id] = conn.name || conn.email || conn.id;
+    }
+  } catch {}
+
+  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    for (const [modelKey, count] of Object.entries(models)) {
+      if (count > 0) {
+        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        const modelName = match ? match[1] : modelKey;
+        const providerName = match ? match[2] : "unknown";
+        activeRequests.push({ model: modelName, provider: providerName, account: accountName, count });
+      }
+    }
+  }
+
+  // Get recent requests from history (re-read to get latest)
+  const db = await getUsageDb();
+  await db.read();
+  const history = db.data.history || [];
+  const seen = new Set();
+  const recentRequests = [...history]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .map((e) => {
+      const t = e.tokens || {};
+      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
+      const completionTokens = t.completion_tokens || t.output_tokens || 0;
+      return { timestamp: e.timestamp, model: e.model, provider: e.provider || "", promptTokens, completionTokens, status: e.status || "ok" };
+    })
+    .filter((e) => {
+      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+
+  // Error provider (auto-clear after 10s)
+  const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
+
+  return { activeRequests, recentRequests, errorProvider };
 }
 
 /**
@@ -443,6 +513,7 @@ export async function getUsageStats() {
     pending: pendingRequests,
     activeRequests: [],
     recentRequests,
+    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
   // Build active requests list from pending counts

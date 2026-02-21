@@ -51,7 +51,7 @@ function ProviderNode({ data }) {
 
       {/* Provider name */}
       <span
-        className="text-sm font-medium truncate"
+        className="text-base font-medium truncate"
         style={{ color: active ? color : "var(--color-text)" }}
       >
         {label}
@@ -99,7 +99,7 @@ RouterNode.propTypes = {
 const nodeTypes = { provider: ProviderNode, router: RouterNode };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet) {
+function buildLayout(providers, activeSet, lastSet, errorSet) {
   const nodeW = 180;
   const nodeH = 30;
   const routerW = 120;
@@ -130,8 +130,9 @@ function buildLayout(providers, activeSet, lastSet) {
     draggable: false,
   });
 
-  const edgeStyle = (active, last, color) => {
-    if (active) return { stroke: color, strokeWidth: 2, opacity: 0.8 };
+  const edgeStyle = (active, last, error, color) => {
+    if (error) return { stroke: "#ef4444", strokeWidth: 2.5, opacity: 0.9 };
+    if (active) return { stroke: "#22c55e", strokeWidth: 2.5, opacity: 0.9 };
     if (last) return { stroke: "#f59e0b", strokeWidth: 2, opacity: 0.7 };
     return { stroke: "var(--color-border)", strokeWidth: 1, opacity: 0.3 };
   };
@@ -140,6 +141,7 @@ function buildLayout(providers, activeSet, lastSet) {
     const config = getProviderConfig(p.provider);
     const active = activeSet.has(p.provider?.toLowerCase());
     const last = !active && lastSet.has(p.provider?.toLowerCase());
+    const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
     const data = {
       label: config.name || p.name || p.provider,
@@ -181,28 +183,32 @@ function buildLayout(providers, activeSet, lastSet) {
       target: nodeId,
       targetHandle,
       animated: active,
-      style: edgeStyle(active, last, config.color),
+      style: edgeStyle(active, last, error, config.color),
     });
   });
 
   return { nodes, edges };
 }
 
-export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "" }) {
+export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
   const activeSet = useMemo(
     () => new Set(activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean)),
     [activeRequests]
   );
 
-  // lastSet: providers that finished most recently (not currently active)
   const lastSet = useMemo(
     () => new Set(lastProvider ? [lastProvider.toLowerCase()] : []),
     [lastProvider]
   );
 
+  const errorSet = useMemo(
+    () => new Set(errorProvider ? [errorProvider.toLowerCase()] : []),
+    [errorProvider]
+  );
+
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet),
-    [providers, activeSet, lastSet]
+    () => buildLayout(providers, activeSet, lastSet, errorSet),
+    [providers, activeSet, lastSet, errorSet]
   );
 
   return (
@@ -246,4 +252,5 @@ ProviderTopology.propTypes = {
     account: PropTypes.string,
   })),
   lastProvider: PropTypes.string,
+  errorProvider: PropTypes.string,
 };

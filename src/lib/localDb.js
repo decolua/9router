@@ -49,6 +49,8 @@ const defaultData = {
   apiKeys: [],
   settings: {
     cloudEnabled: false,
+    tunnelEnabled: false,
+    tunnelUrl: "",
     stickyRoundRobinLimit: 3,
     requireLogin: true,
     observabilityEnabled: true,
@@ -70,6 +72,8 @@ function cloneDefaultData() {
     apiKeys: [],
     settings: {
       cloudEnabled: false,
+    tunnelEnabled: false,
+    tunnelUrl: "",
       stickyRoundRobinLimit: 3,
       requireLogin: true,
       observabilityEnabled: true,

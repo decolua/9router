@@ -35,7 +35,8 @@ export default function DroidToolCard({
     if (!currentConfig) return "not_configured";
     const localMatch = currentConfig.baseUrl?.includes("localhost") || currentConfig.baseUrl?.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentConfig.baseUrl?.startsWith(CLOUD_URL);
-    if (localMatch || cloudMatch) return "configured";
+    const tunnelMatch = baseUrl && currentConfig.baseUrl?.startsWith(baseUrl);
+    if (localMatch || cloudMatch || tunnelMatch) return "configured";
     return "other";
   };
 

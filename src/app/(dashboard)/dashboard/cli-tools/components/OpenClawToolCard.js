@@ -32,7 +32,8 @@ export default function OpenClawToolCard({
     const currentProvider = openclawStatus.settings?.models?.providers?.["9router"];
     if (!currentProvider) return "not_configured";
     const localMatch = currentProvider.baseUrl?.includes("localhost") || currentProvider.baseUrl?.includes("127.0.0.1") || currentProvider.baseUrl?.includes("0.0.0.0");
-    if (localMatch) return "configured";
+    const tunnelMatch = baseUrl && currentProvider.baseUrl?.startsWith(baseUrl);
+    if (localMatch || tunnelMatch) return "configured";
     return "other";
   };
 

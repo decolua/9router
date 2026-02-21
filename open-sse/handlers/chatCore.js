@@ -457,7 +457,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
 
   } catch (error) {
-    trackPendingRequest(model, provider, connectionId, false);
+    trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
 
     const errorDetail = {
@@ -532,7 +532,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Check provider response - return error info for fallback handling
   if (!providerResponse.ok) {
-    trackPendingRequest(model, provider, connectionId, false);
+    trackPendingRequest(model, provider, connectionId, false, true);
     const { statusCode, message, retryAfterMs } = await parseUpstreamError(providerResponse, provider);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
 
@@ -880,8 +880,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
-    // Save usage stats for dashboard
-    if (usage && typeof usage === 'object') {
+    // Save usage stats for dashboard (skip if no real token data to avoid duplicates)
+    if (usage && typeof usage === 'object' && (usage.prompt_tokens > 0 || usage.completion_tokens > 0)) {
       const msg = `[${new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" })}] 📊 [STREAM USAGE] ${provider.toUpperCase()} | in=${usage?.prompt_tokens || 0} | out=${usage?.completion_tokens || 0}${connectionId ? ` | account=${connectionId.slice(0, 8)}...` : ""}`;
       console.log(`${COLORS.green}${msg}${COLORS.reset}`);
 

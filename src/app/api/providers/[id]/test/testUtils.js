@@ -1,6 +1,4 @@
-import { getProviderConnectionById, updateProviderConnection, isCloudEnabled } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import {
   GEMINI_CONFIG,
@@ -324,18 +322,6 @@ export async function testSingleConnection(id) {
   }
 
   await updateProviderConnection(id, updateData);
-
-  if (result.refreshed) {
-    try {
-      const cloudEnabled = await isCloudEnabled();
-      if (cloudEnabled) {
-        const machineId = await getConsistentMachineId();
-        await syncToCloud(machineId);
-      }
-    } catch (err) {
-      console.log("Error syncing to cloud after token refresh:", err);
-    }
-  }
 
   return { valid: result.valid, error: result.error, latencyMs, testedAt: new Date().toISOString() };
 }

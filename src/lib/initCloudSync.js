@@ -1,22 +1,20 @@
-import initializeCloudSync from "@/shared/services/initializeCloudSync";
+import initializeApp from "@/shared/services/initializeApp";
 
-// Initialize cloud sync when this module is imported
 let initialized = false;
 
-export async function ensureCloudSyncInitialized() {
+export async function ensureAppInitialized() {
   if (!initialized) {
     try {
-      await initializeCloudSync();
+      await initializeApp();
       initialized = true;
     } catch (error) {
-      console.error("[ServerInit] Error initializing cloud sync:", error);
+      console.error("[ServerInit] Error initializing app:", error);
     }
   }
   return initialized;
 }
 
 // Auto-initialize when module loads
-ensureCloudSyncInitialized().catch(console.log);
+ensureAppInitialized().catch(console.log);
 
-export default ensureCloudSyncInitialized;
-
+export default ensureAppInitialized;

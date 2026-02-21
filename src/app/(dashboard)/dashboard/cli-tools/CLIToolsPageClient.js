@@ -14,6 +14,8 @@ export default function CLIToolsPageClient({ machineId }) {
   const [expandedTool, setExpandedTool] = useState(null);
   const [modelMappings, setModelMappings] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [tunnelEnabled, setTunnelEnabled] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
 
   useEffect(() => {
@@ -24,13 +26,21 @@ export default function CLIToolsPageClient({ machineId }) {
 
   const loadCloudSettings = async () => {
     try {
-      const res = await fetch("/api/settings");
-      if (res.ok) {
-        const data = await res.json();
+      const [settingsRes, tunnelRes] = await Promise.all([
+        fetch("/api/settings"),
+        fetch("/api/tunnel/status"),
+      ]);
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
         setCloudEnabled(data.cloudEnabled || false);
       }
+      if (tunnelRes.ok) {
+        const data = await tunnelRes.json();
+        setTunnelEnabled(data.enabled || false);
+        setTunnelUrl(data.tunnelUrl || "");
+      }
     } catch (error) {
-      console.log("Error loading cloud settings:", error);
+      console.log("Error loading settings:", error);
     }
   };
 
@@ -108,6 +118,9 @@ export default function CLIToolsPageClient({ machineId }) {
   }, []);
 
   const getBaseUrl = () => {
+    if (tunnelEnabled && tunnelUrl) {
+      return tunnelUrl;
+    }
     if (cloudEnabled && CLOUD_URL) {
       return CLOUD_URL;
     }

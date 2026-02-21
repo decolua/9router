@@ -5,8 +5,19 @@ import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+/* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
 const CLOUD_ACTION_TIMEOUT_MS = 15000;
+========== END CLOUD CODE ========== */
+
+const TUNNEL_BENEFITS = [
+  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
+  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
+  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
+  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
+];
+
+const TUNNEL_ACTION_TIMEOUT_MS = 90000;
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -15,8 +26,7 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
 
-  // Cloud sync state
-  const [requireApiKey, setRequireApiKey] = useState(false);
+  /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [cloudUrl, setCloudUrl] = useState(DEFAULT_CLOUD_URL);
   const [cloudUrlInput, setCloudUrlInput] = useState(DEFAULT_CLOUD_URL);
@@ -27,15 +37,28 @@ export default function APIPageClient({ machineId }) {
   const [setupStatus, setSetupStatus] = useState(null);
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState(null);
-  const [syncStep, setSyncStep] = useState(""); // "syncing" | "verifying" | "disabling" | ""
+  const [syncStep, setSyncStep] = useState("");
+  ========== END CLOUD STATE ========== */
+
+  // Tunnel state
+  const [requireApiKey, setRequireApiKey] = useState(false);
+  const [tunnelEnabled, setTunnelEnabled] = useState(false);
+  const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelShortId, setTunnelShortId] = useState("");
+  const [tunnelLoading, setTunnelLoading] = useState(false);
+  const [tunnelProgress, setTunnelProgress] = useState("");
+  const [tunnelStatus, setTunnelStatus] = useState(null);
+  const [showDisableModal, setShowDisableModal] = useState(false);
+  const [showEnableModal, setShowEnableModal] = useState(false);
 
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
     fetchData();
-    loadCloudSettings();
+    loadSettings();
   }, []);
 
+  /* ========== CLOUD FUNCTIONS — COMMENTED OUT (replaced by Tunnel) ==========
   const postCloudAction = async (action, timeoutMs = CLOUD_ACTION_TIMEOUT_MS) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -74,33 +97,6 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const handleRequireApiKey = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requireApiKey: value }),
-      });
-      if (res.ok) setRequireApiKey(value);
-    } catch (error) {
-      console.log("Error updating requireApiKey:", error);
-    }
-  };
-
-  const fetchData = async () => {
-    try {
-      const keysRes = await fetch("/api/keys");
-      const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
-      }
-    } catch (error) {
-      console.log("Error fetching data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCloudToggle = (checked) => {
     if (checked) {
       setShowCloudModal(true);
@@ -116,24 +112,16 @@ export default function APIPageClient({ machineId }) {
       const { ok, data } = await postCloudAction("enable");
       if (ok) {
         setSyncStep("verifying");
-        
         if (data.verified) {
           setCloudEnabled(true);
           setCloudStatus({ type: "success", message: "Cloud Proxy connected and verified!" });
           setShowCloudModal(false);
         } else {
           setCloudEnabled(true);
-          setCloudStatus({ 
-            type: "warning", 
-            message: data.verifyError || "Connected but verification failed" 
-          });
+          setCloudStatus({ type: "warning", message: data.verifyError || "Connected but verification failed" });
           setShowCloudModal(false);
         }
-        
-        // Refresh keys list if new key was created
-        if (data.createdKey) {
-          await fetchData();
-        }
+        if (data.createdKey) await fetchData();
       } else {
         setCloudStatus({ type: "error", message: data.error || "Failed to enable cloud" });
       }
@@ -148,16 +136,10 @@ export default function APIPageClient({ machineId }) {
   const handleConfirmDisable = async () => {
     setCloudSyncing(true);
     setSyncStep("syncing");
-    
     try {
-      // Step 1: Sync latest data from cloud
       await postCloudAction("sync");
-
       setSyncStep("disabling");
-
-      // Step 2: Disable cloud
       const { ok, data } = await postCloudAction("disable");
-
       if (ok) {
         setCloudEnabled(false);
         setCloudStatus({ type: "success", message: "Cloud disabled" });
@@ -166,7 +148,6 @@ export default function APIPageClient({ machineId }) {
         setCloudStatus({ type: "error", message: data.error || "Failed to disable cloud" });
       }
     } catch (error) {
-      console.log("Error disabling cloud:", error);
       setCloudStatus({ type: "error", message: "Failed to disable cloud" });
     } finally {
       setCloudSyncing(false);
@@ -176,15 +157,11 @@ export default function APIPageClient({ machineId }) {
 
   const handleSyncCloud = async () => {
     if (!cloudEnabled) return;
-
     setCloudSyncing(true);
     try {
       const { ok, data } = await postCloudAction("sync");
-      if (ok) {
-        setCloudStatus({ type: "success", message: "Synced successfully" });
-      } else {
-        setCloudStatus({ type: "error", message: data.error });
-      }
+      if (ok) setCloudStatus({ type: "success", message: "Synced successfully" });
+      else setCloudStatus({ type: "error", message: data.error });
     } catch (error) {
       setCloudStatus({ type: "error", message: error.message });
     } finally {
@@ -193,10 +170,8 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleSaveCloudUrl = async () => {
-    // Strip trailing /v1 or /v1/ and trailing slashes
     const trimmed = cloudUrlInput.trim().replace(/\/v1\/?$/, "").replace(/\/+$/, "");
     if (!trimmed) return;
-
     setCloudUrlSaving(true);
     setSetupStatus(null);
     try {
@@ -225,15 +200,126 @@ export default function APIPageClient({ machineId }) {
     setSetupStatus(null);
     try {
       const { ok, data } = await postCloudAction("check", 8000);
-      if (ok) {
-        setSetupStatus({ type: "success", message: data.message || "Worker is running" });
-      } else {
-        setSetupStatus({ type: "error", message: data.error || "Check failed" });
-      }
+      if (ok) setSetupStatus({ type: "success", message: data.message || "Worker is running" });
+      else setSetupStatus({ type: "error", message: data.error || "Check failed" });
     } catch {
       setSetupStatus({ type: "error", message: "Cannot reach worker" });
     } finally {
       setCloudSyncing(false);
+    }
+  };
+  ========== END CLOUD FUNCTIONS ========== */
+
+  const loadSettings = async () => {
+    try {
+      const [settingsRes, tunnelRes] = await Promise.all([
+        fetch("/api/settings"),
+        fetch("/api/tunnel/status")
+      ]);
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setRequireApiKey(data.requireApiKey || false);
+      }
+      if (tunnelRes.ok) {
+        const data = await tunnelRes.json();
+        setTunnelEnabled(data.enabled || false);
+        setTunnelUrl(data.tunnelUrl || "");
+        setTunnelShortId(data.shortId || "");
+      }
+    } catch (error) {
+      console.log("Error loading settings:", error);
+    }
+  };
+
+  const handleRequireApiKey = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requireApiKey: value }),
+      });
+      if (res.ok) setRequireApiKey(value);
+    } catch (error) {
+      console.log("Error updating requireApiKey:", error);
+    }
+  };
+
+  const fetchData = async () => {
+    try {
+      const keysRes = await fetch("/api/keys");
+      const keysData = await keysRes.json();
+      if (keysRes.ok) {
+        setKeys(keysData.keys || []);
+      }
+    } catch (error) {
+      console.log("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEnableTunnel = async () => {
+    setShowEnableModal(false);
+    setTunnelLoading(true);
+    setTunnelStatus(null);
+    setTunnelProgress("Connecting to server...");
+
+    const progressSteps = [
+      { delay: 2000, msg: "Creating tunnel..." },
+      { delay: 5000, msg: "Starting cloudflared..." },
+      { delay: 15000, msg: "Establishing connections..." },
+      { delay: 30000, msg: "Waiting for tunnel ready..." },
+    ];
+    const timers = progressSteps.map(({ delay, msg }) =>
+      setTimeout(() => setTunnelProgress(msg), delay)
+    );
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TUNNEL_ACTION_TIMEOUT_MS);
+      const res = await fetch("/api/tunnel/enable", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      timers.forEach(clearTimeout);
+      const data = await res.json();
+      if (res.ok) {
+        setTunnelEnabled(true);
+        setTunnelUrl(data.tunnelUrl || "");
+        setTunnelShortId(data.shortId || "");
+        setTunnelStatus({ type: "success", message: "Tunnel connected!" });
+      } else {
+        setTunnelStatus({ type: "error", message: data.error || "Failed to enable tunnel" });
+      }
+    } catch (error) {
+      timers.forEach(clearTimeout);
+      const msg = error?.name === "AbortError" ? "Tunnel creation timed out" : error.message;
+      setTunnelStatus({ type: "error", message: msg });
+    } finally {
+      setTunnelLoading(false);
+      setTunnelProgress("");
+    }
+  };
+
+  const handleDisableTunnel = async () => {
+    setTunnelLoading(true);
+    setTunnelStatus(null);
+    try {
+      const res = await fetch("/api/tunnel/disable", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setTunnelEnabled(false);
+        setTunnelUrl("");
+        setTunnelStatus({ type: "success", message: "Tunnel disabled" });
+        setShowDisableModal(false);
+      } else {
+        setTunnelStatus({ type: "error", message: data.error || "Failed to disable tunnel" });
+      }
+    } catch (error) {
+      setTunnelStatus({ type: "error", message: error.message });
+    } finally {
+      setTunnelLoading(false);
     }
   };
 
@@ -288,7 +374,6 @@ export default function APIPageClient({ machineId }) {
   };
 
   const [baseUrl, setBaseUrl] = useState("/v1");
-  const cloudEndpointNew = cloudUrl ? `${cloudUrl}/v1` : "";
 
   // Hydration fix: Only access window on client side
   useEffect(() => {
@@ -306,8 +391,7 @@ export default function APIPageClient({ machineId }) {
     );
   }
 
-  // Use new format endpoint (machineId embedded in key)
-  const currentEndpoint = cloudEnabled ? cloudEndpointNew : baseUrl;
+  const currentEndpoint = tunnelEnabled && tunnelUrl ? `${tunnelUrl}/v1` : baseUrl;
 
   return (
     <div className="flex flex-col gap-8">
@@ -317,38 +401,35 @@ export default function APIPageClient({ machineId }) {
           <div>
             <h2 className="text-lg font-semibold">API Endpoint</h2>
             <p className="text-sm text-text-muted">
-              {cloudEnabled ? "Using Cloud Proxy" : "Using Local Server"}
+              {tunnelEnabled ? "Using Tunnel" : "Using Local Server"}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="settings"
-              onClick={() => setShowSetupModal(true)}
-            >
-              Setup Cloudflare
-            </Button>
-            {cloudEnabled ? (
+            {tunnelEnabled ? (
               <Button
                 size="sm"
                 variant="secondary"
                 icon="cloud_off"
-                onClick={() => handleCloudToggle(false)}
-                disabled={cloudSyncing}
+                onClick={() => setShowDisableModal(true)}
+                disabled={tunnelLoading}
                 className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
               >
-                Disable Cloud
+                Disable Tunnel
               </Button>
             ) : (
               <Button
                 variant="primary"
                 icon="cloud_upload"
-                onClick={() => handleCloudToggle(true)}
-                disabled={cloudSyncing || !cloudUrl}
+                onClick={() => setShowEnableModal(true)}
+                disabled={tunnelLoading}
                 className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
               >
-                Enable Cloud
+                {tunnelLoading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                    {tunnelProgress || "Creating tunnel..."}
+                  </span>
+                ) : "Enable Tunnel"}
               </Button>
             )}
           </div>
@@ -359,7 +440,7 @@ export default function APIPageClient({ machineId }) {
           <Input 
             value={currentEndpoint} 
             readOnly 
-            className={`flex-1 font-mono text-sm ${cloudEnabled ? "animate-border-glow" : ""}`}
+            className={`flex-1 font-mono text-sm ${tunnelEnabled ? "animate-border-glow" : ""}`}
           />
           <Button
             variant="secondary"
@@ -370,14 +451,14 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
-        {/* Cloud Status */}
-        {cloudStatus && (
+        {/* Tunnel Status */}
+        {tunnelStatus && (
           <div className={`mt-3 p-2 rounded text-sm ${
-            cloudStatus.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-            cloudStatus.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
+            tunnelStatus.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+            tunnelStatus.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
             "bg-red-500/10 text-red-600 dark:text-red-400"
           }`}>
-            {cloudStatus.message}
+            {tunnelStatus.message}
           </div>
         )}
       </Card>
@@ -470,133 +551,9 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* Setup Cloud Modal */}
-      <Modal
-        isOpen={showSetupModal}
-        title="Setup Cloudflare Worker"
-        onClose={() => { setShowSetupModal(false); setSetupStatus(null); }}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              <code className="font-semibold">https://9router.com</code> is a pre-configured worker ready to use. You can also deploy your own.
-            </p>
-          </div>
-          <div>
-            <p className="text-sm font-medium mb-2">Worker URL</p>
-            <div className="flex gap-2">
-              <Input
-                value={cloudUrlInput}
-                onChange={(e) => setCloudUrlInput(e.target.value)}
-                placeholder="https://9router.your-subdomain.workers.dev"
-                className="flex-1 font-mono text-sm"
-              />
-            </div>
-            <p className="text-xs text-text-muted mt-2">
-              Deploy your own worker from <code className="text-xs bg-sidebar px-1 py-0.5 rounded">app/cloud/</code> directory.{" "}
-              <a href="https://github.com/decolua/9router/tree/main/app/cloud" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                Setup guide →
-              </a>
-            </p>
-          </div>
-
-          {/* Status in modal */}
-          {setupStatus && (
-            <div className={`p-2 rounded text-sm ${
-              setupStatus.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-              "bg-red-500/10 text-red-600 dark:text-red-400"
-            }`}>
-              {setupStatus.message}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSaveCloudUrl}
-              fullWidth
-              disabled={cloudUrlSaving || !cloudUrlInput.trim() || cloudUrlInput.trim().replace(/\/v1\/?$/, "").replace(/\/+$/, "") === cloudUrl}
-            >
-              {cloudUrlSaving ? "Saving..." : "Save"}
-            </Button>
-            <Button
-              onClick={handleCheckCloud}
-              variant="secondary"
-              fullWidth
-              disabled={cloudSyncing || !cloudUrl}
-              icon="check_circle"
-            >
-              {cloudSyncing ? "Checking..." : "Check"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Cloud Enable Modal */}
-      <Modal
-        isOpen={showCloudModal}
-        title="Enable Cloud Proxy"
-        onClose={() => setShowCloudModal(false)}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-2">
-              What you will get
-            </p>
-            <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-              <li>• Access your API from anywhere in the world</li>
-              <li>• Share endpoint with your team easily</li>
-              <li>• No need to open ports or configure firewall</li>
-              <li>• Fast global edge network</li>
-            </ul>
-          </div>
-
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-            <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium mb-1">
-              Note
-            </p>
-            <ul className="text-sm text-yellow-700 dark:text-yellow-300 space-y-1">
-              <li>• Cloud will keep your auth session for 1 day. If not used, it will be automatically deleted.</li>
-              <li>• Cloud is currently unstable with Claude Code OAuth in some cases.</li>
-            </ul>
-          </div>
-
-          {/* Sync Progress */}
-          {cloudSyncing && (
-            <div className="flex items-center gap-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
-              <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-primary">
-                  {syncStep === "syncing" && "Syncing data to cloud..."}
-                  {syncStep === "verifying" && "Verifying connection..."}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              onClick={handleEnableCloud}
-              fullWidth
-              disabled={cloudSyncing}
-            >
-              {cloudSyncing ? (
-                <span className="flex items-center gap-2">
-                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                  {syncStep === "syncing" ? "Syncing..." : "Verifying..."}
-                </span>
-              ) : "Enable Cloud"}
-            </Button>
-            <Button
-              onClick={() => setShowCloudModal(false)}
-              variant="ghost"
-              fullWidth
-              disabled={cloudSyncing}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
+      {/* CLOUD MODALS — COMMENTED OUT (replaced by Tunnel) */}
+      {/* Setup Cloud Modal — removed */}
+      {/* Cloud Enable Modal — removed */}
 
       {/* Add Key Modal */}
       <Modal
@@ -667,11 +624,65 @@ export default function APIPageClient({ machineId }) {
         </div>
       </Modal>
 
-      {/* Disable Cloud Modal */}
+      {/* Enable Tunnel Modal */}
+      <Modal
+        isOpen={showEnableModal}
+        title="Enable Tunnel"
+        onClose={() => setShowEnableModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">cloud_upload</span>
+              <div>
+                <p className="text-sm text-blue-800 dark:text-blue-200 font-medium mb-1">
+                  Cloudflare Tunnel
+                </p>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {TUNNEL_BENEFITS.map((benefit) => (
+              <div key={benefit.title} className="flex flex-col items-center text-center p-3 rounded-lg bg-sidebar/50">
+                <span className="material-symbols-outlined text-xl text-primary mb-1">{benefit.icon}</span>
+                <p className="text-xs font-semibold">{benefit.title}</p>
+                <p className="text-xs text-text-muted">{benefit.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-text-muted">
+            Requires outbound port 7844 (TCP/UDP). Connection may take 10-30s.
+          </p>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={handleEnableTunnel}
+              fullWidth
+              className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600 text-white!"
+            >
+              Start Tunnel
+            </Button>
+            <Button
+              onClick={() => setShowEnableModal(false)}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Disable Tunnel Modal */}
       <Modal
         isOpen={showDisableModal}
-        title="Disable Cloud Proxy"
-        onClose={() => !cloudSyncing && setShowDisableModal(false)}
+        title="Disable Tunnel"
+        onClose={() => !tunnelLoading && setShowDisableModal(false)}
       >
         <div className="flex flex-col gap-4">
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
@@ -682,46 +693,33 @@ export default function APIPageClient({ machineId }) {
                   Warning
                 </p>
                 <p className="text-sm text-red-700 dark:text-red-300">
-                  All auth sessions will be deleted from cloud.
+                  The tunnel will be disconnected. Remote access will stop working.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Sync Progress */}
-          {cloudSyncing && (
-            <div className="flex items-center gap-3 p-3 bg-primary/10 border border-primary/30 rounded-lg">
-              <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>
-              <div className="flex-1">
-                <p className="text-sm font-medium text-primary">
-                  {syncStep === "syncing" && "Syncing latest data..."}
-                  {syncStep === "disabling" && "Disabling cloud..."}
-                </p>
-              </div>
-            </div>
-          )}
-
-          <p className="text-sm text-text-muted">Are you sure you want to disable cloud proxy?</p>
+          <p className="text-sm text-text-muted">Are you sure you want to disable the tunnel?</p>
 
           <div className="flex gap-2">
             <Button
-              onClick={handleConfirmDisable}
+              onClick={handleDisableTunnel}
               fullWidth
-              disabled={cloudSyncing}
+              disabled={tunnelLoading}
               className="bg-red-500! hover:bg-red-600! text-white!"
             >
-              {cloudSyncing ? (
+              {tunnelLoading ? (
                 <span className="flex items-center gap-2">
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                  {syncStep === "syncing" ? "Syncing..." : "Disabling..."}
+                  Disabling...
                 </span>
-              ) : "Disable Cloud"}
+              ) : "Disable Tunnel"}
             </Button>
             <Button
               onClick={() => setShowDisableModal(false)}
               variant="ghost"
               fullWidth
-              disabled={cloudSyncing}
+              disabled={tunnelLoading}
             >
               Cancel
             </Button>
