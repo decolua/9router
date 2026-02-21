@@ -47,7 +47,7 @@ export default function ProviderDetailPage() {
     }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
-  const models = getModelsByProviderId(providerId);
+  const models = useMemo(() => getModelsByProviderId(providerId), [providerId]);
   const providerAlias = getProviderAlias(providerId);
 
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -63,10 +63,6 @@ export default function ProviderDetailPage() {
   const allProviderModelIds = useMemo(
     () => allProviderModels.map((model) => model.id),
     [allProviderModels]
-  );
-  const allProviderModelIdsKey = useMemo(
-    () => allProviderModelIds.join("|"),
-    [allProviderModelIds]
   );
   const savedEnabledModels = useMemo(() => {
     const enabled = activeConnection?.providerSpecificData?.enabledModels;
@@ -190,19 +186,24 @@ export default function ProviderDetailPage() {
   }, [fetchConnections, fetchAliases]);
 
   useEffect(() => {
-    if (isCompatible || providerInfo?.passthroughModels) {
-      setSelectedModelIds([]);
-      return;
-    }
+    const nextSelectedModelIds = (isCompatible || providerInfo?.passthroughModels)
+      ? []
+      : savedEnabledModels;
 
-    setSelectedModelIds(savedEnabledModels);
+    setSelectedModelIds((prev) => {
+      if (
+        prev.length === nextSelectedModelIds.length
+        && prev.every((modelId, index) => modelId === nextSelectedModelIds[index])
+      ) {
+        return prev;
+      }
+      return nextSelectedModelIds;
+    });
   }, [
     isCompatible,
     providerInfo?.passthroughModels,
     activeConnection?.id,
-    savedEnabledModels,
-    allProviderModelIdsKey,
-    savedEnabledModelsKey
+    savedEnabledModels
   ]);
 
   const fetchRemoteModels = useCallback(async () => {
