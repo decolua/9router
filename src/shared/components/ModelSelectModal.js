@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, ALIAS_TO_ID, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -24,6 +24,7 @@ export default function ModelSelectModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  const [activeModels, setActiveModels] = useState([]);
 
   const fetchCombos = async () => {
     try {
@@ -57,15 +58,87 @@ export default function ModelSelectModal({
     if (isOpen) fetchProviderNodes();
   }, [isOpen]);
 
+  const fetchActiveModels = async () => {
+    try {
+      const res = await fetch("/v1/models");
+      if (!res.ok) throw new Error(`Failed to fetch active models: ${res.status}`);
+      const data = await res.json();
+      const modelIds = (data.data || [])
+        .map((item) => item?.id)
+        .filter((id) => typeof id === "string" && id.includes("/"));
+      setActiveModels(Array.from(new Set(modelIds)));
+    } catch (error) {
+      console.error("Error fetching active models:", error);
+      setActiveModels([]);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchActiveModels();
+  }, [isOpen]);
+
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
-    
+
+    if (activeModels.length > 0) {
+      const aliasToProviderNode = new Map(
+        providerNodes
+          .filter((node) => typeof node?.prefix === "string" && node.prefix)
+          .map((node) => [node.prefix, node])
+      );
+      const aliasToProviderId = new Map();
+
+      activeProviders.forEach((conn) => {
+        const providerId = conn.provider;
+        aliasToProviderId.set(providerId, providerId);
+        aliasToProviderId.set(getProviderAlias(providerId), providerId);
+      });
+
+      activeModels.forEach((fullModel) => {
+        const firstSlash = fullModel.indexOf("/");
+        if (firstSlash <= 0) return;
+
+        const alias = fullModel.slice(0, firstSlash);
+        const modelId = fullModel.slice(firstSlash + 1);
+        if (!modelId) return;
+
+        const matchedNode = aliasToProviderNode.get(alias);
+        const providerId =
+          matchedNode?.id ||
+          aliasToProviderId.get(alias) ||
+          ALIAS_TO_ID[alias] ||
+          alias;
+        const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
+        const staticName = getModelsByProviderId(providerId).find((m) => m.id === modelId)?.name;
+
+        if (!groups[providerId]) {
+          groups[providerId] = {
+            name: matchedNode?.name || providerInfo.name,
+            alias,
+            color: providerInfo.color,
+            models: [],
+          };
+        }
+
+        const value = `${alias}/${modelId}`;
+        if (!groups[providerId].models.some((m) => m.value === value)) {
+          groups[providerId].models.push({
+            id: modelId,
+            name: staticName || modelId,
+            value,
+          });
+        }
+      });
+
+      return groups;
+    }
+
     // Get all active provider IDs from connections
     const activeConnectionIds = activeProviders.map(p => p.provider);
-    
+
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
       ...activeConnectionIds,  // Only connected providers
@@ -82,7 +155,7 @@ export default function ModelSelectModal({
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
-      
+
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
@@ -91,12 +164,12 @@ export default function ModelSelectModal({
             name: aliasName,
             value: fullModel,
           }));
-        
+
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
-          
+
           groups[providerId] = {
             name: displayName,
             alias: alias,
@@ -108,7 +181,7 @@ export default function ModelSelectModal({
         // Match provider node to get custom name
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = matchedNode?.name || providerInfo.name;
-        
+
         // Get models from modelAliases using providerId (not prefix)
         // modelAliases format: { alias: "providerId/modelId" }
         const nodeModels = Object.entries(modelAliases)
@@ -118,7 +191,7 @@ export default function ModelSelectModal({
             name: aliasName,
             value: fullModel,
           }));
-        
+
         // Only add to groups if there are models (consistent with other provider types)
         if (nodeModels.length > 0) {
           groups[providerId] = {
@@ -148,7 +221,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders, providerNodes]);
+  }, [activeModels, activeProviders, modelAliases, allProviders, providerNodes]);
 
   // Filter combos by search query
   const filteredCombos = useMemo(() => {
@@ -172,7 +245,7 @@ export default function ModelSelectModal({
       );
 
       const providerNameMatches = group.name.toLowerCase().includes(query);
-      
+
       if (matchedModels.length > 0 || providerNameMatches) {
         filtered[providerId] = {
           ...group,
@@ -236,8 +309,8 @@ export default function ModelSelectModal({
                     onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected 
-                        ? "bg-primary text-white border-primary" 
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
                         : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
@@ -276,8 +349,8 @@ export default function ModelSelectModal({
                     onClick={() => handleSelect(model)}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected 
-                        ? "bg-primary text-white border-primary" 
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
                         : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
