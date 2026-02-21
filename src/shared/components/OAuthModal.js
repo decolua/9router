@@ -5,6 +5,34 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+const OAUTH_SESSION_KEY = "oauth_pending_auth";
+
+function saveAuthSession(provider, data) {
+  try {
+    localStorage.setItem(OAUTH_SESSION_KEY, JSON.stringify({ provider, ...data, timestamp: Date.now() }));
+  } catch { /* storage unavailable */ }
+}
+
+function loadAuthSession(provider) {
+  try {
+    const raw = localStorage.getItem(OAUTH_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // Only restore if same provider and within 5 minutes
+    if (data.provider !== provider || Date.now() - data.timestamp > 300000) {
+      localStorage.removeItem(OAUTH_SESSION_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthSession() {
+  try { localStorage.removeItem(OAUTH_SESSION_KEY); } catch { /* ignore */ }
+}
+
 /**
  * OAuth Modal Component
  * - Localhost: Auto callback via popup message
@@ -56,9 +84,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
+      clearAuthSession();
       setStep("success");
       onSuccess?.();
     } catch (err) {
+      clearAuthSession();
       setError(err.message);
       setStep("error");
     }
@@ -152,6 +182,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (!res.ok) throw new Error(data.error);
 
       setAuthData({ ...data, redirectUri });
+      saveAuthSession(provider, { codeVerifier: data.codeVerifier, redirectUri, state: data.state });
 
       // For Codex or non-localhost: use manual input mode
       if (provider === "codex" || !isLocalhost) {
@@ -176,13 +207,25 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      // Try restore pending auth from localStorage (survives HMR/reload)
+      const saved = loadAuthSession(provider);
+      if (saved) {
+        setAuthData({ codeVerifier: saved.codeVerifier, redirectUri: saved.redirectUri, state: saved.state });
+        setStep("waiting");
+        setCallbackUrl("");
+        setError(null);
+        setIsDeviceCode(false);
+        setDeviceData(null);
+        setPolling(false);
+        return; // Don't restart OAuth — just re-listen for callback
+      }
+
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
-      // Auto start OAuth
       startOAuthFlow();
     }
   }, [isOpen, provider, startOAuthFlow]);
@@ -206,6 +249,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       if (code) {
+        // Skip if callback page already handled exchange (localStorage cleared)
+        const stillPending = localStorage.getItem(OAUTH_SESSION_KEY);
+        if (!stillPending) {
+          callbackProcessedRef.current = true;
+          setStep("success");
+          onSuccess?.();
+          return;
+        }
         callbackProcessedRef.current = true;
         await exchangeTokens(code, state);
       }
@@ -293,10 +344,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
+  // Clear session on modal close
+  const handleClose = useCallback(() => {
+    clearAuthSession();
+    onClose();
+  }, [onClose]);
+
   if (!provider || !providerInfo) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Waiting Step (Localhost - popup mode) */}
         {step === "waiting" && !isDeviceCode && (
@@ -389,7 +446,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
                 Connect
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>
@@ -406,7 +463,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <p className="text-sm text-text-muted mb-4">
               Your {providerInfo.name} account has been connected.
             </p>
-            <Button onClick={onClose} fullWidth>
+            <Button onClick={handleClose} fullWidth>
               Done
             </Button>
           </div>
@@ -424,7 +481,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <Button onClick={startOAuthFlow} variant="secondary" fullWidth>
                 Try Again
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>

@@ -18,8 +18,8 @@ function UsagePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "overview");
+  const [tabLoading, setTabLoading] = useState(false);
 
-  // Sync tab with URL on mount and when URL changes
   useEffect(() => {
     const tabFromUrl = searchParams.get("tab");
     if (tabFromUrl && ["overview", "logs", "limits", "details"].includes(tabFromUrl)) {
@@ -27,12 +27,15 @@ function UsagePageContent() {
     }
   }, [searchParams]);
 
-  // Update URL when tab changes
   const handleTabChange = (value) => {
+    if (value === activeTab) return;
+    setTabLoading(true);
     setActiveTab(value);
     const params = new URLSearchParams(searchParams);
     params.set("tab", value);
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
+    // Brief loading flash so user sees feedback
+    setTimeout(() => setTabLoading(false), 300);
   };
 
   return (
@@ -40,7 +43,6 @@ function UsagePageContent() {
       <SegmentedControl
         options={[
           { value: "overview", label: "Overview" },
-          { value: "logs", label: "Logger" },
           { value: "limits", label: "Limits" },
           { value: "details", label: "Details" },
         ]}
@@ -48,19 +50,24 @@ function UsagePageContent() {
         onChange={handleTabChange}
       />
 
-      {/* Content */}
-      {activeTab === "overview" && (
-        <Suspense fallback={<CardSkeleton />}>
-          <UsageStats />
-        </Suspense>
+      {tabLoading ? (
+        <CardSkeleton />
+      ) : (
+        <>
+          {activeTab === "overview" && (
+            <Suspense fallback={<CardSkeleton />}>
+              <UsageStats />
+            </Suspense>
+          )}
+          {activeTab === "logs" && <RequestLogger />}
+          {activeTab === "limits" && (
+            <Suspense fallback={<CardSkeleton />}>
+              <ProviderLimits />
+            </Suspense>
+          )}
+          {activeTab === "details" && <RequestDetailsTab />}
+        </>
       )}
-      {activeTab === "logs" && <RequestLogger />}
-      {activeTab === "limits" && (
-        <Suspense fallback={<CardSkeleton />}>
-          <ProviderLimits />
-        </Suspense>
-      )}
-      {activeTab === "details" && <RequestDetailsTab />}
     </div>
   );
 }

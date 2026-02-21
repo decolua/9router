@@ -100,6 +100,7 @@ export function generateProjectId() {
 }
 
 // Helper: Remove unsupported keywords recursively from object/array
+// Also strips all vendor extension fields (x- prefixed) not supported by Gemini
 function removeUnsupportedKeywords(obj, keywords) {
   if (!obj || typeof obj !== "object") return;
 
@@ -108,13 +109,11 @@ function removeUnsupportedKeywords(obj, keywords) {
       removeUnsupportedKeywords(item, keywords);
     }
   } else {
-    // Delete unsupported keys at current level
-    for (const keyword of keywords) {
-      if (keyword in obj) {
-        delete obj[keyword];
+    for (const key of Object.keys(obj)) {
+      if (keywords.includes(key) || key.startsWith("x-")) {
+        delete obj[key];
       }
     }
-    // Recurse into remaining values
     for (const value of Object.values(obj)) {
       if (value && typeof value === "object") {
         removeUnsupportedKeywords(value, keywords);

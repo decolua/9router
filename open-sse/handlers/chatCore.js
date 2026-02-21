@@ -906,8 +906,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     && !isDroidCLI;
 
   if (needsCodexTranslation) {
-    log?.debug?.("STREAM", `Codex translation mode: openai-responses → openai`);
-    transformStream = createSSETransformStreamWithLogger('openai-responses', 'openai', provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
+    // For claude clients, translate directly to claude format
+    // For openai/openai-responses clients, translate to openai (responsesHandler will re-add event: lines)
+    const codexTarget = sourceFormat === FORMATS.CLAUDE ? FORMATS.CLAUDE : FORMATS.OPENAI;
+    log?.debug?.("STREAM", `Codex translation mode: openai-responses → ${codexTarget}`);
+    transformStream = createSSETransformStreamWithLogger('openai-responses', codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
   } else if (needsTranslation(targetFormat, sourceFormat)) {
     log?.debug?.("STREAM", `Translation mode: ${targetFormat} → ${sourceFormat}`);
     transformStream = createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);

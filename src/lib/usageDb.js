@@ -1,5 +1,6 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
+import { EventEmitter } from "events";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -71,11 +72,18 @@ const defaultData = {
 // Singleton instance
 let dbInstance = null;
 
-// Track in-flight requests in memory
-const pendingRequests = {
-  byModel: {},
-  byAccount: {}
-};
+// Use global to share pending state across Next.js route modules
+if (!global._pendingRequests) {
+  global._pendingRequests = { byModel: {}, byAccount: {} };
+}
+const pendingRequests = global._pendingRequests;
+
+// Use global to share singleton across Next.js route modules
+if (!global._statsEmitter) {
+  global._statsEmitter = new EventEmitter();
+  global._statsEmitter.setMaxListeners(50);
+}
+export const statsEmitter = global._statsEmitter;
 
 /**
  * Track a pending request
@@ -93,11 +101,14 @@ export function trackPendingRequest(model, provider, connectionId, started) {
 
   // Track by account
   if (connectionId) {
-    const accountKey = connectionId; // We use connectionId as key here
+    const accountKey = connectionId;
     if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
     if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
     pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
   }
+
+  console.log(`[PENDING] ${started ? "START" : "END"} | provider=${provider} | model=${model} | emitter listeners=${statsEmitter.listenerCount("update")}`);
+  statsEmitter.emit("update");
 }
 
 /**
@@ -159,12 +170,15 @@ export async function saveRequestUsage(entry) {
       db.data.history = [];
     }
 
+    const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.cost = entryCost;
     db.data.history.push(entry);
 
     // Optional: Limit history size if needed in future
     // if (db.data.history.length > 10000) db.data.history.shift();
 
     await db.write();
+    statsEmitter.emit("update");
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
@@ -387,6 +401,34 @@ export async function getUsageStats() {
     };
   }
 
+  // 20 most recent requests from history (always in sync with SSE emit)
+  const seen = new Set();
+  const recentRequests = [...history]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .map((e) => {
+      const t = e.tokens || {};
+      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
+      const completionTokens = t.completion_tokens || t.output_tokens || 0;
+      return {
+        timestamp: e.timestamp,
+        model: e.model,
+        provider: e.provider || "",
+        promptTokens,
+        completionTokens,
+        status: e.status || "ok",
+      };
+    })
+    .filter((e) => {
+      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      // Deduplicate: same model+provider+tokens within same minute
+      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+
   const stats = {
     totalRequests: history.length,
     totalPromptTokens: 0,
@@ -399,7 +441,8 @@ export async function getUsageStats() {
     byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
-    activeRequests: []
+    activeRequests: [],
+    recentRequests,
   };
 
   // Build active requests list from pending counts
@@ -616,6 +659,55 @@ export async function getUsageStats() {
   }
 
   return stats;
+}
+
+/**
+ * Get time-series chart data for a given period
+ * @param {"24h"|"7d"|"30d"|"60d"} period
+ * @returns {Promise<Array<{label: string, tokens: number, cost: number}>>}
+ */
+export async function getChartData(period = "7d") {
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const now = Date.now();
+
+  let bucketCount, bucketMs, labelFn;
+  if (period === "24h") {
+    bucketCount = 24;
+    bucketMs = 3600000; // 1 hour
+    labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  } else if (period === "7d") {
+    bucketCount = 7;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } else if (period === "30d") {
+    bucketCount = 30;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } else {
+    bucketCount = 60;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  const startTime = now - bucketCount * bucketMs;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => {
+    const ts = startTime + i * bucketMs;
+    return { label: labelFn(ts), tokens: 0, cost: 0, _ts: ts };
+  });
+
+  for (const entry of history) {
+    const entryTime = new Date(entry.timestamp).getTime();
+    if (entryTime < startTime || entryTime > now) continue;
+    const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
+    const promptTokens = entry.tokens?.prompt_tokens || 0;
+    const completionTokens = entry.tokens?.completion_tokens || 0;
+    buckets[idx].tokens += promptTokens + completionTokens;
+    // Use pre-stored cost if available, else 0
+    buckets[idx].cost += entry.cost || 0;
+  }
+
+  return buckets.map(({ label, tokens, cost }) => ({ label, tokens, cost }));
 }
 
 // Re-export request details functions from new SQLite-based module
