@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
   ReactFlow,
   Handle,
   Position,
+  useNodesState,
+  useEdgesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -206,10 +208,35 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     [errorProvider]
   );
 
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+  // Stable key for providers list — only changes when provider set changes
+  const providersKey = useMemo(
+    () => providers.map((p) => p.provider).sort().join(","),
+    [providers]
+  );
+
+  const { nodes: layoutNodes, edges: layoutEdges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
     [providers, activeSet, lastSet, errorSet]
   );
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layoutEdges);
+  const rfInstance = useRef(null);
+
+  // Sync nodes/edges when data changes
+  useEffect(() => {
+    setNodes(layoutNodes);
+    setEdges(layoutEdges);
+    // Re-fit view after update
+    if (rfInstance.current) {
+      setTimeout(() => rfInstance.current.fitView({ padding: 0.3 }), 50);
+    }
+  }, [layoutNodes, layoutEdges, setNodes, setEdges]);
+
+  const onInit = useCallback((instance) => {
+    rfInstance.current = instance;
+    setTimeout(() => instance.fitView({ padding: 0.3 }), 50);
+  }, []);
 
   return (
     <div className="w-full rounded-lg border border-border bg-bg-subtle/30" style={{ height: 480 }}>
@@ -219,12 +246,15 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
         </div>
       ) : (
         <ReactFlow
-          nodes={initialNodes}
-          edges={initialEdges}
+          key={providersKey}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
-          onInit={(instance) => setTimeout(() => instance.fitView({ padding: 0.3 }), 50)}
+          onInit={onInit}
           proOptions={{ hideAttribution: true }}
           panOnDrag={false}
           zoomOnScroll={false}

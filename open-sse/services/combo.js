@@ -43,47 +43,54 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     const modelStr = models[i];
     log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
 
-    const result = await handleSingleModel(body, modelStr);
-    
-    // Success (2xx) - return response
-    if (result.ok) {
-      log.info("COMBO", `Model ${modelStr} succeeded`);
-      return result;
-    }
-
-    // Extract error info from response
-    let errorText = result.statusText || "";
-    let retryAfter = null;
     try {
-      const errorBody = await result.clone().json();
-      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-      retryAfter = errorBody?.retryAfter || null;
-    } catch {
-      // Ignore JSON parse errors
-    }
+      const result = await handleSingleModel(body, modelStr);
+      
+      // Success (2xx) - return response
+      if (result.ok) {
+        log.info("COMBO", `Model ${modelStr} succeeded`);
+        return result;
+      }
 
-    // Track earliest retryAfter across all combo models
-    if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-      earliestRetryAfter = retryAfter;
-    }
+      // Extract error info from response
+      let errorText = result.statusText || "";
+      let retryAfter = null;
+      try {
+        const errorBody = await result.clone().json();
+        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+        retryAfter = errorBody?.retryAfter || null;
+      } catch {
+        // Ignore JSON parse errors
+      }
 
-    // Normalize error text to string (Worker-safe)
-    if (typeof errorText !== "string") {
-      try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-    }
+      // Track earliest retryAfter across all combo models
+      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+        earliestRetryAfter = retryAfter;
+      }
 
-    // Check if should fallback to next model
-    const { shouldFallback } = checkFallbackError(result.status, errorText);
-    
-    if (!shouldFallback) {
-      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-      return result;
-    }
+      // Normalize error text to string (Worker-safe)
+      if (typeof errorText !== "string") {
+        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+      }
 
-    // Fallback to next model
-    lastError = errorText || String(result.status);
-    if (!lastStatus) lastStatus = result.status;
-    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      // Check if should fallback to next model
+      const { shouldFallback } = checkFallbackError(result.status, errorText);
+      
+      if (!shouldFallback) {
+        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        return result;
+      }
+
+      // Fallback to next model
+      lastError = errorText || String(result.status);
+      if (!lastStatus) lastStatus = result.status;
+      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+    } catch (error) {
+      // Catch unexpected exceptions to ensure fallback continues
+      lastError = error.message || String(error);
+      if (!lastStatus) lastStatus = 500;
+      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+    }
   }
 
   // All models failed
