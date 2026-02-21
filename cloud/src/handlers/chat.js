@@ -32,7 +32,7 @@ async function getModelInfo(modelStr, machineId, env) {
  * @param {Object} ctx
  * @param {string|null} machineIdOverride - machineId from URL (old format) or null (new format - extract from key)
  */
-export async function handleChat(request, env, ctx, machineIdOverride = null) {
+export async function handleChat(request, env, ctx, machineIdOverride = null, forceSourceFormat = null) {
   if (request.method === "OPTIONS") {
     return new Response(null, {
       headers: {
@@ -94,19 +94,19 @@ export async function handleChat(request, env, ctx, machineIdOverride = null) {
       body,
       models: comboModels,
       handleSingleModel: (reqBody, model) =>
-        handleSingleModelChat(reqBody, model, machineId, env),
+        handleSingleModelChat(reqBody, model, machineId, env, forceSourceFormat),
       log,
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, machineId, env);
+  return handleSingleModelChat(body, modelStr, machineId, env, forceSourceFormat);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, machineId, env) {
+async function handleSingleModelChat(body, modelStr, machineId, env, forceSourceFormat = null) {
   const modelInfo = await getModelInfo(modelStr, machineId, env);
   if (!modelInfo.provider)
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -176,6 +176,7 @@ async function handleSingleModelChat(body, modelStr, machineId, env) {
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
+      forceSourceFormat,
       onCredentialsRefreshed: async (newCreds) => {
         await updateCredentials(machineId, credentials.id, newCreds, env);
       },

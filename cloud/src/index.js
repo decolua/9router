@@ -114,7 +114,7 @@ const worker = {
 
       // New format: /v1/messages (Claude/Anthropic format)
       if (path === "/v1/messages" && request.method === "POST") {
-        const response = await handleChat(request, env, ctx, null);
+        const response = await handleChat(request, env, ctx, null, "claude");
         log.response(response.status, Date.now() - startTime);
         return addCorsHeaders(response);
       }
@@ -194,7 +194,7 @@ const worker = {
       // Machine ID based messages endpoint (Claude/Anthropic format)
       if (path.match(/^\/[^\/]+\/v1\/messages$/) && request.method === "POST") {
         const machineId = path.split("/")[1];
-        const response = await handleChat(request, env, ctx, machineId);
+        const response = await handleChat(request, env, ctx, machineId, "claude");
         log.response(response.status, Date.now() - startTime);
         return response;
       }
