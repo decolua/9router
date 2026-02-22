@@ -31,6 +31,7 @@
     "socks-proxy-agent": "^8.0.5",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
+    "wreq-js": "^2.0.1",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
