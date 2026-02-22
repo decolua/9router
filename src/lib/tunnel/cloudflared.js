@@ -113,6 +113,12 @@ export async function ensureCloudflared() {
 }
 
 let cloudflaredProcess = null;
+let unexpectedExitHandler = null;
+
+/** Register a callback to be called when cloudflared exits unexpectedly after connecting */
+export function setUnexpectedExitHandler(handler) {
+  unexpectedExitHandler = handler;
+}
 
 export async function spawnCloudflared(tunnelToken) {
   const binaryPath = await ensureCloudflared();
@@ -127,7 +133,9 @@ export async function spawnCloudflared(tunnelToken) {
 
   return new Promise((resolve, reject) => {
     let connectionCount = 0;
+    let resolved = false;
     const timeout = setTimeout(() => {
+      resolved = true;
       resolve(child);
     }, 90000);
 
@@ -135,7 +143,8 @@ export async function spawnCloudflared(tunnelToken) {
       const msg = data.toString();
       if (msg.includes("Registered tunnel connection")) {
         connectionCount++;
-        if (connectionCount >= 4) {
+        if (connectionCount >= 4 && !resolved) {
+          resolved = true;
           clearTimeout(timeout);
           resolve(child);
         }
@@ -146,14 +155,27 @@ export async function spawnCloudflared(tunnelToken) {
     child.stderr.on("data", handleLog);
 
     child.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        reject(err);
+      }
     });
 
     child.on("exit", (code) => {
-      clearTimeout(timeout);
-      if (connectionCount === 0) {
-        reject(new Error(`cloudflared exited with code ${code}`));
+      cloudflaredProcess = null;
+      clearPid();
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        if (connectionCount === 0) {
+          reject(new Error(`cloudflared exited with code ${code}`));
+          return;
+        }
+      }
+      // Notify reconnect handler if tunnel died after successful connection
+      if (unexpectedExitHandler) {
+        unexpectedExitHandler();
       }
     });
   });

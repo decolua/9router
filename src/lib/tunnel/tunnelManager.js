@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { loadState, saveState, clearState } from "./state.js";
-import { spawnCloudflared, killCloudflared, isCloudflaredRunning } from "./cloudflared.js";
+import { spawnCloudflared, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 const TUNNEL_WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://tunnel.9router.com";
@@ -8,6 +8,9 @@ const MACHINE_ID_SALT = "9router-tunnel-salt";
 const API_KEY_SECRET = "9router-tunnel-api-key-secret";
 const SHORT_ID_LENGTH = 6;
 const SHORT_ID_CHARS = "abcdefghijklmnpqrstuvwxyz23456789";
+const RECONNECT_DELAYS_MS = [5000, 15000, 30000];
+
+let isReconnecting = false;
 
 function generateShortId() {
   let result = "";
@@ -80,7 +83,41 @@ export async function enableTunnel() {
 
   await updateSettings({ tunnelEnabled: true, tunnelUrl: hostname });
 
+  // Register exit handler for auto-reconnect on unexpected crash/sleep-wake
+  setUnexpectedExitHandler(() => scheduleReconnect(0));
+
   return { success: true, tunnelUrl: hostname, shortId };
+}
+
+async function scheduleReconnect(attempt) {
+  if (isReconnecting) return;
+  isReconnecting = true;
+
+  const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
+  console.log(`[Tunnel] Unexpected exit detected, reconnecting in ${delay / 1000}s (attempt ${attempt + 1})...`);
+
+  await new Promise((r) => setTimeout(r, delay));
+
+  try {
+    const settings = await getSettings();
+    if (!settings.tunnelEnabled) {
+      console.log("[Tunnel] Tunnel disabled, skipping reconnect");
+      isReconnecting = false;
+      return;
+    }
+    await enableTunnel();
+    console.log("[Tunnel] Reconnected successfully");
+    isReconnecting = false;
+  } catch (err) {
+    console.log(`[Tunnel] Reconnect attempt ${attempt + 1} failed:`, err.message);
+    isReconnecting = false;
+    const nextAttempt = attempt + 1;
+    if (nextAttempt < RECONNECT_DELAYS_MS.length) {
+      scheduleReconnect(nextAttempt);
+    } else {
+      console.log("[Tunnel] All reconnect attempts exhausted");
+    }
+  }
 }
 
 export async function disableTunnel() {

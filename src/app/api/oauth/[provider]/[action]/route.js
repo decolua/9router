@@ -62,7 +62,12 @@ export async function GET(request, { params }) {
 export async function POST(request, { params }) {
   try {
     const { provider, action } = await params;
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
+    }
 
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state } = body;

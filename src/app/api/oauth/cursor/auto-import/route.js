@@ -4,6 +4,85 @@ import { homedir } from "os";
 import { join } from "path";
 import Database from "better-sqlite3";
 
+const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
+const MACHINE_ID_KEYS = ["storage.serviceMachineId", "storage.machineId", "telemetry.machineId"];
+
+/** Get candidate db paths by platform */
+function getCandidatePaths(platform) {
+  const home = homedir();
+
+  if (platform === "darwin") {
+    return [
+      join(home, "Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
+      join(home, "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb"),
+    ];
+  }
+
+  if (platform === "win32") {
+    const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
+    const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+    return [
+      join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(appData, "Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
+      join(localAppData, "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(localAppData, "Programs", "Cursor", "User", "globalStorage", "state.vscdb"),
+    ];
+  }
+
+  // Linux
+  return [
+    join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
+    join(home, ".config/cursor/User/globalStorage/state.vscdb"),
+  ];
+}
+
+/** Extract tokens from open db, with fuzzy fallback */
+function extractTokens(db, platform) {
+  const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
+  const rows = db.prepare(
+    `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
+  ).all(...desiredKeys);
+
+  const normalize = (value) => {
+    if (typeof value !== "string") return value;
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "string" ? parsed : value;
+    } catch {
+      return value;
+    }
+  };
+
+  const tokens = {};
+  for (const row of rows) {
+    if (ACCESS_TOKEN_KEYS.includes(row.key) && !tokens.accessToken) {
+      tokens.accessToken = normalize(row.value);
+    } else if (MACHINE_ID_KEYS.includes(row.key) && !tokens.machineId) {
+      tokens.machineId = normalize(row.value);
+    }
+  }
+
+  // Fuzzy fallback for all platforms when exact keys miss
+  if (!tokens.accessToken || !tokens.machineId) {
+    const fallbackRows = db.prepare(
+      "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
+    ).all();
+
+    for (const row of fallbackRows) {
+      const key = row.key || "";
+      const value = normalize(row.value);
+      if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) {
+        tokens.accessToken = value;
+      }
+      if (!tokens.machineId && key.toLowerCase().includes("machineid")) {
+        tokens.machineId = value;
+      }
+    }
+  }
+
+  return tokens;
+}
+
 /**
  * GET /api/oauth/cursor/auto-import
  * Auto-detect and extract Cursor tokens from local SQLite database
@@ -11,120 +90,41 @@ import Database from "better-sqlite3";
 export async function GET() {
   try {
     const platform = process.platform;
-    let dbPath;
+    const candidates = getCandidatePaths(platform);
 
-    if (platform === "darwin") {
-      // macOS: probe multiple locations (standard + Insiders)
-      const userHome = homedir();
-      const candidateDbPaths = [
-        join(userHome, "Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
-        join(userHome, "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb"),
-      ];
-
-      for (const path of candidateDbPaths) {
-        try {
-          await access(path, constants.R_OK);
-          dbPath = path;
-          break;
-        } catch {
-          // Continue probing next candidate.
-        }
+    // Find first readable db path
+    let dbPath = null;
+    for (const candidate of candidates) {
+      try {
+        await access(candidate, constants.R_OK);
+        dbPath = candidate;
+        break;
+      } catch {
+        // Try next candidate
       }
-
-      if (!dbPath) {
-        return NextResponse.json({
-          found: false,
-          error:
-            "Cursor database not found in known macOS locations. Make sure Cursor IDE is installed and opened at least once.",
-        });
-      }
-    } else if (platform === "linux") {
-      dbPath = join(homedir(), ".config/Cursor/User/globalStorage/state.vscdb");
-    } else if (platform === "win32") {
-      dbPath = join(process.env.APPDATA || "", "Cursor/User/globalStorage/state.vscdb");
-    } else {
-      return NextResponse.json(
-        { error: "Unsupported platform", found: false },
-        { status: 400 }
-      );
     }
 
-    // Try to open database
+    if (!dbPath) {
+      return NextResponse.json({
+        found: false,
+        error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+      });
+    }
+
     let db;
     try {
       db = new Database(dbPath, { readonly: true, fileMustExist: true });
     } catch (error) {
-      if (platform === "darwin") {
-        return NextResponse.json({
-          found: false,
-          error: `Found Cursor database at ${dbPath} but could not open it: ${error.message}`,
-        });
-      }
       return NextResponse.json({
         found: false,
-        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
+        error: `Found Cursor database at:\n${dbPath}\n\nBut could not open it: ${error.message}`,
       });
     }
 
     try {
-      const accessTokenKeys = [
-        "cursorAuth/accessToken",
-        "cursorAuth/token",
-      ];
-      const machineIdKeys = [
-        "storage.serviceMachineId",
-        "storage.machineId",
-        "telemetry.machineId",
-      ];
-      const desiredKeys = [...accessTokenKeys, ...machineIdKeys];
-
-      const rows = db.prepare(
-        `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
-      ).all(...desiredKeys);
-
-      const normalizeValue = (value) => {
-        if (typeof value !== "string") return value;
-        try {
-          const parsed = JSON.parse(value);
-          return typeof parsed === "string" ? parsed : value;
-        } catch {
-          return value;
-        }
-      };
-
-      const tokens = {};
-      for (const row of rows) {
-        if (accessTokenKeys.includes(row.key) && !tokens.accessToken) {
-          tokens.accessToken = normalizeValue(row.value);
-        } else if (machineIdKeys.includes(row.key) && !tokens.machineId) {
-          tokens.machineId = normalizeValue(row.value);
-        }
-      }
-
-      // Fuzzy fallback for newer/changed key names (macOS only, where the
-      // issue was originally reported; other platforms use exact keys).
-      if (platform === "darwin" && (!tokens.accessToken || !tokens.machineId)) {
-        const fallbackRows = db.prepare(
-          "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
-        ).all();
-
-        for (const row of fallbackRows) {
-          const key = row.key || "";
-          const value = normalizeValue(row.value);
-
-          if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) {
-            tokens.accessToken = value;
-          }
-
-          if (!tokens.machineId && key.toLowerCase().includes("machineid")) {
-            tokens.machineId = value;
-          }
-        }
-      }
-
+      const tokens = extractTokens(db, platform);
       db.close();
 
-      // Validate tokens exist
       if (!tokens.accessToken || !tokens.machineId) {
         return NextResponse.json({
           found: false,

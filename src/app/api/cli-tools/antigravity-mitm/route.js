@@ -1,7 +1,11 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { getMitmStatus, startMitm, stopMitm, getCachedPassword, setCachedPassword } from "@/mitm/manager";
+import { getMitmStatus, startMitm, stopMitm, getCachedPassword, setCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import { getSettings, updateSettings } from "@/lib/localDb";
+
+// Inject DB hooks so manager.js (CJS) can persist settings without dynamic import issues
+initDbHooks(getSettings, updateSettings);
 
 // GET - Check MITM status
 export async function GET() {
@@ -25,7 +29,8 @@ export async function POST(request) {
   try {
     const { apiKey, sudoPassword } = await request.json();
     const isWin = process.platform === "win32";
-    const pwd = sudoPassword || getCachedPassword() || "";
+    // Priority: request password → in-memory cache → encrypted db
+    const pwd = sudoPassword || getCachedPassword() || await loadEncryptedPassword() || "";
 
     if (!apiKey || (!isWin && !pwd)) {
       return NextResponse.json(
@@ -53,7 +58,7 @@ export async function DELETE(request) {
   try {
     const { sudoPassword } = await request.json();
     const isWin = process.platform === "win32";
-    const pwd = sudoPassword || getCachedPassword() || "";
+    const pwd = sudoPassword || getCachedPassword() || await loadEncryptedPassword() || "";
 
     if (!isWin && !pwd) {
       return NextResponse.json({ error: "Missing sudoPassword" }, { status: 400 });
