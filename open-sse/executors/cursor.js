@@ -32,30 +32,21 @@ if (!isCloudEnv()) {
 const COMPRESS_FLAG = {
   NONE: 0x00,
   GZIP: 0x01,
-  GZIP_ALT: 0x02,
-  GZIP_BOTH: 0x03
+  TRAILER: 0x02,
+  GZIP_TRAILER: 0x03
 };
 
 function decompressPayload(payload, flags) {
-  // Check if payload is JSON error (starts with {"error")
-  if (payload.length > 10 && payload[0] === 0x7b && payload[1] === 0x22) {
-    try {
-      const text = payload.toString('utf-8');
-      if (text.startsWith('{"error"')) {
-        console.log(`[DECOMPRESS] Detected JSON error, skipping decompression`);
-        return payload;
-      }
-    } catch {}
+  // ConnectRPC trailer frame (flags & 0x02) - contains status JSON, not compressed data
+  if (flags & COMPRESS_FLAG.TRAILER) {
+    return payload;
   }
 
-  if (flags === COMPRESS_FLAG.GZIP || flags === COMPRESS_FLAG.GZIP_ALT || flags === COMPRESS_FLAG.GZIP_BOTH) {
+  if (flags === COMPRESS_FLAG.GZIP) {
     try {
       return zlib.gunzipSync(payload);
     } catch (err) {
       console.log(`[DECOMPRESS ERROR] flags=${flags}, payloadSize=${payload.length}, error=${err.message}`);
-      console.log(`[DECOMPRESS ERROR] First 50 bytes (hex):`, payload.slice(0, 50).toString('hex'));
-      console.log(`[DECOMPRESS ERROR] First 50 bytes (utf8):`, payload.slice(0, 50).toString('utf8').replace(/[^\x20-\x7E]/g, '.'));
-      // Try to use payload as-is if decompression fails
       return payload;
     }
   }
@@ -165,7 +156,6 @@ export class CursorExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    // Call translator to convert OpenAI format to Cursor format
     const translatedBody = buildCursorRequest(model, body, stream, credentials);
     const messages = translatedBody.messages || [];
     const tools = translatedBody.tools || body.tools || [];
@@ -292,33 +282,25 @@ export class CursorExecutor extends BaseExecutor {
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     let frameCount = 0;
 
-    console.log(`[CURSOR BUFFER] Total length: ${buffer.length} bytes`);
-
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) {
-        console.log(`[CURSOR BUFFER] Reached end, offset=${offset}, remaining=${buffer.length - offset}`);
-        break;
-      }
+      if (offset + 5 > buffer.length) break;
 
       const flags = buffer[offset];
       const length = buffer.readUInt32BE(offset + 1);
 
-      console.log(`[CURSOR BUFFER] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, '0')}, length=${length}`);
-
-      if (offset + 5 + length > buffer.length) {
-        console.log(`[CURSOR BUFFER] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`);
-        break;
-      }
+      if (offset + 5 + length > buffer.length) break;
 
       let payload = buffer.slice(offset + 5, offset + 5 + length);
       offset += 5 + length;
       frameCount++;
 
-      payload = decompressPayload(payload, flags);
-      if (!payload) {
-        console.log(`[CURSOR BUFFER] Frame ${frameCount}: decompression failed, skipping`);
-        continue;
+      // Stop at ConnectRPC trailer frame (end of response, anything after is a separate response)
+      if (flags & COMPRESS_FLAG.TRAILER) {
+        break;
       }
+
+      payload = decompressPayload(payload, flags);
+      if (!payload) continue;
 
       try {
         const text = payload.toString("utf-8");
@@ -328,7 +310,6 @@ export class CursorExecutor extends BaseExecutor {
       } catch {}
 
       const result = extractTextFromResponse(new Uint8Array(payload));
-      console.log(`[CURSOR DECODED] Frame ${frameCount}:`, result);
 
       if (result.error) {
         return new Response(JSON.stringify({
@@ -373,13 +354,10 @@ export class CursorExecutor extends BaseExecutor {
       if (result.text) totalContent += result.text;
     }
 
-    console.log(`[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`);
-
     // Finalize all remaining tool calls in map (in case stream ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {
       // Check if already in final array
       if (!toolCalls.find(t => t.id === id)) {
-        console.log(`[CURSOR BUFFER] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`);
         toolCalls.push({
           id: tc.id,
           type: tc.type,
@@ -391,7 +369,6 @@ export class CursorExecutor extends BaseExecutor {
       }
     }
 
-    console.log(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
     const message = {
       role: "assistant",
@@ -434,33 +411,25 @@ export class CursorExecutor extends BaseExecutor {
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     let frameCount = 0;
 
-    console.log(`[CURSOR BUFFER SSE] Total length: ${buffer.length} bytes`);
-
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) {
-        console.log(`[CURSOR BUFFER SSE] Reached end, offset=${offset}, remaining=${buffer.length - offset}`);
-        break;
-      }
+      if (offset + 5 > buffer.length) break;
 
       const flags = buffer[offset];
       const length = buffer.readUInt32BE(offset + 1);
 
-      console.log(`[CURSOR BUFFER SSE] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, '0')}, length=${length}`);
-
-      if (offset + 5 + length > buffer.length) {
-        console.log(`[CURSOR BUFFER SSE] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`);
-        break;
-      }
+      if (offset + 5 + length > buffer.length) break;
 
       let payload = buffer.slice(offset + 5, offset + 5 + length);
       offset += 5 + length;
       frameCount++;
 
-      payload = decompressPayload(payload, flags);
-      if (!payload) {
-        console.log(`[CURSOR BUFFER SSE] Frame ${frameCount}: decompression failed, skipping`);
-        continue;
+      // Stop at ConnectRPC trailer frame (end of response, anything after is a separate response)
+      if (flags & COMPRESS_FLAG.TRAILER) {
+        break;
       }
+
+      payload = decompressPayload(payload, flags);
+      if (!payload) continue;
 
       try {
         const text = payload.toString("utf-8");
@@ -470,7 +439,6 @@ export class CursorExecutor extends BaseExecutor {
       } catch {}
 
       const result = extractTextFromResponse(new Uint8Array(payload));
-      console.log(`[CURSOR DECODED SSE] Frame ${frameCount}:`, result);
 
       if (result.error) {
         return new Response(JSON.stringify({
@@ -582,7 +550,6 @@ export class CursorExecutor extends BaseExecutor {
       }
     }
 
-    console.log(`[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`);
 
     if (chunks.length === 0 && toolCalls.length === 0) {
       chunks.push(`data: ${JSON.stringify({
