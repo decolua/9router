@@ -2,6 +2,11 @@ import { cleanupProviderConnections, getSettings } from "@/lib/localDb";
 import { enableTunnel } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 
+// Multiple modules register SIGINT/SIGTERM handlers legitimately
+process.setMaxListeners(20);
+
+let signalHandlersRegistered = false;
+
 /**
  * Initialize app on startup
  * - Cleanup stale data
@@ -24,13 +29,16 @@ export async function initializeApp() {
       }
     }
 
-    // Kill cloudflared on process exit
-    const cleanup = () => {
-      killCloudflared();
-      process.exit();
-    };
-    process.on("SIGINT", cleanup);
-    process.on("SIGTERM", cleanup);
+    // Kill cloudflared on process exit (register once only)
+    if (!signalHandlersRegistered) {
+      const cleanup = () => {
+        killCloudflared();
+        process.exit();
+      };
+      process.on("SIGINT", cleanup);
+      process.on("SIGTERM", cleanup);
+      signalHandlersRegistered = true;
+    }
 
     // Pre-download cloudflared binary in background
     ensureCloudflared().catch(() => {});

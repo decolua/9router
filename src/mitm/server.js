@@ -186,6 +186,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 
   const model = extractModel(bodyBuffer);
+  console.log(`📡 ${model} (passthrough)`);
   const mappedModel = getMappedModel(model);
 
   if (!mappedModel) {

@@ -355,6 +355,13 @@ export const DEFAULT_PRICING = {
       cached: 0.50,
       reasoning: 37.50,
       cache_creation: 5.00
+    },
+    "gpt-oss-120b-medium": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
     }
   },
 

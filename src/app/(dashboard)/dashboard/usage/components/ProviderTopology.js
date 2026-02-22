@@ -1,13 +1,11 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import {
   ReactFlow,
   Handle,
   Position,
-  useNodesState,
-  useEdgesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
@@ -193,46 +191,30 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 }
 
 export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
-  const activeSet = useMemo(
-    () => new Set(activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean)),
+  // Serialize to stable string keys so useMemo only re-runs when values actually change
+  const activeKey = useMemo(
+    () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
     [activeRequests]
   );
+  const lastKey = lastProvider?.toLowerCase() || "";
+  const errorKey = errorProvider?.toLowerCase() || "";
 
-  const lastSet = useMemo(
-    () => new Set(lastProvider ? [lastProvider.toLowerCase()] : []),
-    [lastProvider]
+  const activeSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
+  const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
+
+  const { nodes, edges } = useMemo(
+    () => buildLayout(providers, activeSet, lastSet, errorSet),
+    [providers, activeKey, lastKey, errorKey]
   );
 
-  const errorSet = useMemo(
-    () => new Set(errorProvider ? [errorProvider.toLowerCase()] : []),
-    [errorProvider]
-  );
-
-  // Stable key for providers list — only changes when provider set changes
+  // Stable key — only remount when provider list changes
   const providersKey = useMemo(
     () => providers.map((p) => p.provider).sort().join(","),
     [providers]
   );
 
-  const { nodes: layoutNodes, edges: layoutEdges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
-  );
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(layoutEdges);
   const rfInstance = useRef(null);
-
-  // Sync nodes/edges when data changes
-  useEffect(() => {
-    setNodes(layoutNodes);
-    setEdges(layoutEdges);
-    // Re-fit view after update
-    if (rfInstance.current) {
-      setTimeout(() => rfInstance.current.fitView({ padding: 0.3 }), 50);
-    }
-  }, [layoutNodes, layoutEdges, setNodes, setEdges]);
-
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
     setTimeout(() => instance.fitView({ padding: 0.3 }), 50);
@@ -249,8 +231,6 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           key={providersKey}
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.3 }}
