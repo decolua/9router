@@ -37,32 +37,32 @@ export function openaiToClaudeResponse(chunk, state) {
   if (chunk.usage && typeof chunk.usage === "object") {
     const promptTokens = typeof chunk.usage.prompt_tokens === "number" ? chunk.usage.prompt_tokens : 0;
     const outputTokens = typeof chunk.usage.completion_tokens === "number" ? chunk.usage.completion_tokens : 0;
-    
+
     // Extract cache tokens from prompt_tokens_details
     const cachedTokens = chunk.usage.prompt_tokens_details?.cached_tokens;
     const cacheCreationTokens = chunk.usage.prompt_tokens_details?.cache_creation_tokens;
     const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
     const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
-    
+
     // input_tokens = prompt_tokens - cached_tokens - cache_creation_tokens
     // Because OpenAI's prompt_tokens includes all prompt-side tokens
     const inputTokens = promptTokens - cacheReadTokens - cacheCreateTokens;
-    
+
     state.usage = {
       input_tokens: inputTokens,
       output_tokens: outputTokens
     };
-    
+
     // Add cache_read_input_tokens if present
     if (cacheReadTokens > 0) {
       state.usage.cache_read_input_tokens = cacheReadTokens;
     }
-    
+
     // Add cache_creation_input_tokens if present
     if (cacheCreateTokens > 0) {
       state.usage.cache_creation_input_tokens = cacheCreateTokens;
     }
-    
+
     // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
     // No need to add separately as Claude expects total output_tokens
   }
@@ -70,14 +70,19 @@ export function openaiToClaudeResponse(chunk, state) {
   // First chunk - ALWAYS send message_start first
   if (!state.messageStartSent) {
     state.messageStartSent = true;
-    state.messageId = chunk.id?.replace("chatcmpl-", "") || `msg_${Date.now()}`;
-    if (!state.messageId || state.messageId === "chat" || state.messageId.length < 8) {
-      state.messageId = chunk.extend_fields?.requestId ||
+    const rawId = chunk.id?.replace("chatcmpl-", "") || Date.now().toString();
+    state.messageId = rawId.startsWith("msg_") ? rawId : `msg_${rawId}`;
+    if (!state.messageId || state.messageId === "msg_chat" || state.messageId.length < 12) {
+      const fallback = chunk.extend_fields?.requestId ||
         chunk.extend_fields?.traceId ||
-        `msg_${Date.now()}`;
+        Date.now().toString();
+      state.messageId = `msg_${fallback}`;
     }
     state.model = chunk.model || "unknown";
     state.nextBlockIndex = 0;
+
+    const initialUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+
     results.push({
       type: "message_start",
       message: {
@@ -88,7 +93,7 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 }
+        usage: initialUsage
       }
     });
   }
@@ -148,13 +153,13 @@ export function openaiToClaudeResponse(chunk, state) {
 
         const toolBlockIndex = state.nextBlockIndex++;
         state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
-        
+
         // Strip prefix from tool name for response
         let toolName = tc.function?.name || "";
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
         }
-        
+
         results.push({
           type: "content_block_start",
           index: toolBlockIndex,
@@ -194,7 +199,7 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
-    
+
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
