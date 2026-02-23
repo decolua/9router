@@ -18,7 +18,7 @@ export default function CombosPage() {
 
   useEffect(() => {
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -28,7 +28,7 @@ export default function CombosPage() {
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
-      
+
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
@@ -166,6 +166,8 @@ export default function CombosPage() {
 }
 
 function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
+  const priorityMode = combo.priorityMode || "custom";
+
   return (
     <Card padding="sm" className="group">
       <div className="flex items-center justify-between">
@@ -176,6 +178,11 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
+              {priorityMode === "speed" && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 font-medium" title="Speed-based priority">
+                  ⚡ Speed
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
                 className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
@@ -303,6 +310,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [priorityMode, setPriorityMode] = useState(combo?.priorityMode || "custom");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -353,6 +361,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     setModels(models.filter((_, i) => i !== index));
   };
 
+
   const handleMoveUp = (index) => {
     if (index === 0) return;
     const newModels = [...models];
@@ -370,7 +379,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({ name: name.trim(), models, priorityMode });
     setSaving(false);
   };
 
@@ -398,6 +407,38 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             </p>
           </div>
 
+          {/* Priority Mode Toggle */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Priority Mode</label>
+            <div className="flex gap-1 p-0.5 bg-black/5 dark:bg-white/5 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setPriorityMode("custom")}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${priorityMode === "custom"
+                  ? "bg-white dark:bg-gray-800 text-text-main shadow-sm"
+                  : "text-text-muted hover:text-text-main"
+                  }`}
+              >
+                📋 Custom
+              </button>
+              <button
+                type="button"
+                onClick={() => setPriorityMode("speed")}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${priorityMode === "speed"
+                  ? "bg-white dark:bg-gray-800 text-text-main shadow-sm"
+                  : "text-text-muted hover:text-text-main"
+                  }`}
+              >
+                ⚡ Speed
+              </button>
+            </div>
+            <p className="text-[10px] text-text-muted mt-1">
+              {priorityMode === "speed"
+                ? "Models will be tried fastest-first based on recent response speed (tokens/s)"
+                : "Models will be tried in the order you set below"}
+            </p>
+          </div>
+
           {/* Models */}
           <div>
             <label className="text-sm font-medium mb-1.5 block">Models</label>
@@ -416,6 +457,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                     model={model}
                     isFirst={index === 0}
                     isLast={index === models.length - 1}
+                    showArrows={priorityMode === "custom"}
                     onEdit={(newVal) => {
                       const updated = [...models];
                       updated[index] = newVal;

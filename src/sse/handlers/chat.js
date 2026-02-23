@@ -17,6 +17,57 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { getModelSpeedStats } from "@/lib/requestDetailsDb.js";
+
+/**
+ * Sort models by speed (tokens/s) from last successful request
+ * @param {string[]} models - Array of model strings
+ * @param {object} log - Logger instance
+ * @returns {Promise<string[]>} Sorted models (fastest first)
+ */
+async function sortModelsBySpeed(models, log) {
+  try {
+    // Resolve each model to provider/model
+    const modelInfos = await Promise.all(
+      models.map(async (modelStr) => {
+        const info = await getModelInfo(modelStr);
+        return { modelStr, provider: info.provider, model: info.model };
+      })
+    );
+
+    // Filter out combos (provider is null) and get speed stats for actual models
+    const actualModels = modelInfos.filter(m => m.provider !== null);
+    const speedStats = await getModelSpeedStats(
+      actualModels.map(m => ({ provider: m.provider, model: m.model }))
+    );
+
+    // Sort by speed (descending), models without speed data go last
+    const sorted = modelInfos.sort((a, b) => {
+      const keyA = a.provider ? `${a.provider}/${a.model}` : null;
+      const keyB = b.provider ? `${b.provider}/${b.model}` : null;
+
+      const speedA = keyA && speedStats.has(keyA) ? speedStats.get(keyA).speed : 0;
+      const speedB = keyB && speedStats.has(keyB) ? speedStats.get(keyB).speed : 0;
+
+      return speedB - speedA;
+    });
+
+    const sortedModels = sorted.map(m => m.modelStr);
+
+    // Log the sorted order with speeds
+    log.info("SPEED", `Sorted by tokens/s:`);
+    sorted.forEach((m, i) => {
+      const key = m.provider ? `${m.provider}/${m.model}` : null;
+      const speed = key && speedStats.has(key) ? speedStats.get(key).speed.toFixed(1) : "N/A";
+      log.info("SPEED", `  ${i + 1}. ${m.modelStr} (${speed} tok/s)`);
+    });
+
+    return sortedModels;
+  } catch (error) {
+    log.warn("SPEED", `Failed to sort by speed: ${error.message}, using custom order`);
+    return models;
+  }
+}
 
 /**
  * Handle chat completion request
@@ -85,12 +136,20 @@ export async function handleChat(request, clientRawRequest = null, forceSourceFo
   }
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+  const comboData = await getComboModels(modelStr);
+  if (comboData) {
+    let models = comboData.models;
+    const priorityMode = comboData.priorityMode || "custom";
+
+    // Sort by speed if priorityMode is "speed"
+    if (priorityMode === "speed") {
+      models = await sortModelsBySpeed(models, log);
+    }
+
+    log.info("CHAT", `Combo "${modelStr}" with ${models.length} models (${priorityMode} priority)`);
     return handleComboChat({
       body,
-      models: comboModels,
+      models,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, forceSourceFormat),
       log
     });
@@ -108,12 +167,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
-    if (comboModels) {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+    const comboData = await getComboModels(modelStr);
+    if (comboData) {
+      let models = comboData.models;
+      const priorityMode = comboData.priorityMode || "custom";
+
+      // Sort by speed if priorityMode is "speed"
+      if (priorityMode === "speed") {
+        models = await sortModelsBySpeed(models, log);
+      }
+
+      log.info("CHAT", `Combo "${modelStr}" with ${models.length} models (${priorityMode} priority)`);
       return handleComboChat({
         body,
-        models: comboModels,
+        models,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, forceSourceFormat),
         log
       });

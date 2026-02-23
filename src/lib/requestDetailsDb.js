@@ -169,12 +169,12 @@ export async function getRequestDetailsDb() {
     if (!dbInstance) {
       dbInstance = {
         prepare: () => ({
-          run: () => {},
+          run: () => { },
           get: () => null,
           all: () => []
         }),
-        exec: () => {},
-        pragma: () => {}
+        exec: () => { },
+        pragma: () => { }
       };
     }
     return dbInstance;
@@ -387,7 +387,7 @@ export async function saveRequestDetail(detail) {
     }
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
-      flushToDatabase().catch(() => {});
+      flushToDatabase().catch(() => { });
       flushTimer = null;
     }, config.flushIntervalMs);
   }
@@ -562,4 +562,60 @@ export async function getRequestDetailById(id) {
     providerResponse: safeJsonParse(row.provider_response),
     response: safeJsonParse(row.response)
   };
+}
+
+/**
+ * Get speed statistics for models (tokens/s from last successful request)
+ * @param {Array<{provider: string, model: string}>} providerModelPairs - Array of provider/model pairs
+ * @returns {Promise<Map<string, {speed: number, lastUsed: string}>>} Map of "provider/model" to speed stats
+ */
+export async function getModelSpeedStats(providerModelPairs) {
+  const db = await getRequestDetailsDb();
+  const speedMap = new Map();
+
+  if (isCloud || !providerModelPairs || providerModelPairs.length === 0) {
+    return speedMap;
+  }
+
+  const safeJsonParse = (str, fallback = {}) => {
+    try { return JSON.parse(str || '{}'); }
+    catch { return fallback; }
+  };
+
+  for (const { provider, model } of providerModelPairs) {
+    try {
+      const stmt = prepareStatement(db, `
+        SELECT provider, model, timestamp, latency, tokens
+        FROM request_details
+        WHERE provider = ? AND model = ? AND status = 'success'
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `);
+
+      const row = stmt.get(provider, model);
+
+      if (row) {
+        const latency = safeJsonParse(row.latency);
+        const tokens = safeJsonParse(row.tokens);
+        const totalMs = latency?.total || 0;
+        const completionTokens = tokens?.completion_tokens || 0;
+
+        // Calculate speed: tokens per second
+        let speed = 0;
+        if (totalMs > 0 && completionTokens > 0) {
+          speed = completionTokens / (totalMs / 1000);
+        }
+
+        const key = `${provider}/${model}`;
+        speedMap.set(key, {
+          speed,
+          lastUsed: new Date(row.timestamp).toISOString()
+        });
+      }
+    } catch (error) {
+      console.error(`[getModelSpeedStats] Failed to get speed for ${provider}/${model}:`, error.message);
+    }
+  }
+
+  return speedMap;
 }
