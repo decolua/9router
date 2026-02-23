@@ -54,7 +54,7 @@ export async function getModelInfo(modelStr) {
 
 /**
  * Check if model is a combo and get combo data
- * @returns {Promise<{models: string[], priorityMode: string}|null>} Combo data or null if not a combo
+ * @returns {Promise<{models: string[], priorityMode: string, weights?: Object}|null>} Combo data or null if not a combo
  */
 export async function getComboModels(modelStr) {
   // Only check if it's not in provider/model format
@@ -64,7 +64,8 @@ export async function getComboModels(modelStr) {
   if (combo && combo.models && combo.models.length > 0) {
     return {
       models: combo.models,
-      priorityMode: combo.priorityMode || "custom"
+      priorityMode: combo.priorityMode || "custom",
+      weights: combo.weights || {}
     };
   }
   return null;

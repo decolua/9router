@@ -183,6 +183,11 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
                   ⚡ Speed
                 </span>
               )}
+              {priorityMode === "weight" && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium" title="Weight-based priority">
+                  ⚖️ Weight
+                </span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
                 className="p-0.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
@@ -233,7 +238,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
 }
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, isFirst, isLast, showArrows, priorityMode, weight, totalWeight, onWeightChange, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
 
@@ -275,24 +280,47 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
       )}
 
       {/* Priority arrows */}
-      <div className="flex items-center gap-0.5">
-        <button
-          onClick={onMoveUp}
-          disabled={isFirst}
-          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-          title="Move up"
-        >
-          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-        </button>
-        <button
-          onClick={onMoveDown}
-          disabled={isLast}
-          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-          title="Move down"
-        >
-          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-        </button>
-      </div>
+      {(showArrows === undefined ? true : showArrows) && (!priorityMode || priorityMode === "custom") && (
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={onMoveUp}
+            disabled={isFirst}
+            className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+            title="Move up"
+          >
+            <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+          </button>
+          <button
+            onClick={onMoveDown}
+            disabled={isLast}
+            className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+            title="Move down"
+          >
+            <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+          </button>
+        </div>
+      )}
+
+      {/* Weight Input */}
+      {priorityMode === "weight" && (
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={weight}
+            onChange={(e) => {
+              const val = Math.max(1, Math.min(100, parseInt(e.target.value) || 1));
+              onWeightChange(val);
+            }}
+            className="w-12 px-1 py-0.5 text-xs text-center border border-black/10 dark:border-white/10 rounded bg-white dark:bg-black focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+            title="Weight (1-100)"
+          />
+          <span className="text-[10px] text-text-muted shrink-0 w-8">
+            {totalWeight ? Math.round((weight / totalWeight) * 100) : 0}%
+          </span>
+        </div>
+      )}
 
       {/* Remove */}
       <button
@@ -311,6 +339,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
   const [priorityMode, setPriorityMode] = useState(combo?.priorityMode || "custom");
+  const [weights, setWeights] = useState(combo?.weights || {});
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -379,7 +408,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models, priorityMode });
+    await onSave({ name: name.trim(), models, priorityMode, weights });
     setSaving(false);
   };
 
@@ -431,11 +460,23 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               >
                 ⚡ Speed
               </button>
+              <button
+                type="button"
+                onClick={() => setPriorityMode("weight")}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-all ${priorityMode === "weight"
+                  ? "bg-white dark:bg-gray-800 text-text-main shadow-sm"
+                  : "text-text-muted hover:text-text-main"
+                  }`}
+              >
+                ⚖️ Weight
+              </button>
             </div>
             <p className="text-[10px] text-text-muted mt-1">
               {priorityMode === "speed"
-                ? "Models will be tried fastest-first based on recent response speed (tokens/s)"
-                : "Models will be tried in the order you set below"}
+                ? "Models will be tried fastest-first based on recent response speed (tokens/s). Untested models are prioritized first."
+                : priorityMode === "weight"
+                  ? "Models will be tried randomly, favoring those with higher weights"
+                  : "Models will be tried in the order you set below"}
             </p>
           </div>
 
@@ -457,7 +498,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                     model={model}
                     isFirst={index === 0}
                     isLast={index === models.length - 1}
-                    showArrows={priorityMode === "custom"}
+                    priorityMode={priorityMode}
+                    weight={weights[model] || 10}
+                    totalWeight={models.reduce((acc, m) => acc + (weights[m] || 10), 0)}
+                    onWeightChange={(val) => setWeights({ ...weights, [model]: val })}
                     onEdit={(newVal) => {
                       const updated = [...models];
                       updated[index] = newVal;

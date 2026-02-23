@@ -29,9 +29,9 @@ async function sortModelsBySpeed(models, log) {
   try {
     // Resolve each model to provider/model
     const modelInfos = await Promise.all(
-      models.map(async (modelStr) => {
+      models.map(async (modelStr, originalIndex) => {
         const info = await getModelInfo(modelStr);
-        return { modelStr, provider: info.provider, model: info.model };
+        return { modelStr, provider: info.provider, model: info.model, originalIndex };
       })
     );
 
@@ -41,30 +41,76 @@ async function sortModelsBySpeed(models, log) {
       actualModels.map(m => ({ provider: m.provider, model: m.model }))
     );
 
-    // Sort by speed (descending), models without speed data go last
-    const sorted = modelInfos.sort((a, b) => {
-      const keyA = a.provider ? `${a.provider}/${a.model}` : null;
-      const keyB = b.provider ? `${b.provider}/${b.model}` : null;
+    // Separate models with and without speed data
+    const withSpeed = [];
+    const withoutSpeed = [];
 
-      const speedA = keyA && speedStats.has(keyA) ? speedStats.get(keyA).speed : 0;
-      const speedB = keyB && speedStats.has(keyB) ? speedStats.get(keyB).speed : 0;
-
-      return speedB - speedA;
+    modelInfos.forEach(m => {
+      const key = m.provider ? `${m.provider}/${m.model}` : null;
+      if (key && speedStats.has(key) && speedStats.get(key).speed > 0) {
+        withSpeed.push({ ...m, speed: speedStats.get(key).speed });
+      } else {
+        withoutSpeed.push(m);
+      }
     });
 
+    // Sort models with speed data by speed (descending)
+    withSpeed.sort((a, b) => b.speed - a.speed);
+
+    // Keep models without speed data in their original order
+    withoutSpeed.sort((a, b) => a.originalIndex - b.originalIndex);
+
+    // Combine: models WITHOUT speed data FIRST (exploration), then speed-sorted (exploitation)
+    const sorted = [...withoutSpeed, ...withSpeed];
     const sortedModels = sorted.map(m => m.modelStr);
 
     // Log the sorted order with speeds
-    log.info("SPEED", `Sorted by tokens/s:`);
+    log.info("SPEED", `Sorted by tokens/s (untested models prioritized for benchmarking):`);
     sorted.forEach((m, i) => {
-      const key = m.provider ? `${m.provider}/${m.model}` : null;
-      const speed = key && speedStats.has(key) ? speedStats.get(key).speed.toFixed(1) : "N/A";
+      const speed = m.speed ? m.speed.toFixed(1) : "N/A";
       log.info("SPEED", `  ${i + 1}. ${m.modelStr} (${speed} tok/s)`);
     });
 
     return sortedModels;
   } catch (error) {
     log.warn("SPEED", `Failed to sort by speed: ${error.message}, using custom order`);
+    return models;
+  }
+}
+
+/**
+ * Sort models by weight using weighted random sampling (A-Res)
+ * Higher weights have a higher probability of being sorted first.
+ * @param {string[]} models - Array of model strings
+ * @param {object} weights - Map of model string to weight (e.g. { "glm-x": 80, "ag/gemini-3.1-pro-low": 20 })
+ * @param {object} log - Logger instance
+ * @returns {string[]} Sorted models
+ */
+function sortModelsByWeight(models, weights, log) {
+  try {
+    // If no weights or empty models, return as is
+    if (!models || models.length === 0) return models;
+
+    // Use A-Res algorithm (weighted random sampling without replacement)
+    // score = random() ^ (1 / weight) - highest score wins
+    const scored = models.map(model => {
+      // Default weight is 10 if not specified
+      const weight = Math.max(0.1, Number(weights?.[model]) || 10);
+      const score = Math.pow(Math.random(), 1 / weight);
+      return { model, score, weight };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+
+    // Log the selected order
+    log.info("WEIGHT", `Randomly selected by weight:`);
+    scored.forEach((m, i) => {
+      log.info("WEIGHT", `  ${i + 1}. ${m.model} (weight: ${m.weight})`);
+    });
+
+    return scored.map(m => m.model);
+  } catch (error) {
+    log.warn("WEIGHT", `Failed to sort by weight: ${error.message}, using custom order`);
     return models;
   }
 }
@@ -140,10 +186,13 @@ export async function handleChat(request, clientRawRequest = null, forceSourceFo
   if (comboData) {
     let models = comboData.models;
     const priorityMode = comboData.priorityMode || "custom";
+    const weights = comboData.weights || {};
 
-    // Sort by speed if priorityMode is "speed"
+    // Sort models based on priority mode
     if (priorityMode === "speed") {
       models = await sortModelsBySpeed(models, log);
+    } else if (priorityMode === "weight") {
+      models = sortModelsByWeight(models, weights, log);
     }
 
     log.info("CHAT", `Combo "${modelStr}" with ${models.length} models (${priorityMode} priority)`);
@@ -171,10 +220,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (comboData) {
       let models = comboData.models;
       const priorityMode = comboData.priorityMode || "custom";
+      const weights = comboData.weights || {};
 
-      // Sort by speed if priorityMode is "speed"
+      // Sort models based on priority mode
       if (priorityMode === "speed") {
         models = await sortModelsBySpeed(models, log);
+      } else if (priorityMode === "weight") {
+        models = sortModelsByWeight(models, weights, log);
       }
 
       log.info("CHAT", `Combo "${modelStr}" with ${models.length} models (${priorityMode} priority)`);
