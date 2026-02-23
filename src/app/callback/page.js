@@ -3,43 +3,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-const OAUTH_SESSION_KEY = "oauth_pending_auth";
-
-/**
- * Direct exchange: callback page calls exchange API itself
- * when relay to opener fails (e.g. HMR reload destroyed listeners)
- */
-async function directExchange(code, state) {
-  try {
-    const raw = localStorage.getItem(OAUTH_SESSION_KEY);
-    if (!raw) return false;
-
-    const session = JSON.parse(raw);
-    // Expired (5 min)
-    if (Date.now() - session.timestamp > 300000) {
-      localStorage.removeItem(OAUTH_SESSION_KEY);
-      return false;
-    }
-
-    const res = await fetch(`/api/oauth/${session.provider}/exchange`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code,
-        redirectUri: session.redirectUri,
-        codeVerifier: session.codeVerifier,
-        state,
-      }),
-    });
-
-    const data = await res.json();
-    localStorage.removeItem(OAUTH_SESSION_KEY);
-    return res.ok && data.success;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * OAuth Callback Page Content
  */
@@ -102,43 +65,11 @@ function CallbackContent() {
       return;
     }
 
-    if (error) {
-      setTimeout(() => {
-        setStatus("success");
-        setTimeout(() => {
-          window.close();
-          setTimeout(() => setStatus("done"), 500);
-        }, 1500);
-      }, 0);
-      return;
-    }
-
-    // Try direct exchange FIRST (before relay may be lost to HMR)
-    // Then relay as backup for normal flow
-    const handleExchange = async () => {
-      const pending = localStorage.getItem(OAUTH_SESSION_KEY);
-      if (pending) {
-        // Direct exchange - works even if opener was destroyed by HMR
-        const ok = await directExchange(code, state);
-        if (ok) {
-          setStatus("success");
-          setTimeout(() => {
-            window.close();
-            setTimeout(() => setStatus("done"), 500);
-          }, 1500);
-          return;
-        }
-      }
-
-      // Fallback: relay succeeded and OAuthModal handled it
-      setStatus("success");
-      setTimeout(() => {
-        window.close();
-        setTimeout(() => setStatus("done"), 500);
-      }, 1500);
-    };
-
-    handleExchange();
+    setStatus("success");
+    setTimeout(() => {
+      window.close();
+      setTimeout(() => setStatus("done"), 500);
+    }, 1500);
   }, [searchParams]);
 
   return (

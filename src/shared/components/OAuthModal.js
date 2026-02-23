@@ -5,34 +5,6 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-const OAUTH_SESSION_KEY = "oauth_pending_auth";
-
-function saveAuthSession(provider, data) {
-  try {
-    localStorage.setItem(OAUTH_SESSION_KEY, JSON.stringify({ provider, ...data, timestamp: Date.now() }));
-  } catch { /* storage unavailable */ }
-}
-
-function loadAuthSession(provider) {
-  try {
-    const raw = localStorage.getItem(OAUTH_SESSION_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    // Only restore if same provider and within 5 minutes
-    if (data.provider !== provider || Date.now() - data.timestamp > 300000) {
-      localStorage.removeItem(OAUTH_SESSION_KEY);
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function clearAuthSession() {
-  try { localStorage.removeItem(OAUTH_SESSION_KEY); } catch { /* ignore */ }
-}
-
 /**
  * OAuth Modal Component
  * - Localhost: Auto callback via popup message
@@ -84,11 +56,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      clearAuthSession();
       setStep("success");
       onSuccess?.();
     } catch (err) {
-      clearAuthSession();
       setError(err.message);
       setStep("error");
     }
@@ -182,7 +152,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (!res.ok) throw new Error(data.error);
 
       setAuthData({ ...data, redirectUri });
-      saveAuthSession(provider, { codeVerifier: data.codeVerifier, redirectUri, state: data.state });
 
       // For Codex or non-localhost: use manual input mode
       if (provider === "codex" || !isLocalhost) {
@@ -207,19 +176,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
-      // Try restore pending auth from localStorage (survives HMR/reload)
-      const saved = loadAuthSession(provider);
-      if (saved) {
-        setAuthData({ codeVerifier: saved.codeVerifier, redirectUri: saved.redirectUri, state: saved.state });
-        setStep("waiting");
-        setCallbackUrl("");
-        setError(null);
-        setIsDeviceCode(false);
-        setDeviceData(null);
-        setPolling(false);
-        return; // Don't restart OAuth — just re-listen for callback
-      }
-
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -249,14 +205,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       if (code) {
-        // Skip if callback page already handled exchange (localStorage cleared)
-        const stillPending = localStorage.getItem(OAUTH_SESSION_KEY);
-        if (!stillPending) {
-          callbackProcessedRef.current = true;
-          setStep("success");
-          onSuccess?.();
-          return;
-        }
         callbackProcessedRef.current = true;
         await exchangeTokens(code, state);
       }
@@ -303,11 +251,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const stored = localStorage.getItem("oauth_callback");
       if (stored) {
         const data = JSON.parse(stored);
-        // Only use if recent (within 30 seconds)
         if (data.timestamp && Date.now() - data.timestamp < 30000) {
           handleCallback(data);
-          localStorage.removeItem("oauth_callback");
         }
+        localStorage.removeItem("oauth_callback");
       }
     } catch {
       // localStorage may be unavailable or data may be malformed - ignore silently
@@ -346,7 +293,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Clear session on modal close
   const handleClose = useCallback(() => {
-    clearAuthSession();
     onClose();
   }, [onClose]);
 

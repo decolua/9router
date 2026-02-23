@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const net = require("net");
+const https = require("https");
 const crypto = require("crypto");
 const { addDNSEntry, removeDNSEntry, checkDNSEntry } = require("./dns/dnsConfig");
 
@@ -49,12 +50,14 @@ function getCachedPassword() { return globalThis.__mitmSudoPassword || null; }
 function setCachedPassword(pwd) { globalThis.__mitmSudoPassword = pwd; }
 
 // Check if a PID is alive
+// EACCES = process exists but no permission (e.g. root process) → still alive
+// ESRCH  = process does not exist → dead
 function isProcessAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return err.code === "EACCES";
   }
 }
 
@@ -165,53 +168,36 @@ function checkPort443Free() {
  * Get PID and process name currently holding port 443
  * Returns { pid, name } or null if port is free / cannot determine
  */
-function getPort443Owner() {
+function getPort443Owner(sudoPassword) {
   return new Promise((resolve) => {
-    const cmd = IS_WIN
-      ? `netstat -ano | findstr ":443 "`
-      // Only match TCP processes actually LISTEN-ing on port 443 (not outbound UDP/QUIC)
-      : `lsof -i TCP:${MITM_PORT} -n -P -sTCP:LISTEN`;
-
-    exec(cmd, (err, stdout) => {
-      if (err || !stdout.trim()) return resolve(null);
-
-      let pid = null;
-
-      if (IS_WIN) {
-        // netstat line: "  TCP  0.0.0.0:443  0.0.0.0:0  LISTENING  1234"
+    if (IS_WIN) {
+      exec(`netstat -ano | findstr ":443 "`, (err, stdout) => {
+        if (err || !stdout.trim()) return resolve(null);
         for (const line of stdout.split("\n")) {
           const match = line.match(/LISTENING\s+(\d+)/i);
-          if (match) { pid = parseInt(match[1], 10); break; }
-        }
-      } else {
-        // lsof line: "node  1234  user  ..."
-        for (const line of stdout.split("\n").slice(1)) {
-          const parts = line.trim().split(/\s+/);
-          if (parts.length >= 2) { pid = parseInt(parts[1], 10); break; }
-        }
-      }
-
-      if (!pid || isNaN(pid)) return resolve(null);
-
-      // Get process name by PID
-      const nameCmd = IS_WIN
-        ? `tasklist /FI "PID eq ${pid}" /FO CSV /NH`
-        : `ps -p ${pid} -o comm=`;
-
-      exec(nameCmd, (e2, out2) => {
-        let name = "unknown";
-        if (!e2 && out2.trim()) {
-          if (IS_WIN) {
-            // CSV: "node.exe","1234",...
-            const m = out2.match(/"([^"]+)"/);
-            if (m) name = m[1];
-          } else {
-            name = out2.trim();
+          if (match) {
+            const pid = parseInt(match[1], 10);
+            exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, (e2, out2) => {
+              const m = out2?.match(/"([^"]+)"/);
+              resolve({ pid, name: m ? m[1] : "unknown" });
+            });
+            return;
           }
         }
-        resolve({ pid, name });
+        resolve(null);
       });
-    });
+    } else {
+      // Use ps to find node process running server.js (no sudo needed)
+      exec(`ps aux | grep "[s]erver.js"`, (err, stdout) => {
+        if (!stdout?.trim()) return resolve(null);
+        for (const line of stdout.split("\n")) {
+          const parts = line.trim().split(/\s+/);
+          const pid = parseInt(parts[1], 10);
+          if (!isNaN(pid)) return resolve({ pid, name: "node" });
+        }
+        resolve(null);
+      });
+    }
   });
 }
 
@@ -252,6 +238,37 @@ async function killLeftoverMitm(sudoPassword) {
       await new Promise(r => setTimeout(r, 500));
     } catch { /* ignore */ }
   }
+}
+
+/**
+ * Poll MITM health endpoint until server is up or timeout.
+ * Returns { ok, pid } on success, null on timeout.
+ */
+function pollMitmHealth(timeoutMs) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      const req = https.request(
+        { hostname: "127.0.0.1", port: 443, path: "/_mitm_health", method: "GET", rejectUnauthorized: false },
+        (res) => {
+          let body = "";
+          res.on("data", (d) => { body += d; });
+          res.on("end", () => {
+            try {
+              const json = JSON.parse(body);
+              resolve(json.ok === true ? { ok: true, pid: json.pid || null } : null);
+            } catch { resolve(null); }
+          });
+        }
+      );
+      req.on("error", () => {
+        if (Date.now() < deadline) setTimeout(check, 500);
+        else resolve(null);
+      });
+      req.end();
+    };
+    check();
+  });
 }
 
 /**
@@ -319,19 +336,33 @@ async function startMitm(apiKey, sudoPassword) {
   await killLeftoverMitm(sudoPassword);
 
   // Check port 443 availability BEFORE modifying system
+  // "no-permission" = EACCES: port may be held by a root process, check via lsof/netstat
   const portStatus = await checkPort443Free();
-  if (portStatus === "in-use") {
-    const owner = await getPort443Owner();
-    let ownerDesc = "another process";
-    if (owner) {
+  if (portStatus === "in-use" || portStatus === "no-permission") {
+    const owner = await getPort443Owner(sudoPassword);
+    if (owner && owner.name === "node") {
+      // Orphan MITM node process — kill it and continue
+      console.log(`[MITM] Killing orphan node process on port 443 (PID ${owner.pid})...`);
+      try {
+        if (IS_WIN) {
+          await new Promise((resolve) => exec(`taskkill /F /PID ${owner.pid}`, resolve));
+        } else {
+          const { execWithPassword } = require("./dns/dnsConfig");
+          await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
+        }
+        await new Promise(r => setTimeout(r, 800));
+      } catch {
+        // best effort — continue anyway
+      }
+    } else if (owner) {
       const shortName = owner.name.includes("/")
         ? owner.name.split("/").filter(Boolean).pop()
         : owner.name;
-      ownerDesc = `"${shortName}" (PID ${owner.pid})`;
+      throw new Error(
+        `Port 443 is already in use by "${shortName}" (PID ${owner.pid}). Stop that process first, then retry.`
+      );
     }
-    throw new Error(
-      `Port 443 is already in use by ${ownerDesc}. Stop that process first, then retry.`
-    );
+    // owner === null + no-permission → likely just needs sudo, proceed
   }
 
   // 1. Generate SSL certificate if not exists
@@ -358,12 +389,13 @@ async function startMitm(apiKey, sudoPassword) {
   console.log("Starting MITM server...");
 
   if (IS_WIN) {
-    const nodePath = process.execPath;
-    const envArgs = `$env:ROUTER_API_KEY='${apiKey}'; $env:NODE_ENV='production'; & '${nodePath}' '${SERVER_PATH}'`;
+    // Launch elevated node via PowerShell RunAs (triggers UAC prompt)
+    const nodePath = process.execPath.replace(/'/g, "''");
+    const serverPath = SERVER_PATH.replace(/'/g, "''");
     serverProcess = spawn("powershell", [
-      "-Command",
-      `Start-Process powershell -ArgumentList '-NoProfile','-Command','${envArgs.replace(/'/g, "''")}' -Verb RunAs -PassThru`
-    ], { detached: false, stdio: ["ignore", "pipe", "pipe"] });
+      "-NoProfile", "-Command",
+      `$env:ROUTER_API_KEY='${apiKey}'; $env:NODE_ENV='production'; Start-Process '${nodePath}' -ArgumentList '''${serverPath}''' -Verb RunAs -WindowStyle Hidden`
+    ], { stdio: "ignore", env: process.env });
   } else {
     // sudo -S: read password from stdin, -E: preserve env vars
     // Pass ROUTER_API_KEY inline via env=... wrapper to avoid sudo stripping env
@@ -399,18 +431,20 @@ async function startMitm(apiKey, sudoPassword) {
     try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
   });
 
-  // Wait up to 8s — sudo + Node startup takes longer than plain spawn
-  const started = await new Promise((resolve) => {
-    let resolved = false;
-    const done = (val) => { if (!resolved) { resolved = true; resolve(val); } };
-    const timeout = setTimeout(() => done(true), 8000);
-    serverProcess.once("exit", () => { clearTimeout(timeout); done(false); });
-  });
+  // Wait for server to be ready by polling health endpoint
+  const health = await pollMitmHealth(IS_WIN ? 12000 : 8000);
 
-  if (!started) {
+  if (!health) {
+    if (IS_WIN) serverProcess = null;
     try { await removeDNSEntry(sudoPassword); } catch { /* best effort */ }
     const reason = startError || "Check sudo password or port 443 access.";
     throw new Error(`MITM server failed to start. ${reason}`);
+  }
+
+  // On Windows, use real PID from health check (launcher exits immediately after UAC)
+  if (IS_WIN && health.pid) {
+    serverPid = health.pid;
+    fs.writeFileSync(PID_FILE, String(serverPid));
   }
 
   await saveMitmSettings(true, sudoPassword);

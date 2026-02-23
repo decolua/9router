@@ -18,19 +18,6 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
-
-  // Auto-reopen OAuthModal if pending auth exists (survives HMR/reload)
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("oauth_pending_auth");
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (data.provider === providerId && Date.now() - data.timestamp < 300000) {
-          setShowOAuthModal(true);
-        }
-      }
-    } catch { /* ignore */ }
-  }, [providerId]);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);

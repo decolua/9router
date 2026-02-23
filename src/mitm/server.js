@@ -173,6 +173,13 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
 }
 
 const server = https.createServer(sslOptions, async (req, res) => {
+  // Health check endpoint for startup verification
+  if (req.url === "/_mitm_health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, pid: process.pid }));
+    return;
+  }
+
   const bodyBuffer = await collectBodyRaw(req);
 
   // Save request log if enabled
