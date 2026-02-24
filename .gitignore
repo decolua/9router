@@ -67,3 +67,10 @@ package-lock.json
 README1.md
 plans/
 .repomixignore
+
+# Local config files
+.claude/
+.opencode/
+AGENTS.md
+CLAUDE.md
+release-manifest.json
