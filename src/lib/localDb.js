@@ -398,7 +398,7 @@ export async function createProviderConnection(data) {
     "accessToken", "refreshToken", "expiresAt", "tokenType",
     "scope", "idToken", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-    "consecutiveUseCount"
+    "consecutiveUseCount", "proxy"
   ];
   
   for (const field of optionalFields) {
