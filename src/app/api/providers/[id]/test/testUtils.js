@@ -5,11 +5,13 @@ import {
   ANTIGRAVITY_CONFIG,
   CODEX_CONFIG,
   KIRO_CONFIG,
+  QWEN_CONFIG,
+  CLAUDE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
-  claude: { checkExpiry: true },
+  claude: { checkExpiry: true, refreshable: true },
   codex: { checkExpiry: true, refreshable: true },
   "gemini-cli": {
     url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
@@ -33,18 +35,14 @@ const OAUTH_TEST_CONFIG = {
     extraHeaders: { "User-Agent": "9Router", "Accept": "application/vnd.github+json" },
   },
   iflow: {
-    url: "https://iflow.cn/api/oauth/getUserInfo",
+    // iFlow getUserInfo requires accessToken as query param, not header
+    buildUrl: (token) => `https://iflow.cn/api/oauth/getUserInfo?accessToken=${encodeURIComponent(token)}`,
     method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
+    noAuth: true,
   },
-  qwen: {
-    url: "https://portal.qwen.ai/v1/models",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-  },
+  qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
+  cursor: { tokenExists: true },
 };
 
 async function refreshOAuthToken(connection) {
@@ -85,8 +83,26 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
+    if (provider === "claude") {
+      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: CLAUDE_CONFIG.clientId,
+        }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
+    }
+
     if (provider === "kiro") {
-      const { clientId, clientSecret, region } = connection;
+      const psd = connection.providerSpecificData || {};
+      const clientId = psd.clientId || connection.clientId;
+      const clientSecret = psd.clientSecret || connection.clientSecret;
+      const region = psd.region || connection.region;
       if (clientId && clientSecret) {
         const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
         const response = await fetch(endpoint, {
@@ -100,12 +116,27 @@ async function refreshOAuthToken(connection) {
       }
       const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
         body: JSON.stringify({ refreshToken }),
       });
       if (!response.ok) return null;
       const data = await response.json();
       return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
+    }
+
+    if (provider === "qwen") {
+      const response = await fetch(QWEN_CONFIG.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: QWEN_CONFIG.clientId,
+        }),
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     return null;
@@ -126,6 +157,11 @@ async function testOAuthConnection(connection) {
   const config = OAUTH_TEST_CONFIG[connection.provider];
   if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };
+
+  // Cursor uses protobuf API - can only verify token exists, not test endpoint
+  if (config.tokenExists) {
+    return { valid: true, error: null, refreshed: false, newTokens: null };
+  }
 
   let accessToken = connection.accessToken;
   let refreshed = false;
@@ -150,17 +186,24 @@ async function testOAuthConnection(connection) {
   }
 
   try {
-    const headers = { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
-    const res = await fetch(config.url, { method: config.method, headers });
+    const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
+    const headers = config.noAuth
+      ? { ...config.extraHeaders }
+      : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+    const res = await fetch(testUrl, { method: config.method, headers });
 
     if (res.ok) return { valid: true, error: null, refreshed, newTokens };
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
-        const retryRes = await fetch(config.url, {
+        const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+        const retryHeaders = config.noAuth
+          ? { ...config.extraHeaders }
+          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+        const retryRes = await fetch(retryUrl, {
           method: config.method,
-          headers: { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders },
+          headers: retryHeaders,
         });
         if (retryRes.ok) return { valid: true, error: null, refreshed: true, newTokens: tokens };
       }

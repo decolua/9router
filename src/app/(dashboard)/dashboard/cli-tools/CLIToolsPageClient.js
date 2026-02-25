@@ -8,6 +8,14 @@ import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, Default
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
+const STATUS_ENDPOINTS = {
+  claude: "/api/cli-tools/claude-settings",
+  codex: "/api/cli-tools/codex-settings",
+  droid: "/api/cli-tools/droid-settings",
+  openclaw: "/api/cli-tools/openclaw-settings",
+  antigravity: "/api/cli-tools/antigravity-mitm",
+};
+
 export default function CLIToolsPageClient({ machineId }) {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,12 +25,33 @@ export default function CLIToolsPageClient({ machineId }) {
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
+  const [toolStatuses, setToolStatuses] = useState({});
 
   useEffect(() => {
     fetchConnections();
     loadCloudSettings();
     fetchApiKeys();
+    fetchAllStatuses();
   }, []);
+
+  const fetchAllStatuses = async () => {
+    try {
+      const entries = await Promise.all(
+        Object.entries(STATUS_ENDPOINTS).map(async ([toolId, url]) => {
+          try {
+            const res = await fetch(url);
+            const data = await res.json();
+            return [toolId, data];
+          } catch {
+            return [toolId, null];
+          }
+        })
+      );
+      setToolStatuses(Object.fromEntries(entries));
+    } catch (error) {
+      console.log("Error fetching tool statuses:", error);
+    }
+  };
 
   const loadCloudSettings = async () => {
     try {
@@ -165,16 +194,17 @@ export default function CLIToolsPageClient({ machineId }) {
             onModelMappingChange={(alias, target) => handleModelMappingChange(toolId, alias, target)}
             hasActiveProviders={hasActiveProviders}
             cloudEnabled={cloudEnabled}
+            initialStatus={toolStatuses.claude}
           />
         );
       case "codex":
-        return <CodexToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
+        return <CodexToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.codex} />;
       case "droid":
-        return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
+        return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.droid} />;
       case "openclaw":
-        return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
+        return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
       case "antigravity":
-        return <AntigravityToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
+        return <AntigravityToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.antigravity} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
     }

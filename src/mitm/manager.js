@@ -1,5 +1,4 @@
-const cp = require("child_process");
-const { exec } = cp;
+const { exec, spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -41,6 +40,43 @@ const SERVER_PATH = resolveServerPath();
 
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
+
+/**
+ * Get process name using port 443
+ * @returns {string|null} Process name or null if not found
+ */
+function getProcessUsingPort443() {
+  try {
+    if (IS_WIN) {
+      // Windows: use netstat to find PID, then tasklist to get process name
+      const netstatResult = execSync("netstat -ano | findstr :443", { encoding: "utf8" });
+      const lines = netstatResult.trim().split("\n");
+      if (lines.length > 0) {
+        // Extract PID from last column (format: TCP 0.0.0.0:443 0.0.0.0:0 LISTENING 1234)
+        const pidMatch = lines[0].match(/\s+(\d+)\s*$/);
+        if (pidMatch) {
+          const pid = pidMatch[1];
+          const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8" });
+          const processMatch = tasklistResult.match(/"([^"]+)"/);
+          if (processMatch) {
+            return processMatch[1].replace(".exe", "");
+          }
+        }
+      }
+    } else {
+      // macOS/Linux: use lsof
+      const result = execSync("lsof -i :443", { encoding: "utf8" });
+      const lines = result.trim().split("\n");
+      if (lines.length > 1) {
+        const processName = lines[1].split(/\s+/)[0];
+        return processName;
+      }
+    }
+  } catch (error) {
+    return null;
+  }
+  return null;
+}
 
 // Store server process in-memory
 let serverProcess = null;
@@ -441,7 +477,9 @@ async function startMitm(apiKey, sudoPassword) {
   if (!health) {
     if (IS_WIN) serverProcess = null;
     try { await removeDNSEntry(sudoPassword); } catch { /* best effort */ }
-    const reason = startError || "Check sudo password or port 443 access.";
+    const processUsing443 = getProcessUsingPort443();
+    const portInfo = processUsing443 ? ` Port 443 already in use by ${processUsing443}.` : "";
+    const reason = startError || `Check sudo password or port 443 access.${portInfo}`;
     throw new Error(`MITM server failed to start. ${reason}`);
   }
 

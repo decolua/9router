@@ -7,7 +7,10 @@ const os = require("os");
 
 // Configuration
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
-const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
+const TARGET_HOSTS = [
+  "daily-cloudcode-pa.googleapis.com",
+  "cloudcode-pa.googleapis.com"
+];
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
 const API_KEY = process.env.ROUTER_API_KEY;
@@ -69,15 +72,15 @@ function saveResponseLog(url, data) {
 }
 
 // Resolve real IP of target host (bypass /etc/hosts)
-let cachedTargetIP = null;
-async function resolveTargetIP() {
-  if (cachedTargetIP) return cachedTargetIP;
+const cachedTargetIPs = {};
+async function resolveTargetIP(hostname) {
+  if (cachedTargetIPs[hostname]) return cachedTargetIPs[hostname];
   const resolver = new dns.Resolver();
   resolver.setServers(["8.8.8.8"]);
   const resolve4 = promisify(resolver.resolve4.bind(resolver));
-  const addresses = await resolve4(TARGET_HOST);
-  cachedTargetIP = addresses[0];
-  return cachedTargetIP;
+  const addresses = await resolve4(hostname);
+  cachedTargetIPs[hostname] = addresses[0];
+  return cachedTargetIPs[hostname];
 }
 
 function collectBodyRaw(req) {
@@ -108,15 +111,16 @@ function getMappedModel(model) {
 }
 
 async function passthrough(req, res, bodyBuffer) {
-  const targetIP = await resolveTargetIP();
+  const targetHost = req.headers.host || TARGET_HOSTS[0];
+  const targetIP = await resolveTargetIP(targetHost);
 
   const forwardReq = https.request({
     hostname: targetIP,
     port: 443,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: TARGET_HOST },
-    servername: TARGET_HOST,
+    headers: { ...req.headers, host: targetHost },
+    servername: targetHost,
     rejectUnauthorized: false
   }, (forwardRes) => {
     res.writeHead(forwardRes.statusCode, forwardRes.headers);
@@ -210,6 +214,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
 
 server.listen(LOCAL_PORT, () => {
   console.log(`🚀 MITM ready on :${LOCAL_PORT} → ${ROUTER_URL}`);
+  console.log(`📡 Intercepting: ${TARGET_HOSTS.join(", ")}`);
 });
 
 server.on("error", (error) => {

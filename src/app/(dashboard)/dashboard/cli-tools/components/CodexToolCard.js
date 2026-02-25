@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 
-export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled }) {
-  const [codexStatus, setCodexStatus] = useState(null);
+export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus }) {
+  const [codexStatus, setCodexStatus] = useState(initialStatus || null);
   const [checkingCodex, setCheckingCodex] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -25,11 +25,16 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setCodexStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !codexStatus) {
       checkCodexStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, codexStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {

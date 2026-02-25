@@ -15,8 +15,9 @@ export default function DroidToolCard({
   apiKeys,
   activeProviders,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [droidStatus, setDroidStatus] = useState(null);
+  const [droidStatus, setDroidStatus] = useState(initialStatus || null);
   const [checkingDroid, setCheckingDroid] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -49,11 +50,16 @@ export default function DroidToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setDroidStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !droidStatus) {
       checkDroidStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, droidStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {

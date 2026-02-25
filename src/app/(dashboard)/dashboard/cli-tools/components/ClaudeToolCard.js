@@ -17,8 +17,9 @@ export default function ClaudeToolCard({
   hasActiveProviders,
   apiKeys,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [claudeStatus, setClaudeStatus] = useState(null);
+  const [claudeStatus, setClaudeStatus] = useState(initialStatus || null);
   const [checkingClaude, setCheckingClaude] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -52,11 +53,16 @@ export default function ClaudeToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setClaudeStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !claudeStatus) {
       checkClaudeStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, claudeStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {

@@ -13,8 +13,9 @@ export default function AntigravityToolCard({
   activeProviders,
   hasActiveProviders,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState(initialStatus || null);
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
@@ -31,11 +32,16 @@ export default function AntigravityToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !status) {
       fetchStatus();
       loadSavedMappings();
     }
-  }, [isExpanded, status]);
+    if (isExpanded) loadSavedMappings();
+  }, [isExpanded]);
 
   const loadSavedMappings = async () => {
     try {

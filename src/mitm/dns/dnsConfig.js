@@ -3,7 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
+const TARGET_HOSTS = [
+  "daily-cloudcode-pa.googleapis.com",
+  "cloudcode-pa.googleapis.com"
+];
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 const HOSTS_FILE = IS_WIN
@@ -51,12 +54,16 @@ function execElevatedWindows(command) {
 }
 
 /**
- * Check if DNS entry already exists
+ * Check if DNS entry already exists for a specific host
  */
-function checkDNSEntry() {
+function checkDNSEntry(host = null) {
   try {
     const hostsContent = fs.readFileSync(HOSTS_FILE, "utf8");
-    return hostsContent.includes(TARGET_HOST);
+    if (host) {
+      return hostsContent.includes(host);
+    }
+    // Check if all target hosts exist
+    return TARGET_HOSTS.every(h => hostsContent.includes(h));
   } catch {
     return false;
   }
@@ -66,19 +73,24 @@ function checkDNSEntry() {
  * Add DNS entry to hosts file
  */
 async function addDNSEntry(sudoPassword) {
-  if (checkDNSEntry()) {
-    console.log(`DNS entry for ${TARGET_HOST} already exists`);
+  const entriesToAdd = TARGET_HOSTS.filter(host => !checkDNSEntry(host));
+  
+  if (entriesToAdd.length === 0) {
+    console.log(`DNS entries for all target hosts already exist`);
     return;
   }
 
-  const entry = `127.0.0.1 ${TARGET_HOST}`;
+  const entries = entriesToAdd.map(host => `127.0.0.1 ${host}`).join("\n");
 
   try {
     if (IS_WIN) {
-      // Windows: use elevated echo >> hosts
-      await execElevatedWindows(`echo ${entry} >> "${HOSTS_FILE}"`);
+      // Windows: add each entry separately
+      for (const host of entriesToAdd) {
+        const entry = `127.0.0.1 ${host}`;
+        await execElevatedWindows(`echo ${entry} >> "${HOSTS_FILE}"`);
+      }
     } else {
-      await execWithPassword(`echo "${entry}" >> ${HOSTS_FILE}`, sudoPassword);
+      await execWithPassword(`echo "${entries}" >> ${HOSTS_FILE}`, sudoPassword);
     }
     // Flush DNS cache
     if (IS_WIN) {
@@ -89,7 +101,7 @@ async function addDNSEntry(sudoPassword) {
       // Linux: try systemd-resolved, fall back silently
       await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
     }
-    console.log(`✅ Added DNS entry: ${entry}`);
+    console.log(`✅ Added DNS entries: ${entriesToAdd.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to add DNS entry";
     throw new Error(msg);
@@ -100,8 +112,10 @@ async function addDNSEntry(sudoPassword) {
  * Remove DNS entry from hosts file
  */
 async function removeDNSEntry(sudoPassword) {
-  if (!checkDNSEntry()) {
-    console.log(`DNS entry for ${TARGET_HOST} does not exist`);
+  const entriesToRemove = TARGET_HOSTS.filter(host => checkDNSEntry(host));
+  
+  if (entriesToRemove.length === 0) {
+    console.log(`DNS entries for target hosts do not exist`);
     return;
   }
 
@@ -109,7 +123,7 @@ async function removeDNSEntry(sudoPassword) {
     if (IS_WIN) {
       // Read in Node, filter, write to temp file, then elevated-copy over hosts
       const content = fs.readFileSync(HOSTS_FILE, "utf8");
-      const filtered = content.split(/\r?\n/).filter(l => !l.includes(TARGET_HOST)).join("\r\n");
+      const filtered = content.split(/\r?\n/).filter(l => !TARGET_HOSTS.some(host => l.includes(host))).join("\r\n");
       if (!filtered.trim() && content.trim()) {
         throw new Error("Filtered hosts content is empty, aborting to prevent data loss");
       }
@@ -125,11 +139,13 @@ async function removeDNSEntry(sudoPassword) {
         });
       });
     } else {
-      // sed -i '' is macOS syntax; Linux uses sed -i without the empty string arg
-      const sedCmd = IS_MAC
-        ? `sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`
-        : `sed -i '/${TARGET_HOST}/d' ${HOSTS_FILE}`;
-      await execWithPassword(sedCmd, sudoPassword);
+      // Remove all target hosts using sed
+      for (const host of entriesToRemove) {
+        const sedCmd = IS_MAC
+          ? `sed -i '' '/${host}/d' ${HOSTS_FILE}`
+          : `sed -i '/${host}/d' ${HOSTS_FILE}`;
+        await execWithPassword(sedCmd, sudoPassword);
+      }
     }
     // Flush DNS cache
     if (IS_WIN) {
@@ -139,7 +155,7 @@ async function removeDNSEntry(sudoPassword) {
     } else {
       await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
     }
-    console.log(`✅ Removed DNS entry for ${TARGET_HOST}`);
+    console.log(`✅ Removed DNS entries for ${entriesToRemove.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to remove DNS entry";
     throw new Error(msg);
