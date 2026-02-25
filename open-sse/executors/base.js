@@ -1,12 +1,35 @@
 import { HTTP_STATUS } from "../config/constants.js";
+import { shouldUseProxy } from "../utils/proxy-agent-factory.js";
 
 /**
  * BaseExecutor - Base class for provider executors
+ *
+ * Supports per-provider proxy configuration via credentials.proxy:
+ * {
+ *   url: "http://user:pass@proxy.com:8080" | "socks5://proxy.com:1080",
+ *   bypass: ["*.local", "localhost"]
+ * }
  */
 export class BaseExecutor {
   constructor(provider, config) {
     this.provider = provider;
     this.config = config;
+  }
+
+  /**
+   * Get proxy agent for request
+   *
+   * Checks provider-specific proxy config first, falls back to global env vars.
+   * Respects bypass patterns from both provider config and NO_PROXY env var.
+   *
+   * @param {string} targetUrl - Target URL
+   * @param {object} credentials - Provider credentials (may include proxy config)
+   * @returns {Promise<Agent|null>} Proxy agent or null (for direct connection)
+   */
+  async getProxyAgent(targetUrl, credentials = {}) {
+    const proxyConfig = credentials.proxy || null;
+    const globalNoProxy = process.env.NO_PROXY || process.env.no_proxy || '';
+    return shouldUseProxy(targetUrl, proxyConfig, globalNoProxy);
   }
 
   getProvider() {
@@ -85,13 +108,24 @@ export class BaseExecutor {
       const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
 
+      // Get proxy agent
+      const proxyAgent = await this.getProxyAgent(url, credentials);
+
       try {
-        const response = await fetch(url, {
+        const fetchOptions = {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
           signal
-        });
+        };
+
+        // Add dispatcher for proxy agent if available
+        if (proxyAgent) {
+          fetchOptions.dispatcher = proxyAgent;
+          log?.debug?.("PROXY", `Using proxy for ${url}`);
+        }
+
+        const response = await fetch(url, fetchOptions);
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
