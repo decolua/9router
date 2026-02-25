@@ -71,6 +71,14 @@ const PROVIDER_MODELS_CONFIG = {
     },
     authHeader: "x-api-key",
     parseResponse: (data) => data.data || []
+  },
+  alicloud: {
+    url: "https://coding.dashscope.aliyuncs.com/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || []
   }
 };
 

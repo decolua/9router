@@ -174,6 +174,11 @@ export const PROVIDERS = {
       "User-Agent": "connect-es/1.6.1"
     },
     clientVersion: "1.1.3"
+  },
+  alicloud: {
+    baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
   }
 };
 

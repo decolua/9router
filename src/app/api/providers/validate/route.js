@@ -102,17 +102,20 @@ export async function POST(request) {
         case "glm-cn":
         case "kimi":
         case "minimax":
-        case "minimax-cn": {
+        case "minimax-cn":
+        case "alicloud": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
             "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
             kimi: "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
             "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
+            alicloud: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
           };
 
-          // glm-cn uses OpenAI format
-          if (provider === "glm-cn") {
+          // glm-cn and alicloud use OpenAI format
+          if (provider === "glm-cn" || provider === "alicloud") {
+            const testModel = provider === "alicloud" ? "qwen3.5-plus" : "glm-4.7";
             const glmCnRes = await fetch(claudeBaseUrls[provider], {
               method: "POST",
               headers: {
@@ -120,7 +123,7 @@ export async function POST(request) {
                 "content-type": "application/json",
               },
               body: JSON.stringify({
-                model: "glm-4.7",
+                model: testModel,
                 max_tokens: 1,
                 messages: [{ role: "user", content: "test" }],
               }),
@@ -145,7 +148,7 @@ export async function POST(request) {
           break;
         }
 
-          default:
+        default:
             return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }
     } catch (err) {
