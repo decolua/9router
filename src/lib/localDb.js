@@ -780,6 +780,41 @@ export async function updateSettings(updates) {
 }
 
 /**
+ * Export full database payload
+ */
+export async function exportDb() {
+  const db = await getDb();
+  return db.data || cloneDefaultData();
+}
+
+/**
+ * Import full database payload
+ */
+export async function importDb(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Invalid database payload");
+  }
+
+  const nextData = {
+    ...cloneDefaultData(),
+    ...payload,
+    settings: {
+      ...cloneDefaultData().settings,
+      ...(payload.settings && typeof payload.settings === "object" && !Array.isArray(payload.settings)
+        ? payload.settings
+        : {}),
+    },
+  };
+
+  const { data: normalized } = ensureDbShape(nextData);
+  const db = await getDb();
+  db.data = normalized;
+  await db.write();
+
+  return db.data;
+}
+
+/**
  * Check if cloud is enabled
  */
 export async function isCloudEnabled() {

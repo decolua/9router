@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, Button, Badge, Toggle, Input } from "@/shared/components";
+import { useState, useEffect, useRef } from "react";
+import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -13,6 +13,9 @@ export default function ProfilePage() {
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const importFileRef = useRef(null);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -140,6 +143,82 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update observabilityEnabled:", err);
+    }
+  };
+
+  const reloadSettings = async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (!res.ok) return;
+      const data = await res.json();
+      setSettings(data);
+    } catch (err) {
+      console.error("Failed to reload settings:", err);
+    }
+  };
+
+  const handleExportDatabase = async () => {
+    setDbLoading(true);
+    setDbStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/database");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to export database");
+      }
+
+      const payload = await res.json();
+      const content = JSON.stringify(payload, null, 2);
+      const blob = new Blob([content], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+      anchor.href = url;
+      anchor.download = `9router-backup-${stamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      setDbStatus({ type: "success", message: "Database backup downloaded" });
+    } catch (err) {
+      setDbStatus({ type: "error", message: err.message || "Failed to export database" });
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleImportDatabase = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setDbLoading(true);
+    setDbStatus({ type: "", message: "" });
+
+    try {
+      const raw = await file.text();
+      const payload = JSON.parse(raw);
+
+      const res = await fetch("/api/settings/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to import database");
+      }
+
+      await reloadSettings();
+      setDbStatus({ type: "success", message: "Database imported successfully" });
+    } catch (err) {
+      setDbStatus({ type: "error", message: err.message || "Invalid backup file" });
+    } finally {
+      if (importFileRef.current) {
+        importFileRef.current.value = "";
+      }
+      setDbLoading(false);
     }
   };
 
@@ -363,6 +442,36 @@ export default function ProfilePage() {
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                icon="download"
+                onClick={handleExportDatabase}
+                loading={dbLoading}
+              >
+                Download Backup
+              </Button>
+              <Button
+                variant="outline"
+                icon="upload"
+                onClick={() => importFileRef.current?.click()}
+                disabled={dbLoading}
+              >
+                Import Backup
+              </Button>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportDatabase}
+              />
+            </div>
+            {dbStatus.message && (
+              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {dbStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 
