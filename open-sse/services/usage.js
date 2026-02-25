@@ -221,16 +221,26 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "X-Client-Name": "antigravity",
+        "X-Client-Version": "1.107.0",
       },
       body: JSON.stringify({
-        ...(projectId ? { project: projectId } : {}),
-        metadata: CLIENT_METADATA,
-        mode: 1
+        ...(projectId ? { project: projectId } : {})
       }),
     });
 
     if (response.status === 403) {
-      return { message: "Antigravity access forbidden. Check subscription." };
+      return {
+        message: "Antigravity quota API access forbidden. Chat may still work.",
+        quotas: {}
+      };
+    }
+
+    if (response.status === 401) {
+      return {
+        message: "Antigravity quota API authentication expired. Chat may still work.",
+        quotas: {}
+      };
     }
 
     if (!response.ok) {
@@ -470,6 +480,15 @@ async function getKiroUsage(accessToken, providerSpecificData) {
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle authentication errors gracefully
+      if (response.status === 403 || response.status === 401) {
+        return {
+          message: "Kiro quota API authentication expired. Chat may still work.",
+          quotas: {}
+        };
+      }
+
       throw new Error(`Kiro API error (${response.status}): ${errorText}`);
     }
 

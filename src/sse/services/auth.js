@@ -268,11 +268,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 export async function clearAccountError(connectionId, currentConnection) {
   // Only update if currently has error status
   const hasError = currentConnection.testStatus === "unavailable" ||
-                   currentConnection.lastError ||
-                   currentConnection.rateLimitedUntil;
-  
+    currentConnection.lastError ||
+    currentConnection.rateLimitedUntil;
+
   if (!hasError) return; // Skip if already clean
-  
+
   await updateProviderConnection(connectionId, {
     testStatus: "active",
     lastError: null,
@@ -280,17 +280,25 @@ export async function clearAccountError(connectionId, currentConnection) {
     rateLimitedUntil: null,
     backoffLevel: 0
   });
-  log.info("AUTH", `Account ${connectionId.slice(0,8)} error cleared`);
+  log.info("AUTH", `Account ${connectionId.slice(0, 8)} error cleared`);
 }
 
 /**
  * Extract API key from request headers
  */
 export function extractApiKey(request) {
+  // Check Authorization header first
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
     return authHeader.slice(7);
   }
+
+  // Check Anthropic x-api-key header
+  const xApiKey = request.headers.get("x-api-key");
+  if (xApiKey) {
+    return xApiKey;
+  }
+
   return null;
 }
 

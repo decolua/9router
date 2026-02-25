@@ -1,5 +1,13 @@
 import { platform, arch } from "os";
 
+// === GitHub Copilot Version Constants ===
+export const GITHUB_COPILOT = {
+  VSCODE_VERSION: "1.110.0",
+  COPILOT_CHAT_VERSION: "0.38.0",
+  USER_AGENT: "GitHubCopilotChat/0.38.0",
+  API_VERSION: "2025-04-01",
+};
+
 // === Antigravity Binary Alignment: Numeric Enums ===
 // Reference: Antigravity binary analysis - google.internal.cloud.code.v1internal.ClientMetadata
 
@@ -53,7 +61,7 @@ export function getPlatformEnum() {
 export function getPlatformUserAgent() {
   const os = platform();
   const architecture = arch();
-  return `antigravity/1.16.5 ${os}/${architecture}`;
+  return `antigravity/1.104.0 ${os}/${architecture}`;
 }
 
 // Centralized client metadata (used in request bodies for loadCodeAssist, onboardUser, etc.)
@@ -71,7 +79,8 @@ export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local
 export const ANTIGRAVITY_HEADERS = {
   "X-Client-Name": "antigravity",
   "X-Client-Version": "1.107.0",
-  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x"
+  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x",
+  "User-Agent": "antigravity/1.107.0 darwin/arm64"
 };
 
 // Cloud Code Assist API endpoints (for Project ID discovery)
@@ -220,11 +229,11 @@ export const PROVIDERS = {
     format: "openai", // GitHub Copilot uses OpenAI-compatible format
     headers: {
       "copilot-integration-id": "vscode-chat",
-      "editor-version": "vscode/1.107.1",
-      "editor-plugin-version": "copilot-chat/0.26.7",
-      "user-agent": "GitHubCopilotChat/0.26.7",
+      "editor-version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+      "editor-plugin-version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+      "user-agent": GITHUB_COPILOT.USER_AGENT,
       "openai-intent": "conversation-panel",
-      "x-github-api-version": "2025-04-01",
+      "x-github-api-version": GITHUB_COPILOT.API_VERSION,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
       "Accept": "application/json",
@@ -283,6 +292,82 @@ export const PROVIDERS = {
     },
     tokenUrl: "https://api.cline.bot/api/v1/auth/token",
     refreshUrl: "https://api.cline.bot/api/v1/auth/refresh"
+  },
+  nvidia: {
+    baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
+    format: "openai"
+  },
+  anthropic: {
+    baseUrl: "https://api.anthropic.com/v1/messages",
+    format: "claude",
+    headers: {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    }
+  },
+  deepseek: {
+    baseUrl: "https://api.deepseek.com/chat/completions",
+    format: "openai"
+  },
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1/chat/completions",
+    format: "openai"
+  },
+  xai: {
+    baseUrl: "https://api.x.ai/v1/chat/completions",
+    format: "openai"
+  },
+  mistral: {
+    baseUrl: "https://api.mistral.ai/v1/chat/completions",
+    format: "openai"
+  },
+  perplexity: {
+    baseUrl: "https://api.perplexity.ai/chat/completions",
+    format: "openai"
+  },
+  together: {
+    baseUrl: "https://api.together.xyz/v1/chat/completions",
+    format: "openai"
+  },
+  fireworks: {
+    baseUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
+    format: "openai"
+  },
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai/v1/chat/completions",
+    format: "openai"
+  },
+  cohere: {
+    baseUrl: "https://api.cohere.ai/v1/chat/completions",
+    format: "openai"
+  },
+  nebius: {
+    baseUrl: "https://api.studio.nebius.ai/v1/chat/completions",
+    format: "openai"
+  },
+  siliconflow: {
+    baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
+    format: "openai"
+  },
+  hyperbolic: {
+    baseUrl: "https://api.hyperbolic.xyz/v1/chat/completions",
+    format: "openai"
+  },
+  deepgram: {
+    baseUrl: "https://api.deepgram.com/v1/listen",
+    format: "openai"
+  },
+  assemblyai: {
+    baseUrl: "https://api.assemblyai.com/v1/audio/transcriptions",
+    format: "openai"
+  },
+  nanobanana: {
+    baseUrl: "https://api.nanobananaapi.ai/v1/chat/completions",
+    format: "openai"
+  },
+  chutes: {
+    baseUrl: "https://llm.chutes.ai/v1/chat/completions",
+    format: "openai"
   }
 };
 

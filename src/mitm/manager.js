@@ -1,4 +1,5 @@
-const { spawn, exec } = require("child_process");
+const cp = require("child_process");
+const { exec } = cp;
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -65,11 +66,11 @@ function isProcessAlive(pid) {
 function killProcess(pid, force = false) {
   if (IS_WIN) {
     const flag = force ? "/F " : "";
-    exec(`taskkill ${flag}/PID ${pid}`, () => {});
+    exec(`taskkill ${flag}/PID ${pid}`, () => { });
   } else {
     // Use pkill to kill entire process group (catches sudo + child node process)
     const sig = force ? "SIGKILL" : "SIGTERM";
-    exec(`pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`, () => {});
+    exec(`pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`, () => { });
   }
 }
 
@@ -231,9 +232,9 @@ async function killLeftoverMitm(sudoPassword) {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
       if (sudoPassword) {
         const { execWithPassword } = require("./dns/dnsConfig");
-        await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => {});
+        await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
       } else {
-        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, () => {});
+        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, () => { });
       }
       await new Promise(r => setTimeout(r, 500));
     } catch { /* ignore */ }
@@ -378,7 +379,7 @@ async function startMitm(apiKey, sudoPassword) {
   const certAlreadyInstalled = settings.mitmCertInstalled && fs.existsSync(certPath);
   if (!certAlreadyInstalled) {
     await installCert(sudoPassword, certPath);
-    if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => {});
+    if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   }
 
   // 3. Add DNS entry

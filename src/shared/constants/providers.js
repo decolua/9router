@@ -46,6 +46,7 @@ export const APIKEY_PROVIDERS = {
   deepgram: { id: "deepgram", alias: "dg", name: "Deepgram", icon: "mic", color: "#13EF93", textIcon: "DG", website: "https://deepgram.com" },
   assemblyai: { id: "assemblyai", alias: "aai", name: "AssemblyAI", icon: "record_voice_over", color: "#0062FF", textIcon: "AA", website: "https://assemblyai.com" },
   nanobanana: { id: "nanobanana", alias: "nb", name: "NanoBanana", icon: "image", color: "#FFD700", textIcon: "NB", website: "https://nanobananaapi.ai" },
+  chutes: { id: "chutes", alias: "ch", name: "Chutes AI", icon: "water_drop", color: "#5B6EF5", textIcon: "CH", website: "https://chutes.ai" },
 };
 
 export const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";

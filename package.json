@@ -5,8 +5,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",
-    "build": "next build --webpack",
-    "start": "next start"
+    "build": "NODE_ENV=production next build --webpack",
+    "start": "NODE_ENV=production next start",
+    "dev:bun": "bun --bun next dev --webpack --port 20128",
+    "build:bun": "NODE_ENV=production bun --bun next build --webpack",
+    "start:bun": "NODE_ENV=production bun ./.next/standalone/server.js"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -37,6 +40,7 @@
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "postcss": "^8.5.6",
     "tailwindcss": "^4"
   }
 }

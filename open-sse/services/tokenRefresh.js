@@ -1,4 +1,4 @@
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/constants.js";
 
 // Token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -301,6 +301,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "User-Agent": "kiro-cli/1.0.0",
     },
     body: JSON.stringify({
       refreshToken: refreshToken,
@@ -425,10 +426,11 @@ export async function refreshCopilotToken(githubAccessToken, log) {
     const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
       headers: {
         "Authorization": `token ${githubAccessToken}`,
-        "User-Agent": "GithubCopilot/1.0",
-        "Editor-Version": "vscode/1.100.0",
-        "Editor-Plugin-Version": "copilot/1.300.0",
-        "Accept": "application/json"
+        "User-Agent": GITHUB_COPILOT.USER_AGENT,
+        "Editor-Version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+        "Editor-Plugin-Version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+        "Accept": "application/json",
+        "x-github-api-version": GITHUB_COPILOT.API_VERSION
       }
     });
 

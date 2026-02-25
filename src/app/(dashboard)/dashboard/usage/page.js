@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import ProviderLimits from "./components/ProviderLimits";
@@ -9,28 +9,25 @@ import RequestDetailsTab from "./components/RequestDetailsTab";
 export default function UsagePage() {
   return (
     <Suspense fallback={<CardSkeleton />}>
-      <UsagePageContent />
+      <UsageContent />
     </Suspense>
   );
 }
 
-function UsagePageContent() {
+function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "overview");
+
   const [tabLoading, setTabLoading] = useState(false);
 
-  useEffect(() => {
-    const tabFromUrl = searchParams.get("tab");
-    if (tabFromUrl && ["overview", "logs", "limits", "details"].includes(tabFromUrl)) {
-      setActiveTab(tabFromUrl);
-    }
-  }, [searchParams]);
+  const tabFromUrl = searchParams.get("tab");
+  const activeTab = tabFromUrl && ["overview", "logs", "limits", "details"].includes(tabFromUrl)
+    ? tabFromUrl
+    : "overview";
 
   const handleTabChange = (value) => {
     if (value === activeTab) return;
     setTabLoading(true);
-    setActiveTab(value);
     const params = new URLSearchParams(searchParams);
     params.set("tab", value);
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
@@ -71,3 +68,4 @@ function UsagePageContent() {
     </div>
   );
 }
+

@@ -18,7 +18,7 @@ export class KiroService {
    */
   async registerClient(region = "us-east-1") {
     const endpoint = `https://oidc.${region}.amazonaws.com/client/register`;
-    
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -51,7 +51,7 @@ export class KiroService {
    */
   async startDeviceAuthorization(clientId, clientSecret, startUrl, region = "us-east-1") {
     const endpoint = `https://oidc.${region}.amazonaws.com/device_authorization`;
-    
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -85,7 +85,7 @@ export class KiroService {
    */
   async pollDeviceToken(clientId, clientSecret, deviceCode, region = "us-east-1") {
     const endpoint = `https://oidc.${region}.amazonaws.com/token`;
-    
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -141,7 +141,7 @@ export class KiroService {
   async exchangeSocialCode(code, codeVerifier) {
     // Must match the redirect_uri used in buildSocialLoginUrl
     const redirectUri = "kiro://kiro.kiroAgent/authenticate-success";
-    
+
     const response = await fetch(`${KIRO_AUTH_SERVICE}/oauth/token`, {
       method: "POST",
       headers: {
@@ -177,7 +177,7 @@ export class KiroService {
     // AWS SSO OIDC refresh (Builder ID or IDC)
     if (clientId && clientSecret) {
       const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
-      
+
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -251,6 +251,43 @@ export class KiroService {
     } catch (error) {
       throw new Error(`Token validation failed: ${error.message}`);
     }
+  }
+
+  /**
+   * List available models from CodeWhisperer API
+   */
+  async listAvailableModels(accessToken, profileArn) {
+    const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
+    const target = "AmazonCodeWhispererService.ListAvailableModels";
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-amz-json-1.0",
+        "x-amz-target": target,
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({
+        origin: "AI_EDITOR",
+        profileArn,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to list models: ${error}`);
+    }
+
+    const data = await response.json();
+    return (data.models || []).map(m => ({
+      id: m.modelId,
+      name: m.modelName || m.modelId,
+      description: m.description,
+      rateMultiplier: m.rateMultiplier,
+      rateUnit: m.rateUnit,
+      maxInputTokens: m.tokenLimits?.maxInputTokens || 0,
+    }));
   }
 
   /**

@@ -38,22 +38,22 @@ export async function POST(request) {
         if (!node) {
           return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
         }
-        
+
         let normalizedBase = node.baseUrl?.trim().replace(/\/$/, "") || "";
         if (normalizedBase.endsWith("/messages")) {
           normalizedBase = normalizedBase.slice(0, -9); // remove /messages
         }
-        
+
         const modelsUrl = `${normalizedBase}/models`;
-        
+
         const res = await fetch(modelsUrl, {
-          headers: { 
+          headers: {
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${apiKey}` 
+            "Authorization": `Bearer ${apiKey}`
           },
         });
-        
+
         isValid = res.ok;
         return NextResponse.json({
           valid: isValid,
@@ -145,8 +145,57 @@ export async function POST(request) {
           break;
         }
 
-          default:
-            return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
+        case "deepseek":
+        case "groq":
+        case "xai":
+        case "mistral":
+        case "perplexity":
+        case "together":
+        case "fireworks":
+        case "cerebras":
+        case "cohere":
+        case "nebius":
+        case "siliconflow":
+        case "hyperbolic":
+        case "assemblyai":
+        case "nanobanana":
+        case "chutes":
+        case "nvidia": {
+          const endpoints = {
+            deepseek: "https://api.deepseek.com/models",
+            groq: "https://api.groq.com/openai/v1/models",
+            xai: "https://api.x.ai/v1/models",
+            mistral: "https://api.mistral.ai/v1/models",
+            perplexity: "https://api.perplexity.ai/models",
+            together: "https://api.together.xyz/v1/models",
+            fireworks: "https://api.fireworks.ai/inference/v1/models",
+            cerebras: "https://api.cerebras.ai/v1/models",
+            cohere: "https://api.cohere.ai/v1/models",
+            nebius: "https://api.studio.nebius.ai/v1/models",
+            siliconflow: "https://api.siliconflow.cn/v1/models",
+            hyperbolic: "https://api.hyperbolic.xyz/v1/models",
+            assemblyai: "https://api.assemblyai.com/v1/account",
+            nanobanana: "https://api.nanobananaapi.ai/v1/models",
+            chutes: "https://llm.chutes.ai/v1/models",
+            nvidia: "https://integrate.api.nvidia.com/v1/models"
+          };
+          const res = await fetch(endpoints[provider], {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          });
+          isValid = res.ok;
+          break;
+        }
+
+        case "deepgram": {
+          const res = await fetch("https://api.deepgram.com/v1/projects", {
+            headers: { "Authorization": `Token ${apiKey}` },
+          });
+          isValid = res.ok;
+          break;
+        }
+
+        default:
+          return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }
     } catch (err) {
       error = err.message;

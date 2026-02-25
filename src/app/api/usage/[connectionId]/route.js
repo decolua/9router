@@ -7,12 +7,12 @@ import { getExecutor } from "open-sse/executors/index.js";
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
-  
+
   // Build credentials object from connection
   const credentials = {
     accessToken: connection.accessToken,
     refreshToken: connection.refreshToken,
-    expiresAt: connection.tokenExpiresAt,
+    expiresAt: connection.expiresAt || connection.tokenExpiresAt,
     providerSpecificData: connection.providerSpecificData,
     // For GitHub
     copilotToken: connection.providerSpecificData?.copilotToken,
@@ -21,7 +21,7 @@ async function refreshAndUpdateCredentials(connection) {
 
   // Check if refresh is needed
   const needsRefresh = executor.needsRefresh(credentials);
-  
+
   if (!needsRefresh) {
     return { connection, refreshed: false };
   }
@@ -55,9 +55,9 @@ async function refreshAndUpdateCredentials(connection) {
 
   // Update token expiry
   if (refreshResult.expiresIn) {
-    updateData.tokenExpiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
+    updateData.expiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
   } else if (refreshResult.expiresAt) {
-    updateData.tokenExpiresAt = refreshResult.expiresAt;
+    updateData.expiresAt = refreshResult.expiresAt;
   }
 
   // Handle provider-specific data (copilotToken for GitHub, etc.)
@@ -77,7 +77,7 @@ async function refreshAndUpdateCredentials(connection) {
     ...connection,
     ...updateData,
   };
-  
+
   return {
     connection: updatedConnection,
     refreshed: true,
@@ -90,7 +90,7 @@ async function refreshAndUpdateCredentials(connection) {
 export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
-    
+
     // Get connection from database
     let connection = await getProviderConnectionById(connectionId);
     if (!connection) {
@@ -108,8 +108,8 @@ export async function GET(request, { params }) {
       connection = result.connection;
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
-      return Response.json({ 
-        error: `Credential refresh failed: ${refreshError.message}` 
+      return Response.json({
+        error: `Credential refresh failed: ${refreshError.message}`
       }, { status: 401 });
     }
 

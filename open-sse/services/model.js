@@ -9,11 +9,39 @@ const ALIAS_TO_PROVIDER_ID = {
   gh: "github",
   kr: "kiro",
   cu: "cursor",
-  // API Key providers (alias = id)
+  // API Key providers
   openai: "openai",
   anthropic: "anthropic",
   gemini: "gemini",
   openrouter: "openrouter",
+  glm: "glm",
+  kimi: "kimi",
+  minimax: "minimax",
+  "minimax-cn": "minimax-cn",
+  ds: "deepseek",
+  deepseek: "deepseek",
+  groq: "groq",
+  xai: "xai",
+  mistral: "mistral",
+  pplx: "perplexity",
+  perplexity: "perplexity",
+  together: "together",
+  fireworks: "fireworks",
+  cerebras: "cerebras",
+  cohere: "cohere",
+  nvidia: "nvidia",
+  nebius: "nebius",
+  siliconflow: "siliconflow",
+  hyp: "hyperbolic",
+  hyperbolic: "hyperbolic",
+  dg: "deepgram",
+  deepgram: "deepgram",
+  aai: "assemblyai",
+  assemblyai: "assemblyai",
+  nb: "nanobanana",
+  nanobanana: "nanobanana",
+  ch: "chutes",
+  chutes: "chutes",
   cursor: "cursor",
 };
 
@@ -42,7 +70,12 @@ export function parseModel(modelStr) {
   }
 
   // Alias format (model alias, not provider alias)
-  return { provider: null, model: modelStr, isAlias: true, providerAlias: null };
+  return {
+    provider: null,
+    model: modelStr,
+    isAlias: true,
+    providerAlias: null,
+  };
 }
 
 /**
@@ -51,29 +84,29 @@ export function parseModel(modelStr) {
  */
 export function resolveModelAliasFromMap(alias, aliases) {
   if (!aliases) return null;
-  
+
   // Check if alias exists
   const resolved = aliases[alias];
   if (!resolved) return null;
-  
+
   // Resolved value is "provider/model" format
   if (typeof resolved === "string" && resolved.includes("/")) {
     const firstSlash = resolved.indexOf("/");
     const providerOrAlias = resolved.slice(0, firstSlash);
     return {
       provider: resolveProviderAlias(providerOrAlias),
-      model: resolved.slice(firstSlash + 1)
+      model: resolved.slice(firstSlash + 1),
     };
   }
-  
+
   // Or object { provider, model }
   if (typeof resolved === "object" && resolved.provider && resolved.model) {
     return {
       provider: resolveProviderAlias(resolved.provider),
-      model: resolved.model
+      model: resolved.model,
     };
   }
-  
+
   return null;
 }
 
@@ -93,9 +126,10 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   }
 
   // Get aliases (from object or function)
-  const aliases = typeof aliasesOrGetter === "function" 
-    ? await aliasesOrGetter() 
-    : aliasesOrGetter;
+  const aliases =
+    typeof aliasesOrGetter === "function"
+      ? await aliasesOrGetter()
+      : aliasesOrGetter;
 
   // Resolve alias
   const resolved = resolveModelAliasFromMap(parsed.model, aliases);
@@ -103,10 +137,26 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
     return resolved;
   }
 
-  // Fallback: treat as openai model
+  // Fallback: infer provider from model name prefix
   return {
-    provider: "openai",
-    model: parsed.model
+    provider: inferProviderFromModelName(parsed.model),
+    model: parsed.model,
   };
 }
 
+/**
+ * Infer provider from model name prefix
+ * Used as fallback when no provider prefix or alias is given
+ */
+function inferProviderFromModelName(modelName) {
+  if (!modelName) return "openai";
+  const m = modelName.toLowerCase();
+  if (m.startsWith("claude-")) return "anthropic";
+  if (m.startsWith("gemini-")) return "gemini";
+  if (m.startsWith("gpt-")) return "openai";
+  if (m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4"))
+    return "openai";
+  if (m.startsWith("deepseek-")) return "openrouter";
+  // Default fallback
+  return "openai";
+}

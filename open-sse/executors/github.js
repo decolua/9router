@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, GITHUB_COPILOT } from "../config/constants.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState } from "../translator/index.js";
@@ -22,11 +22,11 @@ export class GithubExecutor extends BaseExecutor {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "copilot-integration-id": "vscode-chat",
-      "editor-version": "vscode/1.107.1",
-      "editor-plugin-version": "copilot-chat/0.26.7",
-      "user-agent": "GitHubCopilotChat/0.26.7",
+      "editor-version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+      "editor-plugin-version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+      "user-agent": GITHUB_COPILOT.USER_AGENT,
       "openai-intent": "conversation-panel",
-      "x-github-api-version": "2025-04-01",
+      "x-github-api-version": GITHUB_COPILOT.API_VERSION,
       "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
@@ -46,7 +46,7 @@ export class GithubExecutor extends BaseExecutor {
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
-      
+
       if (errorBody.includes("not accessible via the /chat/completions endpoint")) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
@@ -60,7 +60,7 @@ export class GithubExecutor extends BaseExecutor {
   async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
-    
+
     const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
 
     log?.debug("GITHUB", "Sending translated request to /responses");
@@ -86,7 +86,7 @@ export class GithubExecutor extends BaseExecutor {
       async transform(chunk, controller) {
         buffer += decoder.decode(chunk, { stream: true });
         const lines = buffer.split("\n");
-        
+
         buffer = lines.pop() || "";
 
         for (const line of lines) {
@@ -110,13 +110,13 @@ export class GithubExecutor extends BaseExecutor {
       },
       flush(controller) {
         if (buffer.trim()) {
-           const parsed = parseSSELine(buffer.trim());
-           if (parsed && !parsed.done) {
-             const converted = openaiResponsesToOpenAIResponse(parsed, state);
-             if (converted) {
-               controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
-             }
-           }
+          const parsed = parseSSELine(buffer.trim());
+          if (parsed && !parsed.done) {
+            const converted = openaiResponsesToOpenAIResponse(parsed, state);
+            if (converted) {
+              controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
+            }
+          }
         }
       }
     });
@@ -140,13 +140,18 @@ export class GithubExecutor extends BaseExecutor {
       const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
         headers: {
           "Authorization": `token ${githubAccessToken}`,
-          "User-Agent": "GithubCopilot/1.0",
-          "Editor-Version": "vscode/1.100.0",
-          "Editor-Plugin-Version": "copilot/1.300.0",
-          "Accept": "application/json"
+          "User-Agent": GITHUB_COPILOT.USER_AGENT,
+          "Editor-Version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+          "Editor-Plugin-Version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+          "Accept": "application/json",
+          "x-github-api-version": GITHUB_COPILOT.API_VERSION
         }
       });
-      if (!response.ok) return null;
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN", `Copilot token refresh failed: ${response.status} ${errorText}`);
+        return null;
+      }
       const data = await response.json();
       log?.info?.("TOKEN", "Copilot token refreshed");
       return { token: data.token, expiresAt: data.expires_at };
@@ -180,7 +185,7 @@ export class GithubExecutor extends BaseExecutor {
 
   async refreshCredentials(credentials, log) {
     let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log);
-    
+
     if (!copilotResult && credentials.refreshToken) {
       const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log);
       if (githubTokens?.accessToken) {
@@ -191,18 +196,18 @@ export class GithubExecutor extends BaseExecutor {
         return githubTokens;
       }
     }
-    
+
     if (copilotResult) {
       return { accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
     }
-    
+
     return null;
   }
 
   needsRefresh(credentials) {
     // Always refresh if no copilotToken
     if (!credentials.copilotToken) return true;
-    
+
     if (credentials.copilotTokenExpiresAt) {
       // Handle both Unix timestamp (seconds) and ISO string
       let expiresAtMs = credentials.copilotTokenExpiresAt;

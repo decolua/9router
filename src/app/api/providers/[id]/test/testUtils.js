@@ -281,6 +281,58 @@ async function testApiKeyConnection(connection) {
         const res = await fetch("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "nvidia": {
+        const res = await fetch("https://integrate.api.nvidia.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "perplexity": {
+        const res = await fetch("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "together": {
+        const res = await fetch("https://api.together.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "fireworks": {
+        const res = await fetch("https://api.fireworks.ai/inference/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "cerebras": {
+        const res = await fetch("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "cohere": {
+        const res = await fetch("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "nebius": {
+        const res = await fetch("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "siliconflow": {
+        const res = await fetch("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "hyperbolic": {
+        const res = await fetch("https://api.hyperbolic.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "deepgram": {
+        const res = await fetch("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "assemblyai": {
+        const res = await fetch("https://api.assemblyai.com/v1/account", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "nanobanana": {
+        const res = await fetch("https://api.nanobananaapi.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "chutes": {
+        const res = await fetch("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }
