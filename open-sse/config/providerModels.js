@@ -238,6 +238,8 @@ export const PROVIDER_MODELS = {
   nvidia: [
     { id: "moonshotai/kimi-k2.5", name: "Kimi K2.5" },
     { id: "z-ai/glm4.7", name: "GLM 4.7" },
+    { id: "z-ai/glm5", name: "GLM 5" },
+    { id: "stepfun-ai/step-3.5-flash", name: "Step 3.5 Flash" },
     { id: "deepseek-ai/deepseek-v3.2", name: "DeepSeek V3.2" },
     { id: "nvidia/llama-3.3-70b-instruct", name: "Llama 3.3 70B" },
     { id: "meta/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
