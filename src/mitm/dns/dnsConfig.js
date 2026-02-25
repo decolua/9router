@@ -1,9 +1,11 @@
 const { exec, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
 const HOSTS_FILE = IS_WIN
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts")
   : "/etc/hosts";
@@ -81,8 +83,11 @@ async function addDNSEntry(sudoPassword) {
     // Flush DNS cache
     if (IS_WIN) {
       await execElevatedWindows("ipconfig /flushdns");
-    } else {
+    } else if (IS_MAC) {
       await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
+    } else {
+      // Linux: try systemd-resolved, fall back silently
+      await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
     }
     console.log(`✅ Added DNS entry: ${entry}`);
   } catch (error) {
@@ -102,23 +107,37 @@ async function removeDNSEntry(sudoPassword) {
 
   try {
     if (IS_WIN) {
-      // Windows: read, filter, write back via elevated PowerShell
-      const psScript = `(Get-Content '${HOSTS_FILE}') | Where-Object { $_ -notmatch '${TARGET_HOST}' } | Set-Content '${HOSTS_FILE}'`;
-      const psCommand = `Start-Process powershell -ArgumentList '-Command','${psScript.replace(/'/g, "''")}' -Verb RunAs -Wait`;
+      // Read in Node, filter, write to temp file, then elevated-copy over hosts
+      const content = fs.readFileSync(HOSTS_FILE, "utf8");
+      const filtered = content.split(/\r?\n/).filter(l => !l.includes(TARGET_HOST)).join("\r\n");
+      if (!filtered.trim() && content.trim()) {
+        throw new Error("Filtered hosts content is empty, aborting to prevent data loss");
+      }
+      const tmpFile = path.join(os.tmpdir(), "hosts_filtered.tmp");
+      fs.writeFileSync(tmpFile, filtered, "utf8");
+      // Use elevated cmd to copy temp file over hosts (safe: original untouched until copy succeeds)
+      const psCommand = `Start-Process cmd -ArgumentList '/c','copy /Y "${tmpFile}" "${HOSTS_FILE}"' -Verb RunAs -Wait`;
       await new Promise((resolve, reject) => {
         exec(`powershell -Command "${psCommand}"`, (error) => {
+          try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
           if (error) reject(new Error(`Failed to remove DNS entry: ${error.message}`));
           else resolve();
         });
       });
     } else {
-      await execWithPassword(`sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`, sudoPassword);
+      // sed -i '' is macOS syntax; Linux uses sed -i without the empty string arg
+      const sedCmd = IS_MAC
+        ? `sed -i '' '/${TARGET_HOST}/d' ${HOSTS_FILE}`
+        : `sed -i '/${TARGET_HOST}/d' ${HOSTS_FILE}`;
+      await execWithPassword(sedCmd, sudoPassword);
     }
     // Flush DNS cache
     if (IS_WIN) {
       await execElevatedWindows("ipconfig /flushdns");
-    } else {
+    } else if (IS_MAC) {
       await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
+    } else {
+      await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
     }
     console.log(`✅ Removed DNS entry for ${TARGET_HOST}`);
   } catch (error) {

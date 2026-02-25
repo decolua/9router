@@ -389,13 +389,14 @@ async function startMitm(apiKey, sudoPassword) {
   console.log("Starting MITM server...");
 
   if (IS_WIN) {
-    // Launch elevated node via PowerShell RunAs (triggers UAC prompt)
-    const nodePath = process.execPath.replace(/'/g, "''");
-    const serverPath = SERVER_PATH.replace(/'/g, "''");
+    // Use cmd /c to set env vars inline before launching node (env vars survive RunAs)
+    const nodePath = process.execPath.replace(/"/g, '\\"');
+    const serverPath = SERVER_PATH.replace(/"/g, '\\"');
+    const cmdLine = `set ROUTER_API_KEY=${apiKey}&& set NODE_ENV=production&& "${nodePath}" "${serverPath}"`;
     serverProcess = spawn("powershell", [
       "-NoProfile", "-Command",
-      `$env:ROUTER_API_KEY='${apiKey}'; $env:NODE_ENV='production'; Start-Process '${nodePath}' -ArgumentList '''${serverPath}''' -Verb RunAs -WindowStyle Hidden`
-    ], { stdio: "ignore", env: process.env });
+      `Start-Process cmd -ArgumentList '/c','${cmdLine.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden`
+    ], { stdio: "ignore" });
   } else {
     // sudo -S: read password from stdin, -E: preserve env vars
     // Pass ROUTER_API_KEY inline via env=... wrapper to avoid sudo stripping env
@@ -413,23 +414,25 @@ async function startMitm(apiKey, sudoPassword) {
   fs.writeFileSync(PID_FILE, String(serverPid));
 
   let startError = null;
-  serverProcess.stdout.on("data", (data) => {
-    console.log(`[MITM Server] ${data.toString().trim()}`);
-  });
-  serverProcess.stderr.on("data", (data) => {
-    const msg = data.toString().trim();
-    // Capture meaningful errors (ignore sudo password prompt noise)
-    if (msg && !msg.includes("Password:") && !msg.includes("password for")) {
-      console.error(`[MITM Server Error] ${msg}`);
-      startError = msg;
-    }
-  });
-  serverProcess.on("exit", (code) => {
-    console.log(`MITM server exited with code ${code}`);
-    serverProcess = null;
-    serverPid = null;
-    try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
-  });
+  if (!IS_WIN) {
+    serverProcess.stdout.on("data", (data) => {
+      console.log(`[MITM Server] ${data.toString().trim()}`);
+    });
+    serverProcess.stderr.on("data", (data) => {
+      const msg = data.toString().trim();
+      // Capture meaningful errors (ignore sudo password prompt noise)
+      if (msg && !msg.includes("Password:") && !msg.includes("password for")) {
+        console.error(`[MITM Server Error] ${msg}`);
+        startError = msg;
+      }
+    });
+    serverProcess.on("exit", (code) => {
+      console.log(`MITM server exited with code ${code}`);
+      serverProcess = null;
+      serverPid = null;
+      try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+    });
+  }
 
   // Wait for server to be ready by polling health endpoint
   const health = await pollMitmHealth(IS_WIN ? 12000 : 8000);

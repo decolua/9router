@@ -4,6 +4,8 @@ const { exec } = require("child_process");
 const { execWithPassword } = require("../dns/dnsConfig.js");
 
 const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
+const LINUX_CERT_DIR = "/usr/local/share/ca-certificates";
 
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath) {
@@ -16,10 +18,9 @@ function getCertFingerprint(certPath) {
  * Check if certificate is already installed in system store
  */
 async function checkCertInstalled(certPath) {
-  if (IS_WIN) {
-    return checkCertInstalledWindows(certPath);
-  }
-  return checkCertInstalledMac(certPath);
+  if (IS_WIN) return checkCertInstalledWindows(certPath);
+  if (IS_MAC) return checkCertInstalledMac(certPath);
+  return checkCertInstalledLinux();
 }
 
 function checkCertInstalledMac(certPath) {
@@ -60,8 +61,10 @@ async function installCert(sudoPassword, certPath) {
 
   if (IS_WIN) {
     await installCertWindows(certPath);
-  } else {
+  } else if (IS_MAC) {
     await installCertMac(sudoPassword, certPath);
+  } else {
+    await installCertLinux(sudoPassword, certPath);
   }
 }
 
@@ -103,8 +106,10 @@ async function uninstallCert(sudoPassword, certPath) {
 
   if (IS_WIN) {
     await uninstallCertWindows();
-  } else {
+  } else if (IS_MAC) {
     await uninstallCertMac(sudoPassword, certPath);
+  } else {
+    await uninstallCertLinux(sudoPassword);
   }
 }
 
@@ -131,6 +136,34 @@ async function uninstallCertWindows() {
       }
     });
   });
+}
+
+function checkCertInstalledLinux() {
+  const certFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  return Promise.resolve(fs.existsSync(certFile));
+}
+
+async function installCertLinux(sudoPassword, certPath) {
+  const destFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
+  const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+  try {
+    await execWithPassword(cmd, sudoPassword);
+    console.log("✅ Installed certificate to Linux trust store");
+  } catch (error) {
+    throw new Error("Certificate install failed");
+  }
+}
+
+async function uninstallCertLinux(sudoPassword) {
+  const destFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+  try {
+    await execWithPassword(cmd, sudoPassword);
+    console.log("✅ Uninstalled certificate from Linux trust store");
+  } catch (error) {
+    throw new Error("Failed to uninstall certificate");
+  }
 }
 
 module.exports = { installCert, uninstallCert, checkCertInstalled };
