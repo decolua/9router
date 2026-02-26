@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHmac, randomUUID } from "crypto";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
@@ -109,6 +110,13 @@ const PROVIDER_MODELS_CONFIG = {
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
+  iflow: {
+    ...createOpenAIModelsConfig("https://apis.iflow.cn/v1/models"),
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "iFlow-Cli"
+    }
+  },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
@@ -333,7 +341,9 @@ export async function GET(request, { params }) {
     }
 
     // Get auth token
-    const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
+    const token = connection.provider === "iflow"
+      ? (connection.apiKey || connection.accessToken)
+      : (connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey);
     if (!token) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
@@ -348,6 +358,22 @@ export async function GET(request, { params }) {
     const headers = { ...config.headers };
     if (config.authHeader && !config.authQuery) {
       headers[config.authHeader] = (config.authPrefix || "") + token;
+    }
+
+    // iFlow uses HMAC signature headers in addition to Bearer auth for some endpoints.
+    const iflowSigningKey = connection.apiKey || connection.accessToken;
+    if (connection.provider === "iflow" && iflowSigningKey) {
+      const sessionId = `session-${randomUUID()}`;
+      const timestamp = Date.now();
+      const userAgent = headers["User-Agent"] || "iFlow-Cli";
+      const payload = `${userAgent}:${sessionId}:${timestamp}`;
+      const signature = createHmac("sha256", iflowSigningKey)
+        .update(payload)
+        .digest("hex");
+
+      headers["session-id"] = sessionId;
+      headers["x-iflow-timestamp"] = timestamp.toString();
+      headers["x-iflow-signature"] = signature;
     }
 
     // Make request
