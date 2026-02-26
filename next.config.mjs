@@ -5,18 +5,18 @@ const nextConfig = {
     unoptimized: true
   },
   env: {},
-  webpack: (config, { isServer }) => {
-    // Ignore fs/path modules in browser bundle
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        path: false,
-      };
-    }
-    // Stop watching logs directory to prevent HMR during streaming
-    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
-  },
+  // webpack: (config, { isServer }) => {
+  //   // Ignore fs/path modules in browser bundle
+  //   if (!isServer) {
+  //     config.resolve.fallback = {
+  //       ...config.resolve.fallback,
+  //       fs: false,
+  //       path: false,
+  //     };
+  //   }
+  //   // Stop watching logs directory to prevent HMR during streaming
+  //   config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
+  // },
   async rewrites() {
     return [
       {
