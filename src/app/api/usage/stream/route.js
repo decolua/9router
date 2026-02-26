@@ -49,15 +49,24 @@ export async function GET() {
       statsEmitter.on("update", state.send);
       statsEmitter.on("pending", state.sendPending);
 
-      state.keepalive = setInterval(() => {
+      // Push fresh serverUsage (CPU/memory) every 3s so UI updates in real time
+      state.keepalive = setInterval(async () => {
         if (state.closed) { clearInterval(state.keepalive); return; }
         try {
-          controller.enqueue(encoder.encode(": ping\n\n"));
+          const { getServerUsage } = await import("@/lib/usageDb");
+          const serverUsage = getServerUsage();
+          if (state.cachedStats) {
+            const refreshed = { ...state.cachedStats, serverUsage };
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(refreshed)}\n\n`));
+          } else {
+            // fallback: silent ping
+            controller.enqueue(encoder.encode(": ping\n\n"));
+          }
         } catch {
           state.closed = true;
           clearInterval(state.keepalive);
         }
-      }, 25000);
+      }, 3000);
     },
 
     cancel() {

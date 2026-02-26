@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
 
@@ -71,13 +71,10 @@ export default function ModelSpeedTab() {
   const [sortField, setSortField] = useState("avgSpeed");
   const [sortOrder, setSortOrder] = useState("desc");
   const [error, setError] = useState(null);
-  const hasFetched = useRef(false);
 
   useEffect(() => {
-    if (hasFetched.current) return;
-    hasFetched.current = true;
-
     let cancelled = false;
+
     fetch("/api/usage/model-speed")
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
