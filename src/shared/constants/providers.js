@@ -24,7 +24,7 @@ export const APIKEY_PROVIDERS = {
   kimi: { id: "kimi", alias: "kimi", name: "Kimi Coding", icon: "psychology", color: "#1E3A8A", textIcon: "KM" },
   minimax: { id: "minimax", alias: "minimax", name: "Minimax Coding", icon: "memory", color: "#7C3AED", textIcon: "MM" },
   "minimax-cn": { id: "minimax-cn", alias: "minimax-cn", name: "Minimax (China)", icon: "memory", color: "#DC2626", textIcon: "MC" },
-  alicloud: { id: "alicloud", alias: "alicloud", name: "阿里云百炼 Coding Plan", icon: "cloud", color: "#FF6A00", textIcon: "ALi" },
+  alicode: { id: "alicode", alias: "alicode", name: "阿里云百炼 Coding Plan", icon: "cloud", color: "#FF6A00", textIcon: "ALi" },
   openai: { id: "openai", alias: "openai", name: "OpenAI", icon: "auto_awesome", color: "#10A37F", textIcon: "OA" },
   anthropic: { id: "anthropic", alias: "anthropic", name: "Anthropic", icon: "smart_toy", color: "#D97757", textIcon: "AN" },
   gemini: { id: "gemini", alias: "gemini", name: "Gemini", icon: "diamond", color: "#4285F4", textIcon: "GE" },

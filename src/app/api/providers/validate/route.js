@@ -103,19 +103,19 @@ export async function POST(request) {
         case "kimi":
         case "minimax":
         case "minimax-cn":
-        case "alicloud": {
+        case "alicode": {
           const claudeBaseUrls = {
             glm: "https://api.z.ai/api/anthropic/v1/messages",
             "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
             kimi: "https://api.kimi.com/coding/v1/messages",
             minimax: "https://api.minimax.io/anthropic/v1/messages",
             "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
-            alicloud: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
+            alicode: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
           };
 
-          // glm-cn and alicloud use OpenAI format
-          if (provider === "glm-cn" || provider === "alicloud") {
-            const testModel = provider === "alicloud" ? "qwen3.5-plus" : "glm-4.7";
+          // glm-cn and alicode use OpenAI format
+          if (provider === "glm-cn" || provider === "alicode") {
+            const testModel = provider === "alicode" ? "qwen3.5-plus" : "glm-4.7";
             const glmCnRes = await fetch(claudeBaseUrls[provider], {
               method: "POST",
               headers: {

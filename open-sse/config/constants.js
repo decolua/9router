@@ -175,7 +175,7 @@ export const PROVIDERS = {
     },
     clientVersion: "1.1.3"
   },
-  alicloud: {
+  alicode: {
     baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
     format: "openai",
     headers: {}

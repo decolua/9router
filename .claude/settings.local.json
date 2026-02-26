@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(test:*)",
-      "Bash(PORT=20127 NEXT_PUBLIC_BASE_URL=http://localhost:20127 npm run dev:*)"
-    ]
-  }
-}

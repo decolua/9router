@@ -160,7 +160,7 @@ export const PROVIDER_MODELS = {
   "minimax-cn": [
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
   ],
-  alicloud: [
+  alicode: [
     { id: "qwen3.5-plus", name: "Qwen3.5 Plus" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "glm-5", name: "GLM 5" },
@@ -223,7 +223,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   kimi: "kimi",
   minimax: "minimax",
   "minimax-cn": "minimax-cn",
-  alicloud: "alicloud",
+  alicode: "alicode",
 };
 
 export function getModelsByProviderId(providerId) {

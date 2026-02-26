@@ -464,7 +464,7 @@ async function testApiKeyConnection(connection) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
 
-      case "alicloud": {
+      case "alicode": {
         // 阿里云百炼 Coding Plan uses OpenAI-compatible API
         const res = await fetch("https://coding.dashscope.aliyuncs.com/v1/chat/completions", {
           method: "POST",
