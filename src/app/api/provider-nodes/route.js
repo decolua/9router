@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
+import { withApiCache } from "@/lib/apiCache";
+import { API_CACHE_KEYS } from "@/lib/cacheKeys";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+
+const PROVIDER_NODES_CACHE_TTL_MS = Math.max(
+  Number.parseInt(process.env.API_CACHE_PROVIDER_NODES_TTL_MS || "3000", 10) || 0,
+  200
+);
 
 const OPENAI_COMPATIBLE_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
@@ -14,8 +21,12 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
   try {
-    const nodes = await getProviderNodes();
-    return NextResponse.json({ nodes });
+    const payload = await withApiCache(API_CACHE_KEYS.providerNodesList, PROVIDER_NODES_CACHE_TTL_MS, async () => {
+      const nodes = await getProviderNodes();
+      return { nodes };
+    });
+
+    return NextResponse.json(payload);
   } catch (error) {
     console.log("Error fetching provider nodes:", error);
     return NextResponse.json({ error: "Failed to fetch provider nodes" }, { status: 500 });

@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { createHmac, randomUUID } from "crypto";
 import { getProviderConnectionById } from "@/models";
+import { getCachedValue, setCachedValue } from "@/lib/apiCache";
+import { getProviderModelsCacheKey } from "@/lib/cacheKeys";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+const PROVIDER_MODELS_CACHE_TTL_MS = Math.max(
+  Number.parseInt(process.env.API_CACHE_PROVIDER_MODELS_TTL_MS || "300000", 10) || 0,
+  1000
+);
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -168,6 +174,12 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    const cacheKey = getProviderModelsCacheKey(connection.id);
+    const cachedPayload = await getCachedValue(cacheKey);
+    if (cachedPayload) {
+      return NextResponse.json(cachedPayload);
+    }
+
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {
@@ -194,11 +206,13 @@ export async function GET(request, { params }) {
       const data = await response.json();
       const models = data.data || data.models || [];
 
-      return NextResponse.json({
+      const payload = {
         provider: connection.provider,
         connectionId: connection.id,
         models
-      });
+      };
+      await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+      return NextResponse.json(payload);
     }
 
     if (isAnthropicCompatibleProvider(connection.provider)) {
@@ -235,11 +249,13 @@ export async function GET(request, { params }) {
       const data = await response.json();
       const models = data.data || data.models || [];
 
-      return NextResponse.json({
+      const payload = {
         provider: connection.provider,
         connectionId: connection.id,
         models
-      });
+      };
+      await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+      return NextResponse.json(payload);
     }
 
     // Kiro: Try dynamic model fetching first
@@ -251,11 +267,13 @@ export async function GET(request, { params }) {
 
         if (accessToken && profileArn) {
           const models = await kiroService.listAvailableModels(accessToken, profileArn);
-          return NextResponse.json({
+          const payload = {
             provider: connection.provider,
             connectionId: connection.id,
             models
-          });
+          };
+          await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+          return NextResponse.json(payload);
         }
       } catch (error) {
         console.log("Failed to fetch Kiro models dynamically, falling back to static:", error.message);
@@ -307,11 +325,13 @@ export async function GET(request, { params }) {
           const data = await response.json();
           const models = parseGeminiCliModels(data);
           if (models.length > 0) {
-            return NextResponse.json({
+            const payload = {
               provider: connection.provider,
               connectionId: connection.id,
               models
-            });
+            };
+            await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+            return NextResponse.json(payload);
           }
         } else {
           const errorText = await response.text();
@@ -324,12 +344,14 @@ export async function GET(request, { params }) {
       }
 
       // Return empty dynamic list so UI falls back to static provider models.
-      return NextResponse.json({
+      const payload = {
         provider: connection.provider,
         connectionId: connection.id,
         models: [],
         warning,
-      });
+      };
+      await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+      return NextResponse.json(payload);
     }
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
@@ -400,11 +422,13 @@ export async function GET(request, { params }) {
     const data = await response.json();
     const models = config.parseResponse(data);
 
-    return NextResponse.json({
+    const payload = {
       provider: connection.provider,
       connectionId: connection.id,
       models
-    });
+    };
+    await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
+    return NextResponse.json(payload);
   } catch (error) {
     console.log("Error fetching provider models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });

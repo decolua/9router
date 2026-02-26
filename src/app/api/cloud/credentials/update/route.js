@@ -45,9 +45,9 @@ export async function PUT(request) {
 
     await updateProviderConnection(connection.id, updateData);
 
-    return NextResponse.json({ 
-      success: true, 
-      message: `Credentials updated for provider: ${provider}` 
+    return NextResponse.json({
+      success: true,
+      message: `Credentials updated for provider: ${provider}`
     });
 
   } catch (error) {

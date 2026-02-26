@@ -4,6 +4,13 @@ import "open-sse/index.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { withApiCache } from "@/lib/apiCache";
+import { getUsageConnectionCacheKey } from "@/lib/cacheKeys";
+
+const USAGE_CONNECTION_CACHE_TTL_MS = Math.max(
+  Number.parseInt(process.env.API_CACHE_USAGE_CONNECTION_TTL_MS || "30000", 10) || 0,
+  1000
+);
 /**
  * Refresh credentials using executor and update database
  * @returns {{ connection, refreshed: boolean }}
@@ -105,21 +112,28 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for API key connections" });
     }
 
-    // Refresh credentials if needed using executor
-    try {
-      const result = await refreshAndUpdateCredentials(connection);
-      connection = result.connection;
-    } catch (refreshError) {
-      console.error("[Usage API] Credential refresh failed:", refreshError);
-      return Response.json({
-        error: `Credential refresh failed: ${refreshError.message}`
-      }, { status: 401 });
-    }
+    const usage = await withApiCache(getUsageConnectionCacheKey(connectionId), USAGE_CONNECTION_CACHE_TTL_MS, async () => {
+      // Refresh credentials if needed using executor
+      let activeConnection = connection;
+      try {
+        const result = await refreshAndUpdateCredentials(connection);
+        activeConnection = result.connection;
+      } catch (refreshError) {
+        const authError = new Error(`Credential refresh failed: ${refreshError.message}`);
+        authError.status = 401;
+        throw authError;
+      }
 
-    // Fetch usage from provider API
-    const usage = await getUsageForProvider(connection);
+      // Fetch usage from provider API
+      return getUsageForProvider(activeConnection);
+    });
+
     return Response.json(usage);
   } catch (error) {
+    if (error?.status === 401) {
+      return Response.json({ error: error.message }, { status: 401 });
+    }
+
     console.error("[Usage API] Error fetching usage:", error);
     console.error("[Usage API] Error stack:", error.stack);
     return Response.json({ error: error.message }, { status: 500 });
