@@ -138,7 +138,7 @@ export async function getActiveRequests() {
     for (const conn of allConnections) {
       connectionMap[conn.id] = conn.name || conn.email || conn.id;
     }
-  } catch {}
+  } catch { }
 
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
@@ -188,7 +188,7 @@ export async function getUsageDb() {
   if (isCloud) {
     // Return in-memory DB for Workers
     if (!dbInstance) {
-      dbInstance = new Low({ read: async () => {}, write: async () => {} }, defaultData);
+      dbInstance = new Low({ read: async () => { }, write: async () => { } }, defaultData);
       dbInstance.data = defaultData;
     }
     return dbInstance;
@@ -298,6 +298,37 @@ function formatLogDate(date = new Date()) {
   return `${d}-${m}-${y} ${h}:${min}:${s}`;
 }
 
+function getServerUsage() {
+  if (isCloud) {
+    return {
+      cpuPercent: 0,
+      memoryUsedMb: 0,
+      memoryTotalMb: 0,
+      memoryPercent: 0,
+      processRssMb: 0,
+    };
+  }
+
+  const cpuCount = os.cpus()?.length || 1;
+  const loadAvg1m = os.loadavg?.()[0] || 0;
+  const totalMem = os.totalmem?.() || 0;
+  const freeMem = os.freemem?.() || 0;
+  const usedMem = Math.max(0, totalMem - freeMem);
+  const processRss = process.memoryUsage?.().rss || 0;
+
+  const toMb = (bytes) => Math.round((bytes / 1024 / 1024) * 10) / 10;
+  const cpuPercent = Math.min(100, Math.max(0, (loadAvg1m / cpuCount) * 100));
+  const memoryPercent = totalMem > 0 ? (usedMem / totalMem) * 100 : 0;
+
+  return {
+    cpuPercent: Math.round(cpuPercent * 10) / 10,
+    memoryUsedMb: toMb(usedMem),
+    memoryTotalMb: toMb(totalMem),
+    memoryPercent: Math.round(memoryPercent * 10) / 10,
+    processRssMb: toMb(processRss),
+  };
+}
+
 /**
  * Append to log.txt
  * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
@@ -319,7 +350,7 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
       if (conn) {
         account = conn.name || conn.email || account;
       }
-    } catch {}
+    } catch { }
 
     const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
@@ -344,23 +375,23 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
  */
 export async function getRecentLogs(limit = 200) {
   if (isCloud) return []; // Skip in Workers
-  
+
   // Runtime check: ensure fs module is available
   if (!fs || typeof fs.existsSync !== "function") {
     console.error("[usageDb] fs module not available in this environment");
     return [];
   }
-  
+
   if (!LOG_FILE) {
     console.error("[usageDb] LOG_FILE path not defined");
     return [];
   }
-  
+
   if (!fs.existsSync(LOG_FILE)) {
     console.log(`[usageDb] Log file does not exist: ${LOG_FILE}`);
     return [];
   }
-  
+
   try {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
     const lines = content.trim().split("\n");
@@ -523,6 +554,7 @@ export async function getUsageStats() {
     activeRequests: [],
     recentRequests,
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
+    serverUsage: getServerUsage(),
   };
 
   // Build active requests list from pending counts
