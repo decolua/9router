@@ -152,7 +152,7 @@ export async function invalidateCacheKeys(keys = []) {
     store.delete(key);
 
     try {
-      revalidateTag(toNextCacheTag(key));
+      revalidateTag(toNextCacheTag(key), "max");
     } catch {
       // Ignore Next.js cache revalidation errors and keep Redis/memory invalidation best-effort.
     }
