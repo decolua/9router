@@ -460,6 +460,71 @@ async function calculateCost(provider, model, tokens) {
 }
 
 /**
+ * Synchronous cost calculation for bulk processing
+ * @param {string} provider - Provider ID
+ * @param {string} model - Model ID
+ * @param {object} tokens - Token counts
+ * @param {object} pricingMap - Pre-fetched pricing map from db.data.pricing
+ * @returns {number} Cost in dollars
+ */
+function calculateCostSync(provider, model, tokens, pricingMap) {
+  if (!tokens || !provider || !model || !pricingMap) return 0;
+  
+  try {
+    const providerPricing = pricingMap[provider];
+    const defaultInstance = pricingMap["default"] || {};
+    
+    // Fallback logic equivalent to getPricingForModel
+    let pricing = null;
+    if (providerPricing && providerPricing[model]) {
+      pricing = providerPricing[model];
+    } else if (defaultInstance[model]) {
+      pricing = defaultInstance[model];
+    }
+    
+    if (!pricing) return 0;
+
+    let cost = 0;
+
+    // Input tokens (non-cached)
+    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
+    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+    const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
+
+    cost += (nonCachedInput * (pricing.input / 1000000));
+
+    // Cached tokens
+    if (cachedTokens > 0) {
+      const cachedRate = pricing.cached || pricing.input; // Fallback to input rate
+      cost += (cachedTokens * (cachedRate / 1000000));
+    }
+
+    // Output tokens
+    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    cost += (outputTokens * (pricing.output / 1000000));
+
+    // Reasoning tokens
+    const reasoningTokens = tokens.reasoning_tokens || 0;
+    if (reasoningTokens > 0) {
+      const reasoningRate = pricing.reasoning || pricing.output; // Fallback to output rate
+      cost += (reasoningTokens * (reasoningRate / 1000000));
+    }
+
+    // Cache creation tokens
+    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
+    if (cacheCreationTokens > 0) {
+      const cacheCreationRate = pricing.cache_creation || pricing.input; // Fallback to input rate
+      cost += (cacheCreationTokens * (cacheCreationRate / 1000000));
+    }
+
+    return cost;
+  } catch (error) {
+    console.error("Error in calculateCostSync:", error);
+    return 0;
+  }
+}
+
+/**
  * Get aggregated usage stats
  */
 export async function getUsageStats() {
@@ -469,9 +534,10 @@ export async function getUsageStats() {
   // Import localDb to get provider connection names, API keys, pricing, and provider nodes
   const { getProviderConnections, getApiKeys, getPricing, getProviderNodes } = await import("@/lib/localDb.js");
 
-  // Pre-fetch pricing to populate React cache and prevent looping bottleneck
+  // Pre-fetch pricing to populate React cache and perform synchronous calculations
+  let pricingMap = {};
   try {
-    await getPricing();
+    pricingMap = await getPricing();
   } catch (error) {
     console.warn("Could not pre-fetch pricing for usage stats:", error.message);
   }
@@ -609,8 +675,8 @@ export async function getUsageStats() {
     const completionTokens = entry.tokens?.completion_tokens || 0;
     const entryTime = new Date(entry.timestamp);
 
-    // Calculate cost for this entry
-    const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    // Calculate cost for this entry synchronously using pre-fetched map
+    const entryCost = calculateCostSync(entry.provider, entry.model, entry.tokens, pricingMap);
 
     stats.totalPromptTokens += promptTokens;
     stats.totalCompletionTokens += completionTokens;
