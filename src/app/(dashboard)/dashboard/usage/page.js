@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import ProviderLimits from "./components/ProviderLimits";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+import ModelSpeedTab from "./components/ModelSpeedTab";
 
 export default function UsagePage() {
   return (
@@ -21,7 +22,7 @@ function UsageContent() {
   const [tabLoading, setTabLoading] = useState(false);
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "limits", "details"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "logs", "limits", "details", "speed"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -42,6 +43,7 @@ function UsageContent() {
           { value: "overview", label: "Overview" },
           { value: "limits", label: "Limits" },
           { value: "details", label: "Details" },
+          { value: "speed", label: "Model Speed" },
           { value: "logs", label: "Logs" },
         ]}
         value={activeTab}
@@ -64,6 +66,7 @@ function UsageContent() {
             </Suspense>
           )}
           {activeTab === "details" && <RequestDetailsTab />}
+          {activeTab === "speed" && <ModelSpeedTab />}
         </>
       )}
     </div>
