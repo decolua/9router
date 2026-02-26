@@ -37,6 +37,7 @@ export async function PUT(request, { params }) {
       defaultModel,
       isActive,
       apiKey,
+      refreshToken,
       testStatus,
       lastError,
       lastErrorAt,
@@ -55,6 +56,12 @@ export async function PUT(request, { params }) {
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
+    if (refreshToken && existing.authType === "oauth" && existing.provider === "kiro") {
+      const nextRefreshToken = refreshToken.trim();
+      if (nextRefreshToken) {
+        updateData.refreshToken = nextRefreshToken;
+      }
+    }
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
