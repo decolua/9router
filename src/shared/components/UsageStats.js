@@ -6,7 +6,7 @@ import { CardSkeleton } from "./Loading";
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
-import UsageTable, { fmt, fmtCost, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
+import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
 
@@ -85,6 +85,64 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
     });
 }
 
+function sortComboData(comboMap, pendingMap = {}, sortBy, sortOrder) {
+  const rows = [];
+
+  for (const [comboName, comboData] of Object.entries(comboMap || {})) {
+    const modelsMap = comboData?.models || {};
+    const modelEntries = Object.entries(modelsMap);
+    const comboPending = pendingMap[comboName] || 0;
+
+    if (modelEntries.length === 0) {
+      const totalTokens = (comboData.promptTokens || 0) + (comboData.completionTokens || 0);
+      const totalCost = comboData.cost || 0;
+      const inputCost = totalTokens > 0 ? (comboData.promptTokens || 0) * (totalCost / totalTokens) : 0;
+      const outputCost = totalTokens > 0 ? (comboData.completionTokens || 0) * (totalCost / totalTokens) : 0;
+      rows.push({
+        ...comboData,
+        comboName,
+        rawModel: "Unknown Model",
+        provider: "unknown",
+        key: `${comboName}::summary`,
+        totalTokens,
+        totalCost,
+        inputCost,
+        outputCost,
+        pending: comboPending,
+      });
+      continue;
+    }
+
+    for (const [modelKey, modelData] of modelEntries) {
+      const totalTokens = (modelData.promptTokens || 0) + (modelData.completionTokens || 0);
+      const totalCost = modelData.cost || 0;
+      const inputCost = totalTokens > 0 ? (modelData.promptTokens || 0) * (totalCost / totalTokens) : 0;
+      const outputCost = totalTokens > 0 ? (modelData.completionTokens || 0) * (totalCost / totalTokens) : 0;
+
+      rows.push({
+        ...modelData,
+        comboName,
+        key: `${comboName}|${modelKey}`,
+        totalTokens,
+        totalCost,
+        inputCost,
+        outputCost,
+        pending: comboPending,
+      });
+    }
+  }
+
+  return rows.sort((a, b) => {
+    let valA = a[sortBy];
+    let valB = b[sortBy];
+    if (typeof valA === "string") valA = valA.toLowerCase();
+    if (typeof valB === "string") valB = valB.toLowerCase();
+    if (valA < valB) return sortOrder === "asc" ? -1 : 1;
+    if (valA > valB) return sortOrder === "asc" ? 1 : -1;
+    return 0;
+  });
+}
+
 function getGroupKey(item, keyField) {
   switch (keyField) {
     case "rawModel": return item.rawModel || "Unknown Model";
@@ -157,10 +215,9 @@ const ENDPOINT_COLUMNS = [
 
 const COMBO_COLUMNS = [
   { field: "comboName", label: "Combo" },
+  { field: "rawModel", label: "Model" },
+  { field: "provider", label: "Provider" },
   { field: "requests", label: "Requests", align: "right" },
-  { field: "promptTokens", label: "Prompt Tokens", align: "right" },
-  { field: "completionTokens", label: "Completion Tokens", align: "right" },
-  { field: "cost", label: "Cost", align: "right" },
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
@@ -273,25 +330,27 @@ export default function UsageStats() {
         const pendingMap = stats.pending?.byCombo || {};
         return {
           columns: COMBO_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byCombo, pendingMap, sortBy, sortOrder), "comboName"),
+          groupedData: groupDataByKey(sortComboData(stats.byCombo, pendingMap, sortBy, sortOrder), "comboName"),
           storageKey: "usage-stats:expanded-combos",
           emptyMessage: "No combo usage recorded yet.",
           renderSummaryCells: (group) => (
             <>
+              <td className="px-6 py-3 text-text-muted">—</td>
+              <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted">—</td>
-              <td className="px-6 py-3 text-right text-text-muted">—</td>
-              <td className="px-6 py-3 text-right text-text-muted">—</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
             </>
           ),
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.comboName}</td>
+              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>
+                {item.comboName}
+              </td>
+              <td className="px-6 py-3">{item.rawModel || "Unknown Model"}</td>
+              <td className="px-6 py-3">
+                <Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider || "unknown"}</Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted">{fmt(item.promptTokens)}</td>
-              <td className="px-6 py-3 text-right text-text-muted">{fmt(item.completionTokens)}</td>
-              <td className="px-6 py-3 text-right text-text-muted">{fmtCost(item.cost)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
