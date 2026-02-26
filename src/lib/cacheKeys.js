@@ -2,6 +2,7 @@ export const API_CACHE_KEYS = {
   providersList: "api:providers:list:v1",
   providerNodesList: "api:provider-nodes:list:v1",
   usageProvidersList: "api:usage:providers:list:v1",
+  pricingList: "api:pricing:list:v1",
 };
 
 export const USAGE_CHART_PERIODS = ["24h", "7d", "30d", "60d"];

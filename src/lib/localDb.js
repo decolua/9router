@@ -5,7 +5,9 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import { invalidateApiCachesForLocalDbChange, invalidateCacheKeys } from "@/lib/apiCache";
-import { getUsageConnectionCacheKey, getProviderModelsCacheKey } from "@/lib/cacheKeys";
+import { getUsageConnectionCacheKey, getProviderModelsCacheKey, API_CACHE_KEYS } from "@/lib/cacheKeys";
+import { withApiCache } from "@/lib/apiCache";
+import { cache } from "react";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -903,53 +905,55 @@ export async function getCloudUrl() {
  * Get pricing configuration
  * Returns merged user pricing with defaults
  */
-export async function getPricing() {
-  const db = await getDb();
-  const userPricing = db.data.pricing || {};
+export const getPricing = cache(async function getPricing() {
+  return await withApiCache(API_CACHE_KEYS.pricingList, 5 * 60 * 1000, async () => {
+    const db = await getDb();
+    const userPricing = db.data.pricing || {};
 
-  // Import default pricing
-  const { getDefaultPricing } = await import("@/shared/constants/pricing.js");
-  const defaultPricing = getDefaultPricing();
+    // Import default pricing
+    const { getDefaultPricing } = await import("@/shared/constants/pricing.js");
+    const defaultPricing = getDefaultPricing();
 
-  // Merge user pricing with defaults
-  // User pricing overrides defaults for specific provider/model combinations
-  const mergedPricing = {};
+    // Merge user pricing with defaults
+    // User pricing overrides defaults for specific provider/model combinations
+    const mergedPricing = {};
 
-  for (const [provider, models] of Object.entries(defaultPricing)) {
-    mergedPricing[provider] = { ...models };
-
-    // Apply user overrides if they exist
-    if (userPricing[provider]) {
-      for (const [model, pricing] of Object.entries(userPricing[provider])) {
-        if (mergedPricing[provider][model]) {
-          mergedPricing[provider][model] = { ...mergedPricing[provider][model], ...pricing };
-        } else {
-          mergedPricing[provider][model] = pricing;
-        }
-      }
-    }
-  }
-
-  // Add any user-only pricing entries
-  for (const [provider, models] of Object.entries(userPricing)) {
-    if (!mergedPricing[provider]) {
+    for (const [provider, models] of Object.entries(defaultPricing)) {
       mergedPricing[provider] = { ...models };
-    } else {
-      for (const [model, pricing] of Object.entries(models)) {
-        if (!mergedPricing[provider][model]) {
-          mergedPricing[provider][model] = pricing;
+
+      // Apply user overrides if they exist
+      if (userPricing[provider]) {
+        for (const [model, pricing] of Object.entries(userPricing[provider])) {
+          if (mergedPricing[provider][model]) {
+            mergedPricing[provider][model] = { ...mergedPricing[provider][model], ...pricing };
+          } else {
+            mergedPricing[provider][model] = pricing;
+          }
         }
       }
     }
-  }
 
-  return mergedPricing;
-}
+    // Add any user-only pricing entries
+    for (const [provider, models] of Object.entries(userPricing)) {
+      if (!mergedPricing[provider]) {
+        mergedPricing[provider] = { ...models };
+      } else {
+        for (const [model, pricing] of Object.entries(models)) {
+          if (!mergedPricing[provider][model]) {
+            mergedPricing[provider][model] = pricing;
+          }
+        }
+      }
+    }
+
+    return mergedPricing;
+  });
+});
 
 /**
  * Get pricing for a specific provider and model
  */
-export async function getPricingForModel(provider, model) {
+export const getPricingForModel = cache(async function getPricingForModel(provider, model) {
   const pricing = await getPricing();
 
   // Try direct lookup
@@ -984,7 +988,7 @@ export async function getPricingForModel(provider, model) {
   }
 
   return null;
-}
+});
 
 /**
  * Update pricing configuration
@@ -1010,6 +1014,7 @@ export async function updatePricing(pricingData) {
   }
 
   await db.write();
+  await invalidateCacheKeys([API_CACHE_KEYS.pricingList]);
   return db.data.pricing;
 }
 
@@ -1040,6 +1045,7 @@ export async function resetPricing(provider, model) {
   }
 
   await db.write();
+  await invalidateCacheKeys([API_CACHE_KEYS.pricingList]);
   return db.data.pricing;
 }
 
@@ -1050,5 +1056,6 @@ export async function resetAllPricing() {
   const db = await getDb();
   db.data.pricing = {};
   await db.write();
+  await invalidateCacheKeys([API_CACHE_KEYS.pricingList]);
   return db.data.pricing;
 }

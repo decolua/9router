@@ -42,6 +42,7 @@ function UsageContent() {
           { value: "overview", label: "Overview" },
           { value: "limits", label: "Limits" },
           { value: "details", label: "Details" },
+          { value: "logs", label: "Logs" },
         ]}
         value={activeTab}
         onChange={handleTabChange}
