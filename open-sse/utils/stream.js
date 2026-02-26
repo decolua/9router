@@ -10,6 +10,123 @@ const sharedDecoder = new TextDecoder();
 const sharedEncoder = new TextEncoder();
 
 /**
+ * Detect actual response format from a parsed SSE chunk.
+ * Used to auto-correct when upstream returns a different format than expected
+ * (e.g. anthropic-compatible endpoint that actually returns OpenAI responses,
+ *  or openai-compatible endpoint that actually returns Claude SSE events).
+ */
+function detectResponseFormat(chunk) {
+  if (!chunk) return null;
+
+  // OpenAI Responses API format: has "type" field with "response.xxx" value
+  if (chunk.type !== undefined && chunk.type.startsWith("response.")) {
+    return FORMATS.OPENAI_RESPONSES;
+  }
+
+  // OpenAI chat-completion format: has "choices" array with delta
+  if (chunk.choices !== undefined) {
+    return FORMATS.OPENAI;
+  }
+
+  // Claude format: has "type" field (message_start, content_block_delta, etc.)
+  if (chunk.type !== undefined) {
+    return FORMATS.CLAUDE;
+  }
+
+  // Gemini / Antigravity format: has "candidates" array
+  if (chunk.candidates !== undefined) {
+    return FORMATS.GEMINI;
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the *effective* targetFormat for translation.
+ *
+ * Normally `targetFormat` (what we asked the provider for) equals the format
+ * the provider actually returns.  But some "compatible" endpoints (e.g. an
+ * anthropic-compatible proxy that internally uses OpenAI, or vice-versa)
+ * return a *different* wire format.
+ *
+ * When we detect that the actual chunk format differs from `targetFormat` we
+ * return the detected format so the translator pipeline picks the correct
+ * converters.  The detected format is cached in `state.detectedFormat` so we
+ * don't have to sniff every chunk.
+ */
+function resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state) {
+  // Fast path: if we already detected a mismatch earlier, reuse it
+  if (state?.detectedFormat) return state.detectedFormat;
+
+  const detected = detectResponseFormat(parsed);
+  if (!detected) return targetFormat; // could not detect, assume config is right
+
+  // If the detected format matches what we expected, nothing to do
+  if (detected === targetFormat) return targetFormat;
+
+  // The upstream is sending a different format than configured.
+  // Store in state so subsequent chunks & flush reuse the same decision.
+  if (state) state.detectedFormat = detected;
+  return detected;
+}
+
+function normalizeProviderStreamChunk(parsed, state) {
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // Already OpenAI-style chunk
+  if (Array.isArray(parsed.choices)) return parsed;
+
+  // Ollama NDJSON stream chunk -> OpenAI chat.completion.chunk
+  if (parsed.message && typeof parsed.message === "object") {
+    const message = parsed.message;
+    const content = typeof message.content === "string" ? message.content : "";
+    const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+    const toolCalls = rawToolCalls.map((tc, idx) => {
+      const fn = tc?.function || {};
+      const args = fn.arguments;
+      return {
+        index: idx,
+        id: tc?.id || `call_${Date.now()}_${idx}`,
+        type: "function",
+        function: {
+          name: fn.name || "unknown_tool",
+          arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+        },
+      };
+    });
+
+    const delta = {};
+    if (content) delta.content = content;
+    if (toolCalls.length > 0) delta.tool_calls = toolCalls;
+
+    const usage =
+      typeof parsed.prompt_eval_count === "number" || typeof parsed.eval_count === "number"
+        ? {
+          prompt_tokens: parsed.prompt_eval_count || 0,
+          completion_tokens: parsed.eval_count || 0,
+          total_tokens: (parsed.prompt_eval_count || 0) + (parsed.eval_count || 0),
+        }
+        : undefined;
+
+    const finishReason = parsed.done
+      ? (toolCalls.length > 0 ? "tool_calls" : "stop")
+      : null;
+
+    return {
+      id: parsed.id || `chatcmpl-${Date.now()}`,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: parsed.model || state?.model || "unknown",
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+      ...(usage ? { usage } : {}),
+    };
+  }
+
+  return parsed;
+}
+
+/**
  * Stream modes
  */
 const STREAM_MODE = {
@@ -162,38 +279,43 @@ export function createSSEStream(options = {}) {
         const parsed = parseSSELine(trimmed);
         if (!parsed) continue;
 
-        if (parsed && parsed.done) {
-          const output = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+        const normalizedParsed = normalizeProviderStreamChunk(parsed, state);
+        if (!normalizedParsed) continue;
+
+        if (normalizedParsed.done) {
+          if (sourceFormat !== FORMATS.CLAUDE) {
+            const output = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+          }
           continue;
         }
 
         // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
+        if (normalizedParsed.delta?.text) {
+          totalContentLength += normalizedParsed.delta.text.length;
+          accumulatedContent += normalizedParsed.delta.text;
         }
         // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
+        if (normalizedParsed.delta?.thinking) {
+          totalContentLength += normalizedParsed.delta.thinking.length;
+          accumulatedThinking += normalizedParsed.delta.thinking;
         }
-        
+
         // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+        if (normalizedParsed.choices?.[0]?.delta?.content) {
+          totalContentLength += normalizedParsed.choices[0].delta.content.length;
+          accumulatedContent += normalizedParsed.choices[0].delta.content;
         }
         // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        if (normalizedParsed.choices?.[0]?.delta?.reasoning_content) {
+          totalContentLength += normalizedParsed.choices[0].delta.reasoning_content.length;
+          accumulatedThinking += normalizedParsed.choices[0].delta.reasoning_content;
         }
-        
+
         // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        if (normalizedParsed.candidates?.[0]?.content?.parts) {
+          for (const part of normalizedParsed.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
               // Check if this is thinking content
@@ -207,11 +329,15 @@ export function createSSEStream(options = {}) {
         }
 
         // Extract usage
-        const extracted = extractUsage(parsed);
+        const extracted = extractUsage(normalizedParsed);
         if (extracted) state.usage = extracted; // Keep original usage for logging
 
-        // Translate: targetFormat -> openai -> sourceFormat
-        const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        // Resolve actual upstream format – auto-detects mismatches between
+        // the configured targetFormat and what the provider really returns
+        const actualTargetFormat = resolveActualTargetFormat(normalizedParsed, targetFormat, sourceFormat, state);
+
+        // Translate: actualTargetFormat -> openai -> sourceFormat
+        const translated = translateResponse(actualTargetFormat, sourceFormat, normalizedParsed, state);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -273,7 +399,7 @@ export function createSSEStream(options = {}) {
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
-          
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
@@ -294,7 +420,11 @@ export function createSSEStream(options = {}) {
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const normalizedParsed = normalizeProviderStreamChunk(parsed, state);
+            if (!normalizedParsed) return;
+
+            const actualTargetFormat = resolveActualTargetFormat(normalizedParsed, targetFormat, sourceFormat, state);
+            const translated = translateResponse(actualTargetFormat, sourceFormat, normalizedParsed, state);
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -343,7 +473,7 @@ export function createSSEStream(options = {}) {
         } else {
           appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
         }
-        
+
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,

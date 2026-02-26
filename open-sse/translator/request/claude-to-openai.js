@@ -25,7 +25,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
     const systemContent = Array.isArray(body.system)
       ? body.system.map(s => s.text || "").join("\n")
       : body.system;
-    
+
     if (systemContent) {
       result.messages.push({
         role: "system",
@@ -79,7 +79,7 @@ function fixMissingToolResponses(messages) {
     const msg = messages[i];
     if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
       const toolCallIds = msg.tool_calls.map(tc => tc.id);
-      
+
       // Collect all tool response IDs that IMMEDIATELY follow this assistant message
       const respondedIds = new Set();
       let insertPosition = i + 1;
@@ -92,10 +92,10 @@ function fixMissingToolResponses(messages) {
           break;
         }
       }
-      
+
       // Find missing responses and insert them
       const missingIds = toolCallIds.filter(id => !respondedIds.has(id));
-      
+
       if (missingIds.length > 0) {
         const missingResponses = missingIds.map(id => ({
           role: "tool",
@@ -112,7 +112,7 @@ function fixMissingToolResponses(messages) {
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
   const role = msg.role === "user" || msg.role === "tool" ? "user" : "assistant";
-  
+
   // Simple string content
   if (typeof msg.content === "string") {
     return { role, content: msg.content };
@@ -164,7 +164,7 @@ function convertClaudeMessage(msg) {
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
-          
+
           toolResults.push({
             role: "tool",
             tool_call_id: block.tool_use_id,
@@ -177,9 +177,7 @@ function convertClaudeMessage(msg) {
     // If has tool results, return array of tool messages
     if (toolResults.length > 0) {
       if (parts.length > 0) {
-        const textContent = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        const textContent = normalizeOpenAIContent(parts);
         return [...toolResults, { role: "user", content: textContent }];
       }
       return toolResults;
@@ -189,9 +187,7 @@ function convertClaudeMessage(msg) {
     if (toolCalls.length > 0) {
       const result = { role: "assistant" };
       if (parts.length > 0) {
-        result.content = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        result.content = normalizeOpenAIContent(parts);
       }
       result.tool_calls = toolCalls;
       return result;
@@ -201,10 +197,10 @@ function convertClaudeMessage(msg) {
     if (parts.length > 0) {
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: normalizeOpenAIContent(parts)
       };
     }
-    
+
     // Empty content array
     if (msg.content.length === 0) {
       return { role, content: "" };
@@ -214,11 +210,22 @@ function convertClaudeMessage(msg) {
   return null;
 }
 
+function normalizeOpenAIContent(parts) {
+  if (!Array.isArray(parts) || parts.length === 0) return "";
+
+  const allText = parts.every((part) => part?.type === "text");
+  if (allText) {
+    return parts.map((part) => part.text || "").join("\n");
+  }
+
+  return parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts;
+}
+
 // Convert tool choice
 function convertToolChoice(choice) {
   if (!choice) return "auto";
   if (typeof choice === "string") return choice;
-  
+
   switch (choice.type) {
     case "auto": return "auto";
     case "any": return "required";
