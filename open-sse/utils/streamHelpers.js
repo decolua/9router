@@ -2,10 +2,23 @@ import { FORMATS } from "../translator/formats.js";
 
 // Parse SSE data line
 export function parseSSELine(line) {
-  if (!line || line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  if (!line) return null;
 
-  const data = line.slice(5).trim();
-  if (data === "[DONE]") return { done: true };
+  let data = null;
+
+  // Standard SSE line
+  if (line.charCodeAt(0) === 100) { // 'd' = 100
+    data = line.slice(5).trim();
+    if (data === "[DONE]") return { done: true };
+  } else {
+    // Some providers (e.g. Ollama) stream raw NDJSON instead of SSE
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{")) {
+      data = trimmed;
+    } else {
+      return null;
+    }
+  }
 
   try {
     return JSON.parse(data);
@@ -23,10 +36,10 @@ export function hasValuableContent(chunk, format) {
   if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
     const delta = chunk.choices[0].delta;
     return delta.content && delta.content !== "" ||
-           delta.reasoning_content && delta.reasoning_content !== "" ||
-           delta.tool_calls && delta.tool_calls.length > 0 ||
-           chunk.choices[0].finish_reason ||
-           delta.role;
+      delta.reasoning_content && delta.reasoning_content !== "" ||
+      delta.tool_calls && delta.tool_calls.length > 0 ||
+      chunk.choices[0].finish_reason ||
+      delta.role;
   }
 
   // Claude format
@@ -35,7 +48,7 @@ export function hasValuableContent(chunk, format) {
     const hasText = chunk.delta?.text && chunk.delta.text !== "";
     const hasThinking = chunk.delta?.thinking && chunk.delta.thinking !== "";
     const hasInputJson = chunk.delta?.partial_json && chunk.delta.partial_json !== "";
-    
+
     if (isContentBlockDelta && !hasText && !hasThinking && !hasInputJson) {
       return false;
     }
@@ -48,9 +61,9 @@ export function hasValuableContent(chunk, format) {
 // Fix invalid id (generic or too short)
 export function fixInvalidId(parsed) {
   if (parsed.id && (parsed.id === "chat" || parsed.id === "completion" || parsed.id.length < 8)) {
-    const fallbackId = parsed.extend_fields?.requestId || 
-                      parsed.extend_fields?.traceId || 
-                      Date.now().toString(36);
+    const fallbackId = parsed.extend_fields?.requestId ||
+      parsed.extend_fields?.traceId ||
+      Date.now().toString(36);
     parsed.id = `chatcmpl-${fallbackId}`;
     return true;
   }

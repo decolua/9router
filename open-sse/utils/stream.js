@@ -70,6 +70,62 @@ function resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state) {
   return detected;
 }
 
+function normalizeProviderStreamChunk(parsed, state) {
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // Already OpenAI-style chunk
+  if (Array.isArray(parsed.choices)) return parsed;
+
+  // Ollama NDJSON stream chunk -> OpenAI chat.completion.chunk
+  if (parsed.message && typeof parsed.message === "object") {
+    const message = parsed.message;
+    const content = typeof message.content === "string" ? message.content : "";
+    const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+    const toolCalls = rawToolCalls.map((tc, idx) => {
+      const fn = tc?.function || {};
+      const args = fn.arguments;
+      return {
+        index: idx,
+        id: tc?.id || `call_${Date.now()}_${idx}`,
+        type: "function",
+        function: {
+          name: fn.name || "unknown_tool",
+          arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+        },
+      };
+    });
+
+    const delta = {};
+    if (content) delta.content = content;
+    if (toolCalls.length > 0) delta.tool_calls = toolCalls;
+
+    const usage =
+      typeof parsed.prompt_eval_count === "number" || typeof parsed.eval_count === "number"
+        ? {
+          prompt_tokens: parsed.prompt_eval_count || 0,
+          completion_tokens: parsed.eval_count || 0,
+          total_tokens: (parsed.prompt_eval_count || 0) + (parsed.eval_count || 0),
+        }
+        : undefined;
+
+    const finishReason = parsed.done
+      ? (toolCalls.length > 0 ? "tool_calls" : "stop")
+      : null;
+
+    return {
+      id: parsed.id || `chatcmpl-${Date.now()}`,
+      object: "chat.completion.chunk",
+      created: Math.floor(Date.now() / 1000),
+      model: parsed.model || state?.model || "unknown",
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+      ...(usage ? { usage } : {}),
+    };
+  }
+
+  return parsed;
+}
+
 /**
  * Stream modes
  */
@@ -223,7 +279,10 @@ export function createSSEStream(options = {}) {
         const parsed = parseSSELine(trimmed);
         if (!parsed) continue;
 
-        if (parsed && parsed.done) {
+        const normalizedParsed = normalizeProviderStreamChunk(parsed, state);
+        if (!normalizedParsed) continue;
+
+        if (normalizedParsed.done) {
           if (sourceFormat !== FORMATS.CLAUDE) {
             const output = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(output);
@@ -233,30 +292,30 @@ export function createSSEStream(options = {}) {
         }
 
         // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
+        if (normalizedParsed.delta?.text) {
+          totalContentLength += normalizedParsed.delta.text.length;
+          accumulatedContent += normalizedParsed.delta.text;
         }
         // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
+        if (normalizedParsed.delta?.thinking) {
+          totalContentLength += normalizedParsed.delta.thinking.length;
+          accumulatedThinking += normalizedParsed.delta.thinking;
         }
 
         // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+        if (normalizedParsed.choices?.[0]?.delta?.content) {
+          totalContentLength += normalizedParsed.choices[0].delta.content.length;
+          accumulatedContent += normalizedParsed.choices[0].delta.content;
         }
         // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        if (normalizedParsed.choices?.[0]?.delta?.reasoning_content) {
+          totalContentLength += normalizedParsed.choices[0].delta.reasoning_content.length;
+          accumulatedThinking += normalizedParsed.choices[0].delta.reasoning_content;
         }
 
         // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        if (normalizedParsed.candidates?.[0]?.content?.parts) {
+          for (const part of normalizedParsed.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
               // Check if this is thinking content
@@ -270,15 +329,15 @@ export function createSSEStream(options = {}) {
         }
 
         // Extract usage
-        const extracted = extractUsage(parsed);
+        const extracted = extractUsage(normalizedParsed);
         if (extracted) state.usage = extracted; // Keep original usage for logging
 
         // Resolve actual upstream format – auto-detects mismatches between
         // the configured targetFormat and what the provider really returns
-        const actualTargetFormat = resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state);
+        const actualTargetFormat = resolveActualTargetFormat(normalizedParsed, targetFormat, sourceFormat, state);
 
         // Translate: actualTargetFormat -> openai -> sourceFormat
-        const translated = translateResponse(actualTargetFormat, sourceFormat, parsed, state);
+        const translated = translateResponse(actualTargetFormat, sourceFormat, normalizedParsed, state);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -360,8 +419,11 @@ export function createSSEStream(options = {}) {
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
-            const actualTargetFormat = resolveActualTargetFormat(parsed, targetFormat, sourceFormat, state);
-            const translated = translateResponse(actualTargetFormat, sourceFormat, parsed, state);
+            const normalizedParsed = normalizeProviderStreamChunk(parsed, state);
+            if (!normalizedParsed) return;
+
+            const actualTargetFormat = resolveActualTargetFormat(normalizedParsed, targetFormat, sourceFormat, state);
+            const translated = translateResponse(actualTargetFormat, sourceFormat, normalizedParsed, state);
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
