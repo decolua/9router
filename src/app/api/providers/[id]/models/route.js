@@ -70,14 +70,6 @@ const PROVIDER_MODELS_CONFIG = {
     authQuery: "key", // Use query param for API key
     parseResponse: (data) => data.models || []
   },
-  qwen: {
-    url: "https://portal.qwen.ai/v1/models",
-    method: "GET",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    parseResponse: (data) => data.data || []
-  },
   antigravity: {
     url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
     method: "POST",
