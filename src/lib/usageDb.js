@@ -222,7 +222,7 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
+ * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey?, comboName? }
  */
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
@@ -509,6 +509,7 @@ export async function getUsageStats() {
     byAccount: {},
     byApiKey: {},
     byEndpoint: {},
+    byCombo: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -616,6 +617,48 @@ export async function getUsageStats() {
       stats.byModel[modelKey].lastUsed = entry.timestamp;
     }
 
+
+    // By Combo (combo name + nested models)
+    if (entry.comboName) {
+      if (!stats.byCombo[entry.comboName]) {
+        stats.byCombo[entry.comboName] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          models: {},
+          lastUsed: entry.timestamp
+        };
+      }
+      stats.byCombo[entry.comboName].requests++;
+      stats.byCombo[entry.comboName].promptTokens += promptTokens;
+      stats.byCombo[entry.comboName].completionTokens += completionTokens;
+      stats.byCombo[entry.comboName].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byCombo[entry.comboName].lastUsed)) {
+        stats.byCombo[entry.comboName].lastUsed = entry.timestamp;
+      }
+
+      // Nested model aggregation within combo
+      const modelKey = entry.provider ? `${entry.model} (${entry.provider})` : entry.model;
+      if (!stats.byCombo[entry.comboName].models[modelKey]) {
+        stats.byCombo[entry.comboName].models[modelKey] = {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          cost: 0,
+          rawModel: entry.model,
+          provider: entry.provider,
+          lastUsed: entry.timestamp
+        };
+      }
+      stats.byCombo[entry.comboName].models[modelKey].requests++;
+      stats.byCombo[entry.comboName].models[modelKey].promptTokens += promptTokens;
+      stats.byCombo[entry.comboName].models[modelKey].completionTokens += completionTokens;
+      stats.byCombo[entry.comboName].models[modelKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byCombo[entry.comboName].models[modelKey].lastUsed)) {
+        stats.byCombo[entry.comboName].models[modelKey].lastUsed = entry.timestamp;
+      }
+    }
     // By Account (model + oauth account)
     // Use connectionId if available, otherwise fallback to provider name
     if (entry.connectionId) {
