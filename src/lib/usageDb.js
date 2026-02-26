@@ -622,6 +622,7 @@ export async function getUsageStats() {
     if (entry.comboName) {
       if (!stats.byCombo[entry.comboName]) {
         stats.byCombo[entry.comboName] = {
+          comboName: entry.comboName,
           requests: 0,
           promptTokens: 0,
           completionTokens: 0,

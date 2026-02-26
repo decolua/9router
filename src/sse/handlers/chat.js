@@ -85,7 +85,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr),
       log
     });
   }
@@ -97,7 +97,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, comboNameOverride = undefined) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -108,7 +108,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, forceSourceFormat),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboNameOverride || modelStr),
         log
       });
     }
@@ -178,7 +178,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      comboName: modelStr !== `${provider}/${model}` ? modelStr : undefined,
+      comboName: comboNameOverride || (modelStr !== `${provider}/${model}` ? modelStr : undefined),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

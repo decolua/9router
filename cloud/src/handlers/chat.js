@@ -77,7 +77,7 @@ export async function handleChat(request, env, ctx, machineIdOverride = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (reqBody, model) => handleSingleModelChat(reqBody, model, machineId, env),
+      handleSingleModel: (reqBody, model) => handleSingleModelChat(reqBody, model, machineId, env, modelStr),
       log
     });
   }
@@ -89,7 +89,7 @@ export async function handleChat(request, env, ctx, machineIdOverride = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, machineId, env) {
+async function handleSingleModelChat(body, modelStr, machineId, env, comboNameOverride = undefined) {
   const modelInfo = await getModelInfo(modelStr, machineId, env);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -134,7 +134,7 @@ async function handleSingleModelChat(body, modelStr, machineId, env) {
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
-      comboName: modelStr !== `${provider}/${model}` ? modelStr : undefined,
+      comboName: comboNameOverride || (modelStr !== `${provider}/${model}` ? modelStr : undefined),
       onCredentialsRefreshed: async (newCreds) => {
         await updateCredentials(machineId, credentials.id, newCreds, env);
       },
