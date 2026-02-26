@@ -6,7 +6,7 @@ import { CardSkeleton } from "./Loading";
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
-import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
+import UsageTable, { fmt, fmtCost, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
 
