@@ -155,8 +155,18 @@ const ENDPOINT_COLUMNS = [
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
+const COMBO_COLUMNS = [
+  { field: "comboName", label: "Combo" },
+  { field: "requests", label: "Requests", align: "right" },
+  { field: "promptTokens", label: "Prompt Tokens", align: "right" },
+  { field: "completionTokens", label: "Completion Tokens", align: "right" },
+  { field: "cost", label: "Cost", align: "right" },
+  { field: "lastUsed", label: "Last Used", align: "right" },
+];
+
 const TABLE_OPTIONS = [
   { value: "model", label: "Usage by Model" },
+  { value: "combo", label: "Usage by Combo" },
   { value: "account", label: "Usage by Account" },
   { value: "apiKey", label: "Usage by API Key" },
   { value: "endpoint", label: "Usage by Endpoint" },
@@ -254,6 +264,34 @@ export default function UsageStats() {
               <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
               <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+            </>
+          ),
+        };
+      }
+      case "combo": {
+        const pendingMap = stats.pending?.byCombo || {};
+        return {
+          columns: COMBO_COLUMNS,
+          groupedData: groupDataByKey(sortData(stats.byCombo, pendingMap, sortBy, sortOrder), "comboName"),
+          storageKey: "usage-stats:expanded-combos",
+          emptyMessage: "No combo usage recorded yet.",
+          renderSummaryCells: (group) => (
+            <>
+              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted">—</td>
+              <td className="px-6 py-3 text-right text-text-muted">—</td>
+              <td className="px-6 py-3 text-right text-text-muted">—</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+            </>
+          ),
+          renderDetailCells: (item) => (
+            <>
+              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.comboName}</td>
+              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted">{fmt(item.promptTokens)}</td>
+              <td className="px-6 py-3 text-right text-text-muted">{fmt(item.completionTokens)}</td>
+              <td className="px-6 py-3 text-right text-text-muted">{fmtCost(item.cost)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
