@@ -26,6 +26,7 @@
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
+    "redis": "^4.7.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.7.0",
