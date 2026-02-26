@@ -134,6 +134,7 @@ async function handleSingleModelChat(body, modelStr, machineId, env) {
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
+      comboName: modelStr !== `${provider}/${model}` ? modelStr : undefined,
       onCredentialsRefreshed: async (newCreds) => {
         await updateCredentials(machineId, credentials.id, newCreds, env);
       },

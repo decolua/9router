@@ -41,7 +41,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onCredentialsRefreshed,
     onRequestSuccess,
     onDisconnect,
-    connectionId
+    connectionId,
+    comboName: undefined
   });
 
   if (!result.success || !result.response) {

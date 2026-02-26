@@ -347,7 +347,7 @@ function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {string} options.apiKey - API key for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, comboName }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -603,7 +603,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
               tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
               timestamp: new Date().toISOString(),
               connectionId: connectionId || undefined,
-              apiKey: apiKey || undefined
+              apiKey: apiKey || undefined,
+              comboName: comboName || undefined
             }).catch(() => { });
           }
 
@@ -707,7 +708,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
                 timestamp: new Date().toISOString(),
                 connectionId: connectionId || undefined,
                 apiKey: apiKey || undefined,
-                endpoint: clientRawRequest?.endpoint || null
+                endpoint: clientRawRequest?.endpoint || null,
+                comboName: comboName || undefined
               }).catch(() => { });
             }
 
@@ -802,7 +804,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
         apiKey: apiKey || undefined,
-        endpoint: clientRawRequest?.endpoint || null
+        endpoint: clientRawRequest?.endpoint || null,
+        comboName: comboName || undefined
       }).catch(err => {
         console.error("Failed to save usage stats:", err.message);
       });
@@ -941,7 +944,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         timestamp: new Date().toISOString(),
         connectionId: connectionId || undefined,
         apiKey: apiKey || undefined,
-        endpoint: clientRawRequest?.endpoint || null
+        endpoint: clientRawRequest?.endpoint || null,
+        comboName: comboName || undefined
       }).catch(err => {
         console.error("Failed to save streaming usage stats:", err.message);
       });
