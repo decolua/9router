@@ -13,10 +13,10 @@ export function buildErrorBody(statusCode, message) {
       : { type: "invalid_request_error", code: "" });
 
   return {
+    type: "error",
     error: {
-      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
-      code: errorInfo.code
+      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
     }
   };
 }
@@ -159,11 +159,12 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify(buildErrorBody(statusCode, msg)),
     {
       status: statusCode,
       headers: {
         "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
         "Retry-After": String(retryAfterSec)
       }
     }

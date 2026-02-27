@@ -86,14 +86,45 @@ async function ensureAnthropicJsonResponse(response) {
     return response;
   }
 
-  // Already anthropic format
+  // Already correct Anthropic format (success message)
   if (body?.type === "message" && Array.isArray(body?.content)) {
     return response;
   }
 
-  // OpenAI fallback -> Anthropic
+  // Already correct Anthropic error format
+  if (body?.type === "error" && body?.error) {
+    return response;
+  }
+
+  // OpenAI success format -> Anthropic
   if (Array.isArray(body?.choices)) {
     const normalized = openAIToClaudeJson(body);
+    return new Response(JSON.stringify(normalized), {
+      status: response.status,
+      headers: response.headers,
+    });
+  }
+
+  // Any error response (non-2xx or has error field) -> normalize to Anthropic error format
+  if (response.status >= 400 || body?.error) {
+    const message = typeof body?.error === "string"
+      ? body.error
+      : body?.error?.message || body?.message || `Upstream error: ${response.status}`;
+
+    const errorTypeMap = {
+      401: "authentication_error",
+      403: "permission_error",
+      404: "not_found_error",
+      429: "rate_limit_error",
+    };
+    const errorType = body?.error?.type
+      || errorTypeMap[response.status]
+      || (response.status >= 500 ? "api_error" : "invalid_request_error");
+
+    const normalized = {
+      type: "error",
+      error: { type: errorType, message }
+    };
     return new Response(JSON.stringify(normalized), {
       status: response.status,
       headers: response.headers,
