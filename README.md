@@ -114,6 +114,28 @@ Default URLs:
 
 ---
 
+## 🎥 Video Tutorial
+
+<div align="center">
+  
+### 📺 Complete Setup Guide - 9Router + Claude Code FREE
+  
+[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+
+**🎬 Watch the complete step-by-step tutorial:**
+- ✅ 9Router installation & setup
+- ✅ FREE Claude Sonnet 4.5 configuration
+- ✅ Claude Code integration
+- ✅ Live coding demonstration
+
+**⏱️ Duration:** 20 minutes | **👥 By:** Developer Community
+
+[▶️ Watch on YouTube](https://www.youtube.com/watch?v=o3qYCyjrFYg)
+
+</div>
+
+---
+
 ## 💡 Key Features
 
 | Feature | What It Does | Why It Matters |
