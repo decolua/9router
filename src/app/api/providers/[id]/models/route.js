@@ -120,6 +120,15 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: (data) => data.data || []
   },
 
+  alicode: {
+    url: "https://coding.dashscope.aliyuncs.com/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || []
+  },
+
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),

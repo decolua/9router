@@ -1,5 +1,6 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getDefaultModel } from "open-sse/config/providerModels.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -304,6 +305,16 @@ async function testApiKeyConnection(connection) {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "kimi-latest", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        });
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "alicode": {
+        // Aliyun Coding Plan uses OpenAI-compatible API
+        const res = await fetch("https://coding.dashscope.aliyuncs.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: getDefaultModel("alicode"), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };

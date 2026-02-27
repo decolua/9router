@@ -223,6 +223,11 @@ export const PROVIDERS = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
+  alicode: {
+    baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
     responsesUrl: "https://api.githubcopilot.com/responses",
