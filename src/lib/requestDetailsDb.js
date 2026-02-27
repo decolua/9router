@@ -612,7 +612,8 @@ export async function getModelSpeedStats(providerModelPairs) {
         const latency = safeJsonParse(row.latency);
         const tokens = safeJsonParse(row.tokens);
         const totalMs = latency?.total || 0;
-        const completionTokens = tokens?.completion_tokens || 0;
+        // Support both OpenAI (completion_tokens) and Claude (output_tokens) formats
+        const completionTokens = tokens?.completion_tokens ?? tokens?.output_tokens ?? 0;
 
         // Calculate speed: tokens per second
         let speed = 0;
