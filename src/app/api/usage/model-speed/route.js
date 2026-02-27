@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getRequestDetailsDb } from "@/lib/requestDetailsDb";
 
+// Cache for 30 seconds
+export const revalidate = 30;
+
 /**
  * GET /api/usage/model-speed
  * Returns aggregated speed stats (tokens/s) per model, computed from logged request details.

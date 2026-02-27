@@ -72,27 +72,30 @@ export default function ModelSpeedTab() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [error, setError] = useState(null);
 
+  const fetchData = async () => {
+    try {
+      const res = await fetch("/api/usage/model-speed", { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      const data = await res.json();
+      setModels(data.models || []);
+      setError(null);
+    } catch (err) {
+      console.error("[ModelSpeedTab] fetch error:", err);
+      setError("Failed to load model speed data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/usage/model-speed")
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data) => {
-        if (!cancelled) {
-          setModels(data.models || []);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          console.error("[ModelSpeedTab] fetch error:", err);
-          setError("Failed to load model speed data.");
-          setLoading(false);
-        }
-      });
-
-    return () => { cancelled = true; };
+    setLoading(true);
+    fetchData();
   }, []);
+
+  const handleReload = () => {
+    setLoading(true);
+    fetchData();
+  };
 
   const maxSpeed = useMemo(
     () => Math.max(...models.map((m) => m.avgSpeed), 0),
@@ -156,6 +159,18 @@ export default function ModelSpeedTab() {
             </button>
           )}
         </div>
+
+        <button
+          type="button"
+          onClick={handleReload}
+          disabled={loading}
+          className="p-2 rounded-lg border border-border bg-bg-subtle hover:bg-bg-muted transition-colors disabled:opacity-50"
+          title="Reload data"
+        >
+          <span className={`material-symbols-outlined text-[18px] ${loading ? "animate-spin" : ""}`}>
+            refresh
+          </span>
+        </button>
 
         <span className="text-xs text-text-muted">
           {loading
