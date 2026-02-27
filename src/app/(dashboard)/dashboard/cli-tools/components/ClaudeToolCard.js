@@ -31,6 +31,9 @@ export default function ClaudeToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [scriptCopied, setScriptCopied] = useState(false);
   const hasInitializedModels = useRef(false);
 
   const getConfigStatus = () => {
@@ -57,12 +60,23 @@ export default function ClaudeToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
+    // Check if warning was previously dismissed
+    const dismissed = localStorage.getItem("claude-cli-warning-dismissed");
+    if (dismissed === "true") setWarningDismissed(true);
+  }, []);
+
+  const handleDismissWarning = () => {
+    setWarningDismissed(true);
+    localStorage.setItem("claude-cli-warning-dismissed", "true");
+  };
+
+  useEffect(() => {
     if (isExpanded && !claudeStatus) {
       checkClaudeStatus();
       fetchModelAliases();
     }
     if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
+  }, [claudeStatus, isExpanded]);
 
   const fetchModelAliases = async () => {
     try {
@@ -187,26 +201,59 @@ export default function ClaudeToolCard({
   };
 
   // Generate settings.json content for manual copy
-  const getManualConfigs = () => {
-    const manualJson = `{
-  "env": {
-    "ANTHROPIC_BASE_URL": "https://{NEXT_PUBLIC_BASE_URL}/v1",
-    "ANTHROPIC_AUTH_TOKEN": "<GET_FROM_/dashboard/endpoint_API_Keys>",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "lg",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "md",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "sm",
-    "MAX_THINKING_TOKENS": "24000"
-  }
-}`;
+  const getGeneratedConfig = () => {
+    const config = {
+      ANTHROPIC_BASE_URL: getDisplayUrl(),
+      ANTHROPIC_AUTH_TOKEN: selectedApiKey || "<YOUR_API_KEY>",
+    };
 
+    tool.defaultModels.forEach((model) => {
+      if (model.envKey) {
+        config[model.envKey] = modelMappings[model.alias] || model.defaultValue || "";
+      }
+    });
+
+    return JSON.stringify(config, null, 2);
+  };
+
+  const handleCopyConfig = async () => {
+    try {
+      await navigator.clipboard.writeText(getGeneratedConfig());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  const getQuickApplyScript = () => {
+    const configObj = { env: {} };
+    configObj.env.ANTHROPIC_BASE_URL = getDisplayUrl();
+    configObj.env.ANTHROPIC_AUTH_TOKEN = selectedApiKey || "<YOUR_API_KEY>";
+    tool.defaultModels.forEach((model) => {
+      if (model.envKey) {
+        configObj.env[model.envKey] = modelMappings[model.alias] || model.defaultValue || "";
+      }
+    });
+    const configJson = JSON.stringify(configObj, null, 2);
+    return `mkdir -p ~/.claude && cat > ~/.claude/setting.json << 'EOF'\n${configJson}\nEOF\necho "Config applied to ~/.claude/setting.json"`;
+  };
+
+  const handleCopyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(getQuickApplyScript());
+      setScriptCopied(true);
+      setTimeout(() => setScriptCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy:", err);
+    }
+  };
+
+  const getManualConfigs = () => {
     return [
       {
-        filename: "Instruction",
-        content: "Copy the JSON below and paste it into your local Claude Code config file: ~/.claude/setting.json. Set ANTHROPIC_AUTH_TOKEN using a key from /dashboard/endpoint → API Keys.",
-      },
-      {
         filename: "~/.claude/setting.json",
-        content: manualJson,
+        content: getGeneratedConfig(),
       },
     ];
   };
@@ -240,17 +287,20 @@ export default function ClaudeToolCard({
             </div>
           )}
 
-          {!checkingClaude && claudeStatus && !claudeStatus.installed && (
+          {!checkingClaude && claudeStatus && !claudeStatus.installed && !warningDismissed && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-yellow-500">warning</span>
                 <div className="flex-1">
                   <p className="font-medium text-yellow-600 dark:text-yellow-400">Claude CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install Claude CLI to use this feature.</p>
+                  <p className="text-sm text-text-muted">This is expected on remote servers. You can configure Claude CLI locally instead.</p>
                 </div>
                 <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
                   <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
                   {showInstallGuide ? "Hide" : "How to Install"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleDismissWarning} title="Dismiss warning">
+                  <span className="material-symbols-outlined text-[18px]">close</span>
                 </Button>
               </div>
               {showInstallGuide && (
@@ -265,6 +315,83 @@ export default function ClaudeToolCard({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Config Generator for remote servers */}
+          {!checkingClaude && claudeStatus && !claudeStatus.installed && (
+            <div className="flex flex-col gap-4">
+              <h4 className="font-medium text-sm">Generate Local Config</h4>
+              <p className="text-xs text-text-muted">Configure your models and API key, then copy the generated config to your local ~/.claude/setting.json file.</p>
+
+              <div className="flex flex-col gap-2">
+                {/* API Key */}
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <div className="flex flex-1 items-center gap-2">
+                    {apiKeys.length > 0 ? (
+                      <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
+                        <option value="">Select an API key</option>
+                        {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.name || key.key}</option>)}
+                      </select>
+                    ) : (
+                      <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
+                        {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      </span>
+                    )}
+                    <a
+                      href="/dashboard/endpoint#api-keys"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 px-2 py-1.5 text-xs border border-border rounded text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      Open API Keys
+                    </a>
+                  </div>
+                </div>
+
+                {/* Model Mappings */}
+                {tool.defaultModels.map((model) => (
+                  <div key={model.alias} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{model.name}</span>
+                    <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                    <input type="text" value={modelMappings[model.alias] || ""} onChange={(e) => onModelMappingChange(model.alias, e.target.value)} placeholder={model.defaultValue || "provider/model-id"} className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+                    <button onClick={() => openModelSelector(model.alias)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
+                    {modelMappings[model.alias] && <button onClick={() => onModelMappingChange(model.alias, "")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Generated Config */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-text-main">Generated Config</span>
+                  <Button variant="outline" size="sm" onClick={handleCopyConfig}>
+                    <span className="material-symbols-outlined text-[14px] mr-1">{copied ? "check" : "content_copy"}</span>
+                    {copied ? "Copied!" : "Copy"}
+                  </Button>
+                </div>
+                <pre className="p-3 bg-black/5 dark:bg-white/5 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all">
+                  {getGeneratedConfig()}
+                </pre>
+                <p className="text-xs text-text-muted">Paste this into your local Claude Code config file: <code className="px-1 bg-black/5 dark:bg-white/5 rounded">~/.claude/setting.json</code></p>
+              </div>
+
+              {/* Quick Apply Script */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-text-main">Quick Apply Script</span>
+                  <Button variant="outline" size="sm" onClick={handleCopyScript}>
+                    <span className="material-symbols-outlined text-[14px] mr-1">{scriptCopied ? "check" : "content_copy"}</span>
+                    {scriptCopied ? "Copied!" : "Copy Script"}
+                  </Button>
+                </div>
+                <pre className="p-3 bg-black/5 dark:bg-white/5 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all">
+                  {getQuickApplyScript()}
+                </pre>
+                <p className="text-xs text-text-muted">Run this command in your local terminal to apply the config directly.</p>
+              </div>
             </div>
           )}
 
@@ -307,7 +434,7 @@ export default function ClaudeToolCard({
                   <div className="flex flex-1 items-center gap-2">
                     {apiKeys.length > 0 ? (
                       <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
-                        {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
+                        {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.name || key.key}</option>)}
                       </select>
                     ) : (
                       <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
