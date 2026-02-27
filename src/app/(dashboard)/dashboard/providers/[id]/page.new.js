@@ -1144,20 +1144,28 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
 
+  const modelLockUntil = Object.entries(connection)
+    .filter(([k]) => k.startsWith("modelLock_"))
+    .map(([, v]) => v)
+    .filter(v => v && new Date(v).getTime() > Date.now())
+    .sort()[0] || null;
+
   useEffect(() => {
     const checkCooldown = () => {
-      const cooldown = connection.rateLimitedUntil &&
-        new Date(connection.rateLimitedUntil).getTime() > Date.now();
-      setIsCooldown(cooldown);
+      const until = Object.entries(connection)
+        .filter(([k]) => k.startsWith("modelLock_"))
+        .map(([, v]) => v)
+        .filter(v => v && new Date(v).getTime() > Date.now())
+        .sort()[0] || null;
+      setIsCooldown(!!until);
     };
 
     checkCooldown();
-    // Update every second while in cooldown
-    const interval = connection.rateLimitedUntil ? setInterval(checkCooldown, 1000) : null;
+    const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [connection.rateLimitedUntil]);
+  }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
@@ -1200,7 +1208,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={connection.rateLimitedUntil} />}
+            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
@@ -1239,7 +1247,7 @@ ConnectionRow.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
-    rateLimitedUntil: PropTypes.string,
+    modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
     lastError: PropTypes.string,

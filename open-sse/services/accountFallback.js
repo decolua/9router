@@ -138,6 +138,64 @@ export function formatRetryAfter(rateLimitedUntil) {
   return `reset after ${parts.join(" ")}`;
 }
 
+/** Prefix for model lock flat fields on connection record */
+export const MODEL_LOCK_PREFIX = "modelLock_";
+
+/** Special key used when no model is known (account-level lock) */
+export const MODEL_LOCK_ALL = `${MODEL_LOCK_PREFIX}__all`;
+
+/** Build the flat field key for a model lock */
+export function getModelLockKey(model) {
+  return model ? `${MODEL_LOCK_PREFIX}${model}` : MODEL_LOCK_ALL;
+}
+
+/**
+ * Check if a model lock on a connection is still active.
+ * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
+ */
+export function isModelLockActive(connection, model) {
+  const key = getModelLockKey(model);
+  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
+  if (!expiry) return false;
+  return new Date(expiry).getTime() > Date.now();
+}
+
+/**
+ * Get earliest active model lock expiry across all modelLock_* fields.
+ * Used for UI cooldown display.
+ */
+export function getEarliestModelLockUntil(connection) {
+  if (!connection) return null;
+  let earliest = null;
+  const now = Date.now();
+  for (const [key, val] of Object.entries(connection)) {
+    if (!key.startsWith(MODEL_LOCK_PREFIX) || !val) continue;
+    const t = new Date(val).getTime();
+    if (t <= now) continue;
+    if (!earliest || t < earliest) earliest = t;
+  }
+  return earliest ? new Date(earliest).toISOString() : null;
+}
+
+/**
+ * Build update object to set a model lock on a connection.
+ */
+export function buildModelLockUpdate(model, cooldownMs) {
+  const key = getModelLockKey(model);
+  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+}
+
+/**
+ * Build update object to clear all model locks on a connection.
+ */
+export function buildClearModelLocksUpdate(connection) {
+  const cleared = {};
+  for (const key of Object.keys(connection)) {
+    if (key.startsWith(MODEL_LOCK_PREFIX)) cleared[key] = null;
+  }
+  return cleared;
+}
+
 /**
  * Filter available accounts (not in cooldown)
  */

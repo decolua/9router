@@ -99,7 +99,8 @@ export default function ProvidersPage() {
     );
 
     const getEffectiveStatus = (conn) => {
-      const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
+      const isCooldown = Object.entries(conn)
+        .some(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now());
       return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
     };
 
