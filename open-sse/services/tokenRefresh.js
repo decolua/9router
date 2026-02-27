@@ -206,42 +206,56 @@ export async function refreshQwenToken(refreshToken, log) {
  * Specialized refresh for Codex (OpenAI) OAuth tokens
  */
 export async function refreshCodexToken(refreshToken, log) {
-  const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.codex.clientId,
-      scope: "openid profile email offline_access",
-    }),
-  });
+  const endpoint = OAUTH_ENDPOINTS.openai.token;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Codex token", {
-      status: response.status,
-      error: errorText,
-    });
-    return null;
-  }
+  const refreshFn = async () => {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: PROVIDERS.codex.clientId,
+          scope: "openid profile email offline_access",
+        }),
+      });
 
-  const tokens = await response.json();
+      if (response.status === 200) {
+        const tokens = await response.json();
 
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
-    hasNewAccessToken: !!tokens.access_token,
-    hasNewRefreshToken: !!tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-  });
+        log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
+          hasNewAccessToken: !!tokens.access_token,
+          hasNewRefreshToken: !!tokens.refresh_token,
+          expiresIn: tokens.expires_in,
+        });
 
-  return {
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token || refreshToken,
-    expiresIn: tokens.expires_in,
+        return {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || refreshToken,
+          expiresIn: tokens.expires_in,
+        };
+      } else {
+        const errorText = await response.text().catch(() => "");
+        log?.warn?.("TOKEN_REFRESH", `Error with Codex endpoint`, {
+          status: response.status,
+          error: errorText,
+        });
+        return null; // Return null so refreshWithRetry can loop!
+      }
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Network error trying Codex endpoint`, {
+        error: error.message,
+      });
+      // Throw error to trigger catch and log in refreshWithRetry
+      throw error;
+    }
   };
+
+  return refreshWithRetry(refreshFn, 3, log);
 }
 
 /**
