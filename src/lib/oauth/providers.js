@@ -293,32 +293,27 @@ const PROVIDERS = {
         console.log("Failed to load code assist:", e);
       }
 
-      // Onboard user to enable Gemini Code Assist
+      // Fire-and-forget onboarding — does not block DB save
       if (projectId) {
-        try {
+        const doOnboard = async () => {
           for (let i = 0; i < 10; i++) {
-            const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
-            });
-            if (onboardRes.ok) {
-              const result = await onboardRes.json();
-              if (result.done === true) {
-                // Extract final project ID from response
-                if (result.response?.cloudaicompanionProject) {
-                  const respProject = result.response.cloudaicompanionProject;
-                  projectId = typeof respProject === 'string' ? respProject.trim() : (respProject.id || projectId);
-                }
-                break;
+            try {
+              const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
+              });
+              if (onboardRes.ok) {
+                const result = await onboardRes.json();
+                if (result.done === true) break;
               }
+            } catch (e) {
+              break;
             }
-            // Wait 5 seconds before retry
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
-        } catch (e) {
-          console.log("Failed to onboard user:", e);
-        }
+        };
+        doOnboard().catch(() => {});
       }
 
       return { userInfo, projectId };
