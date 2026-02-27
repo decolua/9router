@@ -45,7 +45,8 @@ export async function GET() {
       const latency = safeJsonParse(row.latency);
       const tokens = safeJsonParse(row.tokens);
       const totalMs = latency?.total || 0;
-      const completionTokens = tokens?.completion_tokens || 0;
+      // Support both OpenAI (completion_tokens) and Claude (output_tokens) formats
+      const completionTokens = tokens?.completion_tokens ?? tokens?.output_tokens ?? 0;
 
       if (totalMs <= 0 || completionTokens <= 0) continue;
 
