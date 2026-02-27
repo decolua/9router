@@ -24,6 +24,8 @@ export default function ProviderDetailPage() {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
+  const [modelTestResults, setModelTestResults] = useState({});
+  const [testingModels, setTestingModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -256,6 +258,27 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleTestModels = async () => {
+    if (testingModels) return;
+    const conn = connections.find((c) => c.isActive !== false) || connections[0];
+    if (!conn) return;
+    setTestingModels(true);
+    setModelTestResults({});
+    try {
+      const res = await fetch(`/api/providers/${conn.id}/test-models`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        const map = {};
+        for (const r of data.results || []) map[r.modelId] = r.ok ? "ok" : "error";
+        setModelTestResults(map);
+      }
+    } catch {
+      // silent fail
+    } finally {
+      setTestingModels(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -305,6 +328,7 @@ export default function ProviderDetailPage() {
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+              testStatus={modelTestResults[model.id]}
             />
           );
         })}
@@ -494,11 +518,23 @@ export default function ProviderDetailPage() {
 
       {/* Models */}
       <Card>
-        <h2 className="text-lg font-semibold mb-4">
-          {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">
+            {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
+          </h2>
+          {connections.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={testingModels ? "progress_activity" : "science"}
+              onClick={handleTestModels}
+              disabled={testingModels}
+            >
+              {testingModels ? "Testing…" : "Test Models"}
+            </Button>
+          )}
+        </div>
         {renderModelsSection()}
-
       </Card>
 
       {/* Modals */}
@@ -552,10 +588,27 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus }) {
+  const borderColor = testStatus === "ok"
+    ? "border-green-500/40"
+    : testStatus === "error"
+    ? "border-red-500/40"
+    : "border-border";
+
+  const iconColor = testStatus === "ok"
+    ? "#22c55e"
+    : testStatus === "error"
+    ? "#ef4444"
+    : undefined;
+
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-sidebar/50">
-      <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+      <span
+        className="material-symbols-outlined text-base"
+        style={iconColor ? { color: iconColor } : undefined}
+      >
+        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+      </span>
       <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
       <button
         onClick={() => onCopy(fullModel, `model-${model.id}`)}
@@ -578,6 +631,7 @@ ModelRow.propTypes = {
   alias: PropTypes.string,
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
+  testStatus: PropTypes.oneOf(["ok", "error"]),
 };
 
 function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
@@ -1498,3 +1552,4 @@ EditCompatibleNodeModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   isAnthropic: PropTypes.bool,
 };
+

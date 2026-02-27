@@ -113,7 +113,6 @@ export const PROVIDER_MODELS = {
     { id: "claude-4.6-opus-max", name: "Claude 4.6 Opus Max" },
     { id: "claude-4.6-sonnet-medium-thinking", name: "Claude 4.6 Sonnet Medium Thinking" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gpt-5.2", name: "GPT 5.2" },
     { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
