@@ -153,49 +153,53 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
 export async function refreshQwenToken(refreshToken, log) {
   const endpoint = OAUTH_ENDPOINTS.qwen.token;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: PROVIDERS.qwen.clientId,
-      }),
-    });
-
-    if (response.status === 200) {
-      const tokens = await response.json();
-
-      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Qwen token", {
-        hasNewAccessToken: !!tokens.access_token,
-        hasNewRefreshToken: !!tokens.refresh_token,
-        expiresIn: tokens.expires_in,
+  const refreshFn = async () => {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: PROVIDERS.qwen.clientId,
+        }),
       });
 
-      return {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || refreshToken,
-        expiresIn: tokens.expires_in,
-      };
-    } else {
-      const errorText = await response.text().catch(() => "");
-      log?.warn?.("TOKEN_REFRESH", `Error with Qwen endpoint`, {
-        status: response.status,
-        error: errorText,
+      if (response.status === 200) {
+        const tokens = await response.json();
+
+        log?.info?.("TOKEN_REFRESH", "Successfully refreshed Qwen token", {
+          hasNewAccessToken: !!tokens.access_token,
+          hasNewRefreshToken: !!tokens.refresh_token,
+          expiresIn: tokens.expires_in,
+        });
+
+        return {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || refreshToken,
+          expiresIn: tokens.expires_in,
+        };
+      } else {
+        const errorText = await response.text().catch(() => "");
+        log?.warn?.("TOKEN_REFRESH", `Error with Qwen endpoint`, {
+          status: response.status,
+          error: errorText,
+        });
+        return null; // Return null so refreshWithRetry can loop!
+      }
+    } catch (error) {
+      log?.warn?.("TOKEN_REFRESH", `Network error trying Qwen endpoint`, {
+        error: error.message,
       });
+      // Throw error to trigger catch and log in refreshWithRetry
+      throw error;
     }
-  } catch (error) {
-    log?.warn?.("TOKEN_REFRESH", `Network error trying Qwen endpoint`, {
-      error: error.message,
-    });
-  }
+  };
 
-  log?.error?.("TOKEN_REFRESH", "Failed to refresh Qwen token");
-  return null;
+  return refreshWithRetry(refreshFn, 3, log);
 }
 
 /**

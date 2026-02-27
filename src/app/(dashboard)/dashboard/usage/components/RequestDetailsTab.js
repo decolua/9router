@@ -261,6 +261,7 @@ export default function RequestDetailsTab() {
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">Clear</span>
             <Button
+              type="button"
               variant="ghost"
               onClick={handleClearFilters}
               disabled={!filters.provider && !filters.status && !filters.startDate && !filters.endDate}
@@ -272,6 +273,7 @@ export default function RequestDetailsTab() {
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">Actions</span>
             <Button
+              type="button"
               variant="ghost"
               onClick={handleClearAll}
               disabled={clearing || pagination.totalItems === 0}
