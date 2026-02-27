@@ -499,6 +499,20 @@ export async function getRequestDetails(filter = {}) {
     catch { return fallback; }
   };
 
+  // Normalize tokens to prompt_tokens/completion_tokens format
+  const normalizeTokens = (tokens) => {
+    if (!tokens || typeof tokens !== 'object') return tokens;
+    return {
+      prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
+      completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
+      // Preserve additional fields
+      ...(tokens.cache_read_input_tokens && { cache_read_input_tokens: tokens.cache_read_input_tokens }),
+      ...(tokens.cache_creation_input_tokens && { cache_creation_input_tokens: tokens.cache_creation_input_tokens }),
+      ...(tokens.cached_tokens && { cached_tokens: tokens.cached_tokens }),
+      ...(tokens.reasoning_tokens && { reasoning_tokens: tokens.reasoning_tokens }),
+    };
+  };
+
   // Convert back to original format
   const details = rows.map(row => ({
     id: row.id,
@@ -508,7 +522,7 @@ export async function getRequestDetails(filter = {}) {
     timestamp: new Date(row.timestamp).toISOString(),
     status: row.status,
     latency: safeJsonParse(row.latency),
-    tokens: safeJsonParse(row.tokens),
+    tokens: normalizeTokens(safeJsonParse(row.tokens)),
     request: safeJsonParse(row.request),
     providerRequest: safeJsonParse(row.provider_request),
     providerResponse: safeJsonParse(row.provider_response),
