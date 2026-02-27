@@ -383,15 +383,43 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
     const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${rec} | ${status}\n`;
     fs.appendFileSync(LOG_FILE, line);
     const lines = fs.readFileSync(LOG_FILE, "utf-8").trim().split("\n");
-    if (lines.length > 200) fs.writeFileSync(LOG_FILE, lines.slice(-200).join("\n") + "\n");
+    if (lines.length > 5000) fs.writeFileSync(LOG_FILE, lines.slice(-5000).join("\n") + "\n");
   } catch (err) { console.error("Failed to append log:", err.message); }
 }
 
-export async function getRecentLogs(limit = 200) {
-  if (isCloud || !fs || !LOG_FILE || !fs.existsSync(LOG_FILE)) return [];
+export async function getRecentLogs(options = {}) {
+  const limit = options.limit || 200;
+  const page = options.page || 1;
+  const search = options.search ? options.search.toLowerCase() : "";
+
+  if (isCloud || !fs || !LOG_FILE || !fs.existsSync(LOG_FILE)) return { logs: [], total: 0 };
   try {
-    return fs.readFileSync(LOG_FILE, "utf-8").trim().split("\n").slice(-limit).reverse();
-  } catch { return []; }
+    let lines = fs.readFileSync(LOG_FILE, "utf-8").trim().split("\n").filter(l => l);
+    
+    // Reverse so newest is first
+    lines.reverse();
+    
+    if (search) {
+      lines = lines.filter(line => line.toLowerCase().includes(search));
+    }
+    
+    const total = lines.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedLogs = lines.slice(startIndex, startIndex + limit);
+    
+    return { logs: paginatedLogs, total };
+  } catch { return { logs: [], total: 0 }; }
+}
+
+export async function clearAllLogs() {
+  if (isCloud || !fs || !LOG_FILE) return false;
+  try {
+    fs.writeFileSync(LOG_FILE, "");
+    return true;
+  } catch (err) {
+    console.error("Failed to clear logs:", err.message);
+    return false;
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -562,4 +590,4 @@ export async function getChartData(period = "7d") {
 }
 
 // Re-export request details functions from requestDetailsDb
-export { saveRequestDetail, getRequestDetails, getRequestDetailById, getModelSpeedStats } from "./requestDetailsDb.js";
+export { saveRequestDetail, getRequestDetails, getRequestDetailById, getModelSpeedStats, clearAllRequestDetails } from "./requestDetailsDb.js";

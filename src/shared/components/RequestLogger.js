@@ -7,10 +7,14 @@ export default function RequestLogger() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [totalLogs, setTotalLogs] = useState(0);
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [page, limit, search]);
 
   useEffect(() => {
     let interval;
@@ -20,15 +24,26 @@ export default function RequestLogger() {
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, page, limit, search]);
 
   const fetchLogs = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/usage/request-logs");
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        ...(search ? { search } : {})
+      });
+      const res = await fetch(`/api/usage/request-logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data);
+        if (Array.isArray(data)) {
+          setLogs(data);
+          setTotalLogs(data.length);
+        } else {
+          setLogs(data.logs || []);
+          setTotalLogs(data.total || 0);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch logs:", error);
@@ -37,11 +52,49 @@ export default function RequestLogger() {
     }
   };
 
+  const handleFlush = async () => {
+    if (!confirm("Are you sure you want to clear all logs?")) return;
+    try {
+      setLoading(true);
+      const res = await fetch("/api/usage/request-logs", { method: "DELETE" });
+      if (res.ok) {
+        setPage(1);
+        fetchLogs();
+      }
+    } catch (error) {
+      console.error("Failed to clear logs:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(totalLogs / limit) || 1;
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Request Logs</h2>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">Request Logs</h2>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search logs..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-1.5 bg-bg-subtle border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-64"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleFlush}
+            className="px-3 py-1.5 text-xs font-medium bg-error/10 text-error hover:bg-error/20 rounded-lg transition-colors border border-error/20"
+          >
+            Flush Logs
+          </button>
           <label className="text-sm font-medium text-text-muted flex items-center gap-2 cursor-pointer">
             <span>Auto Refresh (3s)</span>
             <div
@@ -113,8 +166,32 @@ export default function RequestLogger() {
           )}
         </div>
       </Card>
+
+      <div className="flex items-center justify-between text-sm text-text-muted">
+        <div>
+          Showing {logs.length === 0 ? 0 : (page - 1) * limit + 1} to {Math.min(page * limit, totalLogs)} of {totalLogs} entries
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-1 border border-border rounded hover:bg-bg-subtle disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Previous
+          </button>
+          <span className="px-2 font-medium">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="px-3 py-1 border border-border rounded hover:bg-bg-subtle disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+
       <div className="text-[10px] text-text-muted italic">
-        Logs are saved to log.txt in the application data directory.
+        Logs are saved to log.txt in the application data directory. Limited to the most recent 5000 entries.
       </div>
     </div>
   );

@@ -101,6 +101,7 @@ export default function RequestDetailsTab() {
     startDate: "",
     endDate: ""
   });
+  const [clearing, setClearing] = useState(false);
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -162,6 +163,28 @@ export default function RequestDetailsTab() {
 
   const handleClearFilters = () => {
     setFilters({ provider: "", status: "", startDate: "", endDate: "" });
+  };
+
+  const handleClearAll = async () => {
+    if (!confirm(`Clear all ${pagination.totalItems} request details? This cannot be undone.`)) return;
+
+    setClearing(true);
+    try {
+      const res = await fetch("/api/usage/request-details/clear", { method: "DELETE" });
+      const data = await res.json();
+
+      if (data.success) {
+        setDetails([]);
+        setPagination(prev => ({ ...prev, page: 1, totalItems: 0, totalPages: 0 }));
+      } else {
+        alert("Failed to clear request details");
+      }
+    } catch (error) {
+      console.error("Failed to clear request details:", error);
+      alert("Failed to clear request details");
+    } finally {
+      setClearing(false);
+    }
   };
 
   return (
@@ -243,6 +266,18 @@ export default function RequestDetailsTab() {
               disabled={!filters.provider && !filters.status && !filters.startDate && !filters.endDate}
             >
               Clear Filters
+            </Button>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">Actions</span>
+            <Button
+              variant="ghost"
+              onClick={handleClearAll}
+              disabled={clearing || pagination.totalItems === 0}
+              className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+            >
+              {clearing ? "Clearing..." : "Clear All"}
             </Button>
           </div>
         </div>

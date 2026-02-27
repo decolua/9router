@@ -543,6 +543,34 @@ export async function getRequestDetails(filter = {}) {
 }
 
 /**
+ * Clear all request details from the database
+ * @returns {Promise<{success: boolean, deletedCount: number}>}
+ */
+export async function clearAllRequestDetails() {
+  const db = await getRequestDetailsDb();
+
+  if (isCloud) {
+    return { success: false, deletedCount: 0 };
+  }
+
+  try {
+    // Get count before deletion
+    const countStmt = prepareStatement(db, 'SELECT COUNT(*) as count FROM request_details');
+    const countResult = countStmt.get();
+    const deletedCount = countResult?.count || 0;
+
+    // Clear the table
+    const deleteStmt = prepareStatement(db, 'DELETE FROM request_details');
+    deleteStmt.run();
+
+    return { success: true, deletedCount };
+  } catch (error) {
+    console.error("[requestDetailsDb] Failed to clear all details:", error);
+    return { success: false, deletedCount: 0 };
+  }
+}
+
+/**
  * Get single request detail by ID
  * @param {string} id - Request detail ID
  * @returns {Promise<object|null>} Request detail or null
