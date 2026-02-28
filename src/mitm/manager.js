@@ -10,9 +10,12 @@ const { addDNSEntry, removeDNSEntry, checkDNSEntry } = require("./dns/dnsConfig"
 const IS_WIN = process.platform === "win32";
 const { generateCert } = require("./cert/generate");
 const { installCert } = require("./cert/install");
+const { MITM_DIR } = require("./paths");
 
 const MITM_PORT = 443;
-const PID_FILE = path.join(os.homedir(), ".9router", "mitm", ".mitm.pid");
+// Windows: node listens on 8443, netsh portproxy forwards 443→8443
+const MITM_WIN_NODE_PORT = 8443;
+const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
 
 // Resolve server.js path robustly:
 // __dirname is unreliable inside Next.js bundles, so we use DATA_DIR env or
@@ -48,20 +51,15 @@ const ENCRYPT_SALT = "9router-mitm-pwd";
 function getProcessUsingPort443() {
   try {
     if (IS_WIN) {
-      // Windows: use netstat to find PID, then tasklist to get process name
-      const netstatResult = execSync("netstat -ano | findstr :443", { encoding: "utf8" });
-      const lines = netstatResult.trim().split("\n");
-      if (lines.length > 0) {
-        // Extract PID from last column (format: TCP 0.0.0.0:443 0.0.0.0:0 LISTENING 1234)
-        const pidMatch = lines[0].match(/\s+(\d+)\s*$/);
-        if (pidMatch) {
-          const pid = pidMatch[1];
-          const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8" });
-          const processMatch = tasklistResult.match(/"([^"]+)"/);
-          if (processMatch) {
-            return processMatch[1].replace(".exe", "");
-          }
-        }
+      // Use PowerShell for precise port 443 owner lookup
+      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
+        `"$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.OwningProcess } else { 0 }"`;
+      const pidStr = execSync(psCmd, { encoding: "utf8", windowsHide: true }).trim();
+      const pid = parseInt(pidStr, 10);
+      if (pid && pid > 4) {
+        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true });
+        const processMatch = tasklistResult.match(/"([^"]+)"/);
+        if (processMatch) return processMatch[1].replace(".exe", "");
       }
     } else {
       // macOS/Linux: use lsof
@@ -208,20 +206,19 @@ function checkPort443Free() {
 function getPort443Owner(sudoPassword) {
   return new Promise((resolve) => {
     if (IS_WIN) {
-      exec(`netstat -ano | findstr ":443 "`, (err, stdout) => {
-        if (err || !stdout.trim()) return resolve(null);
-        for (const line of stdout.split("\n")) {
-          const match = line.match(/LISTENING\s+(\d+)/i);
-          if (match) {
-            const pid = parseInt(match[1], 10);
-            exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, (e2, out2) => {
-              const m = out2?.match(/"([^"]+)"/);
-              resolve({ pid, name: m ? m[1] : "unknown" });
-            });
-            return;
-          }
-        }
-        resolve(null);
+      // Use PowerShell Get-NetTCPConnection for precise port 443 owner lookup
+      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
+        `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
+        `if ($c) { $c.OwningProcess } else { 0 }"`;
+      exec(psCmd, { windowsHide: true }, (err, stdout) => {
+        if (err) return resolve(null);
+        const pid = parseInt(stdout.trim(), 10);
+        // 0 = no owner, <=4 = System/Idle — not real port owners
+        if (!pid || pid <= 4) return resolve(null);
+        exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }, (e2, out2) => {
+          const m = out2?.match(/"([^"]+)"/);
+          resolve({ pid, name: m ? m[1] : "unknown" });
+        });
       });
     } else {
       // Use ps to find node process running server.js (no sudo needed)
@@ -281,12 +278,12 @@ async function killLeftoverMitm(sudoPassword) {
  * Poll MITM health endpoint until server is up or timeout.
  * Returns { ok, pid } on success, null on timeout.
  */
-function pollMitmHealth(timeoutMs) {
+function pollMitmHealth(timeoutMs, port = MITM_PORT) {
   return new Promise((resolve) => {
     const deadline = Date.now() + timeoutMs;
     const check = () => {
       const req = https.request(
-        { hostname: "127.0.0.1", port: 443, path: "/_mitm_health", method: "GET", rejectUnauthorized: false },
+        { hostname: "127.0.0.1", port, path: "/_mitm_health", method: "GET", rejectUnauthorized: false },
         (res) => {
           let body = "";
           res.on("data", (d) => { body += d; });
@@ -332,8 +329,7 @@ async function getMitmStatus() {
   }
 
   const dnsConfigured = checkDNSEntry();
-  const certDir = path.join(os.homedir(), ".9router", "mitm");
-  const certExists = fs.existsSync(path.join(certDir, "server.crt"));
+  const certExists = fs.existsSync(path.join(MITM_DIR, "server.crt"));
 
   return { running, pid, dnsConfigured, certExists };
 }
@@ -372,71 +368,132 @@ async function startMitm(apiKey, sudoPassword) {
   // Kill any leftover MITM server from a previous failed start attempt
   await killLeftoverMitm(sudoPassword);
 
-  // Check port 443 availability BEFORE modifying system
-  // "no-permission" = EACCES: port may be held by a root process, check via lsof/netstat
-  const portStatus = await checkPort443Free();
-  if (portStatus === "in-use" || portStatus === "no-permission") {
-    const owner = await getPort443Owner(sudoPassword);
-    if (owner && owner.name === "node") {
-      // Orphan MITM node process — kill it and continue
-      console.log(`[MITM] Killing orphan node process on port 443 (PID ${owner.pid})...`);
-      try {
-        if (IS_WIN) {
-          await new Promise((resolve) => exec(`taskkill /F /PID ${owner.pid}`, resolve));
-        } else {
+  if (!IS_WIN) {
+    // Check port 443 availability — Windows handles this inside elevated script
+    const portStatus = await checkPort443Free();
+    if (portStatus === "in-use" || portStatus === "no-permission") {
+      const owner = await getPort443Owner(sudoPassword);
+      if (owner && owner.name === "node") {
+        // Orphan MITM node process — kill it and continue
+        console.log(`[MITM] Killing orphan node process on port 443 (PID ${owner.pid})...`);
+        try {
           const { execWithPassword } = require("./dns/dnsConfig");
           await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
-        }
-        await new Promise(r => setTimeout(r, 800));
-      } catch {
-        // best effort — continue anyway
+          await new Promise(r => setTimeout(r, 800));
+        } catch { /* best effort */ }
+      } else if (owner) {
+        const shortName = owner.name.includes("/")
+          ? owner.name.split("/").filter(Boolean).pop()
+          : owner.name;
+        throw new Error(
+          `Port 443 is already in use by "${shortName}" (PID ${owner.pid}). Stop that process first, then retry.`
+        );
       }
-    } else if (owner) {
-      const shortName = owner.name.includes("/")
-        ? owner.name.split("/").filter(Boolean).pop()
-        : owner.name;
-      throw new Error(
-        `Port 443 is already in use by "${shortName}" (PID ${owner.pid}). Stop that process first, then retry.`
-      );
     }
-    // owner === null + no-permission → likely just needs sudo, proceed
   }
 
-  // 1. Generate SSL certificate if not exists
-  const certPath = path.join(os.homedir(), ".9router", "mitm", "server.crt");
+  // 1. Generate SSL certificate if not exists (no elevation needed)
+  const certPath = path.join(MITM_DIR, "server.crt");
   if (!fs.existsSync(certPath)) {
     console.log("Generating SSL certificate...");
     await generateCert();
   }
 
-  // 2. Install certificate to system keychain
-  // Skip if db flag says installed AND cert file still exists (same cert in keychain)
-  const settings = _getSettings ? await _getSettings().catch(() => ({})) : {};
-  const certAlreadyInstalled = settings.mitmCertInstalled && fs.existsSync(certPath);
-  if (!certAlreadyInstalled) {
-    await installCert(sudoPassword, certPath);
-    if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
-  }
-
-  // 3. Add DNS entry
-  console.log("Adding DNS entry...");
-  await addDNSEntry(sudoPassword);
-
-  // 4. Spawn MITM server with sudo (port 443 requires root on macOS/Linux)
+  // 4. Spawn MITM server
   console.log("Starting MITM server...");
 
   if (IS_WIN) {
-    // Use cmd /c to set env vars inline before launching node (env vars survive RunAs)
-    const nodePath = process.execPath.replace(/"/g, '\\"');
-    const serverPath = SERVER_PATH.replace(/"/g, '\\"');
-    const cmdLine = `set ROUTER_API_KEY=${apiKey}&& set NODE_ENV=production&& "${nodePath}" "${serverPath}"`;
-    serverProcess = spawn("powershell", [
-      "-NoProfile", "-Command",
-      `Start-Process cmd -ArgumentList '/c','${cmdLine.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden`
-    ], { stdio: "ignore" });
+    // Windows: single UAC via VBScript → elevated PowerShell script that:
+    // 1. Installs SSL cert  2. Adds DNS entries  3. Starts node server.js (elevated → can bind 443)  4. Writes flag
+    // Node polls flag file to know when server is ready, then health-checks port 443
+    const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
+    const TARGET_HOSTS_WIN = ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"];
+
+    // Use Chr(34) in VBScript for quotes — avoid escaping issues
+    const flagFile = path.join(os.tmpdir(), `mitm_ready_${Date.now()}.flag`);
+
+    // PowerShell uses single-quoted strings — escape single quotes only
+    const psSQ = (s) => s.replace(/'/g, "''");
+    const certPs = psSQ(certPath);
+    const hostsPs = psSQ(hostsFile);
+    const nodePs = psSQ(process.execPath);
+    const serverPs = psSQ(SERVER_PATH);
+    const flagPs = psSQ(flagFile);
+
+    const dnsLines = TARGET_HOSTS_WIN.map(h =>
+      `$hc = Get-Content -Path '${hostsPs}' -Raw -ErrorAction SilentlyContinue\n` +
+      `if ($hc -notmatch [regex]::Escape('${h}')) { Add-Content -Path '${hostsPs}' -Value '127.0.0.1 ${h}' -Encoding UTF8 }`
+    ).join("\n");
+
+    const psScript = [
+      `# 0. Kill any orphan node process on port 443`,
+      `$conn = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
+      `if ($conn -and $conn.OwningProcess -gt 4) { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue }`,
+      `Start-Sleep -Milliseconds 500`,
+      ``,
+      `# 1. Install SSL cert to Windows Root store (always run to ensure trust)`,
+      `& certutil -addstore Root '${certPs}' | Out-Null`,
+      ``,
+      `# 2. Add DNS entries to hosts file`,
+      dnsLines,
+      `& ipconfig /flushdns | Out-Null`,
+      ``,
+      `# 3. Start node MITM server elevated (required to bind port 443)`,
+      `# Use cmd /c to pass env vars inline — Start-Process does not inherit current env`,
+      `$nodeCmd = 'set ROUTER_API_KEY=${psSQ(apiKey)}&& set NODE_ENV=production&& "${nodePs}" "${serverPs}"'`,
+      `Start-Process cmd -ArgumentList '/c',$nodeCmd -WindowStyle Hidden`,
+      ``,
+      `# 4. Signal ready`,
+      `Start-Sleep -Milliseconds 500`,
+      `Set-Content -Path '${flagPs}' -Value 'ready' -Encoding UTF8`,
+    ].join("\n");
+
+    const tmpPs1 = path.join(os.tmpdir(), `mitm_start_${Date.now()}.ps1`);
+    fs.writeFileSync(tmpPs1, psScript, "utf8");
+
+    // VBScript uses Shell.Application.ShellExecute to trigger UAC from any context
+    // Chr(34) = double-quote, avoids VBScript string escaping issues
+    const vbs = [
+      `Set oShell = CreateObject("Shell.Application")`,
+      `Dim ps`,
+      `ps = Chr(34) & "powershell.exe" & Chr(34)`,
+      `Dim args`,
+      `args = "-NoProfile -ExecutionPolicy Bypass -File " & Chr(34) & "${tmpPs1}" & Chr(34)`,
+      `oShell.ShellExecute ps, args, "", "runas", 1`,
+    ].join("\r\n");
+    const tmpVbs = path.join(os.tmpdir(), `mitm_uac_${Date.now()}.vbs`);
+    fs.writeFileSync(tmpVbs, vbs, "utf8");
+
+    // Launch VBScript — shows UAC dialog, user confirms, script runs elevated
+    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: false, detached: true }).unref();
+
+    // Poll flag file — resolves when elevated script completes
+    await new Promise((resolve, reject) => {
+      const deadline = Date.now() + 90000; // 90s: UAC wait + cert install + node start
+      const poll = () => {
+        if (fs.existsSync(flagFile)) {
+          try { fs.unlinkSync(flagFile); fs.unlinkSync(tmpPs1); fs.unlinkSync(tmpVbs); } catch { /* ignore */ }
+          return resolve();
+        }
+        if (Date.now() > deadline) return reject(new Error("Timed out waiting for UAC confirmation. Please try again."));
+        setTimeout(poll, 500);
+      };
+      poll();
+    });
+
+    if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else {
+    // macOS/Linux: install cert + add DNS (requires sudo), then spawn server
+    const settings = _getSettings ? await _getSettings().catch(() => ({})) : {};
+    const certAlreadyInstalled = settings.mitmCertInstalled && fs.existsSync(certPath);
+    if (!certAlreadyInstalled) {
+      await installCert(sudoPassword, certPath);
+      if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
+    }
+    console.log("Adding DNS entry...");
+    await addDNSEntry(sudoPassword);
+
     // sudo -S: read password from stdin, -E: preserve env vars
-    // Pass ROUTER_API_KEY inline via env=... wrapper to avoid sudo stripping env
     const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
@@ -447,8 +504,11 @@ async function startMitm(apiKey, sudoPassword) {
     serverProcess.stdin.end();
   }
 
-  serverPid = serverProcess.pid;
-  fs.writeFileSync(PID_FILE, String(serverPid));
+  // Windows: node was started by elevated script — PID comes from health check later
+  if (!IS_WIN && serverProcess) {
+    serverPid = serverProcess.pid;
+    fs.writeFileSync(PID_FILE, String(serverPid));
+  }
 
   let startError = null;
   if (!IS_WIN) {
@@ -471,8 +531,8 @@ async function startMitm(apiKey, sudoPassword) {
     });
   }
 
-  // Wait for server to be ready by polling health endpoint
-  const health = await pollMitmHealth(IS_WIN ? 12000 : 8000);
+  // Wait for server to be ready by polling health endpoint on port 443
+  const health = await pollMitmHealth(IS_WIN ? 15000 : 8000, MITM_PORT);
 
   if (!health) {
     if (IS_WIN) serverProcess = null;
@@ -482,6 +542,9 @@ async function startMitm(apiKey, sudoPassword) {
     const reason = startError || `Check sudo password or port 443 access.${portInfo}`;
     throw new Error(`MITM server failed to start. ${reason}`);
   }
+
+  // On Windows, mark cert as installed after successful start
+  if (IS_WIN && _updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
 
   // On Windows, use real PID from health check (launcher exits immediately after UAC)
   if (IS_WIN && health.pid) {
@@ -524,8 +587,58 @@ async function stopMitm(sudoPassword) {
     serverPid = null;
   }
 
-  console.log("Removing DNS entry...");
-  await removeDNSEntry(sudoPassword);
+  if (IS_WIN) {
+    // Windows stop: remove DNS entries via elevated VBScript (1 UAC)
+    const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
+    const TARGET_HOSTS_WIN = ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"];
+    const psSQ = (s) => s.replace(/'/g, "''");
+
+    // Filter hosts content in Node (read doesn't need elevation)
+    let hostsContent = "";
+    try { hostsContent = fs.readFileSync(hostsFile, "utf8"); } catch { /* ignore */ }
+    const filtered = hostsContent.split(/\r?\n/)
+      .filter(l => !TARGET_HOSTS_WIN.some(h => l.includes(h)))
+      .join("\r\n");
+    const tmpHosts = path.join(os.tmpdir(), "mitm_hosts_clean.tmp");
+    fs.writeFileSync(tmpHosts, filtered, "utf8");
+
+    const flagFile = path.join(os.tmpdir(), "mitm_stop_done.flag");
+    const psScript = [
+      `Copy-Item -Path '${psSQ(tmpHosts)}' -Destination '${psSQ(hostsFile)}' -Force`,
+      `& ipconfig /flushdns | Out-Null`,
+      `Remove-Item '${psSQ(tmpHosts)}' -ErrorAction SilentlyContinue`,
+      `Set-Content -Path '${psSQ(flagFile)}' -Value 'done' -Encoding UTF8`,
+    ].join("\n");
+    const tmpPs1 = path.join(os.tmpdir(), "mitm_stop.ps1");
+    fs.writeFileSync(tmpPs1, psScript, "utf8");
+
+    const vbs = [
+      `Set oShell = CreateObject("Shell.Application")`,
+      `Dim args`,
+      `args = "-NoProfile -ExecutionPolicy Bypass -File " & Chr(34) & "${tmpPs1}" & Chr(34)`,
+      `oShell.ShellExecute "powershell.exe", args, "", "runas", 1`,
+    ].join("\r\n");
+    const tmpVbs = path.join(os.tmpdir(), "mitm_stop_uac.vbs");
+    fs.writeFileSync(tmpVbs, vbs, "utf8");
+    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: false, detached: true }).unref();
+
+    // Poll flag — best effort, don't block UI if user cancels UAC
+    await new Promise((resolve) => {
+      const deadline = Date.now() + 30000;
+      const poll = () => {
+        if (fs.existsSync(flagFile)) {
+          try { fs.unlinkSync(flagFile); fs.unlinkSync(tmpPs1); fs.unlinkSync(tmpVbs); } catch { /* ignore */ }
+          return resolve();
+        }
+        if (Date.now() > deadline) return resolve();
+        setTimeout(poll, 500);
+      };
+      poll();
+    });
+  } else {
+    console.log("Removing DNS entry...");
+    await removeDNSEntry(sudoPassword);
+  }
 
   try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
 

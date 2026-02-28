@@ -17,7 +17,7 @@ const checkDroidInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where droid" : "command -v droid";
-    await execAsync(command);
+    await execAsync(command, { windowsHide: true });
     return true;
   } catch {
     return false;

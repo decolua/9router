@@ -17,6 +17,7 @@ function convertMessages(messages, tools, model) {
   let pendingUserContent = [];
   let pendingAssistantContent = [];
   let pendingToolResults = [];
+  let pendingImages = [];
   let currentRole = null;
 
   const flushPending = () => {
@@ -28,7 +29,12 @@ function convertMessages(messages, tools, model) {
           modelId: ""
         }
       };
-      
+
+      // Attach images if present (Kiro API supports images field)
+      if (pendingImages.length > 0) {
+        userMsg.userInputMessage.images = pendingImages;
+      }
+
       if (pendingToolResults.length > 0) {
         userMsg.userInputMessage.userInputMessageContext = {
           toolResults: pendingToolResults
@@ -64,6 +70,7 @@ function convertMessages(messages, tools, model) {
       currentMessage = userMsg;
       pendingUserContent = [];
       pendingToolResults = [];
+      pendingImages = [];
     } else if (currentRole === "assistant") {
       const content = pendingAssistantContent.join("\n\n").trim() || "...";
       const assistantMsg = {
@@ -97,9 +104,24 @@ function convertMessages(messages, tools, model) {
       if (typeof msg.content === "string") {
         content = msg.content;
       } else if (Array.isArray(msg.content)) {
-        const textParts = msg.content
-          .filter(c => c.type === "text" || c.text)
-          .map(c => c.text || "");
+        const textParts = [];
+        for (const c of msg.content) {
+          if (c.type === "text" || c.text) {
+            textParts.push(c.text || "");
+          } else if (c.type === "image_url") {
+            const url = c.image_url?.url || "";
+            const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
+            if (base64Match) {
+              // Extract format from media type (e.g. "image/png" → "png")
+              const mediaType = base64Match[1];
+              const format = mediaType.split("/")[1] || mediaType;
+              pendingImages.push({ format, source: { bytes: base64Match[2] } });
+            } else if (url.startsWith("http://") || url.startsWith("https://")) {
+              // Kiro images field only supports base64 — fallback to URL text
+              textParts.push(`[Image: ${url}]`);
+            }
+          }
+        }
         content = textParts.join("\n");
         
         // Check for tool_result blocks

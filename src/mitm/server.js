@@ -3,8 +3,6 @@ const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
-const os = require("os");
-
 // Configuration
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 const TARGET_HOSTS = [
@@ -14,7 +12,8 @@ const TARGET_HOSTS = [
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
 const API_KEY = process.env.ROUTER_API_KEY;
-const DB_FILE = path.join(os.homedir(), ".9router", "db.json");
+const { DATA_DIR, MITM_DIR } = require("./paths");
+const DB_FILE = path.join(DATA_DIR, "db.json");
 
 // Toggle logging (set true to enable file logging for debugging)
 const ENABLE_FILE_LOG = false;
@@ -25,7 +24,7 @@ if (!API_KEY) {
 }
 
 // Load SSL certificates
-const certDir = path.join(os.homedir(), ".9router", "mitm");
+const certDir = MITM_DIR;
 let sslOptions;
 try {
   sslOptions = {
@@ -92,17 +91,18 @@ function collectBodyRaw(req) {
   });
 }
 
-function extractModel(body) {
-  try {
-    return JSON.parse(body.toString()).model || null;
-  } catch {
-    return null;
-  }
+// Extract model from URL path (Gemini format: /v1beta/models/gemini-2.0-flash:generateContent)
+// Fallback to body.model (OpenAI format)
+function extractModel(url, body) {
+  const urlMatch = url.match(/\/models\/([^/:]+)/);
+  if (urlMatch) return urlMatch[1];
+  try { return JSON.parse(body.toString()).model || null; } catch { return null; }
 }
 
 function getMappedModel(model) {
   if (!model) return null;
   try {
+    if (!fs.existsSync(DB_FILE)) return null;
     const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
     return db.mitmAlias?.antigravity?.[model] || null;
   } catch {
@@ -200,8 +200,8 @@ const server = https.createServer(sslOptions, async (req, res) => {
     return passthrough(req, res, bodyBuffer);
   }
 
-  const model = extractModel(bodyBuffer);
-  console.log(`📡 ${model} (passthrough)`);
+  const model = extractModel(req.url, bodyBuffer);
+  console.log(`📡 intercepted: ${req.url} | model: ${model}`);
   const mappedModel = getMappedModel(model);
 
   if (!mappedModel) {

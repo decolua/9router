@@ -178,30 +178,47 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 }
 
 /**
- * Clear account error status (only if currently has error)
- * Clears all modelLock_* fields and resets error state.
+ * Clear account error status on successful request.
+ * - Clears modelLock_${model} (the model that just succeeded)
+ * - Lazy-cleans any other expired modelLock_* keys
+ * - Resets error state only if no active locks remain
+ * @param {string} connectionId
+ * @param {object} currentConnection - credentials object (has _connection) or raw connection
+ * @param {string|null} model - model that succeeded
  */
-export async function clearAccountError(connectionId, currentConnection) {
-  // Support both direct connection object and credentials wrapper
+export async function clearAccountError(connectionId, currentConnection, model = null) {
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
-
-  // Collect all modelLock_* keys (both active and expired)
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
-  const hasError = conn.testStatus === "unavailable" || conn.lastError || allLockKeys.length > 0;
 
-  if (!hasError) return; // Skip if already clean
+  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
 
-  // Clear all modelLock_* keys (lazy cleanup of expired ones included)
-  const clearLocks = Object.fromEntries(allLockKeys.map(k => [k, null]));
-  await updateProviderConnection(connectionId, {
-    ...clearLocks,
-    testStatus: "active",
-    lastError: null,
-    lastErrorAt: null,
-    backoffLevel: 0
+  // Keys to clear: current model's lock + all expired locks
+  const keysToClear = allLockKeys.filter(k => {
+    if (model && k === `modelLock_${model}`) return true; // succeeded model
+    if (model && k === "modelLock___all") return true;    // account-level lock
+    const expiry = conn[k];
+    return expiry && new Date(expiry).getTime() <= now;   // expired
   });
-  log.info("AUTH", `Account ${connectionId.slice(0, 8)} error cleared`);
+
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+
+  // Check if any active locks remain after clearing
+  const remainingActiveLocks = allLockKeys.filter(k => {
+    if (keysToClear.includes(k)) return false;
+    const expiry = conn[k];
+    return expiry && new Date(expiry).getTime() > now;
+  });
+
+  const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
+
+  // Only reset error state if no active locks remain
+  if (remainingActiveLocks.length === 0) {
+    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
+  }
+
+  await updateProviderConnection(connectionId, clearObj);
+  log.info("AUTH", `Account ${connectionId.slice(0, 8)} cleared lock for model=${model || "__all"}`);
 }
 
 /**

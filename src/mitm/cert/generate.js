@@ -1,6 +1,6 @@
 const path = require("path");
 const fs = require("fs");
-const os = require("os");
+const { MITM_DIR } = require("../paths");
 
 const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
 
@@ -8,7 +8,7 @@ const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
  * Generate self-signed SSL certificate using selfsigned (pure JS, no openssl needed)
  */
 async function generateCert() {
-  const certDir = path.join(os.homedir(), ".9router", "mitm");
+  const certDir = MITM_DIR;
   const keyPath = path.join(certDir, "server.key");
   const certPath = path.join(certDir, "server.crt");
 

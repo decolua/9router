@@ -240,7 +240,23 @@ export default function AntigravityToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {/* Start/Stop Button - always on top */}
+          {/* Status indicators */}
+          <div className="flex items-center gap-3">
+            {[
+              { label: "DNS", ok: status?.dnsConfigured },
+              { label: "Cert", ok: status?.certExists },
+              { label: "Server", ok: status?.running },
+            ].map(({ label, ok }) => (
+              <div key={label} className="flex items-center gap-1">
+                <span className={`material-symbols-outlined text-[14px] ${ok ? "text-green-500" : "text-text-muted"}`}>
+                  {ok ? "check_circle" : "radio_button_unchecked"}
+                </span>
+                <span className={`text-xs ${ok ? "text-green-500" : "text-text-muted"}`}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Start/Stop Button */}
           <div className="flex items-center gap-2">
             {isRunning ? (
               <button 

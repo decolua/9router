@@ -38,18 +38,20 @@ function execWithPassword(command, password) {
 }
 
 /**
- * Execute elevated command on Windows via PowerShell RunAs
+ * Execute elevated command on Windows via PowerShell RunAs (hidden window)
  */
 function execElevatedWindows(command) {
   return new Promise((resolve, reject) => {
-    const psCommand = `Start-Process cmd -ArgumentList '/c','${command.replace(/'/g, "''")}' -Verb RunAs -Wait`;
-    exec(`powershell -Command "${psCommand}"`, (error, stdout, stderr) => {
-      if (error) {
-        reject(new Error(`Elevated command failed: ${error.message}\n${stderr}`));
-      } else {
-        resolve(stdout);
+    const escaped = command.replace(/'/g, "''");
+    const psCommand = `Start-Process cmd -ArgumentList '/c','${escaped}' -Verb RunAs -Wait -WindowStyle Hidden`;
+    exec(
+      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      { windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(`Elevated command failed: ${error.message}\n${stderr}`));
+        else resolve(stdout);
       }
-    });
+    );
   });
 }
 
@@ -84,17 +86,26 @@ async function addDNSEntry(sudoPassword) {
 
   try {
     if (IS_WIN) {
-      // Windows: add each entry separately
-      for (const host of entriesToAdd) {
-        const entry = `127.0.0.1 ${host}`;
-        await execElevatedWindows(`echo ${entry} >> "${HOSTS_FILE}"`);
-      }
+      // Windows: add all entries + flush in one elevated PowerShell call (single UAC)
+      const hostsPath = HOSTS_FILE.replace(/'/g, "''");
+      const addLines = entriesToAdd.map(host =>
+        `$hc = Get-Content -Path '${hostsPath}' -Raw -ErrorAction SilentlyContinue; if ($hc -notmatch '${host}') { Add-Content -Path '${hostsPath}' -Value '127.0.0.1 ${host}' -Encoding UTF8 }`
+      ).join("; ");
+      const psScript = `${addLines}; ipconfig /flushdns | Out-Null`;
+      await new Promise((resolve, reject) => {
+        const escaped = psScript.replace(/"/g, '\\"');
+        exec(
+          `powershell -NonInteractive -WindowStyle Hidden -Command "Start-Process powershell -ArgumentList '-NonInteractive -WindowStyle Hidden -Command \\"${escaped}\\"' -Verb RunAs -Wait"`,
+          { windowsHide: true },
+          (error) => { if (error) reject(new Error(`Failed to add DNS: ${error.message}`)); else resolve(); }
+        );
+      });
     } else {
       await execWithPassword(`echo "${entries}" >> ${HOSTS_FILE}`, sudoPassword);
     }
-    // Flush DNS cache
+    // Flush DNS cache (non-Windows)
     if (IS_WIN) {
-      await execElevatedWindows("ipconfig /flushdns");
+      // already flushed above
     } else if (IS_MAC) {
       await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
     } else {
@@ -121,7 +132,7 @@ async function removeDNSEntry(sudoPassword) {
 
   try {
     if (IS_WIN) {
-      // Read in Node, filter, write to temp file, then elevated-copy over hosts
+      // Read in Node, filter, write to temp file, then single elevated-copy + flush (1 UAC)
       const content = fs.readFileSync(HOSTS_FILE, "utf8");
       const filtered = content.split(/\r?\n/).filter(l => !TARGET_HOSTS.some(host => l.includes(host))).join("\r\n");
       if (!filtered.trim() && content.trim()) {
@@ -129,14 +140,21 @@ async function removeDNSEntry(sudoPassword) {
       }
       const tmpFile = path.join(os.tmpdir(), "hosts_filtered.tmp");
       fs.writeFileSync(tmpFile, filtered, "utf8");
-      // Use elevated cmd to copy temp file over hosts (safe: original untouched until copy succeeds)
-      const psCommand = `Start-Process cmd -ArgumentList '/c','copy /Y "${tmpFile}" "${HOSTS_FILE}"' -Verb RunAs -Wait`;
+      const tmpEsc = tmpFile.replace(/'/g, "''");
+      const hostsEsc = HOSTS_FILE.replace(/'/g, "''");
+      // Single UAC: copy temp file over hosts + flush DNS
+      const psScript = `Copy-Item -Path '${tmpEsc}' -Destination '${hostsEsc}' -Force; ipconfig /flushdns | Out-Null; Remove-Item '${tmpEsc}' -ErrorAction SilentlyContinue`;
       await new Promise((resolve, reject) => {
-        exec(`powershell -Command "${psCommand}"`, (error) => {
-          try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-          if (error) reject(new Error(`Failed to remove DNS entry: ${error.message}`));
-          else resolve();
-        });
+        const escaped = psScript.replace(/"/g, '\\"');
+        exec(
+          `powershell -NonInteractive -WindowStyle Hidden -Command "Start-Process powershell -ArgumentList '-NonInteractive -WindowStyle Hidden -Command \\"${escaped}\\"' -Verb RunAs -Wait"`,
+          { windowsHide: true },
+          (error) => {
+            try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+            if (error) reject(new Error(`Failed to remove DNS entry: ${error.message}`));
+            else resolve();
+          }
+        );
       });
     } else {
       // Remove all target hosts using sed
@@ -147,9 +165,9 @@ async function removeDNSEntry(sudoPassword) {
         await execWithPassword(sedCmd, sudoPassword);
       }
     }
-    // Flush DNS cache
+    // Flush DNS cache (non-Windows, already flushed above for Windows)
     if (IS_WIN) {
-      await execElevatedWindows("ipconfig /flushdns");
+      // already flushed above
     } else if (IS_MAC) {
       await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
     } else {

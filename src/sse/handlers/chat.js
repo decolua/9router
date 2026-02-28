@@ -187,7 +187,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials);
+        await clearAccountError(credentials.connectionId, credentials, model);
       }
     });
 

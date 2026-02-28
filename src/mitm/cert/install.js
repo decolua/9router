@@ -80,17 +80,17 @@ async function installCertMac(sudoPassword, certPath) {
 }
 
 async function installCertWindows(certPath) {
-  // Use PowerShell elevated to add cert to Root store
-  const psCommand = `Start-Process certutil -ArgumentList '-addstore','Root','${certPath.replace(/'/g, "''")}' -Verb RunAs -Wait`;
+  const escaped = certPath.replace(/'/g, "''");
+  const psCommand = `Start-Process certutil -ArgumentList '-addstore','Root','${escaped}' -Verb RunAs -Wait -WindowStyle Hidden`;
   return new Promise((resolve, reject) => {
-    exec(`powershell -Command "${psCommand}"`, (error) => {
-      if (error) {
-        reject(new Error(`Failed to install certificate: ${error.message}`));
-      } else {
-        console.log(`✅ Installed certificate to Windows Root store`);
-        resolve();
+    exec(
+      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      { windowsHide: true },
+      (error) => {
+        if (error) reject(new Error(`Failed to install certificate: ${error.message}`));
+        else { console.log("✅ Installed certificate to Windows Root store"); resolve(); }
       }
-    });
+    );
   });
 }
 
@@ -125,16 +125,16 @@ async function uninstallCertMac(sudoPassword, certPath) {
 }
 
 async function uninstallCertWindows() {
-  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','daily-cloudcode-pa.googleapis.com' -Verb RunAs -Wait`;
+  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','daily-cloudcode-pa.googleapis.com' -Verb RunAs -Wait -WindowStyle Hidden`;
   return new Promise((resolve, reject) => {
-    exec(`powershell -Command "${psCommand}"`, (error) => {
-      if (error) {
-        reject(new Error(`Failed to uninstall certificate: ${error.message}`));
-      } else {
-        console.log("✅ Uninstalled certificate from Windows Root store");
-        resolve();
+    exec(
+      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      { windowsHide: true },
+      (error) => {
+        if (error) reject(new Error(`Failed to uninstall certificate: ${error.message}`));
+        else { console.log("✅ Uninstalled certificate from Windows Root store"); resolve(); }
       }
-    });
+    );
   });
 }
 

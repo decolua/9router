@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById } from "@/models";
+import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -7,15 +7,31 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 export async function GET() {
   try {
     const connections = await getProviderConnections();
+
+    // Build nodeNameMap for compatible providers (id → name)
+    let nodeNameMap = {};
+    try {
+      const nodes = await getProviderNodes();
+      for (const node of nodes) {
+        if (node.id && node.name) nodeNameMap[node.id] = node.name;
+      }
+    } catch {}
     
-    // Hide sensitive fields
-    const safeConnections = connections.map(c => ({
-      ...c,
-      apiKey: undefined,
-      accessToken: undefined,
-      refreshToken: undefined,
-      idToken: undefined,
-    }));
+    // Hide sensitive fields, enrich name for compatible providers
+    const safeConnections = connections.map(c => {
+      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+      const name = isCompatible
+        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        : c.name;
+      return {
+        ...c,
+        name,
+        apiKey: undefined,
+        accessToken: undefined,
+        refreshToken: undefined,
+        idToken: undefined,
+      };
+    });
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {

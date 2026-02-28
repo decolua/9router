@@ -122,7 +122,7 @@ export async function handleEmbeddings(request) {
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials);
+        await clearAccountError(credentials.connectionId, credentials, model);
       }
     });
 
