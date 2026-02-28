@@ -25,7 +25,7 @@ export default function ProviderDetailPage() {
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
-  const [testingModels, setTestingModels] = useState(false);
+  const [testingModelId, setTestingModelId] = useState(null);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -259,24 +259,21 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleTestModels = async () => {
-    if (testingModels) return;
-    const conn = connections.find((c) => c.isActive !== false) || connections[0];
-    if (!conn) return;
-    setTestingModels(true);
-    setModelTestResults({});
+  const handleTestModel = async (modelId) => {
+    if (testingModelId) return;
+    setTestingModelId(modelId);
     try {
-      const res = await fetch(`/api/providers/${conn.id}/test-models`, { method: "POST" });
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+      });
       const data = await res.json();
-      if (res.ok) {
-        const map = {};
-        for (const r of data.results || []) map[r.modelId] = r.ok ? "ok" : "error";
-        setModelTestResults(map);
-      }
+      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
     } catch {
-      // silent fail
+      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
     } finally {
-      setTestingModels(false);
+      setTestingModelId(null);
     }
   };
 
@@ -342,6 +339,8 @@ export default function ProviderDetailPage() {
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
               testStatus={modelTestResults[model.id]}
+              onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+              isTesting={testingModelId === model.id}
             />
           );
         })}
@@ -559,18 +558,6 @@ export default function ProviderDetailPage() {
           <h2 className="text-lg font-semibold">
             {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
           </h2>
-          {connections.length > 0 && (
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="science"
-              loading={testingModels}
-              onClick={handleTestModels}
-              disabled={testingModels}
-            >
-              {testingModels ? "Testing…" : "Test Models"}
-            </Button>
-          )}
         </div>
         {renderModelsSection()}
       </Card>
@@ -638,7 +625,7 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -660,6 +647,18 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
       </span>
       <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+      {onTest && (
+        <button
+          onClick={onTest}
+          disabled={isTesting}
+          className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          title="Test model"
+        >
+          <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+            {isTesting ? "progress_activity" : "science"}
+          </span>
+        </button>
+      )}
       <button
         onClick={() => onCopy(fullModel, `model-${model.id}`)}
         className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
@@ -693,6 +692,8 @@ ModelRow.propTypes = {
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
+  onTest: PropTypes.func,
+  isTesting: PropTypes.bool,
 };
 
 function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {

@@ -351,6 +351,14 @@ export default function AntigravityToolCard({
             </>
           )}
 
+          {/* Windows admin warning */}
+          {!isRunning && isWindows && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
+              <span className="material-symbols-outlined text-[14px]">warning</span>
+              <span>Windows: Run terminal (9Router) as Administrator to enable MITM</span>
+            </div>
+          )}
+
           {/* When stopped: how it works */}
           {!isRunning && (
             <div className="flex flex-col gap-1.5 px-1">
