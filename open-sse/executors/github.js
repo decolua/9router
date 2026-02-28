@@ -34,15 +34,59 @@ export class GithubExecutor extends BaseExecutor {
     };
   }
 
+  // Sanitize messages for GitHub Copilot /chat/completions endpoint.
+  // The endpoint only accepts 'text' and 'image_url' content part types.
+  // Tool-related content (tool_use, tool_result, thinking) must be serialized as text.
+  sanitizeMessagesForChatCompletions(body) {
+    if (!body?.messages) return body;
+
+    const sanitized = { ...body };
+    sanitized.messages = body.messages.map(msg => {
+      // assistant messages with only tool_calls have content: null — leave as-is
+      if (!msg.content) return msg;
+
+      // String content is always fine
+      if (typeof msg.content === "string") return msg;
+
+      // Array content: filter/convert unsupported part types
+      if (Array.isArray(msg.content)) {
+        const cleanContent = msg.content
+          .map(part => {
+            if (part.type === "text") return part;
+            if (part.type === "image_url") return part;
+            // Serialize tool_use, tool_result, thinking, etc. as text
+            const text = part.text || part.content || JSON.stringify(part);
+            return { type: "text", text: typeof text === "string" ? text : JSON.stringify(text) };
+          })
+          .filter(part => part.text !== ""); // remove empty text parts
+
+        // If all content was stripped (e.g. only tool_result with no text), drop content
+        return { ...msg, content: cleanContent.length > 0 ? cleanContent : null };
+      }
+
+      return msg;
+    });
+
+    return sanitized;
+  }
+
   async execute(options) {
     const { model, log } = options;
 
+    // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     if (this.knownCodexModels.has(model)) {
       log?.debug("GITHUB", `Using cached /responses route for ${model}`);
       return this.executeWithResponsesEndpoint(options);
     }
 
-    const result = await super.execute(options);
+    // Sanitize messages before sending to /chat/completions
+    // This handles Claude models on GitHub Copilot which reject non-text/image_url content types
+    const sanitizedOptions = {
+      ...options,
+      body: this.sanitizeMessagesForChatCompletions(options.body)
+    };
+
+    const result = await super.execute(sanitizedOptions);
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
