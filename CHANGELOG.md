@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- Added API key visibility toggle (eye icon) to Endpoint dashboard page for improved UX and security.
+
 # v0.2.66 (2026-02-06)
 
 ## Features
