@@ -121,19 +121,17 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
 
   // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
+  // Responses API function tools use { type:"function", name, parameters } (flat).
+  // Convert tools format.
+  // Hosted tools (e.g. web_search, computer_use) have no explicit `name` field and are
+  // passed through as-is so downstream translators can map them to provider-native equivalents.
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools
-      .map(tool => {
-        // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
-        const name = tool.name;
-        if (!name || typeof name !== "string" || name.trim() === "") return null;
+    result.tools = body.tools.map(tool => {
+      // Already in Chat Completions format: { type: "function", function: { name, ... } }
+      if (tool.function) return tool;
+      // Responses API function tool: { type: "function", name, description, parameters }
+      const name = tool.name;
+      if (name && typeof name === "string" && name.trim() !== "") {
         return {
           type: "function",
           function: {
@@ -143,8 +141,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
             strict: tool.strict
           }
         };
-      })
-      .filter(Boolean);
+      }
+      // Hosted tools (web_search, computer_use, etc.) — pass through for downstream handling
+      return tool;
+    });
   }
 
   // Cleanup Responses API specific fields

@@ -190,8 +190,20 @@ function openaiToGeminiBase(model, body, stream) {
   // Convert tools
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     const functionDeclarations = [];
+    let hasGoogleSearch = false;
+
     for (const t of body.tools) {
-      // Check if already in Anthropic/Claude format (no type field, direct name/description/input_schema)
+      // OpenAI hosted tool: web_search → Gemini native google_search grounding
+      if (t.type === "web_search") {
+        hasGoogleSearch = true;
+        continue;
+      }
+      // Other unnamed hosted tools (computer_use, code_interpreter, etc.) — skip,
+      // they have no Gemini equivalent in function-calling API
+      if (t.type !== "function" && !t.name && !t.input_schema) {
+        continue;
+      }
+      // Anthropic/Claude format (no type field, direct name/description/input_schema)
       if (t.name && t.input_schema) {
         const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(t.input_schema || { type: "object", properties: {} }));
         functionDeclarations.push({
@@ -200,7 +212,7 @@ function openaiToGeminiBase(model, body, stream) {
           parameters: cleanedSchema
         });
       }
-      // OpenAI format
+      // OpenAI Chat Completions format: { type: "function", function: { name, ... } }
       else if (t.type === "function" && t.function) {
         const fn = t.function;
         const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(fn.parameters || { type: "object", properties: {} }));
@@ -212,8 +224,16 @@ function openaiToGeminiBase(model, body, stream) {
       }
     }
 
+    result.tools = [];
+    // google_search grounding must be a separate element in the tools array
+    if (hasGoogleSearch) {
+      result.tools.push({ google_search: {} });
+    }
     if (functionDeclarations.length > 0) {
-      result.tools = [{ functionDeclarations }];
+      result.tools.push({ functionDeclarations });
+    }
+    if (result.tools.length === 0) {
+      delete result.tools;
     }
   }
 
