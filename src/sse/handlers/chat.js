@@ -1,3 +1,5 @@
+import "open-sse/index.js";
+
 import {
   getProviderCredentials,
   markAccountUnavailable,

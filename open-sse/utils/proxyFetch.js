@@ -1,9 +1,8 @@
-
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
 const originalFetch = globalThis.fetch;
-let proxyAgent = null;
-let socksAgent = null;
+let proxyDispatcher = null;
+let proxyDispatcherUrl = null;
 
 /**
  * Get proxy URL from environment
@@ -36,24 +35,36 @@ function getProxyUrl(targetUrl) {
 }
 
 /**
- * Create proxy agent lazily
+ * Normalize proxy URL (allow host:port)
  */
-async function getAgent(proxyUrl) {
-  const proxyProtocol = new URL(proxyUrl).protocol;
-  
-  if (proxyProtocol === "socks:" || proxyProtocol === "socks5:" || proxyProtocol === "socks4:") {
-    if (!socksAgent) {
-      const { SocksProxyAgent } = await import("socks-proxy-agent");
-      socksAgent = new SocksProxyAgent(proxyUrl);
-    }
-    return socksAgent;
+function normalizeProxyUrl(proxyUrl) {
+  if (!proxyUrl) return null;
+  try {
+    // eslint-disable-next-line no-new
+    new URL(proxyUrl);
+    return proxyUrl;
+  } catch {
+    // Allow "127.0.0.1:7890" style values
+    return `http://${proxyUrl}`;
   }
-  
-  if (!proxyAgent) {
-    const { HttpsProxyAgent } = await import("https-proxy-agent");
-    proxyAgent = new HttpsProxyAgent(proxyUrl);
+}
+
+/**
+ * Create proxy dispatcher lazily (undici-compatible)
+ * Closes old dispatcher when proxy URL changes to prevent connection pool leak
+ */
+async function getDispatcher(proxyUrl) {
+  const normalized = normalizeProxyUrl(proxyUrl);
+  if (!normalized) return null;
+
+  if (!proxyDispatcher || proxyDispatcherUrl !== normalized) {
+    try { proxyDispatcher?.close?.(); } catch { /* ignore */ }
+    const { ProxyAgent } = await import("undici");
+    proxyDispatcher = new ProxyAgent({ uri: normalized });
+    proxyDispatcherUrl = normalized;
   }
-  return proxyAgent;
+
+  return proxyDispatcher;
 }
 
 /**
@@ -61,12 +72,12 @@ async function getAgent(proxyUrl) {
  */
 async function patchedFetch(url, options = {}) {
   const targetUrl = typeof url === "string" ? url : url.toString();
-  const proxyUrl = getProxyUrl(targetUrl);
+  const proxyUrl = normalizeProxyUrl(getProxyUrl(targetUrl));
   
   if (proxyUrl) {
     try {
-      const agent = await getAgent(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher: agent });
+      const dispatcher = await getDispatcher(proxyUrl);
+      return await originalFetch(url, { ...options, dispatcher });
     } catch (proxyError) {
       // Fallback to direct connection if proxy fails
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
@@ -77,7 +88,8 @@ async function patchedFetch(url, options = {}) {
   return originalFetch(url, options);
 }
 
-if (!isCloud) {
+// Idempotency guard — only patch once to avoid wrapping multiple times
+if (!isCloud && globalThis.fetch !== patchedFetch) {
   globalThis.fetch = patchedFetch;
 }
 
