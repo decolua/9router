@@ -201,20 +201,17 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 
   const model = extractModel(req.url, bodyBuffer);
-  console.log(`📡 intercepted: ${req.url} | model: ${model}`);
   const mappedModel = getMappedModel(model);
 
   if (!mappedModel) {
     return passthrough(req, res, bodyBuffer);
   }
 
-  console.log(`🔀 ${model} → ${mappedModel}`);
   return intercept(req, res, bodyBuffer, mappedModel);
 });
 
 server.listen(LOCAL_PORT, () => {
-  console.log(`🚀 MITM ready on :${LOCAL_PORT} → ${ROUTER_URL}`);
-  console.log(`📡 Intercepting: ${TARGET_HOSTS.join(", ")}`);
+  console.log(`🚀 MITM ready on :${LOCAL_PORT}`);
 });
 
 server.on("error", (error) => {

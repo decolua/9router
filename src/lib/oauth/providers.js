@@ -261,12 +261,16 @@ const PROVIDERS = {
         "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
+        "x-request-source": "local", // MITM passthrough marker
       };
       const metadata = getOAuthClientMetadata();
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
+        headers: { 
+          Authorization: `Bearer ${tokens.access_token}`,
+          "x-request-source": "local", // MITM passthrough marker
+        },
       });
       const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
 

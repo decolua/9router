@@ -214,7 +214,10 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
 
-    // Fetch quota data
+    // Fetch quota data with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
       headers: {
@@ -223,11 +226,15 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
         "Content-Type": "application/json",
         "X-Client-Name": "antigravity",
         "X-Client-Version": "1.107.0",
+        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({
         ...(projectId ? { project: projectId } : {})
       }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (response.status === 403) {
       return {
@@ -302,6 +309,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
       subscriptionInfo,
     };
   } catch (error) {
+    console.error("[Antigravity Usage] Error:", error.message, error.cause);
     return { message: `Antigravity error: ${error.message}` };
   }
 }
@@ -323,20 +331,28 @@ async function getAntigravityProjectId(accessToken) {
  */
 async function getAntigravitySubscriptionInfo(accessToken) {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
     const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) return null;
 
     return await response.json();
-  } catch {
+  } catch (error) {
+    console.error("[Antigravity Subscription] Error:", error.message);
     return null;
   }
 }
