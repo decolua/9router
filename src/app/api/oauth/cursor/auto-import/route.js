@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { access, constants } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import Database from "better-sqlite3";
+import { execFile, execSync } from "child_process";
+import { promisify } from "util";
+import { createRequire } from "module";
+
+const execFileAsync = promisify(execFile);
 
 const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
 const MACHINE_ID_KEYS = ["storage.serviceMachineId", "storage.machineId", "telemetry.machineId"];
@@ -29,15 +33,14 @@ function getCandidatePaths(platform) {
     ];
   }
 
-  // Linux
   return [
     join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
     join(home, ".config/cursor/User/globalStorage/state.vscdb"),
   ];
 }
 
-/** Extract tokens from open db, with fuzzy fallback */
-function extractTokens(db, platform) {
+/** Extract tokens using better-sqlite3 (stream-based, no RAM limit) */
+function extractTokens(db) {
   const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
   const rows = db.prepare(
     `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
@@ -62,7 +65,7 @@ function extractTokens(db, platform) {
     }
   }
 
-  // Fuzzy fallback for all platforms when exact keys miss
+  // Fuzzy fallback
   if (!tokens.accessToken || !tokens.machineId) {
     const fallbackRows = db.prepare(
       "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
@@ -84,15 +87,55 @@ function extractTokens(db, platform) {
 }
 
 /**
+ * Extract tokens via sqlite3 CLI (fallback for Windows when native addon fails)
+ * Queries each key individually and parses output
+ */
+async function extractTokensViaCLI(dbPath) {
+  const normalize = (raw) => {
+    const value = raw.trim();
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "string" ? parsed : value;
+    } catch {
+      return value;
+    }
+  };
+
+  const query = async (sql) => {
+    const { stdout } = await execFileAsync("sqlite3", [dbPath, sql], { timeout: 10000 });
+    return stdout.trim();
+  };
+
+  // Try each key in priority order
+  let accessToken = null;
+  for (const key of ACCESS_TOKEN_KEYS) {
+    try {
+      const raw = await query(`SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`);
+      if (raw) { accessToken = normalize(raw); break; }
+    } catch { /* try next */ }
+  }
+
+  let machineId = null;
+  for (const key of MACHINE_ID_KEYS) {
+    try {
+      const raw = await query(`SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`);
+      if (raw) { machineId = normalize(raw); break; }
+    } catch { /* try next */ }
+  }
+
+  return { accessToken, machineId };
+}
+
+/**
  * GET /api/oauth/cursor/auto-import
- * Auto-detect and extract Cursor tokens from local SQLite database
+ * Auto-detect and extract Cursor tokens from local SQLite database.
+ * Strategy: better-sqlite3 (native, fast) → sqlite3 CLI (fallback) → windowsManual
  */
 export async function GET() {
   try {
     const platform = process.platform;
     const candidates = getCandidatePaths(platform);
 
-    // Find first readable db path
     let dbPath = null;
     for (const candidate of candidates) {
       try {
@@ -111,44 +154,47 @@ export async function GET() {
       });
     }
 
-    let db;
+    // Strategy 1: better-sqlite3 bundled → then global install fallback
+    let Database = null;
     try {
-      db = new Database(dbPath, { readonly: true, fileMustExist: true });
-    } catch (error) {
-      return NextResponse.json({
-        found: false,
-        error: `Found Cursor database at:\n${dbPath}\n\nBut could not open it: ${error.message}`,
-      });
+      const mod = await import("better-sqlite3");
+      Database = mod.default;
+    } catch {
+      // Try loading from global node_modules (user ran: npm i better-sqlite3 -g)
+      try {
+        const globalRoot = execSync("npm root -g", { timeout: 5000 }).toString().trim();
+        const requireGlobal = createRequire(join(globalRoot, "better-sqlite3", "package.json"));
+        Database = requireGlobal("better-sqlite3");
+      } catch { /* fall through to sqlite3 CLI strategy */ }
     }
 
-    try {
-      const tokens = extractTokens(db, platform);
-      db.close();
+    if (Database) {
+      let db;
+      try {
+        db = new Database(dbPath, { readonly: true, fileMustExist: true });
+        const tokens = extractTokens(db);
+        db.close();
 
-      if (!tokens.accessToken || !tokens.machineId) {
-        return NextResponse.json({
-          found: false,
-          error: "Tokens not found in database. Please login to Cursor IDE first.",
-        });
+        if (tokens.accessToken && tokens.machineId) {
+          return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
+        }
+      } catch {
+        db?.close();
       }
-
-      return NextResponse.json({
-        found: true,
-        accessToken: tokens.accessToken,
-        machineId: tokens.machineId,
-      });
-    } catch (error) {
-      db?.close();
-      return NextResponse.json({
-        found: false,
-        error: `Failed to read database: ${error.message}`,
-      });
     }
+
+    // Strategy 2: sqlite3 CLI (works on Windows if sqlite3 is installed)
+    try {
+      const tokens = await extractTokensViaCLI(dbPath);
+      if (tokens.accessToken && tokens.machineId) {
+        return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
+      }
+    } catch { /* sqlite3 CLI not available */ }
+
+    // Strategy 3: ask user to paste manually
+    return NextResponse.json({ found: false, windowsManual: true, dbPath });
   } catch (error) {
     console.log("Cursor auto-import error:", error);
-    return NextResponse.json(
-      { found: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ found: false, error: error.message }, { status: 500 });
   }
 }

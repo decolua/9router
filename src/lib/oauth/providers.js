@@ -761,7 +761,18 @@ const PROVIDERS = {
       if (!response.ok) return { ok: false, data: { error: "poll_failed", error_description: `Poll failed: ${response.status}` } };
       const data = await response.json();
       if (data.status === "approved" && data.token) {
-        return { ok: true, data: { access_token: data.token, _userEmail: data.userEmail } };
+        // Fetch profile to get orgId for X-Kilocode-OrganizationID header
+        let orgId = null;
+        try {
+          const profileRes = await fetch(`${config.apiBaseUrl}/api/profile`, {
+            headers: { "Authorization": `Bearer ${data.token}` }
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            orgId = profile.organizations?.[0]?.id || null;
+          }
+        } catch {}
+        return { ok: true, data: { access_token: data.token, _userEmail: data.userEmail, _orgId: orgId } };
       }
       return { ok: false, data: { error: "authorization_pending" } };
     },
@@ -770,6 +781,7 @@ const PROVIDERS = {
       refreshToken: null,
       expiresIn: null,
       email: tokens._userEmail,
+      ...(tokens._orgId ? { providerSpecificData: { orgId: tokens._orgId } } : {}),
     }),
   },
 

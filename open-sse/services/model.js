@@ -9,6 +9,9 @@ const ALIAS_TO_PROVIDER_ID = {
   gh: "github",
   kr: "kiro",
   cu: "cursor",
+  kc: "kilocode",
+  kmc: "kimi-coding",
+  cl: "cline",
   // API Key providers
   openai: "openai",
   anthropic: "anthropic",

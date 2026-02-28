@@ -339,19 +339,74 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-6">
         {/* Local Mode Info */}
         <Card>
-          <div className="flex items-center gap-4 mb-4">
-            <div className="size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
-              <span className="material-symbols-outlined text-2xl">computer</span>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <div className="size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center">
+                <span className="material-symbols-outlined text-2xl">computer</span>
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold">Local Mode</h2>
+                <p className="text-text-muted">Running on your machine</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-xl font-semibold">Local Mode</h2>
-              <p className="text-text-muted">Running on your machine</p>
+            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
+              {["light", "dark", "system"].map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setTheme(option)}
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition-all",
+                    theme === option
+                      ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
+                      : "text-text-muted hover:text-text-main"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
+                  </span>
+                  <span className="capitalize text-sm">{option}</span>
+                </button>
+              ))}
             </div>
           </div>
-          <div className="pt-4 border-t border-border">
-            <p className="text-sm text-text-muted">
-              All data is stored locally in the <code className="bg-sidebar px-1 rounded">~/.9router/db.json</code> file.
-            </p>
+          <div className="flex flex-col gap-3 pt-4 border-t border-border">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
+              <div>
+                <p className="font-medium">Database Location</p>
+                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                icon="download"
+                onClick={handleExportDatabase}
+                loading={dbLoading}
+              >
+                Download Backup
+              </Button>
+              <Button
+                variant="outline"
+                icon="upload"
+                onClick={() => importFileRef.current?.click()}
+                disabled={dbLoading}
+              >
+                Import Backup
+              </Button>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportDatabase}
+              />
+            </div>
+            {dbStatus.message && (
+              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {dbStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 
@@ -555,102 +610,6 @@ export default function ProfilePage() {
             {proxyStatus.message && (
               <p className={`text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
-              </p>
-            )}
-          </div>
-        </Card>
-
-        {/* Theme Preferences */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
-              <span className="material-symbols-outlined text-[20px]">palette</span>
-            </div>
-            <h3 className="text-lg font-semibold">Appearance</h3>
-          </div>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Dark Mode</p>
-                <p className="text-sm text-text-muted">
-                  Switch between light and dark themes
-                </p>
-              </div>
-              <Toggle
-                checked={isDark}
-                onChange={() => setTheme(isDark ? "light" : "dark")}
-              />
-            </div>
-
-            {/* Theme Options */}
-            <div className="pt-4 border-t border-border">
-              <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
-                {["light", "dark", "system"].map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setTheme(option)}
-                    className={cn(
-                      "flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all",
-                      theme === option
-                        ? "bg-white dark:bg-white/10 text-text-main shadow-sm"
-                        : "text-text-muted hover:text-text-main"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[20px]">
-                      {option === "light" ? "light_mode" : option === "dark" ? "dark_mode" : "contrast"}
-                    </span>
-                    <span className="capitalize">{option}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Data Management */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-green-500/10 text-green-500">
-              <span className="material-symbols-outlined text-[20px]">database</span>
-            </div>
-            <h3 className="text-lg font-semibold">Data</h3>
-          </div>
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between p-4 rounded-lg bg-bg border border-border">
-              <div>
-                <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                icon="download"
-                onClick={handleExportDatabase}
-                loading={dbLoading}
-              >
-                Download Backup
-              </Button>
-              <Button
-                variant="outline"
-                icon="upload"
-                onClick={() => importFileRef.current?.click()}
-                disabled={dbLoading}
-              >
-                Import Backup
-              </Button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={handleImportDatabase}
-              />
-            </div>
-            {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                {dbStatus.message}
               </p>
             )}
           </div>

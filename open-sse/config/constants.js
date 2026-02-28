@@ -284,16 +284,15 @@ export const PROVIDERS = {
   },
   kilocode: {
     baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
-    format: "openrouter",
+    format: "openai",
     headers: {}
   },
   cline: {
-    baseUrl: "https://api.cline.bot/api/v1/messages",
-    format: "claude",
+    baseUrl: "https://api.cline.bot/api/v1/chat/completions",
+    format: "openai",
     headers: {
       "HTTP-Referer": "https://cline.bot",
-      "X-Title": "Cline",
-      "Anthropic-Version": "2023-06-01"
+      "X-Title": "Cline"
     },
     tokenUrl: "https://api.cline.bot/api/v1/auth/token",
     refreshUrl: "https://api.cline.bot/api/v1/auth/refresh"
