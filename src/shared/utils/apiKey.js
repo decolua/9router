@@ -96,3 +96,6 @@ export function isNewFormatKey(apiKey) {
   return parsed?.isNewFormat === true;
 }
 
+// Re-export model pattern matcher utilities
+export { isModelAllowed, validateAllowedModelsFormat } from './model-pattern-matcher.js';
+

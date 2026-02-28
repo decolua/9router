@@ -68,10 +68,17 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+
+    // Validate API key and check model allowlist
+    const validation = await isValidApiKey(apiKey, modelStr);
+
+    if (!validation || (typeof validation === 'object' && !validation.valid)) {
+      const error = typeof validation === 'object' ? validation.error : 'Invalid API key';
+      log.warn("AUTH", `API key validation failed: ${error}`);
+
+      // Return 403 for model restrictions, 401 for invalid keys
+      const status = error.includes('not allowed') ? HTTP_STATUS.FORBIDDEN : HTTP_STATUS.UNAUTHORIZED;
+      return errorResponse(status, error);
     }
   }
 
