@@ -345,19 +345,21 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
-  const fetchModalData = async () => {
-    try {
-      const aliasesRes = await fetch("/api/models/alias");
-      if (!aliasesRes.ok) return;
-      const aliasesData = await aliasesRes.json();
-      setModelAliases(aliasesData.aliases || {});
-    } catch (error) {
-      console.error("Error fetching modal data:", error);
-    }
-  };
-
   useEffect(() => {
-    if (isOpen) fetchModalData();
+    const fetchModalData = async () => {
+      try {
+        const aliasesRes = await fetch("/api/models/alias");
+        if (!aliasesRes.ok) return;
+        const aliasesData = await aliasesRes.json();
+        setModelAliases(aliasesData.aliases || {});
+      } catch (error) {
+        console.error("Error fetching modal data:", error);
+      }
+    };
+
+    if (isOpen) {
+      fetchModalData();
+    }
   }, [isOpen]);
 
   const validateName = (value) => {
