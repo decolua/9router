@@ -72,6 +72,12 @@ export default function ModelSpeedTab() {
   const [sortOrder, setSortOrder] = useState("desc");
   const [error, setError] = useState(null);
 
+  // ── Benchmark state ────────────────────────────────────────────────────────
+  // ── Benchmark state ────────────────────────────────────────────────────────
+  const [benchRunning, setBenchRunning] = useState(false);
+  // Map of "provider/model" -> { status: "running" | "done" | "error", speed: number, error: string }
+  const [benchStatusMap, setBenchStatusMap] = useState({});
+
   const fetchData = async () => {
     try {
       const res = await fetch("/api/usage/model-speed", { cache: "no-store" });
@@ -95,6 +101,65 @@ export default function ModelSpeedTab() {
   const handleReload = () => {
     setLoading(true);
     fetchData();
+  };
+
+  const handleBenchmark = async () => {
+    if (benchRunning) return;
+    setBenchRunning(true);
+    setBenchStatusMap({});
+
+    try {
+      const res = await fetch("/api/usage/model-speed/benchmark", {
+        method: "POST",
+        cache: "no-store",
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+
+            if (event.type === "start") {
+              // No-op for now
+            } else if (event.type === "progress") {
+              setBenchStatusMap((prev) => ({
+                ...prev,
+                [`${event.provider}/${event.model}`]: {
+                  status: event.status,
+                  speed: event.speedTokPerSec ?? null,
+                  error: event.error ?? null,
+                },
+              }));
+            } else if (event.type === "done") {
+              setLoading(true);
+              fetchData();
+            }
+          } catch {
+            // ignore malformed events
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[ModelSpeedTab] benchmark error:", err);
+    } finally {
+      setBenchRunning(false);
+    }
   };
 
   const maxSpeed = useMemo(
@@ -160,10 +225,25 @@ export default function ModelSpeedTab() {
           )}
         </div>
 
+        {/* Benchmark button */}
+        <button
+          id="run-benchmark-btn"
+          type="button"
+          onClick={handleBenchmark}
+          disabled={benchRunning}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-primary/40 bg-primary/10 hover:bg-primary/20 text-primary text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Run benchmark on all active provider models"
+        >
+          <span className={`material-symbols-outlined text-[18px] ${benchRunning ? "animate-spin" : ""}`}>
+            {benchRunning ? "progress_activity" : "bolt"}
+          </span>
+            {benchRunning ? "Benchmarking…" : "Run Benchmark"}
+        </button>
+
         <button
           type="button"
           onClick={handleReload}
-          disabled={loading}
+          disabled={loading || benchRunning}
           className="p-2 rounded-lg border border-border bg-bg-subtle hover:bg-bg-muted transition-colors disabled:opacity-50"
           title="Reload data"
         >
@@ -179,7 +259,6 @@ export default function ModelSpeedTab() {
         </span>
       </div>
 
-      {/* Table */}
       <Card padding="none">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -300,74 +379,92 @@ export default function ModelSpeedTab() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((m, i) => (
-                  <tr
-                    key={`${m.provider}/${m.model}`}
-                    className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/2 dark:hover:bg-white/2 transition-colors"
-                  >
-                    {/* Rank + model */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-text-muted w-5 text-right shrink-0">
-                          {i + 1}
-                        </span>
-                        <span
-                          className="text-sm font-mono text-text-main truncate max-w-[220px]"
-                          title={m.model}
-                        >
-                          {m.model}
-                        </span>
-                      </div>
-                    </td>
+                filtered.map((m, i) => {
+                  const benchData = benchStatusMap[`${m.provider}/${m.model}`];
+                  const displayAvgSpeed = benchData && benchData.speed != null ? benchData.speed : m.avgSpeed;
+                  const isLoading = benchData?.status === "running";
+                  
+                  return (
+                    <tr
+                      key={`${m.provider}/${m.model}`}
+                      className={`border-b border-black/5 dark:border-white/5 last:border-b-0 transition-colors ${
+                        benchData?.status === "error" ? "bg-error/5" : "hover:bg-black/2 dark:hover:bg-white/2"
+                      }`}
+                    >
+                      {/* Rank + model */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-text-muted w-5 text-right shrink-0">
+                            {i + 1}
+                          </span>
+                          <span
+                            className="text-sm font-mono text-text-main truncate max-w-[220px]"
+                            title={m.model}
+                          >
+                            {m.model}
+                          </span>
+                        </div>
+                      </td>
 
-                    {/* Provider */}
-                    <td className="px-4 py-3">
-                      {m.provider ? (
-                        <Badge variant="neutral" size="sm">
-                          {m.provider}
-                        </Badge>
-                      ) : (
-                        <span className="text-text-muted text-xs">—</span>
-                      )}
-                    </td>
+                      {/* Provider */}
+                      <td className="px-4 py-3">
+                        {m.provider ? (
+                          <Badge variant="neutral" size="sm">
+                            {m.provider}
+                          </Badge>
+                        ) : (
+                          <span className="text-text-muted text-xs">—</span>
+                        )}
+                      </td>
 
-                    {/* Avg speed */}
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={`text-sm font-mono font-semibold ${
-                          m.avgSpeed > 0 ? "text-text-main" : "text-text-muted"
-                        }`}
-                      >
-                        {fmtSpeed(m.avgSpeed)}
-                      </span>
-                    </td>
+                      {/* Avg speed */}
+                      <td className="px-4 py-3 text-right">
+                        {isLoading ? (
+                           <span className="flex items-center justify-end gap-1 text-primary">
+                             <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                           </span>
+                        ) : benchData?.status === "error" ? (
+                           <span className="text-sm font-semibold text-error text-right block truncate max-w-[120px]" title={benchData.error}>
+                             Failed
+                           </span>
+                        ) : (
+                          <span
+                            className={`text-sm font-mono font-semibold ${
+                              displayAvgSpeed > 0 ? (benchData ? "text-success" : "text-text-main") : "text-text-muted"
+                            }`}
+                          >
+                            {fmtSpeed(displayAvgSpeed)}
+                          </span>
+                        )}
+                      </td>
 
-                    {/* Speed bar */}
-                    <td className="px-4 py-3 hidden sm:table-cell w-[120px]">
-                      <SpeedBar speed={m.avgSpeed} maxSpeed={maxSpeed} />
-                    </td>
+                      {/* Speed bar */}
+                      <td className="px-4 py-3 hidden sm:table-cell w-[120px]">
+                        <SpeedBar speed={displayAvgSpeed} maxSpeed={maxSpeed} />
+                      </td>
 
-                    {/* Min */}
-                    <td className="px-4 py-3 text-right text-sm font-mono text-text-muted hidden md:table-cell">
-                      {fmtSpeed(m.minSpeed)}
-                    </td>
+                      {/* Min */}
+                      <td className="px-4 py-3 text-right text-sm font-mono text-text-muted hidden md:table-cell">
+                        {fmtSpeed(m.minSpeed)}
+                      </td>
 
-                    {/* Max */}
-                    <td className="px-4 py-3 text-right text-sm font-mono text-text-muted hidden md:table-cell">
-                      {fmtSpeed(m.maxSpeed)}
-                    </td>
+                      {/* Max */}
+                      <td className="px-4 py-3 text-right text-sm font-mono text-text-muted hidden md:table-cell">
+                        {fmtSpeed(m.maxSpeed)}
+                      </td>
 
-                    {/* Samples */}
-                    <td className="px-4 py-3 text-right text-sm text-text-muted hidden sm:table-cell">
-                      {m.sampleCount.toLocaleString()}
-                    </td>
+                      {/* Samples */}
+                      <td className="px-4 py-3 text-right text-sm text-text-muted hidden sm:table-cell">
+                        {m.sampleCount.toLocaleString()}
+                      </td>
 
-                    {/* Last used */}
-                    <td className="px-4 py-3 text-right text-xs text-text-muted whitespace-nowrap">
-                      {timeAgo(m.lastUsed)}
-                    </td>
-                  </tr>
-                ))
+                      {/* Last used */}
+                      <td className="px-4 py-3 text-right text-xs text-text-muted whitespace-nowrap">
+                        {benchData?.status === "done" ? "Just now" : timeAgo(m.lastUsed)}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

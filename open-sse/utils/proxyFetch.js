@@ -49,7 +49,7 @@ function shouldBypassMitmDns(url, options) {
     // Debug: log when bypass is not triggered
     const hostname = new URL(url).hostname;
     if (MITM_BYPASS_HOSTS.some(host => hostname.includes(host))) {
-      console.warn(`[ProxyFetch] MITM bypass NOT triggered for ${hostname} - missing header`);
+      console.debug(`[ProxyFetch] MITM bypass NOT triggered for ${hostname} - missing header`);
     }
     return false;
   }
@@ -94,7 +94,7 @@ function getProxyUrl(targetUrl) {
 function normalizeProxyUrl(proxyUrl) {
   if (!proxyUrl) return null;
   try {
-    // eslint-disable-next-line no-new
+     
     new URL(proxyUrl);
     return proxyUrl;
   } catch {
@@ -186,7 +186,11 @@ async function patchedFetch(url, options = {}) {
       const realIP = await resolveRealIP(parsedUrl.hostname);
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
-      console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+      if (error.message.includes("ECONNREFUSED")) {
+        console.debug(`[ProxyFetch] MITM bypass failed (ECONNREFUSED), falling back to proxy`);
+      } else {
+        console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+      }
     }
   }
   

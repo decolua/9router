@@ -114,6 +114,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
+      "x-request-source": "local",
     },
     body: new URLSearchParams({
       grant_type: "refresh_token",
