@@ -112,20 +112,31 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     }
   }
 
-  // Convert tools format
+  // Convert tools format.
+  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
+  // explicit `name` field and cannot be represented as Chat Completions function declarations.
+  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
+  // such as Gemini, which strictly validates function names.
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => {
-      if (tool.function) return tool;
-      return {
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-          strict: tool.strict
-        }
-      };
-    });
+    result.tools = body.tools
+      .map(tool => {
+        // Already in Chat Completions format: { type: "function", function: { name, ... } }
+        if (tool.function) return tool;
+        // Responses API function tool: { type: "function", name, description, parameters }
+        // Only convert when a non-empty name is present; skip hosted tools without one.
+        const name = tool.name;
+        if (!name || typeof name !== "string" || name.trim() === "") return null;
+        return {
+          type: "function",
+          function: {
+            name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: tool.strict
+          }
+        };
+      })
+      .filter(Boolean);
   }
 
   // Cleanup Responses API specific fields
