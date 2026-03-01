@@ -1,6 +1,7 @@
 import { getProviderConnections } from "@/models";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { handleChat } from "@/sse/handlers/chat.js";
+import { getApiKeys } from "@/lib/localDb";
 
 const BENCHMARK_PROMPT = "Reply with exactly words: ok, hello word";
 const BENCHMARK_MAX_TOKENS = 30;
@@ -12,7 +13,7 @@ function sseEvent(data) {
 /**
  * Build a mock Request object that handleChat expects.
  */
-function createMockChatRequest(provider, modelId) {
+function createMockChatRequest(provider, modelId, activeApiKey) {
   const fullModelId = `${provider}/${modelId}`;
   const body = {
     model: fullModelId,
@@ -22,13 +23,19 @@ function createMockChatRequest(provider, modelId) {
     _benchmark: true // Optional flag if we want downstream to know
   };
 
+  const headers = {
+    "Content-Type": "application/json",
+    // Add a special user-agent or header if we want to identify benchmark calls
+    "User-Agent": "9Router-Benchmark/1.0",
+  };
+
+  if (activeApiKey) {
+    headers["Authorization"] = `Bearer ${activeApiKey}`;
+  }
+
   return new Request("http://localhost/api/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // Add a special user-agent or header if we want to identify benchmark calls
-      "User-Agent": "9Router-Benchmark/1.0",
-    },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -37,10 +44,10 @@ function createMockChatRequest(provider, modelId) {
  * Execute a single benchmark call using the internal router.
  * Returns { totalMs, error } (tokens/speed are logged automatically by the router).
  */
-async function runRouterBenchmarkCall(provider, modelId) {
+async function runRouterBenchmarkCall(provider, modelId, activeApiKey) {
   const start = Date.now();
   try {
-    const mockReq = createMockChatRequest(provider, modelId);
+    const mockReq = createMockChatRequest(provider, modelId, activeApiKey);
     
     // Pass forceSourceFormat = "openai" so translator knows it's an OpenAI style request
     const response = await handleChat(mockReq, null, "openai");
@@ -111,6 +118,10 @@ export async function POST() {
 
         send({ type: "start", total: tasks.length });
 
+        // Get an active local API key to bypass requireApiKey, if any exist
+        const apiKeys = await getApiKeys();
+        const activeApiKey = apiKeys.find((k) => k.isActive !== false)?.key;
+
         let succeeded = 0;
         let failed = 0;
 
@@ -123,7 +134,7 @@ export async function POST() {
             status: "running",
           });
 
-          const result = await runRouterBenchmarkCall(provider, modelId);
+          const result = await runRouterBenchmarkCall(provider, modelId, activeApiKey);
 
           if (result.error) {
             failed++;
