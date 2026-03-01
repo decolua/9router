@@ -12,3 +12,20 @@ export const FORMATS = {
   CURSOR: "cursor"
 };
 
+// Map endpoint suffix → source format (takes priority over body-based detection)
+const ENDPOINT_FORMAT_MAP = {
+  "/v1/responses": FORMATS.OPENAI_RESPONSES,
+  "/v1/chat/completions": FORMATS.OPENAI,
+};
+
+/**
+ * Detect source format from request URL pathname.
+ * Returns null if no matching endpoint found.
+ */
+export function detectFormatByEndpoint(pathname) {
+  for (const [segment, format] of Object.entries(ENDPOINT_FORMAT_MAP)) {
+    if (pathname.includes(segment)) return format;
+  }
+  return null;
+}
+
