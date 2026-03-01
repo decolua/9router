@@ -181,8 +181,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      // Detect source format by endpoint — /chat/completions is always openai, /responses is always openai-responses
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname) : null,
+      // Detect source format by endpoint + body
+      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
