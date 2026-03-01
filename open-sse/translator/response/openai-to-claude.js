@@ -82,6 +82,15 @@ export function openaiToClaudeResponse(chunk, state) {
     state.nextBlockIndex = 0;
 
     const initialUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    
+    // Ensure we only pass valid Claude Usage object fields, not raw OpenAI fields.
+    // Cherry Studio and other strict clients crash if they see prompt_tokens in a Claude message.
+    const cleanUsage = {
+      input_tokens: initialUsage.input_tokens || initialUsage.prompt_tokens || 0,
+      output_tokens: initialUsage.output_tokens || initialUsage.completion_tokens || 0,
+    };
+    if (initialUsage.cache_read_input_tokens) cleanUsage.cache_read_input_tokens = initialUsage.cache_read_input_tokens;
+    if (initialUsage.cache_creation_input_tokens) cleanUsage.cache_creation_input_tokens = initialUsage.cache_creation_input_tokens;
 
     results.push({
       type: "message_start",
@@ -93,7 +102,7 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: initialUsage
+        usage: cleanUsage
       }
     });
   }
