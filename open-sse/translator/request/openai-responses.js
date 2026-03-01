@@ -175,16 +175,23 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         : Array.isArray(msg.content)
           ? msg.content.map(c => {
             if (c.type === "text") return { type: contentType, text: c.text };
-            if (c.type === "image_url") return { type: contentType, text: "[Image content]" };
-            return c;
+            if (c.type === "image_url") return { type: "image_url", image_url: c.image_url };
+            // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
+            const text = c.text || c.content || JSON.stringify(c);
+            return { type: contentType, text: typeof text === "string" ? text : JSON.stringify(text) };
           })
           : [];
 
-      result.input.push({
-        type: "message",
-        role: msg.role,
-        content
-      });
+      // Only push a message block if content is non-empty.
+      // Assistant messages with only tool_calls have content: null — skip the
+      // message block in that case; the tool_calls are pushed separately below.
+      if (content.length > 0) {
+        result.input.push({
+          type: "message",
+          role: msg.role,
+          content
+        });
+      }
     }
 
     // Convert tool calls
