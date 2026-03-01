@@ -148,6 +148,59 @@ export function createErrorResult(statusCode, message, retryAfterMs = null) {
 }
 
 /**
+ * Build OpenAI-compatible error response body
+ * Format: { error: { message, type, code } }
+ */
+function buildOpenAIStyledErrorBody(statusCode, message) {
+  const errorInfo = ERROR_TYPES[statusCode] || 
+    (statusCode >= 500 
+      ? { type: "server_error", code: "internal_server_error" }
+      : { type: "invalid_request_error", code: "" });
+
+  return {
+    error: {
+      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
+      type: errorInfo.type,
+      code: errorInfo.code || null,
+    }
+  };
+}
+
+/**
+ * Create format-aware error result.
+ * - Claude sourceFormat → Anthropic error shape { type: "error", error: { type, message } }
+ * - OpenAI sourceFormat → OpenAI error shape { error: { message, type, code } }
+ * @param {number} statusCode
+ * @param {string} message
+ * @param {string} sourceFormat - The client's expected format ("claude", "openai", etc.)
+ * @param {number|null} retryAfterMs
+ */
+export function createFormattedErrorResult(statusCode, message, sourceFormat, retryAfterMs = null) {
+  const isClaude = sourceFormat === "claude";
+  const body = isClaude
+    ? buildErrorBody(statusCode, message)
+    : buildOpenAIStyledErrorBody(statusCode, message);
+
+  const headers = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*"
+  };
+  if (retryAfterMs) {
+    headers["Retry-After"] = String(Math.max(Math.ceil(retryAfterMs / 1000), 1));
+  }
+
+  const result = {
+    success: false,
+    status: statusCode,
+    error: message,
+    response: new Response(JSON.stringify(body), { status: statusCode, headers })
+  };
+
+  if (retryAfterMs) result.retryAfterMs = retryAfterMs;
+  return result;
+}
+
+/**
  * Create unavailable response when all accounts are rate limited
  * @param {number} statusCode - Original error status code
  * @param {string} message - Error message (without retry info)

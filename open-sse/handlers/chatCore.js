@@ -6,7 +6,7 @@ import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, createFormattedErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -91,11 +91,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return createFormattedErrorResult(499, "Request aborted", sourceFormat);
     }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, sourceFormat);
   }
 
   // Handle 401/403 - try token refresh
@@ -135,7 +135,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log?.debug?.("RETRY", `Antigravity quota reset in ${Math.ceil(retryAfterMs / 1000)}s`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, retryAfterMs);
+    return createFormattedErrorResult(statusCode, errMsg, sourceFormat, retryAfterMs);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };

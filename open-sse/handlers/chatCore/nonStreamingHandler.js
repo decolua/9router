@@ -1,7 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, createFormattedErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/constants.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
@@ -127,7 +127,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request", sourceFormat);
     }
     responseBody = parsed;
   } else {
@@ -136,7 +136,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     } catch (err) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+      return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`, sourceFormat);
     }
   }
 
@@ -165,7 +165,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
-  reqLogger.logConvertedResponse(translatedResponse);
+  // Final format conversion: if client expects Claude format and we have OpenAI, convert
+  let finalResponse = translatedResponse;
+  if (sourceFormat === FORMATS.CLAUDE && translatedResponse.choices) {
+    finalResponse = convertOpenAIJsonToClaude(translatedResponse, model);
+  }
+
+  reqLogger.logConvertedResponse(finalResponse);
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
@@ -176,9 +182,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     providerRequest: finalBody || translatedBody || null,
     providerResponse: responseBody || null,
     response: {
-      content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
-      thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
-      finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
+      content: finalResponse?.choices?.[0]?.message?.content || finalResponse?.content?.[0]?.text || finalResponse?.content || null,
+      thinking: finalResponse?.choices?.[0]?.message?.reasoning_content || finalResponse?.reasoning_content || null,
+      finish_reason: finalResponse?.choices?.[0]?.finish_reason || finalResponse?.stop_reason || "unknown"
     },
     status: "success"
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
@@ -187,8 +193,50 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   return {
     success: true,
-    response: new Response(JSON.stringify(translatedResponse), {
+    response: new Response(JSON.stringify(finalResponse), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     })
+  };
+}
+
+/**
+ * Convert OpenAI chat completion JSON to Claude Messages API format.
+ */
+function convertOpenAIJsonToClaude(openaiResp, fallbackModel) {
+  const choice = openaiResp.choices?.[0];
+  const content = [];
+
+  if (choice?.message?.reasoning_content) {
+    content.push({ type: "thinking", thinking: choice.message.reasoning_content });
+  }
+  if (choice?.message?.tool_calls) {
+    for (const tc of choice.message.tool_calls) {
+      let input = {};
+      try { input = JSON.parse(tc.function?.arguments || "{}"); } catch { }
+      content.push({ type: "tool_use", id: tc.id, name: tc.function?.name, input });
+    }
+  }
+  if (choice?.message?.content) {
+    content.push({ type: "text", text: choice.message.content });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  let stopReason = choice?.finish_reason || "end_turn";
+  if (stopReason === "stop") stopReason = "end_turn";
+  if (stopReason === "length") stopReason = "max_tokens";
+  if (stopReason === "tool_calls") stopReason = "tool_use";
+
+  return {
+    id: `msg_${(openaiResp.id || "").replace("chatcmpl-", "") || Date.now()}`,
+    type: "message",
+    role: "assistant",
+    content,
+    model: openaiResp.model || fallbackModel || "unknown",
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: openaiResp.usage?.prompt_tokens || 0,
+      output_tokens: openaiResp.usage?.completion_tokens || 0,
+    },
   };
 }

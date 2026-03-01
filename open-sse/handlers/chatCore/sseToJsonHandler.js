@@ -1,5 +1,5 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, createFormattedErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/constants.js";
 import { FORMATS } from "../../translator/formats.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
@@ -110,6 +110,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
         };
+      } else if (sourceFormat === FORMATS.CLAUDE) {
+        // Claude Messages API format
+        finalResp = {
+          id: `msg_${jsonResponse.id || Date.now()}`,
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: textContent || "" }],
+          model: model || "unknown",
+          stop_reason: "end_turn",
+          stop_sequence: null,
+          usage: { input_tokens: inTokens, output_tokens: outTokens },
+        };
       } else {
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
@@ -124,7 +136,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+      return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON", sourceFormat);
     }
   }
 
@@ -132,7 +144,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   try {
     const sseText = await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (!parsed) return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request", sourceFormat);
 
     if (onRequestSuccess) await onRequestSuccess();
 
@@ -153,9 +165,57 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       status: "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
+    // If client expects Claude format, convert parsed OpenAI response
+    if (sourceFormat === FORMATS.CLAUDE) {
+      const claudeResp = convertOpenAIJsonToClaude(parsed, model);
+      return { success: true, response: new Response(JSON.stringify(claudeResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    }
+
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+    return createFormattedErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON", sourceFormat);
   }
+}
+
+/**
+ * Convert OpenAI chat completion JSON to Claude Messages API format.
+ */
+function convertOpenAIJsonToClaude(openaiResp, fallbackModel) {
+  const choice = openaiResp.choices?.[0];
+  const content = [];
+
+  if (choice?.message?.reasoning_content) {
+    content.push({ type: "thinking", thinking: choice.message.reasoning_content });
+  }
+  if (choice?.message?.tool_calls) {
+    for (const tc of choice.message.tool_calls) {
+      let input = {};
+      try { input = JSON.parse(tc.function?.arguments || "{}"); } catch { }
+      content.push({ type: "tool_use", id: tc.id, name: tc.function?.name, input });
+    }
+  }
+  if (choice?.message?.content) {
+    content.push({ type: "text", text: choice.message.content });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  let stopReason = choice?.finish_reason || "end_turn";
+  if (stopReason === "stop") stopReason = "end_turn";
+  if (stopReason === "length") stopReason = "max_tokens";
+  if (stopReason === "tool_calls") stopReason = "tool_use";
+
+  return {
+    id: `msg_${(openaiResp.id || "").replace("chatcmpl-", "") || Date.now()}`,
+    type: "message",
+    role: "assistant",
+    content,
+    model: openaiResp.model || fallbackModel || "unknown",
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: openaiResp.usage?.prompt_tokens || 0,
+      output_tokens: openaiResp.usage?.completion_tokens || 0,
+    },
+  };
 }
