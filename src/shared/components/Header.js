@@ -33,6 +33,8 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/cli-tools")) return { title: "CLI Tools", description: "Configure CLI tools", breadcrumbs: [] };
   if (pathname.includes("/endpoint")) return { title: "Endpoint", description: "API endpoint configuration", breadcrumbs: [] };
   if (pathname.includes("/profile")) return { title: "Settings", description: "Manage your preferences", breadcrumbs: [] };
+  if (pathname.includes("/translator")) return { title: "Translator", description: "Debug translation flow between formats", breadcrumbs: [] };
+  if (pathname.includes("/console-log")) return { title: "Console Log", description: "Live server console output", breadcrumbs: [] };
   if (pathname === "/dashboard") return { title: "Endpoint", description: "API endpoint configuration", breadcrumbs: [] };
   return { title: "", description: "", breadcrumbs: [] };
 };

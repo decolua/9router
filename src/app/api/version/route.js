@@ -38,7 +38,6 @@ function compareVersions(a, b) {
 
 export async function GET() {
   const latestVersion = await fetchLatestVersion();
-  console.log("🚀 ~ GET ~ latestVersion:", latestVersion)
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 

@@ -29,6 +29,11 @@ export const API_ENDPOINTS = {
   auth: "/api/auth",
 };
 
+export const CONSOLE_LOG_CONFIG = {
+  maxLines: 200,
+  pollIntervalMs: 1000,
+};
+
 // Provider API endpoints (for display only)
 export const PROVIDER_ENDPOINTS = {
   openrouter: "https://openrouter.ai/api/v1/chat/completions",
