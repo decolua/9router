@@ -59,7 +59,24 @@ export default function ProviderDetailPage() {
     ? (providerNode?.prefix || providerId)
     : providerAlias;
   const activeConnection = connections.find((conn) => conn.isActive !== false) || null;
-  const allProviderModels = remoteModels.length > 0 ? remoteModels : models;
+  const allProviderModels = useMemo(() => {
+    const merged = new Map();
+
+    // Start with static models so they are always available.
+    for (const model of models) {
+      if (!model?.id) continue;
+      merged.set(model.id, model);
+    }
+
+    // Overlay with remote models (same id updates metadata/name),
+    // while preserving static-only models.
+    for (const model of remoteModels) {
+      if (!model?.id) continue;
+      merged.set(model.id, model);
+    }
+
+    return Array.from(merged.values());
+  }, [models, remoteModels]);
   const allProviderModelIds = useMemo(
     () => allProviderModels.map((model) => model.id),
     [allProviderModels]
@@ -561,7 +578,7 @@ export default function ProviderDetailPage() {
                 alias={model.alias}
                 copied={copied}
                 onCopy={copy}
-                onSetAlias={() => {}}
+                onSetAlias={() => { }}
                 onDeleteAlias={() => handleDeleteAlias(model.alias)}
                 isCustom
               />
@@ -837,14 +854,14 @@ function ModelRow({ model, fullModel, alias, selected, onToggleSelect, copied, o
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
-    ? "border-red-500/40"
-    : "border-border";
+      ? "border-red-500/40"
+      : "border-border";
 
   const iconColor = testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
-    ? "#ef4444"
-    : undefined;
+      ? "#ef4444"
+      : undefined;
 
   return (
     <div className={`group relative flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>

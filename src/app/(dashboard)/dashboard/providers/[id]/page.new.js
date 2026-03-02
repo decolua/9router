@@ -56,7 +56,21 @@ export default function ProviderDetailPage() {
     ? (providerNode?.prefix || providerId)
     : providerAlias;
   const activeConnection = connections.find((conn) => conn.isActive !== false) || null;
-  const allProviderModels = models.length > 0 ? models : remoteModels;
+  const allProviderModels = useMemo(() => {
+    const merged = new Map();
+
+    for (const model of models) {
+      if (!model?.id) continue;
+      merged.set(model.id, model);
+    }
+
+    for (const model of remoteModels) {
+      if (!model?.id) continue;
+      merged.set(model.id, model);
+    }
+
+    return Array.from(merged.values());
+  }, [models, remoteModels]);
   const allProviderModelIds = useMemo(
     () => allProviderModels.map((model) => model.id),
     [allProviderModels]
@@ -1141,31 +1155,30 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
-  // Use useState + useEffect for impure Date.now() to avoid calling during render
-  const [isCooldown, setIsCooldown] = useState(false);
-
-  const modelLockUntil = Object.entries(connection)
+  const modelLockValues = Object.entries(connection)
     .filter(([k]) => k.startsWith("modelLock_"))
     .map(([, v]) => v)
-    .filter(v => v && new Date(v).getTime() > Date.now())
-    .sort()[0] || null;
+    .filter(Boolean)
+    .sort();
+
+  const [cooldownUntil, setCooldownUntil] = useState(null);
+  const isCooldown = !!cooldownUntil;
 
   useEffect(() => {
     const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
+      const now = Date.now();
+      const until = modelLockValues
+        .filter(v => new Date(v).getTime() > now)
         .sort()[0] || null;
-      setIsCooldown(!!until);
+      setCooldownUntil(until);
     };
 
     checkCooldown();
-    const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
+    const interval = modelLockValues.length > 0 ? setInterval(checkCooldown, 1000) : null;
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [modelLockValues]);
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
@@ -1208,7 +1221,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {isCooldown && connection.isActive !== false && <CooldownTimer until={cooldownUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}

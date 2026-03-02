@@ -4,6 +4,7 @@ import { getProviderConnectionById } from "@/models";
 import { getCachedValue, setCachedValue } from "@/lib/apiCache";
 import { getProviderModelsCacheKey } from "@/lib/cacheKeys";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
@@ -40,6 +41,50 @@ const parseGeminiCliModels = (data) => {
   }
 
   return [];
+};
+
+const normalizeModelArray = (models) => {
+  if (!Array.isArray(models)) return [];
+
+  return models
+    .map((item) => {
+      if (typeof item === "string") {
+        const id = item.trim();
+        if (!id) return null;
+        return { id, name: id };
+      }
+
+      const id = item?.id || item?.model || item?.name;
+      if (!id || typeof id !== "string") return null;
+
+      return {
+        ...item,
+        id,
+        name: item?.name || id,
+      };
+    })
+    .filter(Boolean);
+};
+
+const mergeStaticAndFetchedModels = (providerId, fetchedModels) => {
+  const merged = new Map();
+
+  for (const model of getModelsByProviderId(providerId)) {
+    if (!model?.id) continue;
+    merged.set(model.id, model);
+  }
+
+  for (const model of normalizeModelArray(fetchedModels)) {
+    const existing = merged.get(model.id) || {};
+    merged.set(model.id, {
+      ...existing,
+      ...model,
+      id: model.id,
+      name: model.name || existing.name || model.id,
+    });
+  }
+
+  return Array.from(merged.values());
 };
 
 const createOpenAIModelsConfig = (url) => ({
@@ -197,7 +242,7 @@ export async function GET(request, { params }) {
       }
 
       const data = await response.json();
-      const models = data.data || data.models || [];
+      const models = mergeStaticAndFetchedModels(connection.provider, data.data || data.models || []);
 
       const payload = {
         provider: connection.provider,
@@ -240,7 +285,7 @@ export async function GET(request, { params }) {
       }
 
       const data = await response.json();
-      const models = data.data || data.models || [];
+      const models = mergeStaticAndFetchedModels(connection.provider, data.data || data.models || []);
 
       const payload = {
         provider: connection.provider,
@@ -259,7 +304,8 @@ export async function GET(request, { params }) {
         const accessToken = connection.accessToken;
 
         if (accessToken && profileArn) {
-          const models = await kiroService.listAvailableModels(accessToken, profileArn);
+          const fetchedModels = await kiroService.listAvailableModels(accessToken, profileArn);
+          const models = mergeStaticAndFetchedModels(connection.provider, fetchedModels);
           const payload = {
             provider: connection.provider,
             connectionId: connection.id,
@@ -316,7 +362,7 @@ export async function GET(request, { params }) {
 
         if (response.ok) {
           const data = await response.json();
-          const models = parseGeminiCliModels(data);
+          const models = mergeStaticAndFetchedModels(connection.provider, parseGeminiCliModels(data));
           if (models.length > 0) {
             const payload = {
               provider: connection.provider,
@@ -340,7 +386,7 @@ export async function GET(request, { params }) {
       const payload = {
         provider: connection.provider,
         connectionId: connection.id,
-        models: [],
+        models: mergeStaticAndFetchedModels(connection.provider, []),
         warning,
       };
       await setCachedValue(cacheKey, payload, PROVIDER_MODELS_CACHE_TTL_MS);
@@ -413,7 +459,7 @@ export async function GET(request, { params }) {
     }
 
     const data = await response.json();
-    const models = config.parseResponse(data);
+    const models = mergeStaticAndFetchedModels(connection.provider, config.parseResponse(data));
 
     const payload = {
       provider: connection.provider,
