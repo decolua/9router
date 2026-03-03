@@ -22,12 +22,28 @@ export const CLI_TOOLS = {
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
   },
+  openclaw: {
+    id: "openclaw",
+    name: "Open Claw",
+    image: "/providers/openclaw.png",
+    color: "#FF6B35",
+    description: "Open Claw AI Assistant",
+    configType: "custom",
+  },
   codex: {
     id: "codex",
     name: "OpenAI Codex CLI",
     image: "/providers/codex.png",
     color: "#10A37F",
     description: "OpenAI Codex CLI",
+    configType: "custom",
+  },
+  opencode: {
+    id: "opencode",
+    name: "OpenCode",
+    image: "/providers/opencode.png",
+    color: "#E87040",
+    description: "OpenCode AI Terminal Assistant",
     configType: "custom",
   },
   antigravity: {
@@ -55,14 +71,6 @@ export const CLI_TOOLS = {
     description: "Factory Droid AI Assistant",
     configType: "custom",
   },
-  openclaw: {
-    id: "openclaw",
-    name: "Open Claw",
-    image: "/providers/openclaw.png",
-    color: "#FF6B35",
-    description: "Open Claw AI Assistant",
-    configType: "custom",
-  },
   cursor: {
     id: "cursor",
     name: "Cursor",
@@ -70,10 +78,10 @@ export const CLI_TOOLS = {
     color: "#000000",
     description: "Cursor AI Code Editor",
     configType: "guide",
-    requiresCloud: true,
+    requiresExternalUrl: true,
     notes: [
       { type: "warning", text: "Requires Cursor Pro account to use this feature." },
-      { type: "cloudCheck", text: "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Cloud Endpoint in Settings." },
+      { type: "cloudCheck", text: "Cursor routes requests through its own server, so local endpoint is not supported. Please enable Tunnel or Cloud Endpoint in Settings." },
     ],
     guideSteps: [
       { step: 1, title: "Open Settings", desc: "Go to Settings → Models" },
