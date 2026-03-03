@@ -78,7 +78,20 @@ export function createSSEStream(options = {}) {
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
-              const parsed = JSON.parse(trimmed.slice(5).trim());
+              let parsed = JSON.parse(trimmed.slice(5).trim());
+
+              // Clean perf_metrics from usage (Cursor crashes: "Cannot read properties of null (reading 'perf_metrics')")
+              let perfMetricsCleaned = false;
+              if (parsed?.usage && typeof parsed.usage === "object" && "perf_metrics" in parsed.usage) {
+                const { perf_metrics, ...usageClean } = parsed.usage;
+                parsed = { ...parsed, usage: usageClean };
+                perfMetricsCleaned = true;
+              }
+              if (parsed?.response?.usage && typeof parsed.response.usage === "object" && "perf_metrics" in parsed.response.usage) {
+                const { perf_metrics, ...usageClean } = parsed.response.usage;
+                parsed = { ...parsed, response: { ...parsed.response, usage: usageClean } };
+                perfMetricsCleaned = true;
+              }
 
               const idFixed = fixInvalidId(parsed);
 
@@ -136,7 +149,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
+              } else if (idFixed || fieldsInjected || perfMetricsCleaned) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }

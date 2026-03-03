@@ -68,9 +68,13 @@ function cleanUsagePayload(payload) {
     if (cleaned.usage === null) {
       const { usage, ...payloadWithoutUsage } = cleaned;
       cleaned = payloadWithoutUsage;
-    } else if (typeof cleaned.usage === "object" && cleaned.usage.perf_metrics === null) {
-      const { perf_metrics, ...usageWithoutPerf } = cleaned.usage;
-      cleaned = { ...cleaned, usage: usageWithoutPerf };
+    } else if (typeof cleaned.usage === "object") {
+      // Remove perf_metrics regardless of value (null, undefined, or object) —
+      // Cursor crashes with "Cannot read properties of null (reading 'perf_metrics')"
+      if ("perf_metrics" in cleaned.usage) {
+        const { perf_metrics, ...usageWithoutPerf } = cleaned.usage;
+        cleaned = { ...cleaned, usage: usageWithoutPerf };
+      }
     }
   }
 
@@ -89,13 +93,19 @@ export function formatSSE(data, sourceFormat) {
   if (data === null || data === undefined) return "data: null\n\n";
   if (data && data.done) return "data: [DONE]\n\n";
 
-  // OpenAI Responses API format
+  // OpenAI Responses API format (structured { event, data })
   if (data && data.event && data.data) {
     const cleanedEventData = cleanUsagePayload(data.data);
     return `event: ${data.event}\ndata: ${JSON.stringify(cleanedEventData)}\n\n`;
   }
 
   data = cleanUsagePayload(data);
+
+  // OpenAI Responses API format (flat object with .type, e.g. from passthrough translate)
+  // Must emit with event: prefix so Cursor/clients can parse SSE event type
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES && data && data.type && data.type.startsWith("response.")) {
+    return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
+  }
 
   // Claude format
   if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
