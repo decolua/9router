@@ -97,7 +97,8 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
+  // String enum matches CLIProxyAPI Go source (internal/auth/antigravity/constants.go)
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
 };
 
 /**

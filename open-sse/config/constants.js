@@ -94,7 +94,7 @@ export const CLIENT_METADATA = {
 // Internal anti-loop header to identify requests originating from this proxy
 export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
-// Antigravity headers
+// Antigravity headers (for chat/stream requests)
 export const ANTIGRAVITY_HEADERS = {
   "X-Client-Name": "antigravity",
   "X-Client-Version": "1.107.0",
@@ -106,6 +106,21 @@ export const ANTIGRAVITY_HEADERS = {
 export const CLOUD_CODE_API = {
   loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+};
+
+// Headers for loadCodeAssist / onboardUser API calls (matches CLIProxyAPI Go source)
+export const LOAD_CODE_ASSIST_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
+};
+
+// Metadata body for loadCodeAssist / onboardUser (string enum, matches CLIProxyAPI Go source)
+export const LOAD_CODE_ASSIST_METADATA = {
+  ideType: "IDE_UNSPECIFIED",
+  platform: "PLATFORM_UNSPECIFIED",
+  pluginType: "GEMINI",
 };
 
 // Provider configurations

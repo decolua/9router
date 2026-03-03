@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { platform, arch } from "os";
 import open from "open";
 import { ANTIGRAVITY_CONFIG } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
@@ -92,21 +91,14 @@ export class AntigravityService {
   }
 
   /**
-   * Get metadata object for API calls
-   * Uses numeric enum values matching Antigravity binary specifications
+   * Get metadata object for loadCodeAssist / onboardUser API calls.
+   * Uses string enum values matching CLIProxyAPI Go source.
    */
   getMetadata() {
-    const os = platform();
-    const architecture = arch();
-    let platformEnum = 0; // UNSPECIFIED
-    if (os === "darwin") platformEnum = architecture === "arm64" ? 2 : 1;
-    else if (os === "linux") platformEnum = architecture === "arm64" ? 4 : 3;
-    else if (os === "win32") platformEnum = 5;
-
     return {
-      ideType: 9,        // ANTIGRAVITY
-      platform: platformEnum,
-      pluginType: 2,     // GEMINI
+      ideType: "IDE_UNSPECIFIED",
+      platform: "PLATFORM_UNSPECIFIED",
+      pluginType: "GEMINI",
     };
   }
 
@@ -117,7 +109,7 @@ export class AntigravityService {
     const response = await fetch(this.config.loadCodeAssistEndpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
-      body: JSON.stringify({ metadata: this.getMetadata(), mode: 1 }),
+      body: JSON.stringify({ metadata: this.getMetadata() }),
     });
 
     if (!response.ok) {
@@ -154,12 +146,7 @@ export class AntigravityService {
     const response = await fetch(this.config.onboardUserEndpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
-      body: JSON.stringify({
-        tierId,
-        metadata: this.getMetadata(),
-        cloudaicompanionProject: projectId,
-        mode: 1,
-      }),
+      body: JSON.stringify({ tierId, metadata: this.getMetadata() }),
     });
 
     if (!response.ok) {

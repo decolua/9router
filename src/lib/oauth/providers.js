@@ -20,7 +20,6 @@ import {
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
   CLINE_CONFIG,
-  getOAuthClientMetadata,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -255,21 +254,22 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      const headers = {
-        Authorization: `Bearer ${tokens.access_token}`,
+      // Matches CLIProxyAPI Go source: string enum, no mode field
+      const loadHeaders = {
+        "Authorization": `Bearer ${tokens.access_token}`,
         "Content-Type": "application/json",
         "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
-        "x-request-source": "local", // MITM passthrough marker
+        "x-request-source": "local",
       };
-      const metadata = getOAuthClientMetadata();
+      const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
-        headers: { 
+        headers: {
           Authorization: `Bearer ${tokens.access_token}`,
-          "x-request-source": "local", // MITM passthrough marker
+          "x-request-source": "local",
         },
       });
       const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
@@ -280,13 +280,12 @@ const PROVIDERS = {
       try {
         const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
           method: "POST",
-          headers,
-          body: JSON.stringify({ metadata, mode: 1 }),
+          headers: loadHeaders,
+          body: JSON.stringify({ metadata }),
         });
         if (loadRes.ok) {
           const data = await loadRes.json();
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
-          // Extract tier ID
           if (Array.isArray(data.allowedTiers)) {
             for (const tier of data.allowedTiers) {
               if (tier.isDefault && tier.id) {
@@ -307,8 +306,8 @@ const PROVIDERS = {
             try {
               const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
                 method: "POST",
-                headers,
-                body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
+                headers: loadHeaders,
+                body: JSON.stringify({ tierId, metadata }),
               });
               if (onboardRes.ok) {
                 const result = await onboardRes.json();
