@@ -161,6 +161,13 @@ const TABLE_OPTIONS = [
   { value: "endpoint", label: "Usage by Endpoint" },
 ];
 
+const PERIODS = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7D" },
+  { value: "30d", label: "30D" },
+  { value: "60d", label: "60D" },
+];
+
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -170,8 +177,10 @@ export default function UsageStats() {
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [providers, setProviders] = useState([]);
+  const [period, setPeriod] = useState("7d");
 
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
@@ -190,33 +199,48 @@ export default function UsageStats() {
       .catch(() => {});
   }, []);
 
-  // SSE connection - no polling, event-driven
+  // Fetch filtered stats via REST when period changes
   useEffect(() => {
-    console.log("[SSE CLIENT] connecting...");
-    const es = new EventSource("/api/usage/stream");
+    // First load: show full spinner; subsequent: show subtle fetching indicator
+    if (!stats) setLoading(true);
+    else setFetching(true);
 
-    es.onopen = () => console.log("[SSE CLIENT] connected ✓");
+    fetch(`/api/usage/stats?period=${period}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setStats((prev) => ({ ...prev, ...data }));
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoading(false);
+        setFetching(false);
+      });
+  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // SSE connection - real-time updates for activeRequests + recentRequests only
+  useEffect(() => {
+    const es = new EventSource("/api/usage/stream");
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        console.log("[SSE CLIENT] message received | activeRequests:", data.activeRequests?.length || 0, "| providers:", data.activeRequests?.map(r => r.provider));
-        setStats(data);
+        // Only update real-time fields from SSE, keep filtered stats intact
+        setStats((prev) => prev ? {
+          ...prev,
+          activeRequests: data.activeRequests,
+          recentRequests: data.recentRequests,
+          errorProvider: data.errorProvider,
+          pending: data.pending,
+        } : data);
         setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
     };
 
-    es.onerror = (e) => {
-      console.error("[SSE CLIENT] error | readyState:", es.readyState, e);
-      setLoading(false);
-    };
+    es.onerror = () => setLoading(false);
 
-    return () => {
-      console.log("[SSE CLIENT] closing");
-      es.close();
-    };
+    return () => es.close();
   }, []);
 
   const toggleSort = useCallback((tableType, field) => {
@@ -357,6 +381,25 @@ export default function UsageStats() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Period selector */}
+      <div className="flex items-center gap-2 self-end">
+        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+          {PERIODS.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              disabled={fetching}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {fetching && (
+          <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+        )}
+      </div>
+
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
@@ -373,8 +416,8 @@ export default function UsageStats() {
         </div>
       )}
 
-      {/* Token / Cost chart */}
-      {loading ? spinner : <UsageChart />}
+      {/* Token / Cost chart - sync period */}
+      {loading ? spinner : <UsageChart period={period} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">

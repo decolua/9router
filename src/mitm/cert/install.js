@@ -26,9 +26,10 @@ async function checkCertInstalled(certPath) {
 function checkCertInstalledMac(certPath) {
   return new Promise((resolve) => {
     try {
-      const fingerprint = getCertFingerprint(certPath);
-      exec(`security find-certificate -a -Z /Library/Keychains/System.keychain | grep -i "${fingerprint}"`, (error) => {
-        resolve(!error);
+      // security outputs fingerprint without colons (e.g. "078B6B5F..."), strip them before grep
+      const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
+      exec(`security find-certificate -a -Z /Library/Keychains/System.keychain | grep -i "${fingerprint}"`, (error, stdout) => {
+        resolve(!error && !!stdout?.trim());
       });
     } catch {
       resolve(false);
