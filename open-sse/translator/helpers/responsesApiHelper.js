@@ -56,11 +56,15 @@ export function convertResponsesApiFormat(body) {
         pendingToolResults = [];
       }
 
-      // Convert content: input_text → text, output_text → text
+      // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
         ? item.content.map(c => {
           if (c.type === "input_text") return { type: "text", text: c.text };
           if (c.type === "output_text") return { type: "text", text: c.text };
+          if (c.type === "input_image") {
+            const url = c.image_url || c.file_id || "";
+            return { type: "image_url", image_url: { url, detail: c.detail || "auto" } };
+          }
           return c;
         })
         : item.content;
