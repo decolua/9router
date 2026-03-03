@@ -1,5 +1,24 @@
 import { platform, arch } from "os";
 
+function mapStainlessOs() {
+  switch (platform()) {
+    case "darwin": return "MacOS";
+    case "win32": return "Windows";
+    case "linux": return "Linux";
+    case "freebsd": return "FreeBSD";
+    default: return `Other::${platform()}`;
+  }
+}
+
+function mapStainlessArch() {
+  switch (arch()) {
+    case "x64": return "x64";
+    case "arm64": return "arm64";
+    case "ia32": return "x86";
+    default: return `other::${arch()}`;
+  }
+}
+
 // === GitHub Copilot Version Constants ===
 export const GITHUB_COPILOT = {
   VSCODE_VERSION: "1.110.0",
@@ -96,23 +115,23 @@ export const PROVIDERS = {
     format: "claude",
     headers: {
       "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27",
+      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
       "Anthropic-Dangerous-Direct-Browser-Access": "true",
-      "User-Agent": "claude-cli/1.0.83 (external, cli)",
+      "User-Agent": "claude-cli/2.1.63 (external, cli)",
       "X-App": "cli",
       "X-Stainless-Helper-Method": "stream",
       "X-Stainless-Retry-Count": "0",
       "X-Stainless-Runtime-Version": "v24.3.0",
-      "X-Stainless-Package-Version": "0.55.1",
+      "X-Stainless-Package-Version": "0.74.0",
       "X-Stainless-Runtime": "node",
       "X-Stainless-Lang": "js",
-      "X-Stainless-Arch": "arm64",
-      "X-Stainless-Os": "MacOS",
-      "X-Stainless-Timeout": "60"
+      "X-Stainless-Arch": mapStainlessArch(),
+      "X-Stainless-Os": mapStainlessOs(),
+      "X-Stainless-Timeout": "600"
     },
     // Claude OAuth configuration
     clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-    tokenUrl: "https://console.anthropic.com/v1/oauth/token"
+    tokenUrl: "https://api.anthropic.com/v1/oauth/token"
   },
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
@@ -376,7 +395,7 @@ export const PROVIDERS = {
 };
 
 // Claude system prompt
-export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
+export const CLAUDE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
 
 // Antigravity default system prompt (required for API to work)
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
@@ -392,8 +411,8 @@ export const OAUTH_ENDPOINTS = {
     auth: "https://auth.openai.com/oauth/authorize"
   },
   anthropic: {
-    token: "https://console.anthropic.com/v1/oauth/token",
-    auth: "https://console.anthropic.com/v1/oauth/authorize"
+    token: "https://api.anthropic.com/v1/oauth/token",
+    auth: "https://api.anthropic.com/v1/oauth/authorize"
   },
   qwen: {
     token: "https://chat.qwen.ai/api/v1/oauth2/token", // From CLIProxyAPI

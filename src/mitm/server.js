@@ -140,6 +140,7 @@ async function passthrough(req, res, bodyBuffer) {
 async function intercept(req, res, bodyBuffer, mappedModel) {
   try {
     const body = JSON.parse(bodyBuffer.toString());
+    console.log("🚀 ~ intercept ~ body:", body)
     body.model = mappedModel;
 
     const response = await fetch(ROUTER_URL, {

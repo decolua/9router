@@ -90,7 +90,8 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
-    result = prepareClaudeRequest(result, provider);
+    const apiKey = credentials?.accessToken || credentials?.apiKey || null;
+    result = prepareClaudeRequest(result, provider, apiKey);
   }
 
   return result;

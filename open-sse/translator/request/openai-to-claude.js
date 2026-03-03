@@ -3,8 +3,9 @@ import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/constants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
-// Prefix for Claude OAuth tool names to avoid conflicts
-const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
+// Empty prefix matches real Claude Code behavior (no tool name prefix).
+// Previously "proxy_" was used but this is a detectable fingerprint difference.
+const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
 export function openaiToClaudeRequest(model, body, stream) {
