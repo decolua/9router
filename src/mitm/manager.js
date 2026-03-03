@@ -97,14 +97,23 @@ function isProcessAlive(pid) {
 }
 
 // Cross-platform process kill
-function killProcess(pid, force = false) {
+function killProcess(pid, force = false, sudoPassword = null) {
   if (IS_WIN) {
     const flag = force ? "/F " : "";
     exec(`taskkill ${flag}/PID ${pid}`, () => { });
   } else {
-    // Use pkill to kill entire process group (catches sudo + child node process)
     const sig = force ? "SIGKILL" : "SIGTERM";
-    exec(`pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`, () => { });
+    // Kill entire process group (sudo parent + child node)
+    const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
+    if (sudoPassword) {
+      const { execWithPassword } = require("./dns/dnsConfig");
+      execWithPassword(cmd, sudoPassword).catch(() => {
+        // Fallback without sudo
+        exec(cmd, () => { });
+      });
+    } else {
+      exec(cmd, () => { });
+    }
   }
 }
 
@@ -252,7 +261,7 @@ async function killLeftoverMitm(sudoPassword) {
     if (fs.existsSync(PID_FILE)) {
       const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
       if (savedPid && isProcessAlive(savedPid)) {
-        killProcess(savedPid, true);
+        killProcess(savedPid, true, sudoPassword);
         await new Promise(r => setTimeout(r, 500));
       }
       fs.unlinkSync(PID_FILE);
@@ -392,15 +401,17 @@ async function startMitm(apiKey, sudoPassword) {
     }
   }
 
-  // 1. Generate SSL certificate if not exists (no elevation needed)
+  const steps = { cert: false, server: false, dns: false };
+
+  // Step 1: Generate SSL certificate if not exists
   const certPath = path.join(MITM_DIR, "server.crt");
   if (!fs.existsSync(certPath)) {
-    console.log("Generating SSL certificate...");
+    console.log("[MITM] Generating SSL certificate...");
     await generateCert();
   }
 
-  // 4. Spawn MITM server
-  console.log("Starting MITM server...");
+  // Step 2: Spawn MITM server
+  console.log("[MITM] Starting server...");
 
   if (IS_WIN) {
     // Windows: single UAC via VBScript → elevated PowerShell script that:
@@ -483,23 +494,22 @@ async function startMitm(apiKey, sudoPassword) {
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else {
-    // macOS/Linux: install cert + add DNS (requires sudo), then spawn server
-    const settings = _getSettings ? await _getSettings().catch(() => ({})) : {};
-    const certAlreadyInstalled = settings.mitmCertInstalled && fs.existsSync(certPath);
-    if (!certAlreadyInstalled) {
+    // macOS/Linux: Step 1 Cert → Step 2 Server → Step 3 DNS
+    // Cert first — no side effects on IDE if it fails
+    const { checkCertInstalled } = require("./cert/install");
+    const certTrusted = await checkCertInstalled(certPath);
+    if (!certTrusted) {
       await installCert(sudoPassword, certPath);
       if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
     }
-    console.log("Adding DNS entry...");
-    await addDNSEntry(sudoPassword);
+    steps.cert = true;
 
-    // sudo -S: read password from stdin, -E: preserve env vars
+    // Server second — binds port 443 but DNS not yet redirected, IDE unaffected
     const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
       { detached: false, stdio: ["pipe", "pipe", "pipe"] }
     );
-    // Write password then close stdin so sudo proceeds
     serverProcess.stdin.write(`${sudoPassword}\n`);
     serverProcess.stdin.end();
   }
@@ -536,12 +546,14 @@ async function startMitm(apiKey, sudoPassword) {
 
   if (!health) {
     if (IS_WIN) serverProcess = null;
-    try { await removeDNSEntry(sudoPassword); } catch { /* best effort */ }
     const processUsing443 = getProcessUsingPort443();
     const portInfo = processUsing443 ? ` Port 443 already in use by ${processUsing443}.` : "";
     const reason = startError || `Check sudo password or port 443 access.${portInfo}`;
+    // Server failed — DNS was NOT added yet (new order), so IDE is unaffected
     throw new Error(`MITM server failed to start. ${reason}`);
   }
+
+  steps.server = true;
 
   // On Windows, mark cert as installed after successful start
   if (IS_WIN && _updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
@@ -552,10 +564,21 @@ async function startMitm(apiKey, sudoPassword) {
     fs.writeFileSync(PID_FILE, String(serverPid));
   }
 
+  // Step 3: DNS last — only redirect IDE traffic after server is confirmed healthy
+  if (!IS_WIN) {
+    console.log("[MITM] Adding DNS entry...");
+    await addDNSEntry(sudoPassword);
+    steps.dns = true;
+  } else {
+    steps.cert = true;
+    steps.server = true;
+    steps.dns = true;
+  }
+
   await saveMitmSettings(true, sudoPassword);
   if (sudoPassword) setCachedPassword(sudoPassword);
 
-  return { running: true, pid: serverPid };
+  return { running: true, pid: serverPid, steps };
 }
 
 /**
@@ -566,9 +589,9 @@ async function stopMitm(sudoPassword) {
   const proc = serverProcess;
   if (proc && !proc.killed) {
     console.log("Stopping MITM server...");
-    killProcess(proc.pid, false);
+    killProcess(proc.pid, false, sudoPassword);
     await new Promise(resolve => setTimeout(resolve, 1000));
-    if (isProcessAlive(proc.pid)) killProcess(proc.pid, true);
+    if (isProcessAlive(proc.pid)) killProcess(proc.pid, true, sudoPassword);
     serverProcess = null;
     serverPid = null;
   } else {
@@ -577,9 +600,9 @@ async function stopMitm(sudoPassword) {
         const savedPid = parseInt(fs.readFileSync(PID_FILE, "utf-8").trim(), 10);
         if (savedPid && isProcessAlive(savedPid)) {
           console.log(`Killing MITM server (PID: ${savedPid})...`);
-          killProcess(savedPid, false);
+          killProcess(savedPid, false, sudoPassword);
           await new Promise(resolve => setTimeout(resolve, 1000));
-          if (isProcessAlive(savedPid)) killProcess(savedPid, true);
+          if (isProcessAlive(savedPid)) killProcess(savedPid, true, sudoPassword);
         }
       }
     } catch { /* ignore */ }

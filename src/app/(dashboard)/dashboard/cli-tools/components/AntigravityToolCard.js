@@ -17,6 +17,7 @@ export default function AntigravityToolCard({
 }) {
   const [status, setStatus] = useState(initialStatus || null);
   const [loading, setLoading] = useState(false);
+  const [startingStep, setStartingStep] = useState(null); // "cert" | "server" | "dns" | null
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
   const [selectedApiKey, setSelectedApiKey] = useState("");
@@ -96,6 +97,8 @@ export default function AntigravityToolCard({
   const doStart = async (password) => {
     setLoading(true);
     setMessage(null);
+    // Show steps progressing in order
+    setStartingStep("cert");
     try {
       const keyToUse = selectedApiKey?.trim() 
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
@@ -109,14 +112,17 @@ export default function AntigravityToolCard({
 
       const data = await res.json();
       if (res.ok) {
+        setStartingStep(null);
         setMessage({ type: "success", text: "MITM started" });
         setShowPasswordModal(false);
         setSudoPassword("");
         fetchStatus();
       } else {
+        setStartingStep(null);
         setMessage({ type: "error", text: data.error || "Failed to start" });
       }
     } catch (error) {
+      setStartingStep(null);
       setMessage({ type: "error", text: error.message });
     } finally {
       setLoading(false);
@@ -240,20 +246,32 @@ export default function AntigravityToolCard({
 
       {isExpanded && (
         <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-          {/* Status indicators */}
-          <div className="flex items-center gap-3">
+          {/* Status indicators — ordered: Cert → Server → DNS */}
+          <div className="flex items-center gap-1">
             {[
-              { label: "DNS", ok: status?.dnsConfigured },
-              { label: "Cert", ok: status?.certExists },
-              { label: "Server", ok: status?.running },
-            ].map(({ label, ok }) => (
-              <div key={label} className="flex items-center gap-1">
-                <span className={`material-symbols-outlined text-[14px] ${ok ? "text-green-500" : "text-text-muted"}`}>
-                  {ok ? "check_circle" : "radio_button_unchecked"}
-                </span>
-                <span className={`text-xs ${ok ? "text-green-500" : "text-text-muted"}`}>{label}</span>
-              </div>
-            ))}
+              { key: "cert",   label: "Cert",   ok: status?.certExists },
+              { key: "server", label: "Server", ok: status?.running },
+              { key: "dns",    label: "DNS",    ok: status?.dnsConfigured },
+            ].map(({ key, label, ok }, i) => {
+              const isLoading = startingStep === key;
+              return (
+                <div key={key} className="flex items-center">
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-md">
+                    {isLoading ? (
+                      <span className="material-symbols-outlined text-[14px] text-primary animate-spin">progress_activity</span>
+                    ) : (
+                      <span className={`material-symbols-outlined text-[14px] ${ok ? "text-green-500" : "text-text-muted"}`}>
+                        {ok ? "check_circle" : "radio_button_unchecked"}
+                      </span>
+                    )}
+                    <span className={`text-xs font-medium ${isLoading ? "text-primary" : ok ? "text-green-500" : "text-text-muted"}`}>
+                      {label}
+                    </span>
+                  </div>
+                  {i < 2 && <span className="material-symbols-outlined text-[12px] text-text-muted">arrow_forward</span>}
+                </div>
+              );
+            })}
           </div>
 
           {/* Start/Stop Button */}

@@ -46,6 +46,7 @@ export async function POST(request) {
       success: true,
       running: result.running,
       pid: result.pid,
+      steps: result.steps || { cert: true, server: true, dns: true },
     });
   } catch (error) {
     console.log("Error starting MITM:", error.message);
