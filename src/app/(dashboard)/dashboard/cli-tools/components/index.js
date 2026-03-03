@@ -5,4 +5,5 @@ export { default as OpenClawToolCard } from "./OpenClawToolCard";
 export { default as DefaultToolCard } from "./DefaultToolCard";
 export { default as AntigravityToolCard } from "./AntigravityToolCard";
 export { default as OpenCodeToolCard } from "./OpenCodeToolCard";
+export { default as CopilotToolCard } from "./CopilotToolCard";
 

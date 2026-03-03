@@ -122,40 +122,14 @@ export const CLI_TOOLS = {
       { step: 5, title: "Select Model", type: "modelSelector" },
     ],
   },
-  copilot: {
-    id: "copilot",
-    name: "GitHub Copilot",
-    image: "/providers/copilot.png",
-    color: "#1F6FEB",
-    description: "GitHub Copilot Chat — VS Code Extension",
-    configType: "guide",
-    guideSteps: [
-      { step: 1, title: "Open VS Code Settings", desc: "Open Command Palette → \"Open User Settings (JSON)\"" },
-      { step: 2, title: "Add config to chatLanguageModels.json", desc: "Add an entry using the Azure vendor pattern:" },
-      { step: 3, title: "Base URL (endpoint)", value: "{{baseUrl}}/chat/completions#models.ai.azure.com", copyable: true },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
-    codeBlock: {
-      language: "json",
-      code: `{
-  "name": "9Router",
-  "vendor": "azure",
-  "apiKey": "{{apiKey}}",
-  "models": [
-    {
-      "id": "{{model}}",
-      "name": "{{model}}",
-      "url": "{{baseUrl}}/chat/completions#models.ai.azure.com",
-      "toolCalling": true,
-      "vision": false,
-      "maxInputTokens": 128000,
-      "maxOutputTokens": 16000
-    }
-  ]
-}`,
-    },
-  },
+  // copilot: {
+  //   id: "copilot",
+  //   name: "GitHub Copilot",
+  //   image: "/providers/copilot.png",
+  //   color: "#1F6FEB",
+  //   description: "GitHub Copilot Chat — VS Code Extension",
+  //   configType: "custom",
+  // },
   roo: {
     id: "roo",
     name: "Roo",
