@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CardSkeleton } from "./Loading";
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
@@ -348,27 +347,34 @@ export default function UsageStats() {
     }
   }, [stats, tableView, sortBy, sortOrder]);
 
-  if (loading) return <CardSkeleton />;
-  if (!stats) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+
+  const spinner = (
+    <div className="flex items-center justify-center py-12 text-text-muted">
+      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-6">
       {/* Overview cards */}
-      <OverviewCards stats={stats} />
+      {loading ? spinner : <OverviewCards stats={stats} />}
 
       {/* Provider topology + Recent Requests */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
-        <ProviderTopology
-          providers={providers}
-          activeRequests={stats.activeRequests || []}
-          lastProvider={stats.recentRequests?.[0]?.provider || ""}
-          errorProvider={stats.errorProvider || ""}
-        />
-        <RecentRequests requests={stats.recentRequests || []} />
-      </div>
+      {loading ? spinner : (
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
+          <ProviderTopology
+            providers={providers}
+            activeRequests={stats.activeRequests || []}
+            lastProvider={stats.recentRequests?.[0]?.provider || ""}
+            errorProvider={stats.errorProvider || ""}
+          />
+          <RecentRequests requests={stats.recentRequests || []} />
+        </div>
+      )}
 
       {/* Token / Cost chart */}
-      <UsageChart />
+      {loading ? spinner : <UsageChart />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">
@@ -383,7 +389,7 @@ export default function UsageStats() {
             ))}
           </select>
         </div>
-        {activeTableConfig && (
+        {loading ? spinner : activeTableConfig && (
           <UsageTable
             title=""
             columns={activeTableConfig.columns}

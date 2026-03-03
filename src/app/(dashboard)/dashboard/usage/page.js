@@ -3,7 +3,6 @@
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
-import ProviderLimits from "./components/ProviderLimits";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 
 export default function UsagePage() {
@@ -21,7 +20,7 @@ function UsageContent() {
   const [tabLoading, setTabLoading] = useState(false);
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "limits", "details"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -40,7 +39,6 @@ function UsageContent() {
       <SegmentedControl
         options={[
           { value: "overview", label: "Overview" },
-          { value: "limits", label: "Limits" },
           { value: "details", label: "Details" },
         ]}
         value={activeTab}
@@ -57,11 +55,6 @@ function UsageContent() {
             </Suspense>
           )}
           {activeTab === "logs" && <RequestLogger />}
-          {activeTab === "limits" && (
-            <Suspense fallback={<CardSkeleton />}>
-              <ProviderLimits />
-            </Suspense>
-          )}
           {activeTab === "details" && <RequestDetailsTab />}
         </>
       )}

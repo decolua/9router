@@ -17,8 +17,8 @@ export const CLI_TOOLS = {
     modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-5-20251101" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-5-20250929" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-6" },
+      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-6" },
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
   },
@@ -29,6 +29,23 @@ export const CLI_TOOLS = {
     color: "#10A37F",
     description: "OpenAI Codex CLI",
     configType: "custom",
+  },
+  antigravity: {
+    id: "antigravity",
+    name: "Antigravity",
+    image: "/providers/antigravity.png",
+    color: "#4285F4",
+    description: "Google Antigravity IDE with MITM",
+    configType: "mitm",
+    modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low"],
+    defaultModels: [
+      { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high" },
+      { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", alias: "gemini-3.1-pro-low" },
+      { id: "gemini-3-flash", name: "Gemini 3 Flash", alias: "gemini-3-flash" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
+      { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", alias: "claude-opus-4-6-thinking" },
+      { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium", alias: "gpt-oss-120b-medium" },
+    ],
   },
   droid: {
     id: "droid",
@@ -72,15 +89,64 @@ export const CLI_TOOLS = {
     name: "Cline",
     image: "/providers/cline.png",
     color: "#00D1B2",
-    description: "CLINE AI Assistant",
+    description: "Cline AI Coding Assistant",
     configType: "guide",
     guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to CLINE Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → Ollama" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 1, title: "Open Settings", desc: "Go to Cline Settings panel" },
+      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
       { step: 4, title: "API Key", type: "apiKeySelector" },
       { step: 5, title: "Select Model", type: "modelSelector" },
     ],
+  },
+  kilo: {
+    id: "kilo",
+    name: "Kilo Code",
+    image: "/providers/kilocode.png",
+    color: "#FF6B6B",
+    description: "Kilo Code AI Assistant",
+    configType: "guide",
+    guideSteps: [
+      { step: 1, title: "Open Settings", desc: "Go to Kilo Code Settings panel" },
+      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
+      { step: 4, title: "API Key", type: "apiKeySelector" },
+      { step: 5, title: "Select Model", type: "modelSelector" },
+    ],
+  },
+  copilot: {
+    id: "copilot",
+    name: "GitHub Copilot",
+    image: "/providers/copilot.png",
+    color: "#1F6FEB",
+    description: "GitHub Copilot Chat — VS Code Extension",
+    configType: "guide",
+    guideSteps: [
+      { step: 1, title: "Open VS Code Settings", desc: "Open Command Palette → \"Open User Settings (JSON)\"" },
+      { step: 2, title: "Add config to chatLanguageModels.json", desc: "Add an entry using the Azure vendor pattern:" },
+      { step: 3, title: "Base URL (endpoint)", value: "{{baseUrl}}/chat/completions#models.ai.azure.com", copyable: true },
+      { step: 4, title: "API Key", type: "apiKeySelector" },
+      { step: 5, title: "Select Model", type: "modelSelector" },
+    ],
+    codeBlock: {
+      language: "json",
+      code: `{
+  "name": "9Router",
+  "vendor": "azure",
+  "apiKey": "{{apiKey}}",
+  "models": [
+    {
+      "id": "{{model}}",
+      "name": "{{model}}",
+      "url": "{{baseUrl}}/chat/completions#models.ai.azure.com",
+      "toolCalling": true,
+      "vision": false,
+      "maxInputTokens": 128000,
+      "maxOutputTokens": 16000
+    }
+  ]
+}`,
+    },
   },
   roo: {
     id: "roo",
@@ -120,23 +186,6 @@ export const CLI_TOOLS = {
   "apiKey": "{{apiKey}}"
 }`,
     },
-  },
-  antigravity: {
-    id: "antigravity",
-    name: "Antigravity",
-    image: "/providers/antigravity.png",
-    color: "#4285F4",
-    description: "Google Antigravity IDE with MITM",
-    configType: "mitm",
-    modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low"],
-    defaultModels: [
-      { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high" },
-      { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", alias: "gemini-3.1-pro-low" },
-      { id: "gemini-3-flash", name: "Gemini 3 Flash", alias: "gemini-3-flash" },
-      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
-      { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", alias: "claude-opus-4-6-thinking" },
-      { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium", alias: "gpt-oss-120b-medium" },
-    ],
   },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
