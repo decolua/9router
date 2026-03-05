@@ -25,6 +25,7 @@ export default function AntigravityToolCard({
   const [modelMappings, setModelMappings] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
+  const [modelAliases, setModelAliases] = useState({});
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -40,8 +41,12 @@ export default function AntigravityToolCard({
     if (isExpanded && !status) {
       fetchStatus();
       loadSavedMappings();
+      fetchModelAliases();
     }
-    if (isExpanded) loadSavedMappings();
+    if (isExpanded) {
+      loadSavedMappings();
+      fetchModelAliases();
+    }
   }, [isExpanded]);
 
   const loadSavedMappings = async () => {
@@ -50,13 +55,23 @@ export default function AntigravityToolCard({
       if (res.ok) {
         const data = await res.json();
         const aliases = data.aliases || {};
-        
+
         if (Object.keys(aliases).length > 0) {
           setModelMappings(aliases);
         }
       }
     } catch (error) {
       console.log("Error loading saved mappings:", error);
+    }
+  };
+
+  const fetchModelAliases = async () => {
+    try {
+      const res = await fetch("/api/models/alias");
+      const data = await res.json();
+      if (res.ok) setModelAliases(data.aliases || {});
+    } catch (error) {
+      console.log("Error fetching model aliases:", error);
     }
   };
 
@@ -100,7 +115,7 @@ export default function AntigravityToolCard({
     // Show steps progressing in order
     setStartingStep("cert");
     try {
-      const keyToUse = selectedApiKey?.trim() 
+      const keyToUse = selectedApiKey?.trim()
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
@@ -219,14 +234,14 @@ export default function AntigravityToolCard({
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image 
-              src="/providers/antigravity.png" 
-              alt={tool.name} 
-              width={32} 
-              height={32} 
-              className="size-8 object-contain rounded-lg" 
-              sizes="32px" 
-              onError={(e) => { e.target.style.display = "none"; }} 
+            <Image
+              src="/providers/antigravity.png"
+              alt={tool.name}
+              width={32}
+              height={32}
+              className="size-8 object-contain rounded-lg"
+              sizes="32px"
+              onError={(e) => { e.target.style.display = "none"; }}
             />
           </div>
           <div className="min-w-0">
@@ -249,9 +264,9 @@ export default function AntigravityToolCard({
           {/* Status indicators — ordered: Cert → Server → DNS */}
           <div className="flex items-center gap-1">
             {[
-              { key: "cert",   label: "Cert",   ok: status?.certExists },
+              { key: "cert", label: "Cert", ok: status?.certExists },
               { key: "server", label: "Server", ok: status?.running },
-              { key: "dns",    label: "DNS",    ok: status?.dnsConfigured },
+              { key: "dns", label: "DNS", ok: status?.dnsConfigured },
             ].map(({ key, label, ok }, i) => {
               const isLoading = startingStep === key;
               return (
@@ -277,8 +292,8 @@ export default function AntigravityToolCard({
           {/* Start/Stop Button */}
           <div className="flex items-center gap-2">
             {isRunning ? (
-              <button 
-                onClick={handleStop} 
+              <button
+                onClick={handleStop}
                 disabled={loading}
                 className="px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-medium text-sm flex items-center gap-2 hover:bg-red-500/20 transition-colors disabled:opacity-50"
               >
@@ -286,8 +301,8 @@ export default function AntigravityToolCard({
                 Stop MITM
               </button>
             ) : (
-              <button 
-                onClick={handleStart} 
+              <button
+                onClick={handleStart}
                 disabled={loading || !hasActiveProviders}
                 className="px-4 py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-sm flex items-center gap-2 hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -311,9 +326,9 @@ export default function AntigravityToolCard({
                 <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
                 <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                 {apiKeys.length > 0 ? (
-                  <select 
-                    value={selectedApiKey} 
-                    onChange={(e) => setSelectedApiKey(e.target.value)} 
+                  <select
+                    value={selectedApiKey}
+                    onChange={(e) => setSelectedApiKey(e.target.value)}
                     className="flex-1 px-2 py-1.5 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
                   >
                     {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
@@ -329,24 +344,24 @@ export default function AntigravityToolCard({
                 <div key={model.alias} className="flex items-center gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">{model.name}</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input 
-                    type="text" 
-                    value={modelMappings[model.alias] || ""} 
-                    onChange={(e) => handleModelMappingChange(model.alias, e.target.value)} 
-                    placeholder="provider/model-id" 
-                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
+                  <input
+                    type="text"
+                    value={modelMappings[model.alias] || ""}
+                    onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
+                    placeholder="provider/model-id"
+                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
                   />
-                  <button 
-                    onClick={() => openModelSelector(model.alias)} 
-                    disabled={!hasActiveProviders} 
+                  <button
+                    onClick={() => openModelSelector(model.alias)}
+                    disabled={!hasActiveProviders}
                     className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                   >
                     Select
                   </button>
                   {modelMappings[model.alias] && (
-                    <button 
-                      onClick={() => handleModelMappingChange(model.alias, "")} 
-                      className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" 
+                    <button
+                      onClick={() => handleModelMappingChange(model.alias, "")}
+                      className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
                       title="Clear"
                     >
                       <span className="material-symbols-outlined text-[14px]">close</span>
@@ -356,9 +371,9 @@ export default function AntigravityToolCard({
               ))}
 
               <div className="flex items-center gap-2">
-                <Button 
-                  variant="primary" 
-                  size="sm" 
+                <Button
+                  variant="primary"
+                  size="sm"
                   onClick={handleSaveMappings}
                   disabled={loading || Object.keys(modelMappings).length === 0}
                 >
@@ -428,17 +443,17 @@ export default function AntigravityToolCard({
           )}
 
           <div className="flex items-center justify-end gap-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setMessage(null); }}
               disabled={loading}
             >
               Cancel
             </Button>
-            <Button 
-              variant="primary" 
-              size="sm" 
+            <Button
+              variant="primary"
+              size="sm"
               onClick={handleConfirmPassword}
               loading={loading}
             >
@@ -449,13 +464,14 @@ export default function AntigravityToolCard({
       </Modal>
 
       {/* Model Select Modal */}
-      <ModelSelectModal 
-        isOpen={modalOpen} 
-        onClose={() => setModalOpen(false)} 
-        onSelect={handleModelSelect} 
-        selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null} 
-        activeProviders={activeProviders} 
-        title={`Select model for ${currentEditingAlias}`} 
+      <ModelSelectModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSelect={handleModelSelect}
+        selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        title={`Select model for ${currentEditingAlias}`}
       />
     </Card>
   );
