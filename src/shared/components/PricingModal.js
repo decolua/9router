@@ -60,17 +60,21 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
         onClose();
       } else {
         const error = await response.json();
-        alert(`Failed to save pricing: ${error.error}`);
+        alert(`${i18nText("Failed to save pricing:")} ${error.error}`);
       }
     } catch (error) {
       console.error("Failed to save pricing:", error);
-      alert("Failed to save pricing");
+      alert(i18nText("Failed to save pricing"));
     } finally {
       setSaving(false);
     }
   };
   const handleReset = async () => {
-    if (!confirm("Reset all pricing to defaults? This cannot be undone."))
+    if (
+      !confirm(
+        i18nText("Reset all pricing to defaults? This cannot be undone."),
+      )
+    )
       return;
     try {
       const response = await fetch("/api/pricing", {
@@ -82,7 +86,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
       }
     } catch (error) {
       console.error("Failed to reset pricing:", error);
-      alert("Failed to reset pricing");
+      alert(i18nText("Failed to reset pricing"));
     }
   };
   if (!isOpen) return null;
@@ -234,7 +238,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
               className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
               disabled={saving}
             >
-              {saving ? "Saving..." : "Save Changes"}
+              {saving ? i18nText("Saving...") : i18nText("Save Changes")}
             </button>
           </div>
         </div>

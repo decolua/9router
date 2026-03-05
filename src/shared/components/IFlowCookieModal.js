@@ -16,7 +16,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
   const [success, setSuccess] = useState(false);
   const handleSubmit = async () => {
     if (!cookie.trim()) {
-      setError("Please paste your cookie");
+      setError(i18nText("Please paste your cookie"));
       return;
     }
     setLoading(true);
@@ -33,7 +33,7 @@ export default function IFlowCookieModal({ isOpen, onSuccess, onClose }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Authentication failed");
+        throw new Error(data.error || i18nText("Authentication failed"));
       }
       setSuccess(true);
       setTimeout(() => {

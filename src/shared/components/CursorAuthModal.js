@@ -32,10 +32,10 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
       } else if (data.windowsManual) {
         setWindowsManual(true);
       } else {
-        setError(data.error || "Could not auto-detect tokens");
+        setError(data.error || i18nText("Could not auto-detect tokens"));
       }
     } catch (err) {
-      setError("Failed to auto-detect tokens");
+      setError(i18nText("Failed to auto-detect tokens"));
     } finally {
       setAutoDetecting(false);
     }
@@ -48,11 +48,11 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
   }, [isOpen]);
   const handleImportToken = async () => {
     if (!accessToken.trim()) {
-      setError("Please enter an access token");
+      setError(i18nText("Please enter an access token"));
       return;
     }
     if (!machineId.trim()) {
-      setError("Please enter a machine ID");
+      setError(i18nText("Please enter a machine ID"));
       return;
     }
     setImporting(true);
@@ -70,7 +70,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Import failed");
+        throw new Error(data.error || i18nText("Import failed"));
       }
       onSuccess?.();
       onClose();
@@ -208,7 +208,9 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                 fullWidth
                 disabled={importing || !accessToken.trim() || !machineId.trim()}
               >
-                {importing ? "Importing..." : "Import Token"}
+                {importing
+                  ? i18nText("Importing...")
+                  : i18nText("Import Token")}
               </Button>
               <Button onClick={onClose} variant="ghost" fullWidth>
                 {i18nText("Cancel")}

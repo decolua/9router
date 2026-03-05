@@ -33,10 +33,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
           setRefreshToken(data.refreshToken);
           setAutoDetected(true);
         } else {
-          setError(data.error || "Could not auto-detect token");
+          setError(data.error || i18nText("Could not auto-detect token"));
         }
       } catch (err) {
-        setError("Failed to auto-detect token");
+        setError(i18nText("Failed to auto-detect token"));
       } finally {
         setAutoDetecting(false);
       }
@@ -53,7 +53,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   };
   const handleImportToken = async () => {
     if (!refreshToken.trim()) {
-      setError("Please enter a refresh token");
+      setError(i18nText("Please enter a refresh token"));
       return;
     }
     setImporting(true);
@@ -70,7 +70,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Import failed");
+        throw new Error(data.error || i18nText("Import failed"));
       }
 
       // Success - notify parent to refresh connections
@@ -83,7 +83,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   };
   const handleIdcContinue = () => {
     if (!idcStartUrl.trim()) {
-      setError("Please enter your IDC start URL");
+      setError(i18nText("Please enter your IDC start URL"));
       return;
     }
     onMethodSelect("idc", {
@@ -232,7 +232,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               <Input
                 value={idcStartUrl}
                 onChange={(e) => setIdcStartUrl(e.target.value)}
-                placeholder="https://your-org.awsapps.com/start"
+                placeholder={i18nText("https://your-org.awsapps.com/start")}
                 className="font-mono text-sm"
               />
               <p className="text-xs text-text-muted mt-1">
@@ -247,7 +247,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               <Input
                 value={idcRegion}
                 onChange={(e) => setIdcRegion(e.target.value)}
-                placeholder="us-east-1"
+                placeholder={i18nText("us-east-1")}
                 className="font-mono text-sm"
               />
               <p className="text-xs text-text-muted mt-1">
@@ -416,7 +416,9 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     fullWidth
                     disabled={importing || !refreshToken.trim()}
                   >
-                    {importing ? "Importing..." : "Import Token"}
+                    {importing
+                      ? i18nText("Importing...")
+                      : i18nText("Import Token")}
                   </Button>
                   <Button onClick={handleBack} variant="ghost" fullWidth>
                     {i18nText("Back")}

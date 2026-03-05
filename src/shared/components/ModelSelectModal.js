@@ -26,7 +26,7 @@ export default function ModelSelectModal({
   onSelect,
   selectedModel,
   activeProviders = [],
-  title = "Select Model",
+  title = i18nText("Select Model"),
   modelAliases = {},
 }) {
   const [searchQuery, setSearchQuery] = useState("");

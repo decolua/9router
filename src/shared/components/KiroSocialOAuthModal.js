@@ -60,7 +60,7 @@ export default function KiroSocialOAuthModal({
         url = new URL(callbackUrl);
       } catch (e) {
         // If URL parsing fails, might be malformed
-        throw new Error("Invalid callback URL format");
+        throw new Error(i18nText("Invalid callback URL format"));
       }
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
@@ -71,7 +71,7 @@ export default function KiroSocialOAuthModal({
         );
       }
       if (!code) {
-        throw new Error("No authorization code found in URL");
+        throw new Error(i18nText("No authorization code found in URL"));
       }
 
       // Exchange code for tokens
@@ -99,7 +99,11 @@ export default function KiroSocialOAuthModal({
   return (
     <Modal
       isOpen={isOpen}
-      title={`Connect Kiro via ${providerName}`}
+      title={
+        provider === "google"
+          ? i18nText("Connect Kiro via Google")
+          : i18nText("Connect Kiro via GitHub")
+      }
       onClose={onClose}
       size="lg"
     >
@@ -159,7 +163,9 @@ export default function KiroSocialOAuthModal({
                 <Input
                   value={callbackUrl}
                   onChange={(e) => setCallbackUrl(e.target.value)}
-                  placeholder="kiro://kiro.kiroAgent/authenticate-success?code=..."
+                  placeholder={i18nText(
+                    "kiro://kiro.kiroAgent/authenticate-success?code=...",
+                  )}
                   className="font-mono text-xs"
                 />
               </div>

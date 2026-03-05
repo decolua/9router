@@ -555,7 +555,9 @@ export default function ProviderDetailPage() {
               !activeConnection || savingSelectedModels || !hasSelectionChanges
             }
           >
-            {savingSelectedModels ? "Saving..." : "Save selection"}
+            {savingSelectedModels
+              ? i18nText("Saving...")
+              : i18nText("Save selection")}
           </Button>
           <div className="flex items-center gap-1 pl-2">
             <span className="text-xs text-text-muted">
@@ -1042,7 +1044,7 @@ function PassthroughModelsSection({
           onClick={handleAdd}
           disabled={!newModel.trim() || adding}
         >
-          {adding ? "Adding..." : "Add"}
+          {adding ? i18nText("Adding...") : i18nText("Add")}
         </Button>
       </div>
 
@@ -1247,7 +1249,7 @@ function CompatibleModelsSection({
           onClick={handleAdd}
           disabled={!newModel.trim() || adding}
         >
-          {adding ? "Adding..." : "Add"}
+          {adding ? i18nText("Adding...") : i18nText("Add")}
         </Button>
         <Button
           size="sm"
@@ -1256,7 +1258,9 @@ function CompatibleModelsSection({
           onClick={handleImport}
           disabled={!canImport || importing}
         >
-          {importing ? "Importing..." : "Import from /models"}
+          {importing
+            ? i18nText("Importing...")
+            : i18nText("Import from /models")}
         </Button>
       </div>
 
@@ -1584,7 +1588,7 @@ function AddApiKeyModal({
   return (
     <Modal
       isOpen={isOpen}
-      title={`Add ${providerName || provider} API Key`}
+      title={i18nText("Add API Key")}
       onClose={onClose}
     >
       <div className="flex flex-col gap-4">
@@ -1618,20 +1622,26 @@ function AddApiKeyModal({
               disabled={!formData.apiKey || validating || saving}
               variant="secondary"
             >
-              {validating ? "Checking..." : "Check"}
+              {validating ? i18nText("Checking...") : i18nText("Check")}
             </Button>
           </div>
         </div>
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
+            {validationResult === "success"
+              ? i18nText("Valid")
+              : i18nText("Invalid")}
           </Badge>
         )}
         {isCompatible && (
           <p className="text-xs text-text-muted">
             {isAnthropic
-              ? `Validation checks ${providerName || "Anthropic Compatible"} by verifying the API key.`
-              : `Validation checks ${providerName || "OpenAI Compatible"} via /models on your base URL.`}
+              ? i18nText(
+                  "Validation checks this provider by verifying the API key.",
+                )
+              : i18nText(
+                  "Validation checks this provider via /models on your base URL.",
+                )}
           </p>
         )}
         <Input
@@ -1651,7 +1661,7 @@ function AddApiKeyModal({
             fullWidth
             disabled={!formData.name || !formData.apiKey || saving}
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? i18nText("Saving...") : i18nText("Save")}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             {i18nText("Cancel")}
@@ -1796,7 +1806,9 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
               name: e.target.value,
             })
           }
-          placeholder={isOAuth ? "Account name" : "Production Key"}
+          placeholder={
+            isOAuth ? i18nText("Account name") : i18nText("Production Key")
+          }
         />
         {isOAuth && connection.email && (
           <div className="bg-sidebar/50 p-3 rounded-lg">
@@ -1829,7 +1841,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
                   })
                 }
                 placeholder={i18nText("Enter new API key")}
-                hint="Leave blank to keep the current API key."
+                hint={i18nText("Leave blank to keep the current API key.")}
                 className="flex-1"
               />
               <div className="pt-6">
@@ -1838,7 +1850,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
                   disabled={!formData.apiKey || validating || saving}
                   variant="secondary"
                 >
-                  {validating ? "Checking..." : "Check"}
+                  {validating ? i18nText("Checking...") : i18nText("Check")}
                 </Button>
               </div>
             </div>
@@ -1846,7 +1858,9 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
               <Badge
                 variant={validationResult === "success" ? "success" : "error"}
               >
-                {validationResult === "success" ? "Valid" : "Invalid"}
+                {validationResult === "success"
+                  ? i18nText("Valid")
+                  : i18nText("Invalid")}
               </Badge>
             )}
           </>
@@ -1856,11 +1870,15 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         {!isCompatible && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
-              {testing ? "Testing..." : "Test Connection"}
+              {testing
+                ? i18nText("Testing...")
+                : i18nText("Test Connection")}
             </Button>
             {testResult && (
               <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
+                {testResult === "success"
+                  ? i18nText("Valid")
+                  : i18nText("Failed")}
               </Badge>
             )}
           </div>
@@ -1868,7 +1886,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={saving}>
-            {saving ? "Saving..." : "Save"}
+            {saving ? i18nText("Saving...") : i18nText("Save")}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             {i18nText("Cancel")}
@@ -1980,7 +1998,11 @@ function EditCompatibleNodeModal({
   return (
     <Modal
       isOpen={isOpen}
-      title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`}
+      title={
+        isAnthropic
+          ? i18nText("Edit Anthropic Compatible")
+          : i18nText("Edit OpenAI Compatible")
+      }
       onClose={onClose}
     >
       <div className="flex flex-col gap-4">
@@ -1993,8 +2015,12 @@ function EditCompatibleNodeModal({
               name: e.target.value,
             })
           }
-          placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
-          hint="Required. A friendly label for this node."
+          placeholder={
+            isAnthropic
+              ? i18nText("Anthropic Compatible (Prod)")
+              : i18nText("OpenAI Compatible (Prod)")
+          }
+          hint={i18nText("Required. A friendly label for this node.")}
         />
         <Input
           label={i18nText("Prefix")}
@@ -2006,7 +2032,9 @@ function EditCompatibleNodeModal({
             })
           }
           placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
-          hint="Required. Used as the provider prefix for model IDs."
+          hint={i18nText(
+            "Required. Used as the provider prefix for model IDs.",
+          )}
         />
         {!isAnthropic && (
           <Select
@@ -2035,7 +2063,15 @@ function EditCompatibleNodeModal({
               ? "https://api.anthropic.com/v1"
               : "https://api.openai.com/v1"
           }
-          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+          hint={
+            isAnthropic
+              ? i18nText(
+                  "Use the base URL (ending in /v1) for your Anthropic-compatible API.",
+                )
+              : i18nText(
+                  "Use the base URL (ending in /v1) for your OpenAI-compatible API.",
+                )
+          }
         />
         <div className="flex gap-2">
           <Input
@@ -2051,13 +2087,15 @@ function EditCompatibleNodeModal({
               disabled={!checkKey || validating || !formData.baseUrl.trim()}
               variant="secondary"
             >
-              {validating ? "Checking..." : "Check"}
+              {validating ? i18nText("Checking...") : i18nText("Check")}
             </Button>
           </div>
         </div>
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
+            {validationResult === "success"
+              ? i18nText("Valid")
+              : i18nText("Invalid")}
           </Badge>
         )}
         <div className="flex gap-2">
@@ -2071,7 +2109,7 @@ function EditCompatibleNodeModal({
               saving
             }
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? i18nText("Saving...") : i18nText("Save")}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             {i18nText("Cancel")}

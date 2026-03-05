@@ -3,8 +3,14 @@
 import { useState } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
+import { i18nText } from "@/i18n/literals";
 
-export default function ManualConfigModal({ isOpen, onClose, title = "Manual Configuration", configs = [] }) {
+export default function ManualConfigModal({
+  isOpen,
+  onClose,
+  title = i18nText("Manual Configuration"),
+  configs = [],
+}) {
   const [copiedIndex, setCopiedIndex] = useState(null);
 
   const copyToClipboard = async (text, index) => {
@@ -32,7 +38,9 @@ export default function ManualConfigModal({ isOpen, onClose, title = "Manual Con
                 <span className="material-symbols-outlined text-[14px] mr-1">
                   {copiedIndex === index ? "check" : "content_copy"}
                 </span>
-                {copiedIndex === index ? "Copied!" : "Copy"}
+                {copiedIndex === index
+                  ? i18nText("Copied!")
+                  : i18nText("Copy")}
               </Button>
             </div>
             <pre className="px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto border border-border">

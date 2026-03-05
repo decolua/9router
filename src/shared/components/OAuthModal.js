@@ -117,7 +117,7 @@ export default function OAuthModal({
           return;
         }
       }
-      setError("Authorization timeout");
+      setError(i18nText("Authorization timeout"));
       setStep("error");
       setPolling(false);
     },
@@ -320,7 +320,7 @@ export default function OAuthModal({
         );
       }
       if (!code) {
-        throw new Error("No authorization code found in URL");
+        throw new Error(i18nText("No authorization code found in URL"));
       }
       await exchangeTokens(code, state);
     } catch (err) {
@@ -337,7 +337,7 @@ export default function OAuthModal({
   return (
     <Modal
       isOpen={isOpen}
-      title={`Connect ${providerInfo.name}`}
+      title={`${i18nText("Connect")} ${providerInfo.name}`}
       onClose={handleClose}
       size="lg"
     >

@@ -847,7 +847,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder={i18nText("OpenAI Compatible (Prod)")}
-          hint="Required. A friendly label for this node."
+          hint={i18nText("Required. A friendly label for this node.")}
         />
         <Input
           label={i18nText("Prefix")}
@@ -859,7 +859,9 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder="oc-prod"
-          hint="Required. Used as the provider prefix for model IDs."
+          hint={i18nText(
+            "Required. Used as the provider prefix for model IDs.",
+          )}
         />
         <Select
           label={i18nText("API Type")}
@@ -882,7 +884,9 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder="https://api.openai.com/v1"
-          hint="Use the base URL (ending in /v1) for your OpenAI-compatible API."
+          hint={i18nText(
+            "Use the base URL (ending in /v1) for your OpenAI-compatible API.",
+          )}
         />
         <div className="flex gap-2">
           <Input
@@ -898,13 +902,15 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
               disabled={!checkKey || validating || !formData.baseUrl.trim()}
               variant="secondary"
             >
-              {validating ? "Checking..." : "Check"}
+              {validating ? i18nText("Checking...") : i18nText("Check")}
             </Button>
           </div>
         </div>
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
+            {validationResult === "success"
+              ? i18nText("Valid")
+              : i18nText("Invalid")}
           </Badge>
         )}
         <div className="flex gap-2">
@@ -918,7 +924,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
               submitting
             }
           >
-            {submitting ? "Creating..." : "Create"}
+            {submitting ? i18nText("Creating...") : i18nText("Create")}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             {i18nText("Cancel")}
@@ -1026,7 +1032,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder={i18nText("Anthropic Compatible (Prod)")}
-          hint="Required. A friendly label for this node."
+          hint={i18nText("Required. A friendly label for this node.")}
         />
         <Input
           label={i18nText("Prefix")}
@@ -1038,7 +1044,9 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder="ac-prod"
-          hint="Required. Used as the provider prefix for model IDs."
+          hint={i18nText(
+            "Required. Used as the provider prefix for model IDs.",
+          )}
         />
         <Input
           label={i18nText("Base URL")}
@@ -1050,7 +1058,9 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
             })
           }
           placeholder="https://api.anthropic.com/v1"
-          hint="Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
+          hint={i18nText(
+            "Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages.",
+          )}
         />
         <div className="flex gap-2">
           <Input
@@ -1066,13 +1076,15 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
               disabled={!checkKey || validating || !formData.baseUrl.trim()}
               variant="secondary"
             >
-              {validating ? "Checking..." : "Check"}
+              {validating ? i18nText("Checking...") : i18nText("Check")}
             </Button>
           </div>
         </div>
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
+            {validationResult === "success"
+              ? i18nText("Valid")
+              : i18nText("Invalid")}
           </Badge>
         )}
         <div className="flex gap-2">
@@ -1086,7 +1098,7 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
               submitting
             }
           >
-            {submitting ? "Creating..." : "Create"}
+            {submitting ? i18nText("Creating...") : i18nText("Create")}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
             {i18nText("Cancel")}

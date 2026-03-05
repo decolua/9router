@@ -396,7 +396,7 @@ export default function APIPageClient({ machineId }) {
     }
   };
   const handleDeleteKey = async (id) => {
-    if (!confirm("Delete this API key?")) return;
+    if (!confirm(i18nText("Delete this API key?"))) return;
     try {
       const res = await fetch(`/api/keys/${id}`, {
         method: "DELETE",
@@ -531,7 +531,9 @@ export default function APIPageClient({ machineId }) {
             icon={copied === "endpoint_url" ? "check" : "content_copy"}
             onClick={() => copy(currentEndpoint, "endpoint_url")}
           >
-            {copied === "endpoint_url" ? "Copied!" : "Copy"}
+            {copied === "endpoint_url"
+              ? i18nText("Copied!")
+              : i18nText("Copy")}
           </Button>
         </div>
 
@@ -635,7 +637,7 @@ export default function APIPageClient({ machineId }) {
                       if (key.isActive && !checked) {
                         if (
                           confirm(
-                            `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+                            `${i18nText("Pause API key")} "${key.name}"?\n\n${i18nText("This key will stop working immediately but can be resumed later.")}`,
                           )
                         ) {
                           handleToggleKey(key.id, checked);
@@ -644,7 +646,11 @@ export default function APIPageClient({ machineId }) {
                         handleToggleKey(key.id, checked);
                       }
                     }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
+                    title={
+                      key.isActive
+                        ? i18nText("Pause key")
+                        : i18nText("Resume key")
+                    }
                   />
                   <button
                     onClick={() => handleDeleteKey(key.id)}
@@ -731,7 +737,9 @@ export default function APIPageClient({ machineId }) {
               icon={copied === "created_key" ? "check" : "content_copy"}
               onClick={() => copy(createdKey, "created_key")}
             >
-              {copied === "created_key" ? "Copied!" : "Copy"}
+              {copied === "created_key"
+                ? i18nText("Copied!")
+                : i18nText("Copy")}
             </Button>
           </div>
           <Button onClick={() => setCreatedKey(null)} fullWidth>
@@ -846,10 +854,10 @@ export default function APIPageClient({ machineId }) {
                   <span className="material-symbols-outlined animate-spin text-sm">
                     progress_activity
                   </span>
-                  Disabling...
+                  {i18nText("Disabling...")}
                 </span>
               ) : (
-                "Disable Tunnel"
+                i18nText("Disable Tunnel")
               )}
             </Button>
             <Button
