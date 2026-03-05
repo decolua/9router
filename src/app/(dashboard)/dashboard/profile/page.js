@@ -343,15 +343,7 @@ export default function ProfilePage() {
       setModelLimitsLoading(false);
     }
   };
-    try {
-      const res = await fetch("/api/settings");
-      if (!res.ok) return;
-      const data = await res.json();
-      setSettings(data);
-    } catch (err) {
-      console.error("Failed to reload settings:", err);
-    }
-  };
+
 
   const handleExportDatabase = async () => {
     setDbLoading(true);
