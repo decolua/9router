@@ -53,6 +53,7 @@ export const CLI_TOOLS = {
     color: "#4285F4",
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
+    mitmDomain: "daily-cloudcode-pa.googleapis.com",
     modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low"],
     defaultModels: [
       { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high" },
@@ -61,6 +62,22 @@ export const CLI_TOOLS = {
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
       { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", alias: "claude-opus-4-6-thinking" },
       { id: "gpt-oss-120b-medium", name: "GPT OSS 120B Medium", alias: "gpt-oss-120b-medium" },
+    ],
+  },
+  copilot: {
+    id: "copilot",
+    name: "GitHub Copilot",
+    image: "/providers/copilot.png",
+    color: "#1F6FEB",
+    description: "GitHub Copilot IDE with MITM",
+    configType: "mitm",
+    mitmDomain: "api.individual.githubcopilot.com",
+    modelAliases: ["gpt-4o-mini", "claude-haiku-4.5", "gpt-4o", "gpt-5-mini"],
+    defaultModels: [
+      { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
+      { id: "gpt-4.1", name: "GPT-4.1", alias: "gpt-4.1" },
+      { id: "gpt-5-mini", name: "GPT-5 Mini", alias: "gpt-5-mini" },
+      { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
     ],
   },
   droid: {
@@ -122,14 +139,6 @@ export const CLI_TOOLS = {
       { step: 5, title: "Select Model", type: "modelSelector" },
     ],
   },
-  // copilot: {
-  //   id: "copilot",
-  //   name: "GitHub Copilot",
-  //   image: "/providers/copilot.png",
-  //   color: "#1F6FEB",
-  //   description: "GitHub Copilot Chat — VS Code Extension",
-  //   configType: "custom",
-  // },
   roo: {
     id: "roo",
     name: "Roo",

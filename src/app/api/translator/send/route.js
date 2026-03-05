@@ -33,7 +33,8 @@ export async function POST(request) {
     // Build URL and headers using provider service
     const url = buildProviderUrl(provider, body.model || "test-model", true, {
       baseUrlIndex: 0,
-      baseUrl: connection.providerSpecificData?.baseUrl
+      baseUrl: connection.providerSpecificData?.baseUrl,
+      qwenResourceUrl: connection.providerSpecificData?.resourceUrl
     });
     console.log("🚀 ~ POST ~ url:", url)
     const headers = buildProviderHeaders(provider, credentials, true, body);

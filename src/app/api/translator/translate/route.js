@@ -93,7 +93,8 @@ export async function POST(request) {
         // Build URL and headers
         const url = buildProviderUrl(provider, model, true, {
           baseUrlIndex: 0,
-          baseUrl: connection.providerSpecificData?.baseUrl
+          baseUrl: connection.providerSpecificData?.baseUrl,
+          qwenResourceUrl: connection.providerSpecificData?.resourceUrl
         });
         const headers = buildProviderHeaders(provider, credentials, true, actualBody);
         

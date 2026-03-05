@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, Toggle, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -18,6 +18,7 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
@@ -25,6 +26,7 @@ export default function ProviderDetailPage() {
   const [modelAliases, setModelAliases] = useState({});
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const { copied, copy } = useCopyToClipboard();
@@ -175,6 +177,11 @@ export default function ProviderDetailPage() {
     setShowOAuthModal(false);
   };
 
+  const handleIFlowCookieSuccess = () => {
+    fetchConnections();
+    setShowIFlowCookieModal(false);
+  };
+
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", {
@@ -270,8 +277,10 @@ export default function ProviderDetailPage() {
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      setModelsTestError("Network error");
     } finally {
       setTestingModelId(null);
     }
@@ -356,6 +365,9 @@ export default function ProviderDetailPage() {
             onCopy={copy}
             onSetAlias={() => {}}
             onDeleteAlias={() => handleDeleteAlias(model.alias)}
+            testStatus={modelTestResults[model.id]}
+            onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+            isTesting={testingModelId === model.id}
             isCustom
           />
         ))}
@@ -504,13 +516,26 @@ export default function ProviderDetailPage() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
           {!isCompatible && (
-            <Button
-              size="sm"
-              icon="add"
-              onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-            >
-              Add
-            </Button>
+            <div className="flex gap-2">
+              {providerId === "iflow" && (
+                <Button
+                  size="sm"
+                  icon="cookie"
+                  variant="secondary"
+                  onClick={() => setShowIFlowCookieModal(true)}
+                  title="Add connection using browser cookie"
+                >
+                  Cookie
+                </Button>
+              )}
+              <Button
+                size="sm"
+                icon="add"
+                onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+              >
+                Add
+              </Button>
+            </div>
           )}
         </div>
 
@@ -522,9 +547,16 @@ export default function ProviderDetailPage() {
             <p className="text-text-main font-medium mb-1">No connections yet</p>
             <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
             {!isCompatible && (
-              <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                Add Connection
-              </Button>
+              <div className="flex gap-2 justify-center">
+                {providerId === "iflow" && (
+                  <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                    Cookie Auth
+                  </Button>
+                )}
+                <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                  {providerId === "iflow" ? "OAuth" : "Add Connection"}
+                </Button>
+              </div>
             )}
           </div>
         ) : (
@@ -559,6 +591,9 @@ export default function ProviderDetailPage() {
             {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
           </h2>
         </div>
+        {!!modelsTestError && (
+          <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
         {renderModelsSection()}
       </Card>
 
@@ -583,6 +618,13 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+        />
+      )}
+      {providerId === "iflow" && (
+        <IFlowCookieModal
+          isOpen={showIFlowCookieModal}
+          onSuccess={handleIFlowCookieSuccess}
+          onClose={() => setShowIFlowCookieModal(false)}
         />
       )}
       <AddApiKeyModal
@@ -639,44 +681,46 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
     : undefined;
 
   return (
-    <div className={`group flex items-center gap-2 px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <span
-        className="material-symbols-outlined text-base"
-        style={iconColor ? { color: iconColor } : undefined}
-      >
-        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
-      </span>
-      <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-      {onTest && (
-        <button
-          onClick={onTest}
-          disabled={isTesting}
-          className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-          title="Test model"
+    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+      <div className="flex items-center gap-2">
+        <span
+          className="material-symbols-outlined text-base"
+          style={iconColor ? { color: iconColor } : undefined}
         >
-          <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-            {isTesting ? "progress_activity" : "science"}
+          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+        </span>
+        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        {onTest && (
+          <button
+            onClick={onTest}
+            disabled={isTesting}
+            className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            title="Test model"
+          >
+            <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+              {isTesting ? "progress_activity" : "science"}
+            </span>
+          </button>
+        )}
+        <button
+          onClick={() => onCopy(fullModel, `model-${model.id}`)}
+          className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+          title="Copy model"
+        >
+          <span className="material-symbols-outlined text-sm">
+            {copied === `model-${model.id}` ? "check" : "content_copy"}
           </span>
         </button>
-      )}
-      <button
-        onClick={() => onCopy(fullModel, `model-${model.id}`)}
-        className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-        title="Copy model"
-      >
-        <span className="material-symbols-outlined text-sm">
-          {copied === `model-${model.id}` ? "check" : "content_copy"}
-        </span>
-      </button>
-      {isCustom && (
-        <button
-          onClick={onDeleteAlias}
-          className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
-          title="Remove custom model"
-        >
-          <span className="material-symbols-outlined text-sm">close</span>
-        </button>
-      )}
+        {isCustom && (
+          <button
+            onClick={onDeleteAlias}
+            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+            title="Remove custom model"
+          >
+            <span className="material-symbols-outlined text-sm">close</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 }

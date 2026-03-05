@@ -145,7 +145,7 @@ export const PROVIDER_MODELS = {
   // API Key Providers (alias = id)
   openai: [
     { id: "gpt-4o", name: "GPT-4o" },
-    { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+    { id: "gpt-5-mini", name: "GPT-5 Mini" },
     { id: "gpt-4-turbo", name: "GPT-4 Turbo" },
     { id: "o1", name: "O1" },
     { id: "o1-mini", name: "O1 Mini" },

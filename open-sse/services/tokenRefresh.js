@@ -180,6 +180,9 @@ export async function refreshQwenToken(refreshToken, log) {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || refreshToken,
         expiresIn: tokens.expires_in,
+        providerSpecificData: tokens.resource_url
+          ? { resourceUrl: tokens.resource_url }
+          : undefined,
       };
     } else {
       const errorText = await response.text().catch(() => "");

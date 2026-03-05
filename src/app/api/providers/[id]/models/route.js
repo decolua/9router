@@ -44,6 +44,18 @@ const createOpenAIModelsConfig = (url) => ({
   parseResponse: parseOpenAIStyleModels
 });
 
+const resolveQwenModelsUrl = (connection) => {
+  const fallback = "https://portal.qwen.ai/v1/models";
+  const raw = connection?.providerSpecificData?.resourceUrl;
+  if (!raw || typeof raw !== "string") return fallback;
+  const value = raw.trim();
+  if (!value) return fallback;
+  if (value.startsWith("http://") || value.startsWith("https://")) {
+    return `${value.replace(/\/$/, "")}/models`;
+  }
+  return `https://${value.replace(/\/$/, "")}/v1/models`;
+};
+
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
   claude: {
@@ -340,6 +352,9 @@ export async function GET(request, { params }) {
 
     // Build request URL
     let url = config.url;
+    if (connection.provider === "qwen") {
+      url = resolveQwenModelsUrl(connection);
+    }
     if (config.authQuery) {
       url += `?${config.authQuery}=${token}`;
     }

@@ -34,6 +34,16 @@ function buildAnthropicCompatibleUrl(baseUrl) {
   return `${normalized}/messages`;
 }
 
+function buildQwenBaseUrl(resourceUrl, fallbackBaseUrl) {
+  const fallback = (fallbackBaseUrl || "").replace(/\/chat\/completions$/, "");
+  const raw = typeof resourceUrl === "string" ? resourceUrl.trim() : "";
+  if (!raw) return fallback;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw.replace(/\/$/, "");
+  }
+  return `https://${raw.replace(/\/$/, "")}/v1`;
+}
+
 // Detect request format from body structure
 export function detectFormat(body) {
   // OpenAI Responses API: has input (array or string) instead of messages[]
@@ -177,6 +187,11 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
 
     case "codex":
       return config.baseUrl;
+
+    case "qwen": {
+      const baseUrl = buildQwenBaseUrl(options?.qwenResourceUrl, config.baseUrl);
+      return `${baseUrl}/chat/completions`;
+    }
 
     case "github":
       return config.baseUrl;

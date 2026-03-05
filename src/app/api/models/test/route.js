@@ -34,15 +34,55 @@ export async function POST(request) {
     });
     const latencyMs = Date.now() - start;
 
-    // 200 = ok; 400 = bad request but auth passed (model reachable)
-    const ok = res.status === 200 || res.status === 400;
-    let error = null;
-    if (!ok) {
-      const text = await res.text().catch(() => "");
-      error = `HTTP ${res.status}${text ? `: ${text.slice(0, 120)}` : ""}`;
+    const rawText = await res.text().catch(() => "");
+    let parsed = null;
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {}
+
+    if (!res.ok) {
+      const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+      const error = `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`;
+      return NextResponse.json({ ok: false, latencyMs, error, status: res.status });
     }
 
-    return NextResponse.json({ ok, latencyMs, error });
+    // Some providers may return HTTP 200 but not a real completion for invalid models.
+    const providerStatus = parsed?.status;
+    const providerMsg = parsed?.msg || parsed?.message;
+    const hasProviderErrorStatus = providerStatus !== undefined
+      && providerStatus !== null
+      && String(providerStatus) !== "200"
+      && String(providerStatus) !== "0";
+    if (hasProviderErrorStatus && providerMsg) {
+      return NextResponse.json({
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: `Provider status ${providerStatus}: ${String(providerMsg).slice(0, 240)}`,
+      });
+    }
+
+    if (parsed?.error) {
+      const providerError = parsed?.error?.message || parsed?.error || "Provider returned an error";
+      return NextResponse.json({
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: String(providerError).slice(0, 240),
+      });
+    }
+
+    const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
+    if (!hasChoices) {
+      return NextResponse.json({
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: "Provider returned no completion choices for this model",
+      });
+    }
+
+    return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
   } catch (err) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }

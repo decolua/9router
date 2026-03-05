@@ -377,7 +377,7 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      // Fetch user info
+      // Fetch user info (MUST succeed to get API key)
       const userInfoRes = await fetch(
         `${IFLOW_CONFIG.userInfoUrl}?accessToken=${encodeURIComponent(tokens.access_token)}`,
         {
@@ -386,8 +386,30 @@ const PROVIDERS = {
           },
         }
       );
-      const result = userInfoRes.ok ? await userInfoRes.json() : {};
-      const userInfo = result.success ? result.data : {};
+      
+      if (!userInfoRes.ok) {
+        const errorText = await userInfoRes.text();
+        throw new Error(`Failed to fetch user info: ${errorText}`);
+      }
+      
+      const result = await userInfoRes.json();
+      if (!result.success) {
+        throw new Error(`User info request failed: ${result.message || 'Unknown error'}`);
+      }
+      
+      const userInfo = result.data || {};
+      
+      // Validate API key (critical for iFlow)
+      if (!userInfo.apiKey || userInfo.apiKey.trim() === "") {
+        throw new Error("Empty API key returned from iFlow");
+      }
+      
+      // Validate email/phone
+      const email = userInfo.email?.trim() || userInfo.phone?.trim();
+      if (!email) {
+        throw new Error("Missing account email/phone in user info");
+      }
+      
       return { userInfo };
     },
     mapTokens: (tokens, extra) => ({

@@ -26,10 +26,14 @@ async function checkCertInstalled(certPath) {
 function checkCertInstalledMac(certPath) {
   return new Promise((resolve) => {
     try {
-      // security outputs fingerprint without colons (e.g. "078B6B5F..."), strip them before grep
       const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
-      exec(`security find-certificate -a -Z /Library/Keychains/System.keychain | grep -i "${fingerprint}"`, (error, stdout) => {
-        resolve(!error && !!stdout?.trim());
+      // security verify-cert returns 0 only if cert is trusted by system policy
+      exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, (error) => {
+        if (!error) return resolve(true);
+        // Fallback: check if fingerprint appears in System keychain with trust
+        exec(`security dump-trust-settings -d 2>/dev/null | grep -i "${fingerprint}"`, (err2, stdout2) => {
+          resolve(!err2 && !!stdout2?.trim());
+        });
       });
     } catch {
       resolve(false);

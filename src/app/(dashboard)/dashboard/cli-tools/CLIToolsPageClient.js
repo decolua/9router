@@ -3,19 +3,20 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import { PROVIDER_MODELS, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, AntigravityToolCard, OpenCodeToolCard, CopilotToolCard } from "./components";
+import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, OpenCodeToolCard } from "./components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
+
+// MITM tools are now on /dashboard/mitm — exclude from CLI Tools page
+const MITM_TOOL_IDS = ["antigravity", "copilot"];
 
 const STATUS_ENDPOINTS = {
   claude: "/api/cli-tools/claude-settings",
   codex: "/api/cli-tools/codex-settings",
   opencode: "/api/cli-tools/opencode-settings",
-  copilot: "/api/cli-tools/copilot-settings",
   droid: "/api/cli-tools/droid-settings",
   openclaw: "/api/cli-tools/openclaw-settings",
-  antigravity: "/api/cli-tools/antigravity-mitm",
 };
 
 export default function CLIToolsPageClient({ machineId }) {
@@ -101,15 +102,12 @@ export default function CLIToolsPageClient({ machineId }) {
     }
   };
 
-  const getActiveProviders = () => {
-    return connections.filter(c => c.isActive !== false);
-  };
+  const getActiveProviders = () => connections.filter(c => c.isActive !== false);
 
   const getAllAvailableModels = () => {
     const activeProviders = getActiveProviders();
     const models = [];
     const seenModels = new Set();
-    
     activeProviders.forEach(conn => {
       const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
       const providerModels = getModelsByProviderId(conn.provider);
@@ -117,58 +115,33 @@ export default function CLIToolsPageClient({ machineId }) {
         const modelValue = `${alias}/${m.id}`;
         if (!seenModels.has(modelValue)) {
           seenModels.add(modelValue);
-          models.push({
-            value: modelValue,
-            label: `${alias}/${m.id}`,
-            provider: conn.provider,
-            alias: alias,
-            connectionName: conn.name,
-            modelId: m.id,
-          });
+          models.push({ value: modelValue, label: `${alias}/${m.id}`, provider: conn.provider, alias, connectionName: conn.name, modelId: m.id });
         }
       });
     });
-    
     return models;
   };
 
   const handleModelMappingChange = useCallback((toolId, modelAlias, targetModel) => {
     setModelMappings(prev => {
-      // Prevent unnecessary updates if value hasn't changed
-      if (prev[toolId]?.[modelAlias] === targetModel) {
-        return prev;
-      }
-      return {
-        ...prev,
-        [toolId]: {
-          ...prev[toolId],
-          [modelAlias]: targetModel,
-        },
-      };
+      if (prev[toolId]?.[modelAlias] === targetModel) return prev;
+      return { ...prev, [toolId]: { ...prev[toolId], [modelAlias]: targetModel } };
     });
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelUrl) {
-      return tunnelUrl;
-    }
-    if (cloudEnabled && CLOUD_URL) {
-      return CLOUD_URL;
-    }
-    if (typeof window !== "undefined") {
-      return window.location.origin;
-    }
+    if (tunnelEnabled && tunnelUrl) return tunnelUrl;
+    if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
+    if (typeof window !== "undefined") return window.location.origin;
     return "http://localhost:20128";
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-6">
-        <div className="flex flex-col gap-4">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
+      <div className="flex flex-col gap-4">
+        <CardSkeleton />
+        <CardSkeleton />
+        <CardSkeleton />
       </div>
     );
   }
@@ -203,18 +176,16 @@ export default function CLIToolsPageClient({ machineId }) {
         return <CodexToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.codex} />;
       case "opencode":
         return <OpenCodeToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.opencode} />;
-      case "copilot":
-        return <CopilotToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.copilot} />;
       case "droid":
         return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.droid} />;
       case "openclaw":
         return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
-      case "antigravity":
-        return <AntigravityToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.antigravity} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }
   };
+
+  const regularTools = Object.entries(CLI_TOOLS).filter(([id]) => !MITM_TOOL_IDS.includes(id));
 
   return (
     <div className="flex flex-col gap-6">
@@ -229,9 +200,8 @@ export default function CLIToolsPageClient({ machineId }) {
           </div>
         </Card>
       )}
-
       <div className="flex flex-col gap-4">
-        {Object.entries(CLI_TOOLS).map(([toolId, tool]) => renderToolCard(toolId, tool))}
+        {regularTools.map(([toolId, tool]) => renderToolCard(toolId, tool))}
       </div>
     </div>
   );

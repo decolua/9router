@@ -3,10 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const TARGET_HOSTS = [
-  "daily-cloudcode-pa.googleapis.com",
-  "cloudcode-pa.googleapis.com"
-];
+// Per-tool DNS hosts mapping
+const TOOL_HOSTS = {
+  antigravity: ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"],
+  copilot: ["api.individual.githubcopilot.com"],
+};
+
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 const HOSTS_FILE = IS_WIN
@@ -38,58 +40,67 @@ function execWithPassword(command, password) {
 }
 
 /**
- * Execute elevated command on Windows via PowerShell RunAs (hidden window)
+ * Flush DNS cache (macOS/Linux)
  */
-function execElevatedWindows(command) {
-  return new Promise((resolve, reject) => {
-    const escaped = command.replace(/'/g, "''");
-    const psCommand = `Start-Process cmd -ArgumentList '/c','${escaped}' -Verb RunAs -Wait -WindowStyle Hidden`;
-    exec(
-      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
-      { windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) reject(new Error(`Elevated command failed: ${error.message}\n${stderr}`));
-        else resolve(stdout);
-      }
-    );
-  });
+async function flushDNS(sudoPassword) {
+  if (IS_WIN) return; // Windows flushes inline via ipconfig
+  if (IS_MAC) {
+    await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
+  } else {
+    await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
+  }
 }
 
 /**
- * Check if DNS entry already exists for a specific host
+ * Check if DNS entry exists for a specific host
  */
 function checkDNSEntry(host = null) {
   try {
     const hostsContent = fs.readFileSync(HOSTS_FILE, "utf8");
-    if (host) {
-      return hostsContent.includes(host);
-    }
-    // Check if all target hosts exist
-    return TARGET_HOSTS.every(h => hostsContent.includes(h));
+    if (host) return hostsContent.includes(host);
+    // Legacy: check all antigravity hosts (backward compat)
+    return TOOL_HOSTS.antigravity.every(h => hostsContent.includes(h));
   } catch {
     return false;
   }
 }
 
 /**
- * Add DNS entry to hosts file
+ * Check DNS status per tool — returns { [tool]: boolean }
  */
-async function addDNSEntry(sudoPassword) {
-  const entriesToAdd = TARGET_HOSTS.filter(host => !checkDNSEntry(host));
-  
+function checkAllDNSStatus() {
+  try {
+    const hostsContent = fs.readFileSync(HOSTS_FILE, "utf8");
+    const result = {};
+    for (const [tool, hosts] of Object.entries(TOOL_HOSTS)) {
+      result[tool] = hosts.every(h => hostsContent.includes(h));
+    }
+    return result;
+  } catch {
+    return Object.fromEntries(Object.keys(TOOL_HOSTS).map(t => [t, false]));
+  }
+}
+
+/**
+ * Add DNS entries for a specific tool
+ */
+async function addDNSEntry(tool, sudoPassword) {
+  const hosts = TOOL_HOSTS[tool];
+  if (!hosts) throw new Error(`Unknown tool: ${tool}`);
+
+  const entriesToAdd = hosts.filter(h => !checkDNSEntry(h));
   if (entriesToAdd.length === 0) {
-    console.log(`DNS entries for all target hosts already exist`);
+    console.log(`DNS entries for ${tool} already exist`);
     return;
   }
 
-  const entries = entriesToAdd.map(host => `127.0.0.1 ${host}`).join("\n");
+  const entries = entriesToAdd.map(h => `127.0.0.1 ${h}`).join("\n");
 
   try {
     if (IS_WIN) {
-      // Windows: add all entries + flush in one elevated PowerShell call (single UAC)
       const hostsPath = HOSTS_FILE.replace(/'/g, "''");
-      const addLines = entriesToAdd.map(host =>
-        `$hc = Get-Content -Path '${hostsPath}' -Raw -ErrorAction SilentlyContinue; if ($hc -notmatch '${host}') { Add-Content -Path '${hostsPath}' -Value '127.0.0.1 ${host}' -Encoding UTF8 }`
+      const addLines = entriesToAdd.map(h =>
+        `$hc = Get-Content -Path '${hostsPath}' -Raw -ErrorAction SilentlyContinue; if ($hc -notmatch '${h}') { Add-Content -Path '${hostsPath}' -Value '127.0.0.1 ${h}' -Encoding UTF8 }`
       ).join("; ");
       const psScript = `${addLines}; ipconfig /flushdns | Out-Null`;
       await new Promise((resolve, reject) => {
@@ -102,17 +113,9 @@ async function addDNSEntry(sudoPassword) {
       });
     } else {
       await execWithPassword(`echo "${entries}" >> ${HOSTS_FILE}`, sudoPassword);
+      await flushDNS(sudoPassword);
     }
-    // Flush DNS cache (non-Windows)
-    if (IS_WIN) {
-      // already flushed above
-    } else if (IS_MAC) {
-      await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
-    } else {
-      // Linux: try systemd-resolved, fall back silently
-      await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
-    }
-    console.log(`✅ Added DNS entries: ${entriesToAdd.join(", ")}`);
+    console.log(`✅ Added DNS entries for ${tool}: ${entriesToAdd.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to add DNS entry";
     throw new Error(msg);
@@ -120,29 +123,26 @@ async function addDNSEntry(sudoPassword) {
 }
 
 /**
- * Remove DNS entry from hosts file
+ * Remove DNS entries for a specific tool
  */
-async function removeDNSEntry(sudoPassword) {
-  const entriesToRemove = TARGET_HOSTS.filter(host => checkDNSEntry(host));
-  
+async function removeDNSEntry(tool, sudoPassword) {
+  const hosts = TOOL_HOSTS[tool];
+  if (!hosts) throw new Error(`Unknown tool: ${tool}`);
+
+  const entriesToRemove = hosts.filter(h => checkDNSEntry(h));
   if (entriesToRemove.length === 0) {
-    console.log(`DNS entries for target hosts do not exist`);
+    console.log(`DNS entries for ${tool} do not exist`);
     return;
   }
 
   try {
     if (IS_WIN) {
-      // Read in Node, filter, write to temp file, then single elevated-copy + flush (1 UAC)
       const content = fs.readFileSync(HOSTS_FILE, "utf8");
-      const filtered = content.split(/\r?\n/).filter(l => !TARGET_HOSTS.some(host => l.includes(host))).join("\r\n");
-      if (!filtered.trim() && content.trim()) {
-        throw new Error("Filtered hosts content is empty, aborting to prevent data loss");
-      }
+      const filtered = content.split(/\r?\n/).filter(l => !entriesToRemove.some(h => l.includes(h))).join("\r\n");
       const tmpFile = path.join(os.tmpdir(), "hosts_filtered.tmp");
       fs.writeFileSync(tmpFile, filtered, "utf8");
       const tmpEsc = tmpFile.replace(/'/g, "''");
       const hostsEsc = HOSTS_FILE.replace(/'/g, "''");
-      // Single UAC: copy temp file over hosts + flush DNS
       const psScript = `Copy-Item -Path '${tmpEsc}' -Destination '${hostsEsc}' -Force; ipconfig /flushdns | Out-Null; Remove-Item '${tmpEsc}' -ErrorAction SilentlyContinue`;
       await new Promise((resolve, reject) => {
         const escaped = psScript.replace(/"/g, '\\"');
@@ -151,33 +151,46 @@ async function removeDNSEntry(sudoPassword) {
           { windowsHide: true },
           (error) => {
             try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
-            if (error) reject(new Error(`Failed to remove DNS entry: ${error.message}`));
+            if (error) reject(new Error(`Failed to remove DNS: ${error.message}`));
             else resolve();
           }
         );
       });
     } else {
-      // Remove all target hosts using sed
       for (const host of entriesToRemove) {
         const sedCmd = IS_MAC
           ? `sed -i '' '/${host}/d' ${HOSTS_FILE}`
           : `sed -i '/${host}/d' ${HOSTS_FILE}`;
         await execWithPassword(sedCmd, sudoPassword);
       }
+      await flushDNS(sudoPassword);
     }
-    // Flush DNS cache (non-Windows, already flushed above for Windows)
-    if (IS_WIN) {
-      // already flushed above
-    } else if (IS_MAC) {
-      await execWithPassword("dscacheutil -flushcache && killall -HUP mDNSResponder", sudoPassword);
-    } else {
-      await execWithPassword("resolvectl flush-caches 2>/dev/null || true", sudoPassword);
-    }
-    console.log(`✅ Removed DNS entries for ${entriesToRemove.join(", ")}`);
+    console.log(`✅ Removed DNS entries for ${tool}: ${entriesToRemove.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to remove DNS entry";
     throw new Error(msg);
   }
 }
 
-module.exports = { addDNSEntry, removeDNSEntry, execWithPassword, checkDNSEntry };
+/**
+ * Remove ALL tool DNS entries (used when stopping server)
+ */
+async function removeAllDNSEntries(sudoPassword) {
+  for (const tool of Object.keys(TOOL_HOSTS)) {
+    try {
+      await removeDNSEntry(tool, sudoPassword);
+    } catch (e) {
+      console.log(`[MITM] Warning: failed to remove DNS for ${tool}: ${e.message}`);
+    }
+  }
+}
+
+module.exports = {
+  TOOL_HOSTS,
+  addDNSEntry,
+  removeDNSEntry,
+  removeAllDNSEntries,
+  execWithPassword,
+  checkDNSEntry,
+  checkAllDNSStatus,
+};

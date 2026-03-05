@@ -2,10 +2,18 @@ const path = require("path");
 const fs = require("fs");
 const { MITM_DIR } = require("../paths");
 
-const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
+// Wildcard domains — covers all subdomains without needing cert update per tool
+const WILDCARD_DOMAINS = [
+  "*.googleapis.com",
+  "*.githubcopilot.com",
+  "*.individual.githubcopilot.com",
+  "*.business.githubcopilot.com"
+];
 
 /**
- * Generate self-signed SSL certificate using selfsigned (pure JS, no openssl needed)
+ * Generate self-signed SSL certificate with wildcard SAN.
+ * Covers all current and future MITM tool domains automatically.
+ * Uses selfsigned (pure JS, no openssl needed).
  */
 async function generateCert() {
   const certDir = MITM_DIR;
@@ -22,7 +30,7 @@ async function generateCert() {
   }
 
   const selfsigned = require("selfsigned");
-  const attrs = [{ name: "commonName", value: TARGET_HOST }];
+  const attrs = [{ name: "commonName", value: "9router-mitm" }];
   const notAfter = new Date();
   notAfter.setFullYear(notAfter.getFullYear() + 1);
   const pems = await selfsigned.generate(attrs, {
@@ -30,14 +38,17 @@ async function generateCert() {
     algorithm: "sha256",
     notAfterDate: notAfter,
     extensions: [
-      { name: "subjectAltName", altNames: [{ type: 2, value: TARGET_HOST }] }
+      {
+        name: "subjectAltName",
+        altNames: WILDCARD_DOMAINS.map(domain => ({ type: 2, value: domain }))
+      }
     ]
   });
 
   fs.writeFileSync(keyPath, pems.private);
   fs.writeFileSync(certPath, pems.cert);
 
-  console.log(`✅ Generated SSL certificate for ${TARGET_HOST}`);
+  console.log(`✅ Generated wildcard SSL certificate: ${WILDCARD_DOMAINS.join(", ")}`);
   return { key: keyPath, cert: certPath };
 }
 
