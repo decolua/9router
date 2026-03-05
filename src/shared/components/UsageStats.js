@@ -5,10 +5,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
-import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
+import UsageTable, {
+  fmt,
+  fmtTime,
+} from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
-
+import { i18nText } from "@/i18n/literals";
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
   if (diff < 60) return `${diff}s ago`;
@@ -16,43 +19,71 @@ function timeAgo(timestamp) {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
-
 function RecentRequests({ requests = [] }) {
   return (
-    <Card className="flex flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
+    <Card
+      className="flex flex-col overflow-hidden"
+      padding="sm"
+      style={{
+        height: 480,
+      }}
+    >
       {/* Header */}
       <div className="px-1 py-2 border-b border-border shrink-0">
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">
+          {i18nText("Recent Requests")}
+        </span>
       </div>
 
       {!requests.length ? (
-        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
+        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
+          {i18nText("No requests yet.")}
+        </div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-bg z-10">
               <tr className="border-b border-border">
                 <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
-                <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
+                <th className="py-1.5 text-left font-semibold text-text-muted">
+                  {i18nText("Model")}
+                </th>
+                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">
+                  {i18nText("In / Out")}
+                </th>
+                <th className="py-1.5 text-right font-semibold text-text-muted">
+                  {i18nText("When")}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
-                const ok = !r.status || r.status === "ok" || r.status === "success";
+                const ok =
+                  !r.status || r.status === "ok" || r.status === "success";
                 return (
                   <tr key={i} className="hover:bg-bg-subtle transition-colors">
                     <td className="py-1.5">
-                      <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
+                      <span
+                        className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`}
+                      />
                     </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td
+                      className="py-1.5 font-mono truncate max-w-[120px]"
+                      title={r.model}
+                    >
+                      {r.model}
+                    </td>
                     <td className="py-1.5 text-right whitespace-nowrap">
-                      <span className="text-primary">{fmt(r.promptTokens)}↑</span>
-                      {" "}
-                      <span className="text-success">{fmt(r.completionTokens)}↓</span>
+                      <span className="text-primary">
+                        {fmt(r.promptTokens)}↑
+                      </span>{" "}
+                      <span className="text-success">
+                        {fmt(r.completionTokens)}↓
+                      </span>
                     </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap">{timeAgo(r.timestamp)}</td>
+                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap">
+                      {timeAgo(r.timestamp)}
+                    </td>
                   </tr>
                 );
               })}
@@ -63,15 +94,29 @@ function RecentRequests({ requests = [] }) {
     </Card>
   );
 }
-
 function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
   return Object.entries(dataMap || {})
     .map(([key, data]) => {
-      const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
+      const totalTokens =
+        (data.promptTokens || 0) + (data.completionTokens || 0);
       const totalCost = data.cost || 0;
-      const inputCost = totalTokens > 0 ? (data.promptTokens || 0) * (totalCost / totalTokens) : 0;
-      const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
-      return { ...data, key, totalTokens, totalCost, inputCost, outputCost, pending: pendingMap[key] || 0 };
+      const inputCost =
+        totalTokens > 0
+          ? (data.promptTokens || 0) * (totalCost / totalTokens)
+          : 0;
+      const outputCost =
+        totalTokens > 0
+          ? (data.completionTokens || 0) * (totalCost / totalTokens)
+          : 0;
+      return {
+        ...data,
+        key,
+        totalTokens,
+        totalCost,
+        inputCost,
+        outputCost,
+        pending: pendingMap[key] || 0,
+      };
     })
     .sort((a, b) => {
       let valA = a[sortBy];
@@ -83,17 +128,24 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
       return 0;
     });
 }
-
 function getGroupKey(item, keyField) {
   switch (keyField) {
-    case "rawModel": return item.rawModel || "Unknown Model";
-    case "accountName": return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || "Unknown Account";
-    case "keyName": return item.keyName || "Unknown Key";
-    case "endpoint": return item.endpoint || "Unknown Endpoint";
-    default: return item[keyField] || "Unknown";
+    case "rawModel":
+      return item.rawModel || "Unknown Model";
+    case "accountName":
+      return (
+        item.accountName ||
+        `Account ${item.connectionId?.slice(0, 8)}...` ||
+        "Unknown Account"
+      );
+    case "keyName":
+      return item.keyName || "Unknown Key";
+    case "endpoint":
+      return item.endpoint || "Unknown Endpoint";
+    default:
+      return item[keyField] || "Unknown";
   }
 }
-
 function groupDataByKey(data, keyField) {
   if (!Array.isArray(data)) return [];
   const groups = {};
@@ -102,7 +154,17 @@ function groupDataByKey(data, keyField) {
     if (!groups[gk]) {
       groups[gk] = {
         groupKey: gk,
-        summary: { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
+        summary: {
+          requests: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+          cost: 0,
+          inputCost: 0,
+          outputCost: 0,
+          lastUsed: null,
+          pending: 0,
+        },
         items: [],
       };
     }
@@ -115,66 +177,149 @@ function groupDataByKey(data, keyField) {
     s.inputCost += item.inputCost || 0;
     s.outputCost += item.outputCost || 0;
     s.pending += item.pending || 0;
-    if (item.lastUsed && (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))) {
+    if (
+      item.lastUsed &&
+      (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))
+    ) {
       s.lastUsed = item.lastUsed;
     }
     groups[gk].items.push(item);
   });
   return Object.values(groups);
 }
-
 const MODEL_COLUMNS = [
-  { field: "rawModel", label: "Model" },
-  { field: "provider", label: "Provider" },
-  { field: "requests", label: "Requests", align: "right" },
-  { field: "lastUsed", label: "Last Used", align: "right" },
+  {
+    field: "rawModel",
+    label: i18nText("Model"),
+  },
+  {
+    field: "provider",
+    label: i18nText("Provider"),
+  },
+  {
+    field: "requests",
+    label: i18nText("Requests"),
+    align: "right",
+  },
+  {
+    field: "lastUsed",
+    label: i18nText("Last Used"),
+    align: "right",
+  },
 ];
-
 const ACCOUNT_COLUMNS = [
-  { field: "rawModel", label: "Model" },
-  { field: "provider", label: "Provider" },
-  { field: "accountName", label: "Account" },
-  { field: "requests", label: "Requests", align: "right" },
-  { field: "lastUsed", label: "Last Used", align: "right" },
+  {
+    field: "rawModel",
+    label: i18nText("Model"),
+  },
+  {
+    field: "provider",
+    label: i18nText("Provider"),
+  },
+  {
+    field: "accountName",
+    label: i18nText("Account"),
+  },
+  {
+    field: "requests",
+    label: i18nText("Requests"),
+    align: "right",
+  },
+  {
+    field: "lastUsed",
+    label: i18nText("Last Used"),
+    align: "right",
+  },
 ];
-
 const API_KEY_COLUMNS = [
-  { field: "keyName", label: "API Key Name" },
-  { field: "rawModel", label: "Model" },
-  { field: "provider", label: "Provider" },
-  { field: "requests", label: "Requests", align: "right" },
-  { field: "lastUsed", label: "Last Used", align: "right" },
+  {
+    field: "keyName",
+    label: i18nText("API Key Name"),
+  },
+  {
+    field: "rawModel",
+    label: i18nText("Model"),
+  },
+  {
+    field: "provider",
+    label: i18nText("Provider"),
+  },
+  {
+    field: "requests",
+    label: i18nText("Requests"),
+    align: "right",
+  },
+  {
+    field: "lastUsed",
+    label: i18nText("Last Used"),
+    align: "right",
+  },
 ];
-
 const ENDPOINT_COLUMNS = [
-  { field: "endpoint", label: "Endpoint" },
-  { field: "rawModel", label: "Model" },
-  { field: "provider", label: "Provider" },
-  { field: "requests", label: "Requests", align: "right" },
-  { field: "lastUsed", label: "Last Used", align: "right" },
+  {
+    field: "endpoint",
+    label: i18nText("Endpoint"),
+  },
+  {
+    field: "rawModel",
+    label: i18nText("Model"),
+  },
+  {
+    field: "provider",
+    label: i18nText("Provider"),
+  },
+  {
+    field: "requests",
+    label: i18nText("Requests"),
+    align: "right",
+  },
+  {
+    field: "lastUsed",
+    label: i18nText("Last Used"),
+    align: "right",
+  },
 ];
-
 const TABLE_OPTIONS = [
-  { value: "model", label: "Usage by Model" },
-  { value: "account", label: "Usage by Account" },
-  { value: "apiKey", label: "Usage by API Key" },
-  { value: "endpoint", label: "Usage by Endpoint" },
+  {
+    value: "model",
+    label: i18nText("Usage by Model"),
+  },
+  {
+    value: "account",
+    label: i18nText("Usage by Account"),
+  },
+  {
+    value: "apiKey",
+    label: i18nText("Usage by API Key"),
+  },
+  {
+    value: "endpoint",
+    label: i18nText("Usage by Endpoint"),
+  },
 ];
-
 const PERIODS = [
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
+  {
+    value: "24h",
+    label: i18nText("24h"),
+  },
+  {
+    value: "7d",
+    label: i18nText("7D"),
+  },
+  {
+    value: "30d",
+    label: i18nText("30D"),
+  },
+  {
+    value: "60d",
+    label: i18nText("60D"),
+  },
 ];
-
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
-
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
@@ -185,7 +330,7 @@ export default function UsageStats() {
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
     fetch("/api/providers")
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (!d?.connections) return;
         const seen = new Set();
@@ -204,11 +349,14 @@ export default function UsageStats() {
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (!stats) setLoading(true);
     else setFetching(true);
-
     fetch(`/api/usage/stats?period=${period}`)
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data) setStats((prev) => ({ ...prev, ...data }));
+        if (data)
+          setStats((prev) => ({
+            ...prev,
+            ...data,
+          }));
       })
       .catch(() => {})
       .finally(() => {
@@ -220,39 +368,47 @@ export default function UsageStats() {
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
     const es = new EventSource("/api/usage/stream");
-
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         // Only update real-time fields from SSE, keep filtered stats intact
-        setStats((prev) => prev ? {
-          ...prev,
-          activeRequests: data.activeRequests,
-          recentRequests: data.recentRequests,
-          errorProvider: data.errorProvider,
-          pending: data.pending,
-        } : data);
+        setStats((prev) =>
+          prev
+            ? {
+                ...prev,
+                activeRequests: data.activeRequests,
+                recentRequests: data.recentRequests,
+                errorProvider: data.errorProvider,
+                pending: data.pending,
+              }
+            : data,
+        );
         setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
     };
-
     es.onerror = () => setLoading(false);
-
     return () => es.close();
   }, []);
-
-  const toggleSort = useCallback((tableType, field) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (params.get("sortBy") === field) {
-      params.set("sortOrder", params.get("sortOrder") === "asc" ? "desc" : "asc");
-    } else {
-      params.set("sortBy", field);
-      params.set("sortOrder", "asc");
-    }
-    router.replace(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, router]);
+  const toggleSort = useCallback(
+    (tableType, field) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (params.get("sortBy") === field) {
+        params.set(
+          "sortOrder",
+          params.get("sortOrder") === "asc" ? "desc" : "asc",
+        );
+      } else {
+        params.set("sortBy", field);
+        params.set("sortOrder", "asc");
+      }
+      router.replace(`?${params.toString()}`, {
+        scroll: false,
+      });
+    },
+    [searchParams, router],
+  );
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {
@@ -262,22 +418,42 @@ export default function UsageStats() {
         const pendingMap = stats.pending?.byModel || {};
         return {
           columns: MODEL_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byModel, pendingMap, sortBy, sortOrder), "rawModel"),
+          groupedData: groupDataByKey(
+            sortData(stats.byModel, pendingMap, sortBy, sortOrder),
+            "rawModel",
+          ),
           storageKey: "usage-stats:expanded-models",
           emptyMessage: "No usage recorded yet.",
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              <td className="px-6 py-3 text-right">
+                {fmt(group.summary.requests)}
+              </td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(group.summary.lastUsed)}
+              </td>
             </>
           ),
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
+              <td
+                className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}
+              >
+                {item.rawModel}
+              </td>
+              <td className="px-6 py-3">
+                <Badge
+                  variant={item.pending > 0 ? "primary" : "neutral"}
+                  size="sm"
+                >
+                  {item.provider}
+                </Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(item.lastUsed)}
+              </td>
             </>
           ),
         };
@@ -285,34 +461,63 @@ export default function UsageStats() {
       case "account": {
         const pendingMap = {};
         if (stats?.pending?.byAccount) {
-          Object.entries(stats.byAccount || {}).forEach(([accountKey, data]) => {
-            const connPending = stats.pending.byAccount[data.connectionId];
-            if (connPending) {
-              const modelKey = data.provider ? `${data.rawModel} (${data.provider})` : data.rawModel;
-              pendingMap[accountKey] = connPending[modelKey] || 0;
-            }
-          });
+          Object.entries(stats.byAccount || {}).forEach(
+            ([accountKey, data]) => {
+              const connPending = stats.pending.byAccount[data.connectionId];
+              if (connPending) {
+                const modelKey = data.provider
+                  ? `${data.rawModel} (${data.provider})`
+                  : data.rawModel;
+                pendingMap[accountKey] = connPending[modelKey] || 0;
+              }
+            },
+          );
         }
         return {
           columns: ACCOUNT_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byAccount, pendingMap, sortBy, sortOrder), "accountName"),
+          groupedData: groupDataByKey(
+            sortData(stats.byAccount, pendingMap, sortBy, sortOrder),
+            "accountName",
+          ),
           storageKey: "usage-stats:expanded-accounts",
           emptyMessage: "No account-specific usage recorded yet.",
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              <td className="px-6 py-3 text-right">
+                {fmt(group.summary.requests)}
+              </td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(group.summary.lastUsed)}
+              </td>
             </>
           ),
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.accountName || `Account ${item.connectionId?.slice(0, 8)}...`}</td>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
+              <td
+                className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}
+              >
+                {item.accountName ||
+                  `Account ${item.connectionId?.slice(0, 8)}...`}
+              </td>
+              <td
+                className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}
+              >
+                {item.rawModel}
+              </td>
+              <td className="px-6 py-3">
+                <Badge
+                  variant={item.pending > 0 ? "primary" : "neutral"}
+                  size="sm"
+                >
+                  {item.provider}
+                </Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(item.lastUsed)}
+              </td>
             </>
           ),
         };
@@ -320,24 +525,37 @@ export default function UsageStats() {
       case "apiKey": {
         return {
           columns: API_KEY_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byApiKey, {}, sortBy, sortOrder), "keyName"),
+          groupedData: groupDataByKey(
+            sortData(stats.byApiKey, {}, sortBy, sortOrder),
+            "keyName",
+          ),
           storageKey: "usage-stats:expanded-apikeys",
           emptyMessage: "No API key usage recorded yet.",
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              <td className="px-6 py-3 text-right">
+                {fmt(group.summary.requests)}
+              </td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(group.summary.lastUsed)}
+              </td>
             </>
           ),
           renderDetailCells: (item) => (
             <>
               <td className="px-6 py-3 font-medium">{item.keyName}</td>
               <td className="px-6 py-3">{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-6 py-3">
+                <Badge variant="neutral" size="sm">
+                  {item.provider}
+                </Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(item.lastUsed)}
+              </td>
             </>
           ),
         };
@@ -346,39 +564,58 @@ export default function UsageStats() {
       default: {
         return {
           columns: ENDPOINT_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byEndpoint, {}, sortBy, sortOrder), "endpoint"),
+          groupedData: groupDataByKey(
+            sortData(stats.byEndpoint, {}, sortBy, sortOrder),
+            "endpoint",
+          ),
           storageKey: "usage-stats:expanded-endpoints",
           emptyMessage: "No endpoint usage recorded yet.",
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+              <td className="px-6 py-3 text-right">
+                {fmt(group.summary.requests)}
+              </td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(group.summary.lastUsed)}
+              </td>
             </>
           ),
           renderDetailCells: (item) => (
             <>
-              <td className="px-6 py-3 font-medium font-mono text-sm">{item.endpoint}</td>
+              <td className="px-6 py-3 font-medium font-mono text-sm">
+                {item.endpoint}
+              </td>
               <td className="px-6 py-3">{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-6 py-3">
+                <Badge variant="neutral" size="sm">
+                  {item.provider}
+                </Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">
+                {fmtTime(item.lastUsed)}
+              </td>
             </>
           ),
         };
       }
     }
   }, [stats, tableView, sortBy, sortOrder]);
-
-  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
-
+  if (!stats && !loading)
+    return (
+      <div className="text-text-muted">
+        {i18nText("Failed to load usage statistics.")}
+      </div>
+    );
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
-      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+      <span className="material-symbols-outlined text-[32px] animate-spin">
+        progress_activity
+      </span>
     </div>
   );
-
   return (
     <div className="flex flex-col gap-6">
       {/* Period selector */}
@@ -396,7 +633,9 @@ export default function UsageStats() {
           ))}
         </div>
         {fetching && (
-          <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+          <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">
+            progress_activity
+          </span>
         )}
       </div>
 
@@ -404,7 +643,9 @@ export default function UsageStats() {
       {loading ? spinner : <OverviewCards stats={stats} />}
 
       {/* Provider topology + Recent Requests */}
-      {loading ? spinner : (
+      {loading ? (
+        spinner
+      ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
           <ProviderTopology
             providers={providers}
@@ -428,25 +669,29 @@ export default function UsageStats() {
             className="px-3 py-1.5 rounded-lg border border-border bg-bg-subtle text-sm font-medium text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             {TABLE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
         </div>
-        {loading ? spinner : activeTableConfig && (
-          <UsageTable
-            title=""
-            columns={activeTableConfig.columns}
-            groupedData={activeTableConfig.groupedData}
-            tableType={tableView}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onToggleSort={toggleSort}
-            storageKey={activeTableConfig.storageKey}
-            renderSummaryCells={activeTableConfig.renderSummaryCells}
-            renderDetailCells={activeTableConfig.renderDetailCells}
-            emptyMessage={activeTableConfig.emptyMessage}
-          />
-        )}
+        {loading
+          ? spinner
+          : activeTableConfig && (
+              <UsageTable
+                title=""
+                columns={activeTableConfig.columns}
+                groupedData={activeTableConfig.groupedData}
+                tableType={tableView}
+                sortBy={sortBy}
+                sortOrder={sortOrder}
+                onToggleSort={toggleSort}
+                storageKey={activeTableConfig.storageKey}
+                renderSummaryCells={activeTableConfig.renderSummaryCells}
+                renderDetailCells={activeTableConfig.renderDetailCells}
+                emptyMessage={activeTableConfig.emptyMessage}
+              />
+            )}
       </div>
     </div>
   );

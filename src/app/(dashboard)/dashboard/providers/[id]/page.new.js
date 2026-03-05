@@ -5,11 +5,30 @@ import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import {
+  Card,
+  Button,
+  Badge,
+  Input,
+  Modal,
+  CardSkeleton,
+  OAuthModal,
+  KiroOAuthWrapper,
+  CursorAuthModal,
+  Toggle,
+  Select,
+} from "@/shared/components";
+import {
+  OAUTH_PROVIDERS,
+  APIKEY_PROVIDERS,
+  FREE_PROVIDERS,
+  getProviderAlias,
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+} from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-
+import { i18nText } from "@/i18n/literals";
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -31,45 +50,53 @@ export default function ProviderDetailPage() {
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [headerImgError, setHeaderImgError] = useState(false);
   const { copied, copy } = useCopyToClipboard();
-
   const providerInfo = providerNode
     ? {
-      id: providerNode.id,
-      name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
-      color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
-      textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
-      apiType: providerNode.apiType,
-      baseUrl: providerNode.baseUrl,
-      type: providerNode.type,
-    }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
+        id: providerNode.id,
+        name:
+          providerNode.name ||
+          (providerNode.type === "anthropic-compatible"
+            ? "Anthropic Compatible"
+            : "OpenAI Compatible"),
+        color:
+          providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
+        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
+        apiType: providerNode.apiType,
+        baseUrl: providerNode.baseUrl,
+        type: providerNode.type,
+      }
+    : OAUTH_PROVIDERS[providerId] ||
+      APIKEY_PROVIDERS[providerId] ||
+      FREE_PROVIDERS[providerId];
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
   const models = useMemo(() => getModelsByProviderId(providerId), [providerId]);
   const providerAlias = getProviderAlias(providerId);
-
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
-
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
-    ? (providerNode?.prefix || providerId)
+    ? providerNode?.prefix || providerId
     : providerAlias;
-  const activeConnection = connections.find((conn) => conn.isActive !== false) || null;
+  const activeConnection =
+    connections.find((conn) => conn.isActive !== false) || null;
   const allProviderModels = models.length > 0 ? models : remoteModels;
   const allProviderModelIds = useMemo(
     () => allProviderModels.map((model) => model.id),
-    [allProviderModels]
+    [allProviderModels],
   );
   const savedEnabledModels = useMemo(() => {
     const enabled = activeConnection?.providerSpecificData?.enabledModels;
     return Array.isArray(enabled)
       ? enabled.filter((modelId) => allProviderModelIds.includes(modelId))
       : [];
-  }, [activeConnection?.providerSpecificData?.enabledModels, allProviderModelIds]);
+  }, [
+    activeConnection?.providerSpecificData?.enabledModels,
+    allProviderModelIds,
+  ]);
   const savedEnabledModelsKey = useMemo(
     () => savedEnabledModels.join("|"),
-    [savedEnabledModels]
+    [savedEnabledModels],
   );
 
   // Define callbacks BEFORE the useEffect that uses them
@@ -84,35 +111,46 @@ export default function ProviderDetailPage() {
       console.log("Error fetching aliases:", error);
     }
   }, []);
-
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/provider-nodes", { cache: "no-store" }),
+        fetch("/api/providers", {
+          cache: "no-store",
+        }),
+        fetch("/api/provider-nodes", {
+          cache: "no-store",
+        }),
       ]);
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
       if (connectionsRes.ok) {
-        const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
+        const filtered = (connectionsData.connections || []).filter(
+          (c) => c.provider === providerId,
+        );
         setConnections(filtered);
       }
       if (nodesRes.ok) {
-        let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
+        let node =
+          (nodesData.nodes || []).find((entry) => entry.id === providerId) ||
+          null;
 
         // Newly created compatible nodes can be briefly unavailable on one worker.
         // Retry a few times before showing "Provider not found".
         if (!node && isCompatible) {
           for (let attempt = 0; attempt < 3; attempt += 1) {
             await new Promise((resolve) => setTimeout(resolve, 150));
-            const retryRes = await fetch("/api/provider-nodes", { cache: "no-store" });
+            const retryRes = await fetch("/api/provider-nodes", {
+              cache: "no-store",
+            });
             if (!retryRes.ok) continue;
             const retryData = await retryRes.json();
-            node = (retryData.nodes || []).find((entry) => entry.id === providerId) || null;
+            node =
+              (retryData.nodes || []).find(
+                (entry) => entry.id === providerId,
+              ) || null;
             if (node) break;
           }
         }
-
         setProviderNode(node);
       }
     } catch (error) {
@@ -121,12 +159,13 @@ export default function ProviderDetailPage() {
       setLoading(false);
     }
   }, [providerId, isCompatible]);
-
   const handleUpdateNode = async (formData) => {
     try {
       const res = await fetch(`/api/provider-nodes/${providerId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(formData),
       });
       const data = await res.json();
@@ -139,35 +178,33 @@ export default function ProviderDetailPage() {
       console.log("Error updating provider node:", error);
     }
   };
-
   const handleToggleModelSelected = (modelId) => {
-    setSelectedModelIds((prev) => (
+    setSelectedModelIds((prev) =>
       prev.includes(modelId)
         ? prev.filter((id) => id !== modelId)
-        : [...prev, modelId]
-    ));
+        : [...prev, modelId],
+    );
   };
-
   const handleSaveSelectedModels = async () => {
     if (!activeConnection || savingSelectedModels) return;
     setSavingSelectedModels(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           providerSpecificData: {
             enabledModels: selectedModelIds,
           },
         }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         alert(data.error || "Failed to save selected models");
         return;
       }
-
       await fetchConnections();
     } catch (error) {
       console.log("Error saving selected models:", error);
@@ -176,21 +213,17 @@ export default function ProviderDetailPage() {
       setSavingSelectedModels(false);
     }
   };
-
   useEffect(() => {
     fetchConnections();
     fetchAliases();
   }, [fetchConnections, fetchAliases]);
-
   useEffect(() => {
-    const nextSelectedModelIds = (isCompatible || providerInfo?.passthroughModels)
-      ? []
-      : savedEnabledModels;
-
+    const nextSelectedModelIds =
+      isCompatible || providerInfo?.passthroughModels ? [] : savedEnabledModels;
     setSelectedModelIds((prev) => {
       if (
-        prev.length === nextSelectedModelIds.length
-        && prev.every((modelId, index) => modelId === nextSelectedModelIds[index])
+        prev.length === nextSelectedModelIds.length &&
+        prev.every((modelId, index) => modelId === nextSelectedModelIds[index])
       ) {
         return prev;
       }
@@ -200,20 +233,17 @@ export default function ProviderDetailPage() {
     isCompatible,
     providerInfo?.passthroughModels,
     activeConnection?.id,
-    savedEnabledModels
+    savedEnabledModels,
   ]);
-
   const fetchRemoteModels = useCallback(async () => {
     if (isCompatible || providerInfo?.passthroughModels || models.length > 0) {
       setRemoteModels([]);
       return;
     }
-
     if (!activeConnection) {
       setRemoteModels([]);
       return;
     }
-
     setLoadingRemoteModels(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
@@ -222,20 +252,24 @@ export default function ProviderDetailPage() {
         setRemoteModels([]);
         return;
       }
-
       const parsed = (data.models || [])
         .map((item) => {
-          if (typeof item === "string") return { id: item, name: item };
+          if (typeof item === "string")
+            return {
+              id: item,
+              name: item,
+            };
           const modelId = item?.id || item?.name || item?.model;
           if (!modelId) return null;
-          return { id: modelId, name: item?.name || modelId };
+          return {
+            id: modelId,
+            name: item?.name || modelId,
+          };
         })
         .filter(Boolean);
-
       const deduped = Array.from(
-        new Map(parsed.map((item) => [item.id, item])).values()
+        new Map(parsed.map((item) => [item.id, item])).values(),
       );
-
       setRemoteModels(deduped);
     } catch (error) {
       console.log("Error fetching remote models:", error);
@@ -243,19 +277,31 @@ export default function ProviderDetailPage() {
     } finally {
       setLoadingRemoteModels(false);
     }
-  }, [activeConnection, isCompatible, models.length, providerInfo?.passthroughModels]);
-
+  }, [
+    activeConnection,
+    isCompatible,
+    models.length,
+    providerInfo?.passthroughModels,
+  ]);
   useEffect(() => {
     fetchRemoteModels();
   }, [fetchRemoteModels]);
-
-  const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
+  const handleSetAlias = async (
+    modelId,
+    alias,
+    providerAliasOverride = providerAlias,
+  ) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
     try {
       const res = await fetch("/api/models/alias", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: fullModel, alias }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: fullModel,
+          alias,
+        }),
       });
       if (res.ok) {
         await fetchAliases();
@@ -267,12 +313,14 @@ export default function ProviderDetailPage() {
       console.log("Error setting alias:", error);
     }
   };
-
   const handleDeleteAlias = async (alias) => {
     try {
-      const res = await fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(
+        `/api/models/alias?alias=${encodeURIComponent(alias)}`,
+        {
+          method: "DELETE",
+        },
+      );
       if (res.ok) {
         await fetchAliases();
       }
@@ -280,30 +328,34 @@ export default function ProviderDetailPage() {
       console.log("Error deleting alias:", error);
     }
   };
-
   const handleDelete = async (id) => {
     if (!confirm("Delete this connection?")) return;
     try {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/providers/${id}`, {
+        method: "DELETE",
+      });
       if (res.ok) {
-        setConnections(connections.filter(c => c.id !== id));
+        setConnections(connections.filter((c) => c.id !== id));
       }
     } catch (error) {
       console.log("Error deleting connection:", error);
     }
   };
-
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
   };
-
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: providerId, ...formData }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          provider: providerId,
+          ...formData,
+        }),
       });
       if (res.ok) {
         await fetchConnections();
@@ -313,12 +365,13 @@ export default function ProviderDetailPage() {
       console.log("Error saving connection:", error);
     }
   };
-
   const handleUpdateConnection = async (formData) => {
     try {
       const res = await fetch(`/api/providers/${selectedConnection.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(formData),
       });
       if (res.ok) {
@@ -329,22 +382,33 @@ export default function ProviderDetailPage() {
       console.log("Error updating connection:", error);
     }
   };
-
   const handleUpdateConnectionStatus = async (id, isActive) => {
     try {
       const res = await fetch(`/api/providers/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          isActive,
+        }),
       });
       if (res.ok) {
-        setConnections(prev => prev.map(c => c.id === id ? { ...c, isActive } : c));
+        setConnections((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  isActive,
+                }
+              : c,
+          ),
+        );
       }
     } catch (error) {
       console.log("Error updating connection status:", error);
     }
   };
-
   const handleSwapPriority = async (conn1, conn2) => {
     if (!conn1 || !conn2) return;
     try {
@@ -353,27 +417,34 @@ export default function ProviderDetailPage() {
       // We use a small offset which the backend re-indexing will fix.
       let p1 = conn2.priority;
       let p2 = conn1.priority;
-
       if (p1 === p2) {
         // If moving conn1 "up" (index decreases)
-        const isConn1MovingUp = connections.indexOf(conn1) > connections.indexOf(conn2);
+        const isConn1MovingUp =
+          connections.indexOf(conn1) > connections.indexOf(conn2);
         if (isConn1MovingUp) {
           p1 = conn2.priority - 0.5;
         } else {
           p1 = conn2.priority + 0.5;
         }
       }
-
       await Promise.all([
         fetch(`/api/providers/${conn1.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p1 }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            priority: p1,
+          }),
         }),
         fetch(`/api/providers/${conn2.id}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p2 }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            priority: p2,
+          }),
         }),
       ]);
       await fetchConnections();
@@ -381,7 +452,6 @@ export default function ProviderDetailPage() {
       console.log("Error swapping priority:", error);
     }
   };
-
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -410,30 +480,36 @@ export default function ProviderDetailPage() {
         />
       );
     }
-
     const availableModels = allProviderModels;
     if (availableModels.length === 0) {
       if (loadingRemoteModels) {
-        return <p className="text-sm text-text-muted">Loading models from provider...</p>;
+        return (
+          <p className="text-sm text-text-muted">
+            {i18nText("Loading models from provider...")}
+          </p>
+        );
       }
-      return <p className="text-sm text-text-muted">No models configured</p>;
+      return (
+        <p className="text-sm text-text-muted">
+          {i18nText("No models configured")}
+        </p>
+      );
     }
-
     const selectedSet = new Set(selectedModelIds);
     const filteredBySelection = showSelectedOnly
       ? availableModels.filter((model) => selectedSet.has(model.id))
       : availableModels;
     const query = modelSearchQuery.trim().toLowerCase();
     const visibleModels = query
-      ? filteredBySelection.filter((model) =>
-        model.id.toLowerCase().includes(query) ||
-        (model.name || "").toLowerCase().includes(query)
-      )
+      ? filteredBySelection.filter(
+          (model) =>
+            model.id.toLowerCase().includes(query) ||
+            (model.name || "").toLowerCase().includes(query),
+        )
       : filteredBySelection;
     const hasSelectionChanges =
       savedEnabledModels.length !== selectedModelIds.length ||
       savedEnabledModels.some((modelId) => !selectedSet.has(modelId));
-
     return (
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -441,7 +517,7 @@ export default function ProviderDetailPage() {
             <Input
               value={modelSearchQuery}
               onChange={(e) => setModelSearchQuery(e.target.value)}
-              placeholder="Search model id"
+              placeholder={i18nText("Search model id")}
               className="pr-8"
             />
             {modelSearchQuery && (
@@ -449,9 +525,11 @@ export default function ProviderDetailPage() {
                 type="button"
                 onClick={() => setModelSearchQuery("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary"
-                title="Clear search"
+                title={i18nText("Clear search")}
               >
-                <span className="material-symbols-outlined text-[16px]">close</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  {"close"}
+                </span>
               </button>
             )}
           </div>
@@ -461,29 +539,33 @@ export default function ProviderDetailPage() {
             onClick={() => setSelectedModelIds(allProviderModelIds)}
             disabled={allProviderModels.length === 0}
           >
-            Select all
+            {i18nText("Select all")}
           </Button>
           <Button
             size="sm"
             variant="secondary"
             onClick={() => setSelectedModelIds([])}
           >
-            Unselect all
+            {i18nText("Unselect all")}
           </Button>
           <Button
             size="sm"
             onClick={handleSaveSelectedModels}
-            disabled={!activeConnection || savingSelectedModels || !hasSelectionChanges}
+            disabled={
+              !activeConnection || savingSelectedModels || !hasSelectionChanges
+            }
           >
             {savingSelectedModels ? "Saving..." : "Save selection"}
           </Button>
           <div className="flex items-center gap-1 pl-2">
-            <span className="text-xs text-text-muted">Selected only</span>
+            <span className="text-xs text-text-muted">
+              {i18nText("Selected only")}
+            </span>
             <Toggle
               size="sm"
               checked={showSelectedOnly}
               onChange={setShowSelectedOnly}
-              title="Show only selected models"
+              title={i18nText("Show only selected models")}
             />
           </div>
         </div>
@@ -495,14 +577,16 @@ export default function ProviderDetailPage() {
         </p>
 
         {visibleModels.length === 0 ? (
-          <p className="text-sm text-text-muted">No models match your filter.</p>
+          <p className="text-sm text-text-muted">
+            {i18nText("No models match your filter.")}
+          </p>
         ) : (
           <div className="flex flex-wrap gap-3">
             {visibleModels.map((model) => {
               const fullModel = `${providerStorageAlias}/${model.id}`;
               const oldFormatModel = `${providerId}/${model.id}`;
               const existingAlias = Object.entries(modelAliases).find(
-                ([, m]) => m === fullModel || m === oldFormatModel
+                ([, m]) => m === fullModel || m === oldFormatModel,
               )?.[0];
               return (
                 <ModelRow
@@ -514,7 +598,9 @@ export default function ProviderDetailPage() {
                   onCopy={copy}
                   selected={selectedSet.has(model.id)}
                   onToggleSelect={() => handleToggleModelSelected(model.id)}
-                  onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
+                  onSetAlias={(alias) =>
+                    handleSetAlias(model.id, alias, providerStorageAlias)
+                  }
                   onDeleteAlias={() => handleDeleteAlias(existingAlias)}
                 />
               );
@@ -524,7 +610,6 @@ export default function ProviderDetailPage() {
       </div>
     );
   };
-
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
@@ -533,13 +618,15 @@ export default function ProviderDetailPage() {
       </div>
     );
   }
-
   if (!providerInfo) {
     return (
       <div className="text-center py-20">
-        <p className="text-text-muted">Provider not found</p>
-        <Link href="/dashboard/providers" className="text-primary mt-4 inline-block">
-          Back to Providers
+        <p className="text-text-muted">{i18nText("Provider not found")}</p>
+        <Link
+          href="/dashboard/providers"
+          className="text-primary mt-4 inline-block"
+        >
+          {i18nText("Back to Providers")}
         </Link>
       </div>
     );
@@ -548,14 +635,15 @@ export default function ProviderDetailPage() {
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getHeaderIconPath = () => {
     if (isOpenAICompatible && providerInfo.apiType) {
-      return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+      return providerInfo.apiType === "responses"
+        ? "/providers/oai-r.png"
+        : "/providers/oai-cc.png";
     }
     if (isAnthropicCompatible) {
       return "/providers/anthropic-m.png";
     }
     return `/providers/${providerInfo.id}.png`;
   };
-
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
@@ -565,16 +653,24 @@ export default function ProviderDetailPage() {
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Providers
+          {i18nText("Back to Providers")}
         </Link>
         <div className="flex items-center gap-4">
           <div
             className="rounded-lg flex items-center justify-center"
-            style={{ backgroundColor: `${providerInfo.color}15` }}
+            style={{
+              backgroundColor: `${providerInfo.color}15`,
+            }}
           >
             {headerImgError ? (
-              <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
-                {providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase()}
+              <span
+                className="text-sm font-bold"
+                style={{
+                  color: providerInfo.color,
+                }}
+              >
+                {providerInfo.textIcon ||
+                  providerInfo.id.slice(0, 2).toUpperCase()}
               </span>
             ) : (
               <Image
@@ -589,9 +685,13 @@ export default function ProviderDetailPage() {
             )}
           </div>
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {providerInfo.name}
+            </h1>
             <p className="text-text-muted">
-              {connections.length} connection{connections.length === 1 ? "" : "s"}
+              {connections.length}
+              {i18nText("connection")}
+              {connections.length === 1 ? "" : "s"}
             </p>
           </div>
         </div>
@@ -601,10 +701,23 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
+              <h2 className="text-lg font-semibold">
+                {isAnthropicCompatible
+                  ? "Anthropic Compatible Details"
+                  : "OpenAI Compatible Details"}
+              </h2>
               <p className="text-sm text-text-muted">
-                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                {isAnthropicCompatible
+                  ? "Messages API"
+                  : providerNode.apiType === "responses"
+                    ? "Responses API"
+                    : "Chat Completions"}{" "}
+                · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                {isAnthropicCompatible
+                  ? "messages"
+                  : providerNode.apiType === "responses"
+                    ? "responses"
+                    : "chat/completions"}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -614,7 +727,7 @@ export default function ProviderDetailPage() {
                 onClick={() => setShowAddApiKeyModal(true)}
                 disabled={connections.length > 0}
               >
-                Add
+                {i18nText("Add")}
               </Button>
               <Button
                 size="sm"
@@ -622,16 +735,26 @@ export default function ProviderDetailPage() {
                 icon="edit"
                 onClick={() => setShowEditNodeModal(true)}
               >
-                Edit
+                {i18nText("Edit")}
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
                 icon="delete"
                 onClick={async () => {
-                  if (!confirm(`Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`)) return;
+                  if (
+                    !confirm(
+                      `Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
+                    )
+                  )
+                    return;
                   try {
-                    const res = await fetch(`/api/provider-nodes/${providerId}`, { method: "DELETE" });
+                    const res = await fetch(
+                      `/api/provider-nodes/${providerId}`,
+                      {
+                        method: "DELETE",
+                      },
+                    );
                     if (res.ok) {
                       router.push("/dashboard/providers");
                     }
@@ -640,13 +763,15 @@ export default function ProviderDetailPage() {
                   }
                 }}
               >
-                Delete
+                {i18nText("Delete")}
               </Button>
             </div>
           </div>
           {connections.length > 0 && (
             <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
+              {i18nText(
+                "Only one connection is allowed per compatible node. Add another node if you need more connections.",
+              )}
             </p>
           )}
         </Card>
@@ -655,14 +780,16 @@ export default function ProviderDetailPage() {
       {/* Connections */}
       <Card>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Connections</h2>
+          <h2 className="text-lg font-semibold">{i18nText("Connections")}</h2>
           {!isCompatible && (
             <Button
               size="sm"
               icon="add"
-              onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+              onClick={() =>
+                isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)
+              }
             >
-              Add
+              {i18nText("Add")}
             </Button>
           )}
         </div>
@@ -670,13 +797,26 @@ export default function ProviderDetailPage() {
         {connections.length === 0 ? (
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+              <span className="material-symbols-outlined text-[32px]">
+                {isOAuth ? "lock" : "key"}
+              </span>
             </div>
-            <p className="text-text-main font-medium mb-1">No connections yet</p>
-            <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
+            <p className="text-text-main font-medium mb-1">
+              {i18nText("No connections yet")}
+            </p>
+            <p className="text-sm text-text-muted mb-4">
+              {i18nText("Add your first connection to get started")}
+            </p>
             {!isCompatible && (
-              <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                Add Connection
+              <Button
+                icon="add"
+                onClick={() =>
+                  isOAuth
+                    ? setShowOAuthModal(true)
+                    : setShowAddApiKeyModal(true)
+                }
+              >
+                {i18nText("Add Connection")}
               </Button>
             )}
           </div>
@@ -691,9 +831,15 @@ export default function ProviderDetailPage() {
                   isOAuth={isOAuth}
                   isFirst={index === 0}
                   isLast={index === connections.length - 1}
-                  onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
-                  onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
-                  onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                  onMoveUp={() =>
+                    handleSwapPriority(conn, connections[index - 1])
+                  }
+                  onMoveDown={() =>
+                    handleSwapPriority(conn, connections[index + 1])
+                  }
+                  onToggleActive={(isActive) =>
+                    handleUpdateConnectionStatus(conn.id, isActive)
+                  }
                   onEdit={() => {
                     setSelectedConnection(conn);
                     setShowEditModal(true);
@@ -708,10 +854,11 @@ export default function ProviderDetailPage() {
       {/* Models */}
       <Card>
         <h2 className="text-lg font-semibold mb-4">
-          {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
+          {providerInfo.passthroughModels
+            ? "Model Aliases"
+            : "Available Models"}
         </h2>
         {renderModelsSection()}
-
       </Card>
 
       {/* Modals */}
@@ -764,8 +911,15 @@ export default function ProviderDetailPage() {
     </div>
   );
 }
-
-function ModelRow({ model, fullModel, alias, selected, onToggleSelect, copied, onCopy }) {
+function ModelRow({
+  model,
+  fullModel,
+  alias,
+  selected,
+  onToggleSelect,
+  copied,
+  onCopy,
+}) {
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border hover:bg-sidebar/50">
       <button
@@ -778,12 +932,16 @@ function ModelRow({ model, fullModel, alias, selected, onToggleSelect, copied, o
           {selected ? "check_box" : "check_box_outline_blank"}
         </span>
       </button>
-      <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
-      <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+      <span className="material-symbols-outlined text-base text-text-muted">
+        smart_toy
+      </span>
+      <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">
+        {fullModel}
+      </code>
       <button
         onClick={() => onCopy(fullModel, `model-${model.id}`)}
         className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-        title="Copy model"
+        title={i18nText("Copy model")}
       >
         <span className="material-symbols-outlined text-sm">
           {copied === `model-${model.id}` ? "check" : "content_copy"}
@@ -792,7 +950,6 @@ function ModelRow({ model, fullModel, alias, selected, onToggleSelect, copied, o
     </div>
   );
 }
-
 ModelRow.propTypes = {
   model: PropTypes.shape({
     id: PropTypes.string.isRequired,
@@ -804,16 +961,21 @@ ModelRow.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
 };
-
-function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
+function PassthroughModelsSection({
+  providerAlias,
+  modelAliases,
+  copied,
+  onCopy,
+  onSetAlias,
+  onDeleteAlias,
+}) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
 
   // Filter aliases for this provider - models are persisted via alias
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerAlias}/`)
+  const providerAliases = Object.entries(modelAliases).filter(([, model]) =>
+    model.startsWith(`${providerAlias}/`),
   );
-
   const allModels = providerAliases.map(([alias, fullModel]) => ({
     modelId: fullModel.replace(`${providerAlias}/`, ""),
     fullModel,
@@ -825,7 +987,6 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
     const parts = modelId.split("/");
     return parts[parts.length - 1];
   };
-
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
@@ -833,10 +994,11 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
 
     // Check if alias already exists
     if (modelAliases[defaultAlias]) {
-      alert(`Alias "${defaultAlias}" already exists. Please use a different model or edit existing alias.`);
+      alert(
+        `Alias "${defaultAlias}" already exists. Please use a different model or edit existing alias.`,
+      );
       return;
     }
-
     setAdding(true);
     try {
       await onSetAlias(modelId, defaultAlias);
@@ -847,17 +1009,23 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
       setAdding(false);
     }
   };
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        OpenRouter supports any model. Add models and create aliases for quick access.
+        {i18nText(
+          "OpenRouter supports any model. Add models and create aliases for quick access.",
+        )}
       </p>
 
       {/* Add new model */}
       <div className="flex items-end gap-2">
         <div className="flex-1">
-          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
+          <label
+            htmlFor="new-model-input"
+            className="text-xs text-text-muted mb-1 block"
+          >
+            {i18nText("Model ID (from OpenRouter)")}
+          </label>
           <input
             id="new-model-input"
             type="text"
@@ -868,7 +1036,12 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
+        <Button
+          size="sm"
+          icon="add"
+          onClick={handleAdd}
+          disabled={!newModel.trim() || adding}
+        >
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>
@@ -891,7 +1064,6 @@ function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy,
     </div>
   );
 }
-
 PassthroughModelsSection.propTypes = {
   providerAlias: PropTypes.string.isRequired,
   modelAliases: PropTypes.object.isRequired,
@@ -900,21 +1072,30 @@ PassthroughModelsSection.propTypes = {
   onSetAlias: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
 };
-
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias }) {
+function PassthroughModelRow({
+  modelId,
+  fullModel,
+  copied,
+  onCopy,
+  onDeleteAlias,
+}) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-sidebar/50">
-      <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
+      <span className="material-symbols-outlined text-base text-text-muted">
+        smart_toy
+      </span>
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
 
         <div className="flex items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">
+            {fullModel}
+          </code>
           <button
             onClick={() => onCopy(fullModel, `model-${modelId}`)}
             className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-            title="Copy model"
+            title={i18nText("Copy model")}
           >
             <span className="material-symbols-outlined text-sm">
               {copied === `model-${modelId}` ? "check" : "content_copy"}
@@ -927,14 +1108,13 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
       <button
         onClick={onDeleteAlias}
         className="p-1 hover:bg-red-50 rounded text-red-500"
-        title="Remove model"
+        title={i18nText("Remove model")}
       >
-        <span className="material-symbols-outlined text-sm">delete</span>
+        <span className="material-symbols-outlined text-sm">{"delete"}</span>
       </button>
     </div>
   );
 }
-
 PassthroughModelRow.propTypes = {
   modelId: PropTypes.string.isRequired,
   fullModel: PropTypes.string.isRequired,
@@ -942,27 +1122,32 @@ PassthroughModelRow.propTypes = {
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
 };
-
-function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+function CompatibleModelsSection({
+  providerStorageAlias,
+  providerDisplayAlias,
+  modelAliases,
+  copied,
+  onCopy,
+  onSetAlias,
+  onDeleteAlias,
+  connections,
+  isAnthropic,
+}) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
-
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerStorageAlias}/`)
+  const providerAliases = Object.entries(modelAliases).filter(([, model]) =>
+    model.startsWith(`${providerStorageAlias}/`),
   );
-
   const allModels = providerAliases.map(([alias, fullModel]) => ({
     modelId: fullModel.replace(`${providerStorageAlias}/`, ""),
     fullModel,
     alias,
   }));
-
   const generateDefaultAlias = (modelId) => {
     const parts = modelId.split("/");
     return parts[parts.length - 1];
   };
-
   const resolveAlias = (modelId) => {
     const baseAlias = generateDefaultAlias(modelId);
     if (!modelAliases[baseAlias]) return baseAlias;
@@ -970,16 +1155,16 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
     if (!modelAliases[prefixedAlias]) return prefixedAlias;
     return null;
   };
-
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
     const resolvedAlias = resolveAlias(modelId);
     if (!resolvedAlias) {
-      alert("All suggested aliases already exist. Please choose a different model or remove conflicting aliases.");
+      alert(
+        "All suggested aliases already exist. Please choose a different model or remove conflicting aliases.",
+      );
       return;
     }
-
     setAdding(true);
     try {
       await onSetAlias(modelId, resolvedAlias, providerStorageAlias);
@@ -990,12 +1175,12 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
       setAdding(false);
     }
   };
-
   const handleImport = async () => {
     if (importing) return;
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    const activeConnection = connections.find(
+      (conn) => conn.isActive !== false,
+    );
     if (!activeConnection) return;
-
     setImporting(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
@@ -1027,18 +1212,25 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
       setImporting(false);
     }
   };
-
   const canImport = connections.some((conn) => conn.isActive !== false);
-
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        {i18nText("Add")}
+        {isAnthropic ? "Anthropic" : "OpenAI"}
+        {i18nText(
+          "-compatible models manually or import them from the /models endpoint.",
+        )}
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
         <div className="flex-1 min-w-[240px]">
-          <label htmlFor="new-compatible-model-input" className="text-xs text-text-muted mb-1 block">Model ID</label>
+          <label
+            htmlFor="new-compatible-model-input"
+            className="text-xs text-text-muted mb-1 block"
+          >
+            {i18nText("Model ID")}
+          </label>
           <input
             id="new-compatible-model-input"
             type="text"
@@ -1049,17 +1241,28 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
+        <Button
+          size="sm"
+          icon="add"
+          onClick={handleAdd}
+          disabled={!newModel.trim() || adding}
+        >
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="download"
+          onClick={handleImport}
+          disabled={!canImport || importing}
+        >
           {importing ? "Importing..." : "Import from /models"}
         </Button>
       </div>
 
       {!canImport && (
         <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
+          {i18nText("Add a connection to enable importing models.")}
         </p>
       )}
 
@@ -1080,7 +1283,6 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
     </div>
   );
 }
-
 CompatibleModelsSection.propTypes = {
   providerStorageAlias: PropTypes.string.isRequired,
   providerDisplayAlias: PropTypes.string.isRequired,
@@ -1089,16 +1291,16 @@ CompatibleModelsSection.propTypes = {
   onCopy: PropTypes.func.isRequired,
   onSetAlias: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
-  connections: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    isActive: PropTypes.bool,
-  })).isRequired,
+  connections: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string,
+      isActive: PropTypes.bool,
+    }),
+  ).isRequired,
   isAnthropic: PropTypes.bool,
 };
-
 function CooldownTimer({ until }) {
   const [remaining, setRemaining] = useState("");
-
   useEffect(() => {
     const updateRemaining = () => {
       const diff = new Date(until).getTime() - Date.now();
@@ -1117,49 +1319,54 @@ function CooldownTimer({ until }) {
         setRemaining(`${hrs}h ${mins}m`);
       }
     };
-
     updateRemaining();
     const interval = setInterval(updateRemaining, 1000);
     return () => clearInterval(interval);
   }, [until]);
-
   if (!remaining) return null;
-
   return (
-    <span className="text-xs text-orange-500 font-mono">
-      ⏱ {remaining}
-    </span>
+    <span className="text-xs text-orange-500 font-mono">⏱ {remaining}</span>
   );
 }
-
 CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
-
-function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({
+  connection,
+  isOAuth,
+  isFirst,
+  isLast,
+  onMoveUp,
+  onMoveDown,
+  onToggleActive,
+  onEdit,
+  onDelete,
+}) {
   const displayName = isOAuth
-    ? connection.name || connection.email || connection.displayName || "OAuth Account"
+    ? connection.name ||
+      connection.email ||
+      connection.displayName ||
+      "OAuth Account"
     : connection.name;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
-
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => v && new Date(v).getTime() > Date.now())
-    .sort()[0] || null;
-
+  const modelLockUntil =
+    Object.entries(connection)
+      .filter(([k]) => k.startsWith("modelLock_"))
+      .map(([, v]) => v)
+      .filter((v) => v && new Date(v).getTime() > Date.now())
+      .sort()[0] || null;
   useEffect(() => {
     const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
-        .sort()[0] || null;
+      const until =
+        Object.entries(connection)
+          .filter(([k]) => k.startsWith("modelLock_"))
+          .map(([, v]) => v)
+          .filter((v) => v && new Date(v).getTime() > Date.now())
+          .sort()[0] || null;
       setIsCooldown(!!until);
     };
-
     checkCooldown();
     const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
     return () => {
@@ -1168,19 +1375,26 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired → treat as active
-    : connection.testStatus;
-
+  const effectiveStatus =
+    connection.testStatus === "unavailable" && !isCooldown
+      ? "active" // Cooldown expired → treat as active
+      : connection.testStatus;
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
+    if (effectiveStatus === "active" || effectiveStatus === "success")
+      return "success";
+    if (
+      effectiveStatus === "error" ||
+      effectiveStatus === "expired" ||
+      effectiveStatus === "unavailable"
+    )
+      return "error";
     return "default";
   };
-
   return (
-    <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div
+      className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}
+    >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Priority arrows */}
         <div className="flex flex-col">
@@ -1189,14 +1403,18 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
             disabled={isFirst}
             className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
+            <span className="material-symbols-outlined text-sm">
+              keyboard_arrow_up
+            </span>
           </button>
           <button
             onClick={onMoveDown}
             disabled={isLast}
             className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-sm">
+              keyboard_arrow_down
+            </span>
           </button>
         </div>
         <span className="material-symbols-outlined text-base text-text-muted">
@@ -1206,17 +1424,29 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+              {connection.isActive === false
+                ? "disabled"
+                : effectiveStatus || "Unknown"}
             </Badge>
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {isCooldown && connection.isActive !== false && (
+              <CooldownTimer until={modelLockUntil} />
+            )}
             {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
+              <span
+                className="text-xs text-red-500 truncate max-w-[300px]"
+                title={connection.lastError}
+              >
                 {connection.lastError}
               </span>
             )}
-            <span className="text-xs text-text-muted">#{connection.priority}</span>
+            <span className="text-xs text-text-muted">
+              #{connection.priority}
+            </span>
             {connection.globalPriority && (
-              <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
+              <span className="text-xs text-text-muted">
+                {i18nText("Auto:")}
+                {connection.globalPriority}
+              </span>
             )}
           </div>
         </div>
@@ -1226,21 +1456,34 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
           size="sm"
           checked={connection.isActive ?? true}
           onChange={onToggleActive}
-          title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
+          title={
+            (connection.isActive ?? true)
+              ? "Disable connection"
+              : "Enable connection"
+          }
         />
         <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
+          <button
+            onClick={onEdit}
+            className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {"edit"}
+            </span>
           </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
+          <button
+            onClick={onDelete}
+            className="p-2 hover:bg-red-500/10 rounded text-red-500"
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {"delete"}
+            </span>
           </button>
         </div>
       </div>
     </div>
   );
 }
-
 ConnectionRow.propTypes = {
   connection: PropTypes.shape({
     id: PropTypes.string,
@@ -1263,8 +1506,15 @@ ConnectionRow.propTypes = {
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
-
-function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, onSave, onClose }) {
+function AddApiKeyModal({
+  isOpen,
+  provider,
+  providerName,
+  isCompatible,
+  isAnthropic,
+  onSave,
+  onClose,
+}) {
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
@@ -1273,14 +1523,18 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
-
   const handleValidate = async () => {
     setValidating(true);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          provider,
+          apiKey: formData.apiKey,
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -1290,10 +1544,8 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
       setValidating(false);
     }
   };
-
   const handleSubmit = async () => {
     if (!provider || !formData.apiKey) return;
-
     setSaving(true);
     try {
       let isValid = false;
@@ -1302,8 +1554,13 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
         setValidationResult(null);
         const res = await fetch("/api/providers/validate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            provider,
+            apiKey: formData.apiKey,
+          }),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -1313,7 +1570,6 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
       } finally {
         setValidating(false);
       }
-
       await onSave({
         name: formData.name,
         apiKey: formData.apiKey,
@@ -1324,28 +1580,44 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
       setSaving(false);
     }
   };
-
   if (!provider) return null;
-
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} API Key`} onClose={onClose}>
+    <Modal
+      isOpen={isOpen}
+      title={`Add ${providerName || provider} API Key`}
+      onClose={onClose}
+    >
       <div className="flex flex-col gap-4">
         <Input
-          label="Name"
+          label={i18nText("Name")}
           value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Production Key"
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              name: e.target.value,
+            })
+          }
+          placeholder={i18nText("Production Key")}
         />
         <div className="flex gap-2">
           <Input
-            label="API Key"
+            label={i18nText("API Key")}
             type="password"
             value={formData.apiKey}
-            onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                apiKey: e.target.value,
+              })
+            }
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+            <Button
+              onClick={handleValidate}
+              disabled={!formData.apiKey || validating || saving}
+              variant="secondary"
+            >
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -1359,29 +1631,36 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
           <p className="text-xs text-text-muted">
             {isAnthropic
               ? `Validation checks ${providerName || "Anthropic Compatible"} by verifying the API key.`
-              : `Validation checks ${providerName || "OpenAI Compatible"} via /models on your base URL.`
-            }
+              : `Validation checks ${providerName || "OpenAI Compatible"} via /models on your base URL.`}
           </p>
         )}
         <Input
-          label="Priority"
+          label={i18nText("Priority")}
           type="number"
           value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              priority: Number.parseInt(e.target.value) || 1,
+            })
+          }
         />
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={!formData.name || !formData.apiKey || saving}
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
+            {i18nText("Cancel")}
           </Button>
         </div>
       </div>
     </Modal>
   );
 }
-
 AddApiKeyModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   provider: PropTypes.string,
@@ -1391,7 +1670,6 @@ AddApiKeyModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
 function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
@@ -1403,7 +1681,6 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
-
   useEffect(() => {
     if (connection) {
       setFormData({
@@ -1415,13 +1692,14 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
       setValidationResult(null);
     }
   }, [connection]);
-
   const handleTest = async () => {
     if (!connection?.provider) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+      const res = await fetch(`/api/providers/${connection.id}/test`, {
+        method: "POST",
+      });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
     } catch {
@@ -1430,7 +1708,6 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
       setTesting(false);
     }
   };
-
   const handleValidate = async () => {
     if (!connection?.provider || !formData.apiKey) return;
     setValidating(true);
@@ -1438,8 +1715,13 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          provider: connection.provider,
+          apiKey: formData.apiKey,
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -1449,11 +1731,13 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
       setValidating(false);
     }
   };
-
   const handleSubmit = async () => {
     setSaving(true);
     try {
-      const updates = { name: formData.name, priority: formData.priority };
+      const updates = {
+        name: formData.name,
+        priority: formData.priority,
+      };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -1463,8 +1747,13 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
             setValidationResult(null);
             const res = await fetch("/api/providers/validate", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                provider: connection.provider,
+                apiKey: formData.apiKey,
+              }),
             });
             const data = await res.json();
             isValid = !!data.valid;
@@ -1486,53 +1775,77 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
       setSaving(false);
     }
   };
-
   if (!connection) return null;
-
   const isOAuth = connection.authType === "oauth";
-  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
-
+  const isCompatible =
+    isOpenAICompatibleProvider(connection.provider) ||
+    isAnthropicCompatibleProvider(connection.provider);
   return (
-    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
+    <Modal
+      isOpen={isOpen}
+      title={i18nText("Edit Connection")}
+      onClose={onClose}
+    >
       <div className="flex flex-col gap-4">
         <Input
-          label="Name"
+          label={i18nText("Name")}
           value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              name: e.target.value,
+            })
+          }
           placeholder={isOAuth ? "Account name" : "Production Key"}
         />
         {isOAuth && connection.email && (
           <div className="bg-sidebar/50 p-3 rounded-lg">
-            <p className="text-sm text-text-muted mb-1">Email</p>
+            <p className="text-sm text-text-muted mb-1">{i18nText("Email")}</p>
             <p className="font-medium">{connection.email}</p>
           </div>
         )}
         <Input
-          label="Priority"
+          label={i18nText("Priority")}
           type="number"
           value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              priority: Number.parseInt(e.target.value) || 1,
+            })
+          }
         />
         {!isOAuth && (
           <>
             <div className="flex gap-2">
               <Input
-                label="API Key"
+                label={i18nText("API Key")}
                 type="password"
                 value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="Enter new API key"
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    apiKey: e.target.value,
+                  })
+                }
+                placeholder={i18nText("Enter new API key")}
                 hint="Leave blank to keep the current API key."
                 className="flex-1"
               />
               <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+                <Button
+                  onClick={handleValidate}
+                  disabled={!formData.apiKey || validating || saving}
+                  variant="secondary"
+                >
                   {validating ? "Checking..." : "Check"}
                 </Button>
               </div>
             </div>
             {validationResult && (
-              <Badge variant={validationResult === "success" ? "success" : "error"}>
+              <Badge
+                variant={validationResult === "success" ? "success" : "error"}
+              >
                 {validationResult === "success" ? "Valid" : "Invalid"}
               </Badge>
             )}
@@ -1554,14 +1867,17 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>
+            {i18nText("Cancel")}
+          </Button>
         </div>
       </div>
     </Modal>
   );
 }
-
 EditConnectionModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   connection: PropTypes.shape({
@@ -1575,8 +1891,13 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
-function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
+function EditCompatibleNodeModal({
+  isOpen,
+  node,
+  onSave,
+  onClose,
+  isAnthropic,
+}) {
   const [formData, setFormData] = useState({
     name: "",
     prefix: "",
@@ -1587,25 +1908,37 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
   const [checkKey, setCheckKey] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
-
   useEffect(() => {
     if (node) {
       setFormData({
         name: node.name || "",
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
-        baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        baseUrl:
+          node.baseUrl ||
+          (isAnthropic
+            ? "https://api.anthropic.com/v1"
+            : "https://api.openai.com/v1"),
       });
     }
   }, [node, isAnthropic]);
-
   const apiTypeOptions = [
-    { value: "chat", label: "Chat Completions" },
-    { value: "responses", label: "Responses API" },
+    {
+      value: "chat",
+      label: i18nText("Chat Completions"),
+    },
+    {
+      value: "responses",
+      label: i18nText("Responses API"),
+    },
   ];
-
   const handleSubmit = async () => {
-    if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    if (
+      !formData.name.trim() ||
+      !formData.prefix.trim() ||
+      !formData.baseUrl.trim()
+    )
+      return;
     setSaving(true);
     try {
       const payload = {
@@ -1621,17 +1954,18 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
       setSaving(false);
     }
   };
-
   const handleValidate = async () => {
     setValidating(true);
     try {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
-          type: isAnthropic ? "anthropic-compatible" : "openai-compatible"
+          type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
         }),
       });
       const data = await res.json();
@@ -1642,51 +1976,81 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
       setValidating(false);
     }
   };
-
   if (!node) return null;
-
   return (
-    <Modal isOpen={isOpen} title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`} onClose={onClose}>
+    <Modal
+      isOpen={isOpen}
+      title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`}
+      onClose={onClose}
+    >
       <div className="flex flex-col gap-4">
         <Input
-          label="Name"
+          label={i18nText("Name")}
           value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              name: e.target.value,
+            })
+          }
           placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
           hint="Required. A friendly label for this node."
         />
         <Input
-          label="Prefix"
+          label={i18nText("Prefix")}
           value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              prefix: e.target.value,
+            })
+          }
           placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
           hint="Required. Used as the provider prefix for model IDs."
         />
         {!isAnthropic && (
           <Select
-            label="API Type"
+            label={i18nText("API Type")}
             options={apiTypeOptions}
             value={formData.apiType}
-            onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                apiType: e.target.value,
+              })
+            }
           />
         )}
         <Input
-          label="Base URL"
+          label={i18nText("Base URL")}
           value={formData.baseUrl}
-          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-          placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
+          onChange={(e) =>
+            setFormData({
+              ...formData,
+              baseUrl: e.target.value,
+            })
+          }
+          placeholder={
+            isAnthropic
+              ? "https://api.anthropic.com/v1"
+              : "https://api.openai.com/v1"
+          }
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
         <div className="flex gap-2">
           <Input
-            label="API Key (for Check)"
+            label={i18nText("API Key (for Check)")}
             type="password"
             value={checkKey}
             onChange={(e) => setCheckKey(e.target.value)}
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            <Button
+              onClick={handleValidate}
+              disabled={!checkKey || validating || !formData.baseUrl.trim()}
+              variant="secondary"
+            >
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -1697,18 +2061,26 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
           </Badge>
         )}
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || saving}>
+          <Button
+            onClick={handleSubmit}
+            fullWidth
+            disabled={
+              !formData.name.trim() ||
+              !formData.prefix.trim() ||
+              !formData.baseUrl.trim() ||
+              saving
+            }
+          >
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
+            {i18nText("Cancel")}
           </Button>
         </div>
       </div>
     </Modal>
   );
 }
-
 EditCompatibleNodeModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   node: PropTypes.shape({

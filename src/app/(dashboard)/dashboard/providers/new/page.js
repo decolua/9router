@@ -5,17 +5,15 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Button, Input, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
-
+import { i18nText } from "@/i18n/literals";
 const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
   value: p.id,
   label: p.name,
 }));
-
 const authMethodOptions = Object.values(AUTH_METHODS).map((m) => ({
   value: m.id,
   label: m.name,
 }));
-
 export default function NewProviderPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -27,14 +25,18 @@ export default function NewProviderPage() {
     isActive: true,
   });
   const [errors, setErrors] = useState({});
-
   const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
     if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: null }));
+      setErrors((prev) => ({
+        ...prev,
+        [field]: null,
+      }));
     }
   };
-
   const validate = () => {
     const newErrors = {};
     if (!formData.provider) newErrors.provider = "Please select a provider";
@@ -44,34 +46,35 @@ export default function NewProviderPage() {
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-
     setLoading(true);
     try {
       const response = await fetch("/api/providers", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(formData),
       });
-
       if (response.ok) {
         router.push("/dashboard/providers");
       } else {
         const data = await response.json();
-        setErrors({ submit: data.error || "Failed to create provider" });
+        setErrors({
+          submit: data.error || "Failed to create provider",
+        });
       }
     } catch (error) {
-      setErrors({ submit: "An error occurred. Please try again." });
+      setErrors({
+        submit: "An error occurred. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   };
-
   const selectedProvider = AI_PROVIDERS[formData.provider];
-
   return (
     <div className="max-w-2xl mx-auto">
       {/* Header */}
@@ -81,11 +84,15 @@ export default function NewProviderPage() {
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Providers
+          {i18nText("Back to Providers")}
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          {i18nText("Add New Provider")}
+        </h1>
         <p className="text-text-muted mt-2">
-          Configure a new AI provider to use with your applications.
+          {i18nText(
+            "Configure a new AI provider to use with your applications.",
+          )}
         </p>
       </div>
 
@@ -94,11 +101,11 @@ export default function NewProviderPage() {
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {/* Provider Selection */}
           <Select
-            label="Provider"
+            label={i18nText("Provider")}
             options={providerOptions}
             value={formData.provider}
             onChange={(e) => handleChange("provider", e.target.value)}
-            placeholder="Select a provider"
+            placeholder={i18nText("Select a provider")}
             error={errors.provider}
             required
           />
@@ -106,12 +113,12 @@ export default function NewProviderPage() {
           {/* Provider Info */}
           {selectedProvider && (
             <Card.Section className="flex items-center gap-3">
-              <div
-                className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border"
-              >
+              <div className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border">
                 <span
                   className="material-symbols-outlined text-xl"
-                  style={{ color: selectedProvider.color }}
+                  style={{
+                    color: selectedProvider.color,
+                  }}
                 >
                   {selectedProvider.icon}
                 </span>
@@ -119,7 +126,7 @@ export default function NewProviderPage() {
               <div>
                 <p className="font-medium">{selectedProvider.name}</p>
                 <p className="text-sm text-text-muted">
-                  Selected provider
+                  {i18nText("Selected provider")}
                 </p>
               </div>
             </Card.Section>
@@ -128,7 +135,8 @@ export default function NewProviderPage() {
           {/* Auth Method */}
           <div className="flex flex-col gap-3">
             <label className="text-sm font-medium">
-              Authentication Method <span className="text-red-500">*</span>
+              {i18nText("Authentication Method")}
+              <span className="text-red-500">*</span>
             </label>
             <div className="flex gap-3">
               {authMethodOptions.map((method) => (
@@ -136,11 +144,7 @@ export default function NewProviderPage() {
                   key={method.value}
                   type="button"
                   onClick={() => handleChange("authMethod", method.value)}
-                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-all ${
-                    formData.authMethod === method.value
-                      ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:border-primary/50"
-                  }`}
+                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border transition-all ${formData.authMethod === method.value ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-primary/50"}`}
                 >
                   <span className="material-symbols-outlined">
                     {method.value === "api_key" ? "key" : "lock"}
@@ -154,9 +158,9 @@ export default function NewProviderPage() {
           {/* API Key Input */}
           {formData.authMethod === "api_key" && (
             <Input
-              label="API Key"
+              label={i18nText("API Key")}
               type="password"
-              placeholder="Enter your API key"
+              placeholder={i18nText("Enter your API key")}
               value={formData.apiKey}
               onChange={(e) => handleChange("apiKey", e.target.value)}
               error={errors.apiKey}
@@ -169,18 +173,18 @@ export default function NewProviderPage() {
           {formData.authMethod === "oauth2" && (
             <Card.Section>
               <p className="text-sm text-text-muted mb-4">
-                Connect your account using OAuth2 authentication.
+                {i18nText("Connect your account using OAuth2 authentication.")}
               </p>
               <Button type="button" variant="secondary" icon="link">
-                Connect with OAuth2
+                {i18nText("Connect with OAuth2")}
               </Button>
             </Card.Section>
           )}
 
           {/* Display Name */}
           <Input
-            label="Display Name"
-            placeholder="e.g., Production API, Dev Environment"
+            label={i18nText("Display Name")}
+            placeholder={i18nText("e.g., Production API, Dev Environment")}
             value={formData.displayName}
             onChange={(e) => handleChange("displayName", e.target.value)}
             hint="Optional. A friendly name to identify this configuration."
@@ -190,7 +194,7 @@ export default function NewProviderPage() {
           <Toggle
             checked={formData.isActive}
             onChange={(checked) => handleChange("isActive", checked)}
-            label="Active"
+            label={i18nText("Active")}
             description="Enable this provider for use in your applications"
           />
 
@@ -205,11 +209,16 @@ export default function NewProviderPage() {
           <div className="flex gap-3 pt-4 border-t border-border">
             <Link href="/dashboard/providers" className="flex-1">
               <Button type="button" variant="ghost" fullWidth>
-                Cancel
+                {i18nText("Cancel")}
               </Button>
             </Link>
-            <Button type="submit" loading={loading} fullWidth className="flex-1">
-              Create Provider
+            <Button
+              type="submit"
+              loading={loading}
+              fullWidth
+              className="flex-1"
+            >
+              {i18nText("Create Provider")}
             </Button>
           </div>
         </form>
@@ -217,4 +226,3 @@ export default function NewProviderPage() {
     </div>
   );
 }
-

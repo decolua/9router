@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
-
+import { i18nText } from "@/i18n/literals";
 export default function Modal({
   isOpen,
   onClose,
@@ -45,9 +45,7 @@ export default function Modal({
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
   }, [isOpen, onClose]);
-
   if (!isOpen) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
@@ -64,7 +62,7 @@ export default function Modal({
           "rounded-xl shadow-2xl",
           "animate-in fade-in zoom-in-95 duration-200",
           sizes[size],
-          className
+          className,
         )}
       >
         {/* Header */}
@@ -87,14 +85,18 @@ export default function Modal({
                 onClick={onClose}
                 className="p-1.5 rounded-lg text-text-muted hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
               >
-                <span className="material-symbols-outlined text-[20px]">close</span>
+                <span className="material-symbols-outlined text-[20px]">
+                  {"close"}
+                </span>
               </button>
             )}
           </div>
         )}
 
         {/* Body */}
-        <div className="p-6 max-h-[calc(80vh-140px)] overflow-y-auto">{children}</div>
+        <div className="p-6 max-h-[calc(80vh-140px)] overflow-y-auto">
+          {children}
+        </div>
 
         {/* Footer */}
         {footer && (
@@ -140,4 +142,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-
