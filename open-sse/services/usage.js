@@ -470,13 +470,12 @@ async function getCodexUsage(accessToken) {
  * Kiro (AWS CodeWhisperer) Usage
  */
 async function getKiroUsage(accessToken, providerSpecificData) {
-  try {
-    const profileArn = providerSpecificData?.profileArn;
-    if (!profileArn) {
-      return { message: "Kiro connected. Profile ARN not available for quota tracking." };
-    }
+  // Default profileArn fallback
+  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
 
-    // Kiro uses AWS CodeWhisperer GetUsageLimits API
+  try {
+    // Try old API first (POST method)
     const payload = {
       origin: "AI_EDITOR",
       profileArn: profileArn,
@@ -550,7 +549,68 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       quotas: quotaInfo,
     };
   } catch (error) {
-    throw new Error(`Failed to fetch Kiro usage: ${error.message}`);
+    // Fallback to new API (GET method)
+    try {
+      const params = new URLSearchParams({
+        origin: "AI_EDITOR",
+        profileArn: profileArn,
+        resourceType: "AGENTIC_REQUEST",
+      });
+
+      const fallbackResponse = await fetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Accept": "application/json",
+        },
+      });
+
+      if (!fallbackResponse.ok) {
+        throw new Error(`Fallback API error (${fallbackResponse.status})`);
+      }
+
+      const fallbackData = await fallbackResponse.json();
+
+      // Parse new API response structure
+      const usageList = fallbackData.usageBreakdownList || [];
+      const quotaInfo = {};
+      const resetAt = parseResetTime(fallbackData.nextDateReset || fallbackData.resetDate);
+
+      usageList.forEach((breakdown) => {
+        const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
+        const used = breakdown.currentUsageWithPrecision || 0;
+        const total = breakdown.usageLimitWithPrecision || 0;
+
+        quotaInfo[resourceType] = {
+          used,
+          total,
+          remaining: total - used,
+          resetAt,
+          unlimited: false,
+        };
+
+        // Add free trial if available
+        if (breakdown.freeTrialInfo) {
+          const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
+          const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
+
+          quotaInfo[`${resourceType}_freetrial`] = {
+            used: freeUsed,
+            total: freeTotal,
+            remaining: freeTotal - freeUsed,
+            resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry),
+            unlimited: false,
+          };
+        }
+      });
+
+      return {
+        plan: fallbackData.subscriptionInfo?.subscriptionTitle || "Kiro",
+        quotas: quotaInfo,
+      };
+    } catch (fallbackError) {
+      throw new Error(`Failed to fetch Kiro usage: ${error.message} | Fallback: ${fallbackError.message}`);
+    }
   }
 }
 

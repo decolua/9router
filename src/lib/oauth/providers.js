@@ -660,6 +660,7 @@ const PROVIDERS = {
             access_token: data.accessToken,
             refresh_token: data.refreshToken,
             expires_in: data.expiresIn,
+            profile_arn: data?.profileArn || null,
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
@@ -675,15 +676,19 @@ const PROVIDERS = {
         },
       };
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      providerSpecificData: {
-        clientId: tokens._clientId,
-        clientSecret: tokens._clientSecret,
-      },
-    }),
+    mapTokens: (tokens) => {
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        providerSpecificData: {
+          profileArn: tokens?.profile_arn || null,
+          clientId: tokens._clientId,
+          clientSecret: tokens._clientSecret,
+        },
+      };
+      return mapped;
+    },
   },
 
   cursor: {
