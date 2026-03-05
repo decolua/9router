@@ -8,6 +8,7 @@ import {
 import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
 import { buildCursorRequest } from "../translator/request/openai-to-cursor.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import crypto from "crypto";
 import { v5 as uuidv5 } from "uuid";
 import zlib from "zlib";
@@ -163,13 +164,13 @@ export class CursorExecutor extends BaseExecutor {
     return generateCursorBody(messages, model, tools, reasoningEffort);
   }
 
-  async makeFetchRequest(url, headers, body, signal) {
-    const response = await fetch(url, {
+  async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body,
       signal
-    });
+    }, proxyOptions);
 
     return {
       status: response.status,
@@ -227,15 +228,16 @@ export class CursorExecutor extends BaseExecutor {
     });
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     try {
-      const response = http2 
+      const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
+      const response = (http2 && !shouldForceFetch)
         ? await this.makeHttp2Request(url, headers, transformedBody, signal)
-        : await this.makeFetchRequest(url, headers, transformedBody, signal);
+        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";

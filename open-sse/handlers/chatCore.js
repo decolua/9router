@@ -67,10 +67,38 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model
   });
 
+  const proxyOptions = {
+    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
+    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
+    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
+  };
+
+  if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
+    let maskedProxyUrl = proxyOptions.connectionProxyUrl;
+    try {
+      const parsed = new URL(proxyOptions.connectionProxyUrl);
+      const host = parsed.hostname || "";
+      const port = parsed.port ? `:${parsed.port}` : "";
+      const protocol = parsed.protocol || "http:";
+      maskedProxyUrl = `${protocol}//${host}${port}`;
+    } catch {
+      // Keep raw if URL parsing fails
+    }
+
+    const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
+    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
+    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | url=${maskedProxyUrl}`);
+  }
+
+  if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionNoProxy) {
+    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
+    log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
+  }
+
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log });
+    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -106,7 +134,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       Object.assign(credentials, newCredentials);
       if (onCredentialsRefreshed) await onCredentialsRefreshed(newCredentials);
       try {
-        const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log });
+        const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
         if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
       } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
     } else {
