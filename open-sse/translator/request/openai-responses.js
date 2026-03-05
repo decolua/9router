@@ -48,11 +48,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         pendingToolResults = [];
       }
 
-      // Convert content: input_text → text, output_text → text
+      // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
         ? item.content.map(c => {
           if (c.type === "input_text") return { type: "text", text: c.text };
           if (c.type === "output_text") return { type: "text", text: c.text };
+          if (c.type === "input_image") {
+            const url = c.image_url || c.file_id || "";
+            return { type: "image_url", image_url: { url, detail: c.detail || "auto" } };
+          }
           return c;
         })
         : item.content;
@@ -186,7 +190,14 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         : Array.isArray(msg.content)
           ? msg.content.map(c => {
             if (c.type === "text") return { type: contentType, text: c.text };
-            if (c.type === "image_url") return { type: "image_url", image_url: c.image_url };
+            // Convert Chat Completions image_url → Responses API input_image
+            // Responses API expects: { type: "input_image", image_url: "<url string>" }
+            // Chat Completions sends: { type: "image_url", image_url: { url: "...", detail: "..." } }
+            if (c.type === "image_url") {
+              const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+              return { type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" };
+            }
+            if (c.type === "input_image") return c;
             // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
             const text = c.text || c.content || JSON.stringify(c);
             return { type: contentType, text: typeof text === "string" ? text : JSON.stringify(text) };
