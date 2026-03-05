@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
+import { sanitizeApiKeyData } from "@/lib/sanitize.js";
 
 // GET /api/keys - List API keys
-export async function GET() {
+export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const keys = await getApiKeys();
-    return NextResponse.json({ keys });
+    const sanitized = sanitizeApiKeyData(keys);
+    return NextResponse.json({ keys: sanitized });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });
@@ -15,6 +24,12 @@ export async function GET() {
 
 // POST /api/keys - Create new API key
 export async function POST(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
+
   try {
     const body = await request.json();
     const { name } = body;
