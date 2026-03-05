@@ -65,22 +65,7 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
-        setSettings(data);
-        setProxyForm({
-          outboundProxyEnabled: data?.outboundProxyEnabled === true,
-          outboundProxyUrl: data?.outboundProxyUrl || "",
-          outboundNoProxy: data?.outboundNoProxy || "",
-        });
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Failed to fetch settings:", err);
-        setLoading(false);
-      });
-  }, []);
+
 
   const updateOutboundProxy = async (e) => {
     e.preventDefault();
