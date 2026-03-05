@@ -850,9 +850,6 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* App Info */}
-          </div>
-        </Card>
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
