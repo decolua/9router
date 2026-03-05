@@ -6,6 +6,9 @@ import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getMaxInputTokens } from "../config/modelLimits.js";
+import { estimateInputTokens } from "../utils/tokenEstimator.js";
+import { getSettings } from "@/lib/localDb";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -66,6 +69,31 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     onError: () => trackPendingRequest(model, provider, connectionId, false),
     log, provider, model
   });
+
+  // Validate input token count against model limits
+  try {
+    let customLimits = null;
+    try {
+      const settings = await getSettings();
+      customLimits = settings?.modelLimits || null;
+    } catch (settingsErr) {
+      // getSettings may not be available (e.g., cloud workers) - use defaults only
+    }
+    
+    const maxInputTokens = getMaxInputTokens(alias, model, customLimits);
+    const estimatedTokens = estimateInputTokens(translatedBody);
+    
+    if (estimatedTokens > maxInputTokens) {
+      const errorMsg = `Input too long: ~${estimatedTokens} tokens (max: ${maxInputTokens}). Please reduce your input or truncate the conversation.`;
+      log?.warn?.("TOKEN_LIMIT", `${alias}/${model}: ${estimatedTokens} > ${maxInputTokens}`);
+      trackPendingRequest(model, provider, connectionId, false, true);
+      appendRequestLog({ model, provider, connectionId, status: "FAILED 400" }).catch(() => {});
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, errorMsg);
+    }
+  } catch (err) {
+    // Don't fail the request if limit check fails - just log
+    log?.warn?.("TOKEN_LIMIT", `Check failed: ${err.message}`);
+  }
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;

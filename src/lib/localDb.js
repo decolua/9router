@@ -60,7 +60,10 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    // Model input token limits (user overrides)
+    // Format: { "provider:model": limit } or { "provider": limit }
+    modelLimits: null
   },
   pricing: {} // NEW: pricing configuration
 };
