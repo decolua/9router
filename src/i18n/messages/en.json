@@ -1,0 +1,201 @@
+{
+  "common": {
+    "language": "Language",
+    "localeNames": {
+      "en": "English",
+      "zhCN": "简体中文"
+    },
+    "actions": {
+      "copy": "Copy",
+      "copied": "Copied",
+      "reload": "Reload Page"
+    }
+  },
+  "landing": {
+    "navigation": {
+      "ariaHome": "Navigate to home",
+      "features": "Features",
+      "howItWorks": "How it Works",
+      "docs": "Docs",
+      "github": "GitHub",
+      "getStarted": "Get Started"
+    },
+    "hero": {
+      "badge": "v1.0 is now live",
+      "titleLine1": "One Endpoint for",
+      "titleLine2": "All AI Providers",
+      "description": "AI endpoint proxy with web dashboard - A JavaScript port of CLIProxyAPI. Works seamlessly with Claude Code, OpenAI Codex, Cline, RooCode, and other CLI tools.",
+      "getStarted": "Get Started",
+      "viewGithub": "View on GitHub"
+    },
+    "getStarted": {
+      "title": "Get Started in 30 Seconds",
+      "description": "Install 9Router, configure your providers via web dashboard, and start routing AI requests.",
+      "step1Title": "Install 9Router",
+      "step1Desc": "Run npx command to start the server instantly",
+      "step2Title": "Open Dashboard",
+      "step2Desc": "Configure providers and API keys via web interface",
+      "step3Title": "Route Requests",
+      "step3Desc": "Point your CLI tools to http://localhost:20128",
+      "terminalLabel": "terminal",
+      "starting": "Starting 9Router...",
+      "serverRunning": "Server running on",
+      "dashboard": "Dashboard:",
+      "ready": "Ready to route!",
+      "configNote": "Configure providers in dashboard or use environment variables",
+      "dataLocation": "Data Location:",
+      "macLinux": "macOS/Linux:",
+      "windows": "Windows:"
+    },
+    "howItWorks": {
+      "title": "How 9Router Works",
+      "description": "Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.",
+      "step1Title": "1. CLI & SDKs",
+      "step1Desc": "Your requests start from your favorite tools or our unified SDK. Just change the base URL.",
+      "step2Title": "2. 9Router Hub",
+      "step2Desc": "Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost.",
+      "step3Title": "3. AI Providers",
+      "step3Desc": "The request is fulfilled by OpenAI, Anthropic, Gemini, or others instantly."
+    },
+    "features": {
+      "title": "Powerful Features",
+      "description": "Everything you need to manage your AI infrastructure in one place, built for scale.",
+      "items": {
+        "unifiedEndpoint": {
+          "title": "Unified Endpoint",
+          "desc": "Access all providers via a single standard API URL."
+        },
+        "easySetup": {
+          "title": "Easy Setup",
+          "desc": "Get up and running in minutes with npx command."
+        },
+        "modelFallback": {
+          "title": "Model Fallback",
+          "desc": "Automatically switch providers on failure or high latency."
+        },
+        "usageTracking": {
+          "title": "Usage Tracking",
+          "desc": "Detailed analytics and cost monitoring across all models."
+        },
+        "oauthApiKeys": {
+          "title": "OAuth & API Keys",
+          "desc": "Securely manage credentials in one vault."
+        },
+        "cloudSync": {
+          "title": "Cloud Sync",
+          "desc": "Sync your configurations across devices instantly."
+        },
+        "cliSupport": {
+          "title": "CLI Support",
+          "desc": "Works with Claude Code, Codex, Cline, Cursor, and more."
+        },
+        "dashboard": {
+          "title": "Dashboard",
+          "desc": "Visual dashboard for real-time traffic analysis."
+        }
+      }
+    },
+    "footer": {
+      "brandDescription": "The unified endpoint for AI generation. Connect, route, and manage your AI providers with ease.",
+      "product": "Product",
+      "resources": "Resources",
+      "legal": "Legal",
+      "features": "Features",
+      "dashboard": "Dashboard",
+      "changelog": "Changelog",
+      "documentation": "Documentation",
+      "github": "GitHub",
+      "npm": "NPM",
+      "license": "MIT License",
+      "copyright": "© {year} 9Router. All rights reserved."
+    },
+    "cta": {
+      "title": "Ready to Simplify Your AI Infrastructure?",
+      "description": "Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.",
+      "startFree": "Start Free",
+      "readDocs": "Read Documentation"
+    }
+  },
+  "login": {
+    "loading": "Loading...",
+    "subtitle": "Enter your password to access the dashboard",
+    "password": "Password",
+    "passwordPlaceholder": "Enter password",
+    "login": "Login",
+    "defaultPassword": "Default password is",
+    "invalidPassword": "Invalid password",
+    "genericError": "An error occurred. Please try again."
+  },
+  "dashboard": {
+    "header": {
+      "logout": "Logout",
+      "breadcrumbs": {
+        "providers": "Providers"
+      },
+      "pages": {
+        "providers": {
+          "title": "Providers",
+          "description": "Manage your AI provider connections"
+        },
+        "combos": {
+          "title": "Combos",
+          "description": "Model combos with fallback"
+        },
+        "usage": {
+          "title": "Usage & Analytics",
+          "description": "Monitor your API usage, token consumption, and request logs"
+        },
+        "mitm": {
+          "title": "MITM Proxy",
+          "description": "Intercept CLI tool traffic and route through 9Router"
+        },
+        "cliTools": {
+          "title": "CLI Tools",
+          "description": "Configure CLI tools"
+        },
+        "endpoint": {
+          "title": "Endpoint",
+          "description": "API endpoint configuration"
+        },
+        "profile": {
+          "title": "Settings",
+          "description": "Manage your preferences"
+        },
+        "translator": {
+          "title": "Translator",
+          "description": "Debug translation flow between formats"
+        },
+        "consoleLog": {
+          "title": "Console Log",
+          "description": "Live server console output"
+        }
+      }
+    },
+    "sidebar": {
+      "nav": {
+        "endpoint": "Endpoint",
+        "providers": "Providers",
+        "combos": "Combos",
+        "usage": "Usage",
+        "quota": "Quota Tracker",
+        "mitm": "MITM",
+        "cliTools": "CLI Tools",
+        "consoleLog": "Console Log",
+        "settings": "Settings"
+      },
+      "sections": {
+        "debug": "Debug",
+        "system": "System"
+      },
+      "newVersion": "↑ New version available: v{latestVersion}",
+      "serviceInfo": "Service is running in terminal. You can close this web page. Shutdown will stop the service.",
+      "shutdown": "Shutdown",
+      "closeProxyTitle": "Close Proxy",
+      "closeProxyMessage": "Are you sure you want to close the proxy server?",
+      "close": "Close",
+      "cancel": "Cancel",
+      "serverDisconnected": "Server Disconnected",
+      "serverStopped": "The proxy server has been stopped."
+    }
+  }
+}

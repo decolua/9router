@@ -13,20 +13,17 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
-
+import { i18nText } from "@/i18n/literals";
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return String(n || 0);
 };
-
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
-
 export default function UsageChart({ period = "7d" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -41,13 +38,10 @@ export default function UsageChart({ period = "7d" }) {
       setLoading(false);
     }
   }, [period]);
-
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
   const hasData = data.some((d) => d.tokens > 0 || d.cost > 0);
-
   return (
     <Card className="p-4 flex flex-col gap-3">
       <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border self-start">
@@ -55,23 +49,35 @@ export default function UsageChart({ period = "7d" }) {
           onClick={() => setViewMode("tokens")}
           className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
         >
-          Tokens
+          {i18nText("Tokens")}
         </button>
         <button
           onClick={() => setViewMode("cost")}
           className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
         >
-          Cost
+          {i18nText("Cost")}
         </button>
       </div>
 
       {loading ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">Loading...</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">
+          Loading...
+        </div>
       ) : !hasData ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">No data for this period</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">
+          {i18nText("No data for this period")}
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <AreaChart
+            data={data}
+            margin={{
+              top: 4,
+              right: 8,
+              left: 0,
+              bottom: 0,
+            }}
+          >
             <defs>
               <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
@@ -85,13 +91,21 @@ export default function UsageChart({ period = "7d" }) {
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }}
+              tick={{
+                fontSize: 10,
+                fill: "currentColor",
+                fillOpacity: 0.5,
+              }}
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
             />
             <YAxis
-              tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }}
+              tick={{
+                fontSize: 10,
+                fill: "currentColor",
+                fillOpacity: 0.5,
+              }}
               tickLine={false}
               axisLine={false}
               tickFormatter={viewMode === "tokens" ? fmtTokens : fmtCost}
@@ -105,7 +119,9 @@ export default function UsageChart({ period = "7d" }) {
                 fontSize: "12px",
               }}
               formatter={(value, name) =>
-                name === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
+                name === "tokens"
+                  ? [fmtTokens(value), "Tokens"]
+                  : [fmtCost(value), "Cost"]
               }
             />
             {viewMode === "tokens" ? (
@@ -116,7 +132,9 @@ export default function UsageChart({ period = "7d" }) {
                 strokeWidth={2}
                 fill="url(#gradTokens)"
                 dot={false}
-                activeDot={{ r: 4 }}
+                activeDot={{
+                  r: 4,
+                }}
               />
             ) : (
               <Area
@@ -126,7 +144,9 @@ export default function UsageChart({ period = "7d" }) {
                 strokeWidth={2}
                 fill="url(#gradCost)"
                 dot={false}
-                activeDot={{ r: 4 }}
+                activeDot={{
+                  r: 4,
+                }}
               />
             )}
           </AreaChart>
@@ -135,7 +155,6 @@ export default function UsageChart({ period = "7d" }) {
     </Card>
   );
 }
-
 UsageChart.propTypes = {
   period: PropTypes.string,
 };

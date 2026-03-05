@@ -1,0 +1,201 @@
+{
+  "common": {
+    "language": "语言",
+    "localeNames": {
+      "en": "English",
+      "zhCN": "简体中文"
+    },
+    "actions": {
+      "copy": "复制",
+      "copied": "已复制",
+      "reload": "重新加载页面"
+    }
+  },
+  "landing": {
+    "navigation": {
+      "ariaHome": "返回首页",
+      "features": "功能特性",
+      "howItWorks": "工作原理",
+      "docs": "文档",
+      "github": "GitHub",
+      "getStarted": "开始使用"
+    },
+    "hero": {
+      "badge": "v1.0 已上线",
+      "titleLine1": "一个端点连接",
+      "titleLine2": "所有 AI 提供商",
+      "description": "带 Web 仪表盘的 AI 端点代理，CLIProxyAPI 的 JavaScript 版本。可无缝配合 Claude Code、OpenAI Codex、Cline、RooCode 等 CLI 工具。",
+      "getStarted": "开始使用",
+      "viewGithub": "查看 GitHub"
+    },
+    "getStarted": {
+      "title": "30 秒快速上手",
+      "description": "安装 9Router，在 Web 仪表盘配置提供商，然后开始转发 AI 请求。",
+      "step1Title": "安装 9Router",
+      "step1Desc": "运行 npx 命令即可立即启动服务",
+      "step2Title": "打开仪表盘",
+      "step2Desc": "通过 Web 界面配置提供商与 API Key",
+      "step3Title": "开始转发请求",
+      "step3Desc": "将你的 CLI 工具指向 http://localhost:20128",
+      "terminalLabel": "终端",
+      "starting": "正在启动 9Router...",
+      "serverRunning": "服务运行于",
+      "dashboard": "仪表盘：",
+      "ready": "已就绪，可开始转发！",
+      "configNote": "可在仪表盘配置提供商，或通过环境变量配置",
+      "dataLocation": "数据目录：",
+      "macLinux": "macOS/Linux：",
+      "windows": "Windows："
+    },
+    "howItWorks": {
+      "title": "9Router 如何工作",
+      "description": "数据从你的应用经过智能路由层，自动转发到最合适的模型提供商。",
+      "step1Title": "1. CLI 与 SDK",
+      "step1Desc": "请求从你常用的工具或统一 SDK 发起，只需替换 base URL。",
+      "step2Title": "2. 9Router 中枢",
+      "step2Desc": "引擎分析请求、检测提供商健康度，并按时延或成本进行路由。",
+      "step3Title": "3. AI 提供商",
+      "step3Desc": "请求会被即时转发到 OpenAI、Anthropic、Gemini 等服务。"
+    },
+    "features": {
+      "title": "核心能力",
+      "description": "你管理 AI 基础设施所需的一切，都在一个地方完成。",
+      "items": {
+        "unifiedEndpoint": {
+          "title": "统一端点",
+          "desc": "通过一个标准 API 地址接入所有提供商。"
+        },
+        "easySetup": {
+          "title": "快速部署",
+          "desc": "使用 npx 命令，几分钟即可跑通。"
+        },
+        "modelFallback": {
+          "title": "模型回退",
+          "desc": "当失败或高延迟时自动切换提供商。"
+        },
+        "usageTracking": {
+          "title": "用量追踪",
+          "desc": "跨模型查看详细统计与成本监控。"
+        },
+        "oauthApiKeys": {
+          "title": "OAuth 与 API Key",
+          "desc": "在一个安全位置统一管理凭据。"
+        },
+        "cloudSync": {
+          "title": "云端同步",
+          "desc": "在不同设备间即时同步配置。"
+        },
+        "cliSupport": {
+          "title": "CLI 支持",
+          "desc": "兼容 Claude Code、Codex、Cline、Cursor 等工具。"
+        },
+        "dashboard": {
+          "title": "可视化仪表盘",
+          "desc": "实时查看请求流量与运行状态。"
+        }
+      }
+    },
+    "footer": {
+      "brandDescription": "AI 统一生成入口。轻松连接、路由并管理你的 AI 提供商。",
+      "product": "产品",
+      "resources": "资源",
+      "legal": "法律",
+      "features": "功能特性",
+      "dashboard": "仪表盘",
+      "changelog": "更新日志",
+      "documentation": "使用文档",
+      "github": "GitHub",
+      "npm": "NPM",
+      "license": "MIT 许可",
+      "copyright": "© {year} 9Router。保留所有权利。"
+    },
+    "cta": {
+      "title": "准备好简化你的 AI 基础设施了吗？",
+      "description": "加入正在使用 9Router 精简 AI 集成流程的开发者。开源且可免费开始。",
+      "startFree": "免费开始",
+      "readDocs": "阅读文档"
+    }
+  },
+  "login": {
+    "loading": "加载中...",
+    "subtitle": "输入密码以访问仪表盘",
+    "password": "密码",
+    "passwordPlaceholder": "请输入密码",
+    "login": "登录",
+    "defaultPassword": "默认密码为",
+    "invalidPassword": "密码错误",
+    "genericError": "发生错误，请稍后重试。"
+  },
+  "dashboard": {
+    "header": {
+      "logout": "退出登录",
+      "breadcrumbs": {
+        "providers": "提供商"
+      },
+      "pages": {
+        "providers": {
+          "title": "提供商",
+          "description": "管理你的 AI 提供商连接"
+        },
+        "combos": {
+          "title": "组合路由",
+          "description": "支持回退策略的模型组合"
+        },
+        "usage": {
+          "title": "用量与分析",
+          "description": "监控 API 用量、Token 消耗与请求日志"
+        },
+        "mitm": {
+          "title": "MITM 代理",
+          "description": "拦截 CLI 工具流量并通过 9Router 转发"
+        },
+        "cliTools": {
+          "title": "CLI 工具",
+          "description": "配置 CLI 工具接入"
+        },
+        "endpoint": {
+          "title": "端点",
+          "description": "API 端点配置"
+        },
+        "profile": {
+          "title": "设置",
+          "description": "管理你的偏好设置"
+        },
+        "translator": {
+          "title": "翻译器",
+          "description": "调试不同格式之间的翻译流程"
+        },
+        "consoleLog": {
+          "title": "控制台日志",
+          "description": "实时查看服务端控制台输出"
+        }
+      }
+    },
+    "sidebar": {
+      "nav": {
+        "endpoint": "端点",
+        "providers": "提供商",
+        "combos": "组合",
+        "usage": "用量",
+        "quota": "配额追踪",
+        "mitm": "MITM",
+        "cliTools": "CLI 工具",
+        "consoleLog": "控制台日志",
+        "settings": "设置"
+      },
+      "sections": {
+        "debug": "调试",
+        "system": "系统"
+      },
+      "newVersion": "↑ 发现新版本：v{latestVersion}",
+      "serviceInfo": "服务正在终端中运行。你可以直接关闭此网页，点击关停会停止服务。",
+      "shutdown": "关停服务",
+      "closeProxyTitle": "关闭代理",
+      "closeProxyMessage": "确认要关闭代理服务吗？",
+      "close": "关闭",
+      "cancel": "取消",
+      "serverDisconnected": "服务已断开",
+      "serverStopped": "代理服务已停止。"
+    }
+  }
+}

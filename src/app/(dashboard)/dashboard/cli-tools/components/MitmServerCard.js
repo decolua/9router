@@ -7,7 +7,12 @@ import { Card, Button, Badge, Input } from "@/shared/components";
  * Shared MITM infrastructure card — manages SSL cert + server start/stop.
  * DNS per-tool is handled separately in MitmToolCard.
  */
-export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }) {
+import { i18nText } from "@/i18n/literals";
+export default function MitmServerCard({
+  apiKeys,
+  cloudEnabled,
+  onStatusChange,
+}) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -16,18 +21,17 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [message, setMessage] = useState(null);
   const [pendingAction, setPendingAction] = useState(null); // "start" | "stop"
 
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
-
+  const isWindows =
+    typeof navigator !== "undefined" &&
+    navigator.userAgent?.includes("Windows");
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
       setSelectedApiKey(apiKeys[0].key);
     }
   }, [apiKeys, selectedApiKey]);
-
   useEffect(() => {
     fetchStatus();
   }, []);
-
   const fetchStatus = async () => {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
@@ -37,10 +41,13 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         onStatusChange?.(data);
       }
     } catch {
-      setStatus({ running: false, certExists: false, dnsStatus: {} });
+      setStatus({
+        running: false,
+        certExists: false,
+        dnsStatus: {},
+      });
     }
   };
-
   const handleAction = (action) => {
     if (isWindows || status?.hasCachedPassword) {
       doAction(action, "");
@@ -50,61 +57,84 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       setMessage(null);
     }
   };
-
   const doAction = async (action, password) => {
     setLoading(true);
     setMessage(null);
     try {
       if (action === "start") {
-        const keyToUse = selectedApiKey?.trim()
-          || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-          || (!cloudEnabled ? "sk_9router" : null);
-
+        const keyToUse =
+          selectedApiKey?.trim() ||
+          (apiKeys?.length > 0 ? apiKeys[0].key : null) ||
+          (!cloudEnabled ? "sk_9router" : null);
         const res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: keyToUse, sudoPassword: password }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            apiKey: keyToUse,
+            sudoPassword: password,
+          }),
         });
         const data = await res.json();
         if (res.ok) {
-          setMessage({ type: "success", text: "Server started" });
+          setMessage({
+            type: "success",
+            text: "Server started",
+          });
         } else {
-          setMessage({ type: "error", text: data.error || "Failed to start server" });
+          setMessage({
+            type: "error",
+            text: data.error || "Failed to start server",
+          });
         }
       } else {
         const res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sudoPassword: password }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sudoPassword: password,
+          }),
         });
         const data = await res.json();
         if (res.ok) {
-          setMessage({ type: "success", text: "Server stopped — all DNS cleared" });
+          setMessage({
+            type: "success",
+            text: "Server stopped — all DNS cleared",
+          });
         } else {
-          setMessage({ type: "error", text: data.error || "Failed to stop server" });
+          setMessage({
+            type: "error",
+            text: data.error || "Failed to stop server",
+          });
         }
       }
       setShowPasswordModal(false);
       setSudoPassword("");
       await fetchStatus();
     } catch (error) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({
+        type: "error",
+        text: error.message,
+      });
     } finally {
       setLoading(false);
       setPendingAction(null);
     }
   };
-
   const handleConfirmPassword = () => {
     if (!sudoPassword.trim()) {
-      setMessage({ type: "error", text: "Sudo password is required" });
+      setMessage({
+        type: "error",
+        text: "Sudo password is required",
+      });
       return;
     }
     doAction(pendingAction, sudoPassword);
   };
-
   const isRunning = status?.running;
-
   return (
     <>
       <Card padding="sm" className="border-primary/20 bg-primary/5">
@@ -112,20 +142,37 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-[20px]">security</span>
-              <span className="font-semibold text-sm text-text-main">MITM Server</span>
+              <span className="material-symbols-outlined text-primary text-[20px]">
+                {"security"}
+              </span>
+              <span className="font-semibold text-sm text-text-main">
+                {i18nText("MITM Server")}
+              </span>
               {isRunning ? (
-                <Badge variant="success" size="sm">Running</Badge>
+                <Badge variant="success" size="sm">
+                  {i18nText("Running")}
+                </Badge>
               ) : (
-                <Badge variant="default" size="sm">Stopped</Badge>
+                <Badge variant="default" size="sm">
+                  {i18nText("Stopped")}
+                </Badge>
               )}
             </div>
             <div className="flex items-center gap-1 text-xs text-text-muted">
               {[
-                { label: "Cert", ok: status?.certExists },
-                { label: "Server", ok: isRunning },
+                {
+                  label: i18nText("Cert"),
+                  ok: status?.certExists,
+                },
+                {
+                  label: i18nText("Server"),
+                  ok: isRunning,
+                },
               ].map(({ label, ok }) => (
-                <span key={label} className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-green-600" : "text-text-muted"}`}>
+                <span
+                  key={label}
+                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded ${ok ? "text-green-600" : "text-text-muted"}`}
+                >
                   <span className={`material-symbols-outlined text-[12px]`}>
                     {ok ? "check_circle" : "radio_button_unchecked"}
                   </span>
@@ -138,36 +185,58 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Purpose & How it works */}
           <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router
+              <span className="font-medium text-text-main">
+                {i18nText("Purpose:")}
+              </span>
+              {i18nText(
+                "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router",
+              )}
             </p>
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot
+              <span className="font-medium text-text-main">
+                {i18nText("How it works:")}
+              </span>
+              {i18nText(
+                "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot",
+              )}
             </p>
           </div>
 
           {/* API Key selector (only when stopped, to pick key for start) */}
           {!isRunning && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-text-muted shrink-0">API Key</span>
+              <span className="text-xs text-text-muted shrink-0">
+                {i18nText("API Key")}
+              </span>
               {apiKeys?.length > 0 ? (
                 <select
                   value={selectedApiKey}
                   onChange={(e) => setSelectedApiKey(e.target.value)}
                   className="flex-1 px-2 py-1 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
                 >
-                  {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
+                  {apiKeys.map((key) => (
+                    <option key={key.id} value={key.key}>
+                      {key.key}
+                    </option>
+                  ))}
                 </select>
               ) : (
                 <span className="text-xs text-text-muted">
-                  {cloudEnabled ? "No API keys — create one in Keys page" : "sk_9router (default)"}
+                  {cloudEnabled
+                    ? "No API keys — create one in Keys page"
+                    : "sk_9router (default)"}
                 </span>
               )}
             </div>
           )}
 
           {message && (
-            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-              <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
+            <div
+              className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}
+            >
+              <span className="material-symbols-outlined text-[14px]">
+                {message.type === "success" ? "check_circle" : "error"}
+              </span>
               <span>{message.text}</span>
             </div>
           )}
@@ -180,8 +249,10 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 disabled={loading}
                 className="px-4 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-medium text-xs flex items-center gap-1.5 hover:bg-red-500/20 transition-colors disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[16px]">stop_circle</span>
-                Stop Server
+                <span className="material-symbols-outlined text-[16px]">
+                  stop_circle
+                </span>
+                {i18nText("Stop Server")}
               </button>
             ) : (
               <button
@@ -189,20 +260,28 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 disabled={loading}
                 className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-xs flex items-center gap-1.5 hover:bg-primary/20 transition-colors disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[16px]">play_circle</span>
-                Start Server
+                <span className="material-symbols-outlined text-[16px]">
+                  play_circle
+                </span>
+                {i18nText("Start Server")}
               </button>
             )}
             {isRunning && (
-              <p className="text-xs text-text-muted">Enable DNS per tool below to activate interception</p>
+              <p className="text-xs text-text-muted">
+                {i18nText("Enable DNS per tool below to activate interception")}
+              </p>
             )}
           </div>
 
           {/* Windows admin warning */}
           {!isRunning && isWindows && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
-              <span className="material-symbols-outlined text-[14px]">warning</span>
-              <span>Windows: Run 9Router terminal as Administrator</span>
+              <span className="material-symbols-outlined text-[14px]">
+                {"warning"}
+              </span>
+              <span>
+                {i18nText("Windows: Run 9Router terminal as Administrator")}
+              </span>
             </div>
           )}
         </div>
@@ -212,30 +291,54 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-xl">
-            <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
+            <h3 className="font-semibold text-text-main">
+              {i18nText("Sudo Password Required")}
+            </h3>
             <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
-              <p className="text-xs text-text-muted">Required for SSL certificate and server startup</p>
+              <span className="material-symbols-outlined text-yellow-500 text-[20px]">
+                {"warning"}
+              </span>
+              <p className="text-xs text-text-muted">
+                {i18nText("Required for SSL certificate and server startup")}
+              </p>
             </div>
             <Input
               type="password"
-              placeholder="Enter sudo password"
+              placeholder={i18nText("Enter sudo password")}
               value={sudoPassword}
               onChange={(e) => setSudoPassword(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !loading) handleConfirmPassword(); }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !loading) handleConfirmPassword();
+              }}
             />
             {message && (
               <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
-                <span className="material-symbols-outlined text-[14px]">error</span>
+                <span className="material-symbols-outlined text-[14px]">
+                  {"error"}
+                </span>
                 <span>{message.text}</span>
               </div>
             )}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setMessage(null); }} disabled={loading}>
-                Cancel
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowPasswordModal(false);
+                  setSudoPassword("");
+                  setMessage(null);
+                }}
+                disabled={loading}
+              >
+                {i18nText("Cancel")}
               </Button>
-              <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>
-                Confirm
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleConfirmPassword}
+                loading={loading}
+              >
+                {i18nText("Confirm")}
               </Button>
             </div>
           </div>

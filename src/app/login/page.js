@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Input } from "@/shared/components";
 import { useRouter } from "next/navigation";
+import { useTranslations } from "next-intl";
 
 export default function LoginPage() {
+  const t = useTranslations("login");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,10 +62,10 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || t("invalidPassword"));
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      setError(t("genericError"));
     } finally {
       setLoading(false);
     }
@@ -75,7 +77,7 @@ export default function LoginPage() {
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-          <p className="text-text-muted mt-4">Loading...</p>
+          <p className="text-text-muted mt-4">{t("loading")}</p>
         </div>
       </div>
     );
@@ -86,16 +88,16 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">Enter your password to access the dashboard</p>
+          <p className="text-text-muted">{t("subtitle")}</p>
         </div>
 
         <Card>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-medium">Password</label>
+              <label className="text-sm font-medium">{t("password")}</label>
               <Input
                 type="password"
-                placeholder="Enter password"
+                placeholder={t("passwordPlaceholder")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -110,11 +112,11 @@ export default function LoginPage() {
               className="w-full"
               loading={loading}
             >
-              Login
+              {t("login")}
             </Button>
 
             <p className="text-xs text-center text-text-muted mt-2">
-              Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+              {t("defaultPassword")} <code className="bg-sidebar px-1 rounded">123456</code>
             </p>
           </form>
         </Card>

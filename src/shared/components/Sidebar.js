@@ -4,33 +4,70 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
-
+import { i18nText } from "@/i18n/literals";
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
-  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/mitm", label: "MITM", icon: "security" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  {
+    href: "/dashboard/endpoint",
+    labelKey: "endpoint",
+    icon: "api",
+  },
+  {
+    href: "/dashboard/providers",
+    labelKey: "providers",
+    icon: "dns",
+  },
+  {
+    href: "/dashboard/combos",
+    labelKey: "combos",
+    icon: "layers",
+  },
+  {
+    href: "/dashboard/usage",
+    labelKey: "usage",
+    icon: "bar_chart",
+  },
+  {
+    href: "/dashboard/quota",
+    labelKey: "quota",
+    icon: "data_usage",
+  },
+  {
+    href: "/dashboard/mitm",
+    labelKey: "mitm",
+    icon: "security",
+  },
+  {
+    href: "/dashboard/cli-tools",
+    labelKey: "cliTools",
+    icon: "terminal",
+  },
 ];
 
 // Debug items (only show when ENABLE_REQUEST_LOGS=true)
 const debugItems = [
-  // { href: "/dashboard/translator", label: "Translator", icon: "translate" },
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  // { href: "/dashboard/translator", labelKey: "translator", icon: "translate" },
+  {
+    href: "/dashboard/console-log",
+    labelKey: "consoleLog",
+    icon: "terminal",
+  },
 ];
-
 const systemItems = [
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  {
+    href: "/dashboard/profile",
+    labelKey: "settings",
+    icon: "settings",
+  },
 ];
-
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
+  const t = useTranslations("dashboard.sidebar");
+  const tCommon = useTranslations("common.actions");
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
@@ -39,22 +76,26 @@ export default function Sidebar({ onClose }) {
   // Lazy check for new npm version on mount
   useEffect(() => {
     fetch("/api/version")
-      .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasUpdate) setUpdateInfo(data);
+      })
       .catch(() => {});
   }, []);
-
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
-      return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
+      return (
+        pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint")
+      );
     }
     return pathname.startsWith(href);
   };
-
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
-      await fetch("/api/shutdown", { method: "POST" });
+      await fetch("/api/shutdown", {
+        method: "POST",
+      });
     } catch (e) {
       // Expected to fail as server shuts down; ignore error
     }
@@ -62,7 +103,6 @@ export default function Sidebar({ onClose }) {
     setShowShutdownModal(false);
     setIsDisconnected(true);
   };
-
   return (
     <>
       <aside className="flex w-72 flex-col border-r border-black/5 dark:border-white/5 bg-vibrancy backdrop-blur-xl transition-colors duration-300">
@@ -77,22 +117,29 @@ export default function Sidebar({ onClose }) {
         <div className="px-6 py-4 flex flex-col gap-2">
           <Link href="/dashboard" className="flex items-center gap-3">
             <div className="flex items-center justify-center size-9 rounded bg-linear-to-br from-[#f97815] to-[#c2590a]">
-              <span className="material-symbols-outlined text-white text-[20px]">hub</span>
+              <span className="material-symbols-outlined text-white text-[20px]">
+                {"hub"}
+              </span>
             </div>
             <div className="flex flex-col">
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
               </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              <span className="text-xs text-text-muted">
+                {i18nText("v")}
+                {APP_CONFIG.version}
+              </span>
             </div>
           </Link>
           {updateInfo && (
             <div className="flex flex-col gap-0.5">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
-                ↑ New version available: v{updateInfo.latestVersion}
+                {t("newVersion", {
+                  latestVersion: updateInfo.latestVersion,
+                })}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                {i18nText("npm install -g 9router@latest")}
               </code>
             </div>
           )}
@@ -109,55 +156,63 @@ export default function Sidebar({ onClose }) {
                 "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
                 isActive(item.href)
                   ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  : "text-text-muted hover:bg-surface/50 hover:text-text-main",
               )}
             >
               <span
                 className={cn(
                   "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  isActive(item.href)
+                    ? "fill-1"
+                    : "group-hover:text-primary transition-colors",
                 )}
               >
                 {item.icon}
               </span>
-              <span className="text-sm font-medium">{item.label}</span>
+              <span className="text-sm font-medium">
+                {t(`nav.${item.labelKey}`)}
+              </span>
             </Link>
           ))}
 
           {/* Debug section */}
           <div className="pt-4 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                Debug
-              </p>
-              {debugItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
+            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+              {t("sections.debug")}
+            </p>
+            {debugItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                  isActive(item.href)
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface/50 hover:text-text-main",
+                )}
+              >
+                <span
                   className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    "material-symbols-outlined text-[18px]",
                     isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                      ? "fill-1"
+                      : "group-hover:text-primary transition-colors",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-sm font-medium">{item.label}</span>
-                </Link>
-              ))}
-            </div>
+                  {item.icon}
+                </span>
+                <span className="text-sm font-medium">
+                  {t(`nav.${item.labelKey}`)}
+                </span>
+              </Link>
+            ))}
+          </div>
 
           {/* System section */}
           <div className="pt-4 mt-2">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
+              {t("sections.system")}
             </p>
             {systemItems.map((item) => (
               <Link
@@ -168,18 +223,22 @@ export default function Sidebar({ onClose }) {
                   "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
                   isActive(item.href)
                     ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                    : "text-text-muted hover:bg-surface/50 hover:text-text-main",
                 )}
               >
                 <span
                   className={cn(
                     "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    isActive(item.href)
+                      ? "fill-1"
+                      : "group-hover:text-primary transition-colors",
                   )}
                 >
                   {item.icon}
                 </span>
-                <span className="text-sm font-medium">{item.label}</span>
+                <span className="text-sm font-medium">
+                  {t(`nav.${item.labelKey}`)}
+                </span>
               </Link>
             ))}
           </div>
@@ -190,11 +249,13 @@ export default function Sidebar({ onClose }) {
           {/* Info message */}
           <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
             <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">info</span>
+              <span className="material-symbols-outlined text-[14px]">
+                {"info"}
+              </span>
             </div>
             <div className="flex flex-col">
               <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
+                {t("serviceInfo")}
               </span>
             </div>
           </div>
@@ -207,7 +268,7 @@ export default function Sidebar({ onClose }) {
             onClick={() => setShowShutdownModal(true)}
             className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
           >
-            Shutdown
+            {t("shutdown")}
           </Button>
         </div>
       </aside>
@@ -217,10 +278,10 @@ export default function Sidebar({ onClose }) {
         isOpen={showShutdownModal}
         onClose={() => setShowShutdownModal(false)}
         onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
+        title={t("closeProxyTitle")}
+        message={t("closeProxyMessage")}
+        confirmText={t("close")}
+        cancelText={t("cancel")}
         variant="danger"
         loading={isShuttingDown}
       />
@@ -230,12 +291,19 @@ export default function Sidebar({ onClose }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="text-center p-8">
             <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-              <span className="material-symbols-outlined text-[32px]">power_off</span>
+              <span className="material-symbols-outlined text-[32px]">
+                power_off
+              </span>
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-            <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-            <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-              Reload Page
+            <h2 className="text-xl font-semibold text-white mb-2">
+              {t("serverDisconnected")}
+            </h2>
+            <p className="text-text-muted mb-6">{t("serverStopped")}</p>
+            <Button
+              variant="secondary"
+              onClick={() => globalThis.location.reload()}
+            >
+              {tCommon("reload")}
             </Button>
           </div>
         </div>
@@ -243,7 +311,6 @@ export default function Sidebar({ onClose }) {
     </>
   );
 }
-
 Sidebar.propTypes = {
   onClose: PropTypes.func,
 };

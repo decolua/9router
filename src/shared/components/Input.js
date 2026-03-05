@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/shared/utils/cn";
-
+import { i18nText } from "@/i18n/literals";
 export default function Input({
   label,
   type = "text",
@@ -28,7 +28,9 @@ export default function Input({
       <div className="relative">
         {icon && (
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
+            <span className="material-symbols-outlined text-[20px]">
+              {icon}
+            </span>
           </div>
         )}
         <input
@@ -49,21 +51,20 @@ export default function Input({
             error
               ? "border-red-500 focus:border-red-500 focus:ring-red-500/20"
               : "",
-            inputClassName
+            inputClassName,
           )}
           {...props}
         />
       </div>
       {error && (
         <p className="text-xs text-red-500 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">error</span>
+          <span className="material-symbols-outlined text-[14px]">
+            {"error"}
+          </span>
           {error}
         </p>
       )}
-      {hint && !error && (
-        <p className="text-xs text-text-muted">{hint}</p>
-      )}
+      {hint && !error && <p className="text-xs text-text-muted">{hint}</p>}
     </div>
   );
 }
-
