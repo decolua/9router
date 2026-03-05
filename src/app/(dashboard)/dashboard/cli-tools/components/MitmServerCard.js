@@ -135,12 +135,13 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             </div>
           </div>
 
-          {/* Mechanism explanation */}
-          <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50">
+          {/* Purpose & How it works */}
+          <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">How it works:</span> MITM server runs an HTTPS proxy on port 443. 
-              When you enable DNS for a tool, its API domain redirects to localhost. 
-              The proxy intercepts requests, applies your model mappings, and forwards to 9Router.
+              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router
+            </p>
+            <p className="text-[11px] text-text-muted leading-relaxed">
+              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot
             </p>
           </div>
 
