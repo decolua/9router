@@ -334,16 +334,20 @@ export default function ProviderDetailPage() {
     const proxyPoolId = bulkProxyPoolId === "__none__" ? null : bulkProxyPoolId;
     setBulkUpdatingProxy(true);
     try {
-      const results = await Promise.all(
-        selectedConnectionIds.map(async (connectionId) => {
+      const results = [];
+      for (const connectionId of selectedConnectionIds) {
+        try {
           const res = await fetch(`/api/providers/${connectionId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ proxyPoolId }),
           });
-          return res.ok;
-        })
-      );
+          results.push(res.ok);
+        } catch (e) {
+          console.log("Error applying bulk proxy pool for", connectionId, e);
+          results.push(false);
+        }
+      }
 
       const failedCount = results.filter((ok) => !ok).length;
       if (failedCount > 0) {
