@@ -31,7 +31,6 @@ export async function GET() {
       pid: status.pid || null,
       certExists: status.certExists || false,
       dnsStatus: status.dnsStatus || {},
-      certCoversTools: status.certCoversTools || {},
       hasCachedPassword: !!getCachedPassword(),
     });
   } catch (error) {

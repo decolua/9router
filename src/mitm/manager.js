@@ -246,37 +246,6 @@ function pollMitmHealth(timeoutMs, port = MITM_PORT) {
 }
 
 /**
- * Check which tools have their domains covered by the installed cert SAN.
- * Uses built-in crypto.X509Certificate (Node 15.6+).
- */
-function getCertToolCoverage(certPath) {
-  try {
-    const pem = fs.readFileSync(certPath, "utf8");
-    const cert = new crypto.X509Certificate(pem);
-    const san = cert.subjectAltName || "";
-    // Extract all DNS SANs
-    const sans = san.split(",").map(s => s.trim().replace(/^DNS:/, ""));
-    const matchesSan = (domain) => sans.some(s => {
-      if (s === domain) return true;
-      // Wildcard: *.foo.com matches bar.foo.com
-      if (s.startsWith("*.")) {
-        const suffix = s.slice(1); // .foo.com
-        return domain.endsWith(suffix) && !domain.slice(0, -suffix.length).includes(".");
-      }
-      return false;
-    });
-    const { TOOL_HOSTS } = require("./dns/dnsConfig");
-    const coverage = {};
-    for (const [tool, hosts] of Object.entries(TOOL_HOSTS)) {
-      coverage[tool] = hosts.every(matchesSan);
-    }
-    return coverage;
-  } catch {
-    return {};
-  }
-}
-
-/**
  * Get full MITM status including per-tool DNS status
  */
 async function getMitmStatus() {
@@ -298,11 +267,10 @@ async function getMitmStatus() {
   }
 
   const dnsStatus = checkAllDNSStatus();
-  const certPath = path.join(MITM_DIR, "server.crt");
-  const certExists = fs.existsSync(certPath);
-  const certCoversTools = certExists ? getCertToolCoverage(certPath) : {};
+  const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
+  const certExists = fs.existsSync(rootCACertPath);
 
-  return { running, pid, certExists, dnsStatus, certCoversTools };
+  return { running, pid, certExists, dnsStatus };
 }
 
 /**
@@ -352,39 +320,34 @@ async function startServer(apiKey, sudoPassword) {
     }
   }
 
-  // Step 1: Generate SSL certificate if not exists or missing domain coverage
-  const certPath = path.join(MITM_DIR, "server.crt");
-  const keyPath = path.join(MITM_DIR, "server.key");
-  let needsRegenerate = false;
+  // Step 1: Auto-migration - Generate Root CA if not exists
+  const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
+  const rootCAKeyPath = path.join(MITM_DIR, "rootCA.key");
 
-  if (!fs.existsSync(certPath)) {
-    console.log("[MITM] Generating SSL certificate...");
-    needsRegenerate = true;
-  } else {
-    // Check if cert covers all tool domains
-    const coverage = getCertToolCoverage(certPath);
-    const { TOOL_HOSTS } = require("./dns/dnsConfig");
-    const allCovered = Object.keys(TOOL_HOSTS).every(tool => coverage[tool] === true);
-    if (!allCovered) {
-      console.log("[MITM] Certificate missing domain coverage — regenerating...");
-      needsRegenerate = true;
-      try {
-        fs.unlinkSync(certPath);
-        if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-      } catch { /* ignore */ }
-    }
-  }
-
-  if (needsRegenerate) {
+  if (!fs.existsSync(rootCACertPath) || !fs.existsSync(rootCAKeyPath)) {
+    console.log("[MITM] Generating Root CA certificate (first time or migration)...");
     await generateCert();
   }
 
-  // Step 2: Install cert + spawn server
+  // Step 1.5: Auto-install Root CA if not trusted yet
+  const { checkCertInstalled } = require("./cert/install");
+  const rootCATrusted = await checkCertInstalled(rootCACertPath);
+  if (!rootCATrusted) {
+    console.log("[MITM] Installing Root CA to system trust store...");
+    // Use provided password or cached/stored password
+    const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
+    if (!password && !IS_WIN) {
+      throw new Error("Sudo password required to install Root CA certificate");
+    }
+    await installCert(password, rootCACertPath);
+    console.log("✅ Root CA installed successfully");
+  }
+
+  // Step 2: Spawn server (Root CA already installed in Step 1.5)
   if (IS_WIN) {
     const hostsFile = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts");
     const flagFile = path.join(os.tmpdir(), `mitm_ready_${Date.now()}.flag`);
     const psSQ = (s) => s.replace(/'/g, "''");
-    const certPs = psSQ(certPath);
     const nodePs = psSQ(process.execPath);
     const serverPs = psSQ(SERVER_PATH);
     const flagPs = psSQ(flagFile);
@@ -393,7 +356,6 @@ async function startServer(apiKey, sudoPassword) {
       `$conn = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1`,
       `if ($conn -and $conn.OwningProcess -gt 4) { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue }`,
       `Start-Sleep -Milliseconds 500`,
-      `& certutil -addstore Root '${certPs}' | Out-Null`,
       `$nodeCmd = 'set ROUTER_API_KEY=${psSQ(apiKey)}&& set NODE_ENV=production&& "${nodePs}" "${serverPs}"'`,
       `Start-Process cmd -ArgumentList '/c',$nodeCmd -WindowStyle Hidden`,
       `Start-Sleep -Milliseconds 500`,
@@ -429,13 +391,7 @@ async function startServer(apiKey, sudoPassword) {
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else {
-    const { checkCertInstalled } = require("./cert/install");
-    const certTrusted = await checkCertInstalled(certPath);
-    if (!certTrusted) {
-      await installCert(sudoPassword, certPath);
-      if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
-    }
-
+    // Non-Windows: Root CA already installed in Step 1.5, just spawn server
     const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
@@ -583,7 +539,10 @@ async function stopServer(sudoPassword) {
 async function enableToolDNS(tool, sudoPassword) {
   const status = await getMitmStatus();
   if (!status.running) throw new Error("MITM server is not running. Start the server first.");
-  await addDNSEntry(tool, sudoPassword);
+  
+  // Use cached password if not provided
+  const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
+  await addDNSEntry(tool, password);
   return { success: true };
 }
 
@@ -591,7 +550,9 @@ async function enableToolDNS(tool, sudoPassword) {
  * Disable DNS for a specific tool
  */
 async function disableToolDNS(tool, sudoPassword) {
-  await removeDNSEntry(tool, sudoPassword);
+  // Use cached password if not provided
+  const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
+  await removeDNSEntry(tool, password);
   return { success: true };
 }
 

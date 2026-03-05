@@ -2,6 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { getMitmAlias, setMitmAliasAll } from "@/models";
+import { getMitmStatus } from "@/mitm/manager";
 
 // GET - Get MITM aliases for a tool
 export async function GET(request) {
@@ -23,6 +24,15 @@ export async function PUT(request) {
 
     if (!tool || !mappings || typeof mappings !== "object") {
       return NextResponse.json({ error: "tool and mappings required" }, { status: 400 });
+    }
+
+    // Check if DNS is enabled for this tool
+    const status = await getMitmStatus();
+    if (!status.dnsStatus || !status.dnsStatus[tool]) {
+      return NextResponse.json(
+        { error: `DNS must be enabled for ${tool} before editing model mappings` },
+        { status: 403 }
+      );
     }
 
     const filtered = {};

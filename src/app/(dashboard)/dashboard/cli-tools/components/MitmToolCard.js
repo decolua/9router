@@ -10,6 +10,7 @@ import Image from "next/image";
  * - Start/Stop DNS replaces Save Mappings button
  * - Toggle switch removed; status badge is display-only
  * - Skips sudo modal if password is already cached
+ * - Model mappings can only be edited when DNS is active
  */
 export default function MitmToolCard({
   tool,
@@ -17,7 +18,6 @@ export default function MitmToolCard({
   onToggle,
   serverRunning,
   dnsActive,
-  certCovered,
   hasCachedPassword,
   apiKeys,
   activeProviders,
@@ -104,10 +104,19 @@ export default function MitmToolCard({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to toggle DNS");
-      setMessage({
-        type: "success",
-        text: action === "enable" ? "DNS enabled — traffic intercepted" : "DNS disabled — traffic restored",
-      });
+      
+      if (action === "enable") {
+        setMessage({
+          type: "success",
+          text: `DNS enabled successfully. Please restart ${tool.name} to apply changes.`,
+        });
+      } else {
+        setMessage({
+          type: "success",
+          text: "DNS disabled — traffic restored",
+        });
+      }
+      
       setShowPasswordModal(false);
       setSudoPassword("");
       onDnsChange?.(data);
@@ -154,7 +163,7 @@ export default function MitmToolCard({
                   <Badge variant="warning" size="sm">DNS off</Badge>
                 )}
               </div>
-              <p className="text-xs text-text-muted truncate">{tool.mitmDomain}</p>
+              <p className="text-xs text-text-muted">Intercept {tool.name} requests via MITM proxy</p>
             </div>
           </div>
           <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>
@@ -166,19 +175,12 @@ export default function MitmToolCard({
           <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
             {/* Info */}
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
-              <p>
-                <span className="font-medium text-text-main">Domain:</span>{" "}
-                <code className="text-[10px] bg-surface px-1 rounded">{tool.mitmDomain}</code>
-                {certCovered !== undefined && (
-                  <span className={`ml-1.5 ${certCovered ? "text-green-600" : "text-red-500"}`}>
-                    <span className="material-symbols-outlined text-[11px] align-middle">
-                      {certCovered ? "verified" : "warning"}
-                    </span>
-                    {certCovered ? " cert OK" : " cert missing domain"}
-                  </span>
-                )}
-              </p>
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
+              {!dnsActive && (
+                <p className="text-amber-600 text-[10px] mt-1">
+                  ⚠️ Enable DNS to edit model mappings
+                </p>
+              )}
             </div>
 
             {message && (
@@ -201,12 +203,13 @@ export default function MitmToolCard({
                       onChange={(e) => handleModelMappingChange(model.alias, e.target.value)}
                       onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
                       placeholder="provider/model-id"
-                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      disabled={!dnsActive}
+                      className={`flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
                     />
                     <button
                       onClick={() => openModelSelector(model.alias)}
-                      disabled={!hasActiveProviders}
-                      className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 ${hasActiveProviders ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                      disabled={!hasActiveProviders || !dnsActive}
+                      className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                     >
                       Select
                     </button>

@@ -26,15 +26,57 @@ if (!API_KEY) {
   process.exit(1);
 }
 
+const { getCertForDomain } = require("./cert/generate");
+
+// Certificate cache for performance
+const certCache = new Map();
+
+// SNI callback for dynamic certificate generation
+function sniCallback(servername, cb) {
+  try {
+    // Check cache first
+    if (certCache.has(servername)) {
+      const cached = certCache.get(servername);
+      return cb(null, cached);
+    }
+
+    // Generate new cert for this domain
+    const certData = getCertForDomain(servername);
+    if (!certData) {
+      return cb(new Error(`Failed to generate cert for ${servername}`));
+    }
+
+    // Create secure context
+    const ctx = require("tls").createSecureContext({
+      key: certData.key,
+      cert: certData.cert
+    });
+
+    // Cache it
+    certCache.set(servername, ctx);
+    console.log(`✅ Generated cert for: ${servername}`);
+
+    cb(null, ctx);
+  } catch (error) {
+    console.error(`❌ SNI error for ${servername}:`, error.message);
+    cb(error);
+  }
+}
+
+// Load Root CA for default context
 const certDir = MITM_DIR;
+const rootCAKeyPath = path.join(certDir, "rootCA.key");
+const rootCACertPath = path.join(certDir, "rootCA.crt");
+
 let sslOptions;
 try {
   sslOptions = {
-    key: fs.readFileSync(path.join(certDir, "server.key")),
-    cert: fs.readFileSync(path.join(certDir, "server.crt"))
+    key: fs.readFileSync(rootCAKeyPath),
+    cert: fs.readFileSync(rootCACertPath),
+    SNICallback: sniCallback
   };
 } catch (e) {
-  console.error(`❌ SSL cert not found in ${certDir}: ${e.message}`);
+  console.error(`❌ Root CA not found in ${certDir}: ${e.message}`);
   process.exit(1);
 }
 

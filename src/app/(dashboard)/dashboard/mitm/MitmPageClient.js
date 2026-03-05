@@ -12,7 +12,7 @@ export default function MitmPageClient() {
   const [apiKeys, setApiKeys] = useState([]);
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [expandedTool, setExpandedTool] = useState(null);
-  const [mitmStatus, setMitmStatus] = useState({ running: false, certExists: false, dnsStatus: {}, certCoversTools: {}, hasCachedPassword: false });
+  const [mitmStatus, setMitmStatus] = useState({ running: false, certExists: false, dnsStatus: {}, hasCachedPassword: false });
 
   useEffect(() => {
     fetchConnections();
@@ -78,7 +78,6 @@ export default function MitmPageClient() {
             onToggle={() => setExpandedTool(expandedTool === toolId ? null : toolId)}
             serverRunning={mitmStatus.running}
             dnsActive={mitmStatus.dnsStatus?.[toolId] || false}
-            certCovered={mitmStatus.certCoversTools?.[toolId] || false}
             hasCachedPassword={mitmStatus.hasCachedPassword || false}
             apiKeys={apiKeys}
             activeProviders={getActiveProviders()}
