@@ -3,6 +3,8 @@ import { getProviderConnections, createProviderConnection, getProviderNodeById, 
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/providers - List all connections
 export async function GET() {
   try {
@@ -15,8 +17,8 @@ export async function GET() {
       for (const node of nodes) {
         if (node.id && node.name) nodeNameMap[node.id] = node.name;
       }
-    } catch {}
-    
+    } catch { }
+
     // Hide sensitive fields, enrich name for compatible providers
     const safeConnections = connections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
@@ -47,9 +49,9 @@ export async function POST(request) {
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
 
     // Validation
-    const isValidProvider = APIKEY_PROVIDERS[provider] || 
-                          isOpenAICompatibleProvider(provider) || 
-                          isAnthropicCompatibleProvider(provider);
+    const isValidProvider = APIKEY_PROVIDERS[provider] ||
+      isOpenAICompatibleProvider(provider) ||
+      isAnthropicCompatibleProvider(provider);
 
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
