@@ -152,15 +152,18 @@ async function main() {
   const readmePath = path.join(__dirname, '../../README.md');
   const readmeContent = fs.readFileSync(readmePath, 'utf8');
   
-  // Translate languages in batches
+  // Translate languages in batches (parallel within batch)
   const results = [];
   for (let i = 0; i < targetLangs.length; i += BATCH_SIZE) {
     const batch = targetLangs.slice(i, i + BATCH_SIZE);
     console.log(`\nBatch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(targetLangs.length / BATCH_SIZE)}: ${batch.join(', ')}`);
+    console.log('Starting translations in parallel...\n');
     
-    const batchResults = await Promise.allSettled(
-      batch.map(lang => translateToLanguage(readmeContent, lang))
-    );
+    // Start all translations in parallel (don't await yet)
+    const batchPromises = batch.map(lang => translateToLanguage(readmeContent, lang));
+    
+    // Wait for all to complete
+    const batchResults = await Promise.allSettled(batchPromises);
     
     results.push(...batchResults);
     
