@@ -9,10 +9,12 @@ export async function GET() {
     const { password, ...safeSettings } = settings;
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
+    const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
+      enableTranslator,
       hasPassword: !!password
     });
   } catch (error) {

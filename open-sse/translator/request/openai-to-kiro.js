@@ -54,13 +54,17 @@ function convertMessages(messages, tools, model) {
             description = `Tool: ${name}`;
           }
           
+          const schema = t.function?.parameters || t.parameters || t.input_schema || {};
+          // Normalize schema: Kiro requires required[] and proper type/properties
+          const normalizedSchema = Object.keys(schema).length === 0
+            ? { type: "object", properties: {}, required: [] }
+            : { ...schema, required: schema.required ?? [] };
+
           return {
             toolSpecification: {
               name,
               description,
-              inputSchema: {
-                json: t.function?.parameters || t.parameters || t.input_schema || {}
-              }
+              inputSchema: { json: normalizedSchema }
             }
           };
         });

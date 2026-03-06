@@ -19,9 +19,7 @@ const navItems = [
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
 
-// Debug items (only show when ENABLE_REQUEST_LOGS=true)
 const debugItems = [
-  // { href: "/dashboard/translator", label: "Translator", icon: "translate" },
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
 ];
 
@@ -35,6 +33,14 @@ export default function Sidebar({ onClose }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [enableTranslator, setEnableTranslator] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then(res => res.json())
+      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .catch(() => {});
+  }, []);
 
   // Lazy check for new npm version on mount
   useEffect(() => {
@@ -129,6 +135,23 @@ export default function Sidebar({ onClose }) {
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
                 Debug
               </p>
+              {enableTranslator && (
+                <Link
+                  href="/dashboard/translator"
+                  onClick={onClose}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    isActive("/dashboard/translator")
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  )}
+                >
+                  <span className={cn("material-symbols-outlined text-[18px]", isActive("/dashboard/translator") ? "fill-1" : "group-hover:text-primary transition-colors")}>
+                    translate
+                  </span>
+                  <span className="text-sm font-medium">Translator</span>
+                </Link>
+              )}
               {debugItems.map((item) => (
                 <Link
                   key={item.href}
