@@ -88,6 +88,20 @@ export const CLI_TOOLS = {
     description: "Factory Droid AI Assistant",
     configType: "custom",
   },
+  amp: {
+    id: "amp",
+    name: "Amp CLI",
+    image: "/providers/amp.svg",
+    color: "#000000",
+    description: "Amp AI Coding Assistant",
+    configType: "custom",
+    settingsFile: "~/.config/amp/settings.json",
+    secretsFile: "~/.local/share/amp/secrets.json",
+    envVars: {
+      url: "AMP_URL",
+      apiKey: "AMP_API_KEY",
+    },
+  },
   cursor: {
     id: "cursor",
     name: "Cursor",

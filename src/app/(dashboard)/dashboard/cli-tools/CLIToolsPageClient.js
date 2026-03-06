@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, OpenCodeToolCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, OpenCodeToolCard, AmpToolCard } from "./components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -17,6 +17,7 @@ const STATUS_ENDPOINTS = {
   opencode: "/api/cli-tools/opencode-settings",
   droid: "/api/cli-tools/droid-settings",
   openclaw: "/api/cli-tools/openclaw-settings",
+  amp: "/api/cli-tools/amp-settings",
 };
 
 export default function CLIToolsPageClient({ machineId }) {
@@ -180,6 +181,8 @@ export default function CLIToolsPageClient({ machineId }) {
         return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.droid} />;
       case "openclaw":
         return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
+      case "amp":
+        return <AmpToolCard key={toolId} {...commonProps} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.amp} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }
