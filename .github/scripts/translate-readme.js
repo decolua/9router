@@ -9,6 +9,7 @@ const API_MODEL = process.env.GLM_API_MODEL || 'glm-5';
 const API_KEY = process.env.GLM_API_KEY;
 const MAX_TOKENS = parseInt(process.env.GLM_MAX_TOKENS || '32000');
 const TEMPERATURE = parseFloat(process.env.GLM_TEMPERATURE || '0.3');
+const BATCH_SIZE = parseInt(process.env.TRANSLATE_BATCH_SIZE || '2'); // Number of languages to translate in parallel
 
 const SUPPORTED_LANGUAGES = {
   vi: 'Vietnamese',
@@ -144,20 +145,29 @@ async function main() {
   console.log(`API Endpoint: ${API_ENDPOINT}`);
   console.log(`Model: ${API_MODEL}`);
   console.log(`Max Tokens: ${MAX_TOKENS}`);
+  console.log(`Batch Size: ${BATCH_SIZE}`);
   console.log(`Languages: ${targetLangs.join(', ')}`);
   console.log('='.repeat(60));
   
   const readmePath = path.join(__dirname, '../../README.md');
   const readmeContent = fs.readFileSync(readmePath, 'utf8');
   
-  // Translate languages sequentially (streaming doesn't work well in parallel)
+  // Translate languages in batches
   const results = [];
-  for (const lang of targetLangs) {
-    try {
-      const result = await translateToLanguage(readmeContent, lang);
-      results.push({ status: 'fulfilled', value: result });
-    } catch (error) {
-      results.push({ status: 'rejected', reason: error, lang });
+  for (let i = 0; i < targetLangs.length; i += BATCH_SIZE) {
+    const batch = targetLangs.slice(i, i + BATCH_SIZE);
+    console.log(`\nBatch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(targetLangs.length / BATCH_SIZE)}: ${batch.join(', ')}`);
+    
+    const batchResults = await Promise.allSettled(
+      batch.map(lang => translateToLanguage(readmeContent, lang))
+    );
+    
+    results.push(...batchResults);
+    
+    // Wait between batches to avoid rate limit
+    if (i + BATCH_SIZE < targetLangs.length) {
+      console.log('\nWaiting 3s before next batch...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
   }
   

@@ -17,6 +17,18 @@ function timeAgo(timestamp) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+// Auto-update time display every second without re-rendering parent
+function TimeAgo({ timestamp }) {
+  const [, setTick] = useState(0);
+  
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  return <>{timeAgo(timestamp)}</>;
+}
+
 function RecentRequests({ requests = [] }) {
   return (
     <Card className="flex flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
@@ -52,7 +64,7 @@ function RecentRequests({ requests = [] }) {
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
                     </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap">{timeAgo(r.timestamp)}</td>
+                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
                 );
               })}
