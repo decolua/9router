@@ -284,6 +284,9 @@ export const PROVIDER_MODELS = {
     { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
+  ramclouds: [
+    { id: "auto", name: "Auto (Best Available)" },
+  ],
 };
 
 // Helper functions
@@ -354,6 +357,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   nebius: "nebius",
   siliconflow: "siliconflow",
   hyperbolic: "hyperbolic",
+  ramclouds: "ramclouds",
 };
 
 export function getModelsByProviderId(providerId) {

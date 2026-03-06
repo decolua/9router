@@ -331,6 +331,11 @@ export const PROVIDERS = {
     tokenUrl: "https://api.cline.bot/api/v1/auth/token",
     refreshUrl: "https://api.cline.bot/api/v1/auth/refresh"
   },
+  ramclouds: {
+    baseUrl: "https://ramclouds.me/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   nvidia: {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     format: "openai"
