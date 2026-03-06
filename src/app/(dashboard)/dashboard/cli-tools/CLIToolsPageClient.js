@@ -111,7 +111,12 @@ export default function CLIToolsPageClient({ machineId }) {
     const seenModels = new Set();
     activeProviders.forEach(conn => {
       const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
-      const providerModels = getModelsByProviderId(conn.provider);
+
+      // Use dynamically fetched models if available, otherwise fall back to static models
+      const dynamicModels = conn.providerSpecificData?.models || [];
+      const staticModels = getModelsByProviderId(conn.provider);
+      const providerModels = dynamicModels.length > 0 ? dynamicModels : staticModels;
+
       providerModels.forEach(m => {
         const modelValue = `${alias}/${m.id}`;
         if (!seenModels.has(modelValue)) {
