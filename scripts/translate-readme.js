@@ -125,7 +125,7 @@ ${readmeContent}`;
     .replace(/<img src="\.\/images\//g, '<img src="../images/')
     .replace(/<img src="\.\/public\//g, '<img src="../public/');
   
-  const i18nDir = path.join(__dirname, '../../i18n');
+  const i18nDir = path.join(__dirname, '../i18n');
   if (!fs.existsSync(i18nDir)) {
     fs.mkdirSync(i18nDir, { recursive: true });
   }
@@ -149,7 +149,7 @@ async function main() {
   console.log(`Languages: ${targetLangs.join(', ')}`);
   console.log('='.repeat(60));
   
-  const readmePath = path.join(__dirname, '../../README.md');
+  const readmePath = path.join(__dirname, '../README.md');
   const readmeContent = fs.readFileSync(readmePath, 'utf8');
   
   // Translate languages in batches (parallel within batch)
