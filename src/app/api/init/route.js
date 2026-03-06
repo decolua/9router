@@ -1,7 +1,7 @@
-// Auto-initialize cloud sync when server starts
-import "@/lib/initCloudSync";
+import { ensureAppInitialized } from "@/lib/initCloudSync";
 
-// This API route is called automatically to initialize sync
+// Initialize at runtime when this API route is called
 export async function GET() {
+  await ensureAppInitialized();
   return new Response("Initialized", { status: 200 });
 }

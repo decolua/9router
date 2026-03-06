@@ -42,6 +42,9 @@ export async function handleChat(request, clientRawRequest = null) {
     };
   }
 
+  // Check for internal proxy bypass header
+  const isInternalProxy = request.headers.get("x-internal-proxy") === "true";
+
   // Log request endpoint and model
   const url = new URL(request.url);
   const modelStr = body.model;
@@ -62,9 +65,9 @@ export async function handleChat(request, clientRawRequest = null) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
-  // Enforce API key if enabled in settings
+  // Enforce API key if enabled in settings (skip for internal proxy requests)
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && !isInternalProxy) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");

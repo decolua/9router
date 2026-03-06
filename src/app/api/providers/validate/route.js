@@ -164,7 +164,8 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
-        case "nvidia": {
+        case "nvidia":
+        case "ramclouds": {
           const endpoints = {
             deepseek: "https://api.deepseek.com/models",
             groq: "https://api.groq.com/openai/v1/models",
@@ -181,7 +182,8 @@ export async function POST(request) {
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",
-            nvidia: "https://integrate.api.nvidia.com/v1/models"
+            nvidia: "https://integrate.api.nvidia.com/v1/models",
+            ramclouds: "https://ramclouds.me/v1/models"
           };
           const res = await fetch(endpoints[provider], {
             headers: { "Authorization": `Bearer ${apiKey}` },
