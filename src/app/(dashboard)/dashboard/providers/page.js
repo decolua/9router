@@ -324,7 +324,7 @@ export default function ProvidersPage() {
             API Key Compatible Providers{" "}
           </h2>
           <div className="flex gap-2">
-            {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
+            {/* {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
               <button
                 onClick={() => handleBatchTest("compatible")}
                 disabled={!!testingMode}
@@ -340,7 +340,7 @@ export default function ProvidersPage() {
                 </span>
                 {testingMode === "compatible" ? "Testing..." : "Test All"}
               </button>
-            )}
+            )} */}
             <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
               Add Anthropic Compatible
             </Button>
