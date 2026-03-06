@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getModelsByProviderId } from "@/shared/constants/models";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
 
 const MITM_TOOL_IDS = ["antigravity", "copilot"];
@@ -10,6 +11,7 @@ const MITM_TOOL_IDS = ["antigravity", "copilot"];
 export default function MitmPageClient() {
   const [connections, setConnections] = useState([]);
   const [apiKeys, setApiKeys] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [expandedTool, setExpandedTool] = useState(null);
   const [mitmStatus, setMitmStatus] = useState({ running: false, certExists: false, dnsStatus: {}, hasCachedPassword: false });
@@ -17,6 +19,7 @@ export default function MitmPageClient() {
   useEffect(() => {
     fetchConnections();
     fetchApiKeys();
+    fetchAliases();
     fetchCloudSettings();
   }, []);
 
@@ -40,6 +43,16 @@ export default function MitmPageClient() {
     } catch { /* ignore */ }
   };
 
+  const fetchAliases = async () => {
+    try {
+      const res = await fetch("/api/models/alias");
+      if (res.ok) {
+        const data = await res.json();
+        setModelAliases(data.aliases || {});
+      }
+    } catch { /* ignore */ }
+  };
+
   const fetchCloudSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -54,7 +67,11 @@ export default function MitmPageClient() {
 
   const hasActiveProviders = () => {
     const active = getActiveProviders();
-    return active.some(conn => getModelsByProviderId(conn.provider).length > 0);
+    return active.some(conn =>
+      getModelsByProviderId(conn.provider).length > 0 ||
+      isOpenAICompatibleProvider(conn.provider) ||
+      isAnthropicCompatibleProvider(conn.provider)
+    );
   };
 
   const mitmTools = Object.entries(CLI_TOOLS).filter(([id]) => MITM_TOOL_IDS.includes(id));
@@ -82,6 +99,7 @@ export default function MitmPageClient() {
             apiKeys={apiKeys}
             activeProviders={getActiveProviders()}
             hasActiveProviders={hasActiveProviders()}
+            modelAliases={modelAliases}
             cloudEnabled={cloudEnabled}
             onDnsChange={(data) => setMitmStatus(prev => ({ ...prev, dnsStatus: data.dnsStatus ?? prev.dnsStatus }))}
           />

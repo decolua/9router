@@ -22,6 +22,7 @@ export default function MitmToolCard({
   apiKeys,
   activeProviders,
   hasActiveProviders,
+  modelAliases = {},
   cloudEnabled,
   onDnsChange,
 }) {
@@ -74,7 +75,7 @@ export default function MitmToolCard({
   };
 
   const handleModelSelect = (model) => {
-    if (!currentEditingAlias) return;
+    if (!currentEditingAlias || model.isPlaceholder) return;
     const updated = { ...modelMappings, [currentEditingAlias]: model.value };
     setModelMappings(updated);
     saveMappings(updated);
@@ -104,7 +105,7 @@ export default function MitmToolCard({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to toggle DNS");
-      
+
       if (action === "enable") {
         setMessage({
           type: "success",
@@ -116,7 +117,7 @@ export default function MitmToolCard({
           text: "DNS disabled — traffic restored",
         });
       }
-      
+
       setShowPasswordModal(false);
       setSudoPassword("");
       onDnsChange?.(data);
@@ -303,6 +304,7 @@ export default function MitmToolCard({
         onSelect={handleModelSelect}
         selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null}
         activeProviders={activeProviders}
+        modelAliases={modelAliases}
         title={`Select model for ${currentEditingAlias}`}
       />
     </>
