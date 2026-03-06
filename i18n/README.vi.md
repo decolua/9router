@@ -153,7 +153,7 @@ URL mặc định:
         <img src="../public/providers/openclaw.png" width="60" alt="OpenClaw"/><br/>
         <b>OpenClaw</b>
       </td>
-      <td align="center width="120">
+      <td align="center" width="120">
         <img src="../public/providers/codex.png" width="60" alt="Codex"/><br/>
         <b>Codex</b>
       </td>
@@ -164,7 +164,11 @@ URL mặc định:
       <td align="center" width="120">
         <img src="../public/providers/cursor.png" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
-     td>
+      </td>
+      <td align="center" width="120">
+        <img src="../public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
+      </td>
     </tr>
     <tr>
       <td align="center" width="120">
@@ -184,8 +188,12 @@ URL mặc định:
         <b>Roo</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
+        <img src="../public/providers/copilot.png" width="60" alt="Copilot"/><br/>
+        <b>Copilot</b>
+      </td>
+      <td align="center" width="120">
+        <img src="../public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
+        <b>Kilo Code</b>
       </td>
     </tr>
   </table>
@@ -207,7 +215,7 @@ URL mặc định:
       <td align="center" width="120">
         <img src="../public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
         <b>Antigravity</b>
- </td>
+      </td>
       <td align="center" width="120">
         <img src="../public/providers/codex.png" width="60" alt="Codex"/><br/>
         <b>Codex</b>
@@ -235,7 +243,7 @@ URL mặc định:
         <sub>8+ mô hình • Không giới hạn</sub>
       </td>
       <td align="center" width="150">
-        <img src="../public/providers/qwen.png"="70" alt="Qwen"/><br/>
+        <img src="../public/providers/qwen.png" width="70" alt="Qwen"/><br/>
         <b>Qwen Code</b><br/>
         <sub>3+ mô hình • Không giới hạn</sub>
       </td>
@@ -245,7 +253,7 @@ URL mặc định:
         <sub>180K/tháng MIỄN PHÍ</sub>
       </td>
       <td align="center" width="150">
-        <img src="../public/providerskiro.png" width="70" alt="Kiro"/><br/>
+        <img src="../public/providers/kiro.png" width="70" alt="Kiro"/><br/>
         <b>Kiro AI</b><br/>
         <sub>Claude • Không giới hạn</sub>
       </td>
@@ -262,7 +270,7 @@ URL mặc định:
         <img src="../public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
         <sub>OpenRouter</sub>
       </td>
-     td align="center" width="100">
+      <td align="center" width="100">
         <img src="../public/providers/glm.png" width="50" alt="GLM"/><br/>
         <sub>GLM</sub>
       </td>
@@ -272,7 +280,7 @@ URL mặc định:
       </td>
       <td align="center" width="100">
         <img src="../public/providers/minimax.png" width="50" alt="MiniMax"/><br/>
-        <subMiniMax</sub>
+        <sub>MiniMax</sub>
       </td>
       <td align="center" width="100">
         <img src="../public/providers/openai.png" width="50" alt="OpenAI"/><br/>
@@ -285,7 +293,7 @@ URL mặc định:
     </tr>
     <tr>
       <td align="center" width="100">
-        <img src=".//providers/gemini.png" width="50" alt="Gemini"/><br/>
+        <img src="../public/providers/gemini.png" width="50" alt="Gemini"/><br/>
         <sub>Gemini</sub>
       </td>
       <td align="center" width="100">
@@ -296,7 +304,7 @@ URL mặc định:
         <img src="../public/providers/groq.png" width="50" alt="Groq"/><br/>
         <sub>Groq</sub>
       </td>
-      < align="center" width="100">
+      <td align="center" width="100">
         <img src="../public/providers/xai.png" width="50" alt="xAI"/><br/>
         <sub>xAI</sub>
       </td>
@@ -305,7 +313,8 @@ URL mặc định:
         <sub>Mistral</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/perplexity.png" width="50" alt="Perplexity"/><br        <sub>Perplexity</sub>
+        <img src="../public/providers/perplexity.png" width="50" alt="Perplexity"/><br/>
+        <sub>Perplexity</sub>
       </td>
     </tr>
     <tr>
@@ -318,7 +327,7 @@ URL mặc định:
         <sub>Fireworks</sub>
       </td>
       <td align="center" width="100">
-        < src="./public/providers/cerebras.png" width="50" alt="Cerebras"/><br/>
+        <img src="../public/providers/cerebras.png" width="50" alt="Cerebras"/><br/>
         <sub>Cerebras</sub>
       </td>
       <td align="center" width="100">
@@ -329,7 +338,7 @@ URL mặc định:
         <img src="../public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
         <sub>NVIDIA</sub>
       </td>
- <td align="center" width="100">
+      <td align="center" width="100">
         <img src="../public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
         <sub>SiliconFlow</sub>
       </td>

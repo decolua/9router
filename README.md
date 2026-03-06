@@ -16,6 +16,8 @@
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
   [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+
+  [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md)
 </div>
 
 ---
@@ -163,6 +165,10 @@ Default URLs:
         <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
       </td>
+      <td align="center" width="120">
+        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
+      </td>
     </tr>
     <tr>
       <td align="center" width="120">
@@ -182,8 +188,12 @@ Default URLs:
         <b>Roo</b>
       </td>
       <td align="center" width="120">
-        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
+        <img src="./public/providers/copilot.png" width="60" alt="Copilot"/><br/>
+        <b>Copilot</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
+        <b>Kilo Code</b>
       </td>
     </tr>
   </table>

@@ -11,7 +11,7 @@
     <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
   </p>
   
- ![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
+  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
@@ -157,10 +157,15 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
       </td>
       <td align="center" width="120">
         <img src="../public/providers/opencode.png" width="60" alt="OpenCode"/><br/>
-        <b>OpenCode</b      </td>
+        <b>OpenCode</b>
+      </td>
       <td align="center" width="120">
         <img src="../public/providers/cursor.png" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
+      </td>
+      <td align="center" width="120">
+        <img src="../public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
       </td>
     </tr>
     <tr>
@@ -169,7 +174,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <b>Cline</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/continue.png" width="60" altContinue"/><br/>
+        <img src="../public/providers/continue.png" width="60" alt="Continue"/><br/>
         <b>Continue</b>
       </td>
       <td align="center" width="120">
@@ -181,8 +186,12 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <b>Roo</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/antigravity" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
+        <img src="../public/providers/copilot.png" width="60" alt="Copilot"/><br/>
+        <b>Copilot</b>
+      </td>
+      <td align="center" width="120">
+        <img src="../public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
+        <b>Kilo Code</b>
       </td>
     </tr>
   </table>
@@ -201,7 +210,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <img src="../public/providers/claude.png" width="60" alt="Claude Code"/><br/>
         <b>Claude-Code</b>
       </td>
-      <td align="center" width="">
+      <td align="center" width="120">
         <img src="../public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
         <b>Antigravity</b>
       </td>
@@ -212,7 +221,8 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
       <td align="center" width="120">
         <img src="../public/providers/github.png" width="60" alt="GitHub"/><br/>
         <b>GitHub</b>
-      </td      <td align="center" width="120">
+      </td>
+      <td align="center" width="120">
         <img src="../public/providers/cursor.png" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
       </td>
@@ -238,7 +248,8 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
       <td align="center" width="150">
         <img src="../public/providers/gemini-cli.png" width="70" alt="Gemini CLI"/><br/>
         <b>Gemini CLI</b><br/>
-        <sub>180K/月 免费</sub      </td>
+        <sub>180K/月 免费</sub>
+      </td>
       <td align="center" width="150">
         <img src="../public/providers/kiro.png" width="70" alt="Kiro"/><br/>
         <b>Kiro AI</b><br/>
@@ -254,7 +265,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
   <table>
     <tr>
       <td align="center" width="100">
-        <img src="../public/providers/openrouter.png" width="50" altOpenRouter"/><br/>
+        <img src="../public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
         <sub>OpenRouter</sub>
       </td>
       <td align="center" width="100">
@@ -266,7 +277,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <sub>Kimi</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/minimax" width="50" alt="MiniMax"/><br/>
+        <img src="../public/providers/minimax.png" width="50" alt="MiniMax"/><br/>
         <sub>MiniMax</sub>
       </td>
       <td align="center" width="100">
@@ -279,7 +290,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
       </td>
     </tr>
     <tr>
-      <td="center" width="100">
+      <td align="center" width="100">
         <img src="../public/providers/gemini.png" width="50" alt="Gemini"/><br/>
         <sub>Gemini</sub>
       </td>
@@ -324,7 +335,8 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
       <td align="center" width="100">
         <img src="../public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
         <sub>NVIDIA</sub>
-      </td      <td align="center" width="100">
+      </td>
+      <td align="center" width="100">
         <img src="../public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
         <sub>SiliconFlow</sub>
       </td>
