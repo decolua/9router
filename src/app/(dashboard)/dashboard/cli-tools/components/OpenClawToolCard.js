@@ -13,8 +13,9 @@ export default function OpenClawToolCard({
   apiKeys,
   activeProviders,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [openclawStatus, setOpenclawStatus] = useState(null);
+  const [openclawStatus, setOpenclawStatus] = useState(initialStatus || null);
   const [checkingOpenclaw, setCheckingOpenclaw] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -46,11 +47,16 @@ export default function OpenClawToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setOpenclawStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !openclawStatus) {
       checkOpenclawStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, openclawStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {
@@ -207,7 +213,7 @@ export default function OpenClawToolCard({
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">

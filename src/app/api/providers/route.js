@@ -1,21 +1,39 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById } from "@/models";
+import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+
+export const dynamic = "force-dynamic";
 
 // GET /api/providers - List all connections
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    
-    // Hide sensitive fields
-    const safeConnections = connections.map(c => ({
-      ...c,
-      apiKey: undefined,
-      accessToken: undefined,
-      refreshToken: undefined,
-      idToken: undefined,
-    }));
+
+    // Build nodeNameMap for compatible providers (id → name)
+    let nodeNameMap = {};
+    try {
+      const nodes = await getProviderNodes();
+      for (const node of nodes) {
+        if (node.id && node.name) nodeNameMap[node.id] = node.name;
+      }
+    } catch { }
+
+    // Hide sensitive fields, enrich name for compatible providers
+    const safeConnections = connections.map(c => {
+      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+      const name = isCompatible
+        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        : c.name;
+      return {
+        ...c,
+        name,
+        apiKey: undefined,
+        accessToken: undefined,
+        refreshToken: undefined,
+        idToken: undefined,
+      };
+    });
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
@@ -31,9 +49,9 @@ export async function POST(request) {
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
 
     // Validation
-    const isValidProvider = APIKEY_PROVIDERS[provider] || 
-                          isOpenAICompatibleProvider(provider) || 
-                          isAnthropicCompatibleProvider(provider);
+    const isValidProvider = APIKEY_PROVIDERS[provider] ||
+      isOpenAICompatibleProvider(provider) ||
+      isAnthropicCompatibleProvider(provider);
 
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });

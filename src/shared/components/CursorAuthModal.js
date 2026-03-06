@@ -15,35 +15,38 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
+  const [windowsManual, setWindowsManual] = useState(false);
+
+  const runAutoDetect = async () => {
+    setAutoDetecting(true);
+    setError(null);
+    setAutoDetected(false);
+    setWindowsManual(false);
+
+    try {
+      const res = await fetch("/api/oauth/cursor/auto-import");
+      const data = await res.json();
+
+      if (data.found) {
+        setAccessToken(data.accessToken);
+        setMachineId(data.machineId);
+        setAutoDetected(true);
+      } else if (data.windowsManual) {
+        setWindowsManual(true);
+      } else {
+        setError(data.error || "Could not auto-detect tokens");
+      }
+    } catch (err) {
+      setError("Failed to auto-detect tokens");
+    } finally {
+      setAutoDetecting(false);
+    }
+  };
 
   // Auto-detect tokens when modal opens
   useEffect(() => {
     if (!isOpen) return;
-
-    const autoDetect = async () => {
-      setAutoDetecting(true);
-      setError(null);
-      setAutoDetected(false);
-
-      try {
-        const res = await fetch("/api/oauth/cursor/auto-import");
-        const data = await res.json();
-
-        if (data.found) {
-          setAccessToken(data.accessToken);
-          setMachineId(data.machineId);
-          setAutoDetected(true);
-        } else {
-          setError(data.error || "Could not auto-detect tokens");
-        }
-      } catch (err) {
-        setError("Failed to auto-detect tokens");
-      } finally {
-        setAutoDetecting(false);
-      }
-    };
-
-    autoDetect();
+    runAutoDetect();
   }, [isOpen]);
 
   const handleImportToken = async () => {
@@ -76,7 +79,6 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
         throw new Error(data.error || "Import failed");
       }
 
-      // Success - close modal and trigger refresh
       onSuccess?.();
       onClose();
     } catch (err) {
@@ -119,8 +121,29 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
               </div>
             )}
 
+            {/* Windows manual instructions */}
+            {windowsManual && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg border border-amber-200 dark:border-amber-800 flex flex-col gap-2">
+                <div className="flex gap-2 items-center">
+                  <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">info</span>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Could not read Cursor database automatically.
+                  </p>
+                </div>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Run this command in your terminal, then click <strong>Retry</strong>:
+                </p>
+                <pre className="text-xs bg-black/10 dark:bg-white/10 rounded p-2 font-mono select-all">
+                  npm i better-sqlite3 -g
+                </pre>
+                <Button onClick={runAutoDetect} variant="outline" fullWidth>
+                  Retry
+                </Button>
+              </div>
+            )}
+
             {/* Info message if not auto-detected */}
-            {!autoDetected && !error && (
+            {!autoDetected && !windowsManual && !error && (
               <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                 <div className="flex gap-2">
                   <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>

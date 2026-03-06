@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { CardSkeleton } from "./Loading";
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
@@ -16,6 +15,18 @@ function timeAgo(timestamp) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// Auto-update time display every second without re-rendering parent
+function TimeAgo({ timestamp }) {
+  const [, setTick] = useState(0);
+  
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  return <>{timeAgo(timestamp)}</>;
 }
 
 function RecentRequests({ requests = [] }) {
@@ -53,7 +64,7 @@ function RecentRequests({ requests = [] }) {
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
                     </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap">{timeAgo(r.timestamp)}</td>
+                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
                 );
               })}
@@ -162,6 +173,13 @@ const TABLE_OPTIONS = [
   { value: "endpoint", label: "Usage by Endpoint" },
 ];
 
+const PERIODS = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7D" },
+  { value: "30d", label: "30D" },
+  { value: "60d", label: "60D" },
+];
+
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -171,8 +189,10 @@ export default function UsageStats() {
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [providers, setProviders] = useState([]);
+  const [period, setPeriod] = useState("7d");
 
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
@@ -191,33 +211,48 @@ export default function UsageStats() {
       .catch(() => {});
   }, []);
 
-  // SSE connection - no polling, event-driven
+  // Fetch filtered stats via REST when period changes
   useEffect(() => {
-    console.log("[SSE CLIENT] connecting...");
-    const es = new EventSource("/api/usage/stream");
+    // First load: show full spinner; subsequent: show subtle fetching indicator
+    if (!stats) setLoading(true);
+    else setFetching(true);
 
-    es.onopen = () => console.log("[SSE CLIENT] connected ✓");
+    fetch(`/api/usage/stats?period=${period}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setStats((prev) => ({ ...prev, ...data }));
+      })
+      .catch(() => {})
+      .finally(() => {
+        setLoading(false);
+        setFetching(false);
+      });
+  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // SSE connection - real-time updates for activeRequests + recentRequests only
+  useEffect(() => {
+    const es = new EventSource("/api/usage/stream");
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        console.log("[SSE CLIENT] message received | activeRequests:", data.activeRequests?.length || 0, "| providers:", data.activeRequests?.map(r => r.provider));
-        setStats(data);
+        // Only update real-time fields from SSE, keep filtered stats intact
+        setStats((prev) => prev ? {
+          ...prev,
+          activeRequests: data.activeRequests,
+          recentRequests: data.recentRequests,
+          errorProvider: data.errorProvider,
+          pending: data.pending,
+        } : data);
         setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
     };
 
-    es.onerror = (e) => {
-      console.error("[SSE CLIENT] error | readyState:", es.readyState, e);
-      setLoading(false);
-    };
+    es.onerror = () => setLoading(false);
 
-    return () => {
-      console.log("[SSE CLIENT] closing");
-      es.close();
-    };
+    return () => es.close();
   }, []);
 
   const toggleSort = useCallback((tableType, field) => {
@@ -348,27 +383,53 @@ export default function UsageStats() {
     }
   }, [stats, tableView, sortBy, sortOrder]);
 
-  if (loading) return <CardSkeleton />;
-  if (!stats) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+
+  const spinner = (
+    <div className="flex items-center justify-center py-12 text-text-muted">
+      <span className="material-symbols-outlined text-[32px] animate-spin">progress_activity</span>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Overview cards */}
-      <OverviewCards stats={stats} />
-
-      {/* Provider topology + Recent Requests */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
-        <ProviderTopology
-          providers={providers}
-          activeRequests={stats.activeRequests || []}
-          lastProvider={stats.recentRequests?.[0]?.provider || ""}
-          errorProvider={stats.errorProvider || ""}
-        />
-        <RecentRequests requests={stats.recentRequests || []} />
+      {/* Period selector */}
+      <div className="flex items-center gap-2 self-end">
+        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+          {PERIODS.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              disabled={fetching}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {fetching && (
+          <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
+        )}
       </div>
 
-      {/* Token / Cost chart */}
-      <UsageChart />
+      {/* Overview cards */}
+      {loading ? spinner : <OverviewCards stats={stats} />}
+
+      {/* Provider topology + Recent Requests */}
+      {loading ? spinner : (
+        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
+          <ProviderTopology
+            providers={providers}
+            activeRequests={stats.activeRequests || []}
+            lastProvider={stats.recentRequests?.[0]?.provider || ""}
+            errorProvider={stats.errorProvider || ""}
+          />
+          <RecentRequests requests={stats.recentRequests || []} />
+        </div>
+      )}
+
+      {/* Token / Cost chart - sync period */}
+      {loading ? spinner : <UsageChart period={period} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">
@@ -383,7 +444,7 @@ export default function UsageStats() {
             ))}
           </select>
         </div>
-        {activeTableConfig && (
+        {loading ? spinner : activeTableConfig && (
           <UsageTable
             title=""
             columns={activeTableConfig.columns}

@@ -76,7 +76,7 @@ const checkCodexInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where codex" : "command -v codex";
-    await execAsync(command);
+    await execAsync(command, { windowsHide: true });
     return true;
   } catch {
     return false;

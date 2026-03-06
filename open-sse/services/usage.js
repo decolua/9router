@@ -214,23 +214,40 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
 
-    // Fetch quota data
+    // Fetch quota data with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "X-Client-Name": "antigravity",
+        "X-Client-Version": "1.107.0",
+        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({
-        ...(projectId ? { project: projectId } : {}),
-        metadata: CLIENT_METADATA,
-        mode: 1
+        ...(projectId ? { project: projectId } : {})
       }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (response.status === 403) {
-      return { message: "Antigravity access forbidden. Check subscription." };
+      return {
+        message: "Antigravity quota API access forbidden. Chat may still work.",
+        quotas: {}
+      };
+    }
+
+    if (response.status === 401) {
+      return {
+        message: "Antigravity quota API authentication expired. Chat may still work.",
+        quotas: {}
+      };
     }
 
     if (!response.ok) {
@@ -292,6 +309,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
       subscriptionInfo,
     };
   } catch (error) {
+    console.error("[Antigravity Usage] Error:", error.message, error.cause);
     return { message: `Antigravity error: ${error.message}` };
   }
 }
@@ -313,20 +331,28 @@ async function getAntigravityProjectId(accessToken) {
  */
 async function getAntigravitySubscriptionInfo(accessToken) {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
     const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) return null;
 
     return await response.json();
-  } catch {
+  } catch (error) {
+    console.error("[Antigravity Subscription] Error:", error.message);
     return null;
   }
 }
@@ -444,13 +470,12 @@ async function getCodexUsage(accessToken) {
  * Kiro (AWS CodeWhisperer) Usage
  */
 async function getKiroUsage(accessToken, providerSpecificData) {
-  try {
-    const profileArn = providerSpecificData?.profileArn;
-    if (!profileArn) {
-      return { message: "Kiro connected. Profile ARN not available for quota tracking." };
-    }
+  // Default profileArn fallback
+  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
 
-    // Kiro uses AWS CodeWhisperer GetUsageLimits API
+  try {
+    // Try old API first (POST method)
     const payload = {
       origin: "AI_EDITOR",
       profileArn: profileArn,
@@ -470,6 +495,15 @@ async function getKiroUsage(accessToken, providerSpecificData) {
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle authentication errors gracefully
+      if (response.status === 403 || response.status === 401) {
+        return {
+          message: "Kiro quota API authentication expired. Chat may still work.",
+          quotas: {}
+        };
+      }
+
       throw new Error(`Kiro API error (${response.status}): ${errorText}`);
     }
 
@@ -515,7 +549,68 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       quotas: quotaInfo,
     };
   } catch (error) {
-    throw new Error(`Failed to fetch Kiro usage: ${error.message}`);
+    // Fallback to new API (GET method)
+    try {
+      const params = new URLSearchParams({
+        origin: "AI_EDITOR",
+        profileArn: profileArn,
+        resourceType: "AGENTIC_REQUEST",
+      });
+
+      const fallbackResponse = await fetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Accept": "application/json",
+        },
+      });
+
+      if (!fallbackResponse.ok) {
+        throw new Error(`Fallback API error (${fallbackResponse.status})`);
+      }
+
+      const fallbackData = await fallbackResponse.json();
+
+      // Parse new API response structure
+      const usageList = fallbackData.usageBreakdownList || [];
+      const quotaInfo = {};
+      const resetAt = parseResetTime(fallbackData.nextDateReset || fallbackData.resetDate);
+
+      usageList.forEach((breakdown) => {
+        const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
+        const used = breakdown.currentUsageWithPrecision || 0;
+        const total = breakdown.usageLimitWithPrecision || 0;
+
+        quotaInfo[resourceType] = {
+          used,
+          total,
+          remaining: total - used,
+          resetAt,
+          unlimited: false,
+        };
+
+        // Add free trial if available
+        if (breakdown.freeTrialInfo) {
+          const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
+          const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
+
+          quotaInfo[`${resourceType}_freetrial`] = {
+            used: freeUsed,
+            total: freeTotal,
+            remaining: freeTotal - freeUsed,
+            resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry),
+            unlimited: false,
+          };
+        }
+      });
+
+      return {
+        plan: fallbackData.subscriptionInfo?.subscriptionTitle || "Kiro",
+        quotas: quotaInfo,
+      };
+    } catch (fallbackError) {
+      throw new Error(`Failed to fetch Kiro usage: ${error.message} | Fallback: ${fallbackError.message}`);
+    }
   }
 }
 

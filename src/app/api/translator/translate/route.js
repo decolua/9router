@@ -1,84 +1,66 @@
 import { NextResponse } from "next/server";
-import { detectFormat, getTargetFormat, buildProviderUrl, buildProviderHeaders } from "open-sse/services/provider.js";
+import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
+import { parseModel } from "open-sse/services/model.js";
 import { getProviderConnections } from "@/lib/localDb.js";
+import { getExecutor } from "open-sse/executors/index.js";
 
 export async function POST(request) {
   try {
-    const { step, provider, body } = await request.json();
+    const { step, body } = await request.json();
 
-    if (!step || !provider || !body) {
-      return NextResponse.json({ success: false, error: "Step, provider, and body required" }, { status: 400 });
+    if (!step || !body) {
+      return NextResponse.json({ success: false, error: "Step and body required" }, { status: 400 });
     }
-
-    let result;
 
     switch (step) {
       case 1: {
-        // Step 1: Client → Source (detect format)
-        // Return format: { timestamp, endpoint, headers, body }
-        const actualBody = body.body || body;
-        const sourceFormat = detectFormat(actualBody);
-        
-        result = {
-          timestamp: body.timestamp || new Date().toISOString(),
-          endpoint: body.endpoint || "/v1/messages",
-          headers: body.headers || {},
-          body: actualBody,
-          _detectedFormat: sourceFormat
-        };
-        break;
+        // Detect provider + formats from 1_req_client.json
+        const clientBody = body.body || body;
+        const { provider, model } = parseModel(clientBody.model);
+        const sourceFormat = detectFormat(clientBody);
+        const targetFormat = getTargetFormat(provider);
+        return NextResponse.json({ success: true, result: { provider, model, sourceFormat, targetFormat } });
       }
 
       case 2: {
-        // Step 2: Source → OpenAI
-        // Return format: { timestamp, headers: {}, body }
-        const actualBody = body.body || body;
-        const sourceFormat = detectFormat(actualBody);
-        const targetFormat = FORMATS.OPENAI;
-        const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
-        result = {
-          timestamp: new Date().toISOString(),
-          headers: {},
-          body: translated
-        };
-        break;
+        // source → OpenAI intermediate (mirrors 3_req_openai.json)
+        // Translate source→openai only (half of the pipeline)
+        const clientBody = body.body || body;
+        const { provider, model } = parseModel(clientBody.model);
+        const sourceFormat = detectFormat(clientBody);
+        const stream = clientBody.stream !== false;
+
+        // translateRequest(source, OPENAI) = only the first half
+        const result = translateRequest(sourceFormat, FORMATS.OPENAI, model, clientBody, stream, null, provider);
+        delete result._toolNameMap;
+
+        return NextResponse.json({ success: true, result: { body: result } });
       }
 
       case 3: {
-        // Step 3: OpenAI → Target
-        // Return format: { timestamp, body }
-        const actualBody = body.body || body;
-        const sourceFormat = FORMATS.OPENAI;
-        const targetFormat = getTargetFormat(provider);
-        const model = actualBody.model || "test-model";
-        const translated = translateRequest(sourceFormat, targetFormat, model, actualBody, true, null, provider);
-        
-        result = {
-          timestamp: new Date().toISOString(),
-          body: translated
-        };
-        break;
-      }
+        // OpenAI intermediate → target + build URL/headers (mirrors 4_req_target.json)
+        const openaiBody = body.body || body;
+        const provider = body.provider;
+        const model = body.model;
 
-      case 4: {
-        // Step 4: Build final request with real URL and headers
-        // Return format: { timestamp, url, headers, body }
-        const actualBody = body.body || body;
-        const model = actualBody.model || "test-model";
-        
-        // Get provider credentials
+        if (!provider || !model) {
+          return NextResponse.json({ success: false, error: "provider and model required" }, { status: 400 });
+        }
+
+        const targetFormat = getTargetFormat(provider);
+        const stream = openaiBody.stream !== false;
+
+        // translateRequest(OPENAI, target) = second half of pipeline
+        const translated = translateRequest(FORMATS.OPENAI, targetFormat, model, openaiBody, stream, null, provider);
+        delete translated._toolNameMap;
+
+        // Build URL + headers via executor (same as chatCore → executor.execute)
         const connections = await getProviderConnections({ provider });
         const connection = connections.find(c => c.isActive !== false);
-        
         if (!connection) {
-          return NextResponse.json({ 
-            success: false, 
-            error: `No active connection found for provider: ${provider}` 
-          }, { status: 400 });
+          return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
         }
 
         const credentials = {
@@ -90,29 +72,19 @@ export async function POST(request) {
           providerSpecificData: connection.providerSpecificData
         };
 
-        // Build URL and headers
-        const url = buildProviderUrl(provider, model, true, {
-          baseUrlIndex: 0,
-          baseUrl: connection.providerSpecificData?.baseUrl
-        });
-        const headers = buildProviderHeaders(provider, credentials, true, actualBody);
-        
-        result = {
-          timestamp: new Date().toISOString(),
-          url: url,
-          headers: headers,
-          body: actualBody
-        };
-        break;
+        const executor = getExecutor(provider);
+        const url = executor.buildUrl(model, stream, 0, credentials);
+        const headers = executor.buildHeaders(credentials, stream);
+        const finalBody = executor.transformRequest(model, translated, stream, credentials);
+
+        return NextResponse.json({ success: true, result: { url, headers, body: finalBody } });
       }
 
       default:
-        return NextResponse.json({ success: false, error: "Invalid step" }, { status: 400 });
+        return NextResponse.json({ success: false, error: "Invalid step (1-3)" }, { status: 400 });
     }
-
-    return NextResponse.json({ success: true, result });
   } catch (error) {
-    console.error("Error translating:", error);
+    console.error("Error in translator:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

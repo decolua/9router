@@ -17,7 +17,10 @@ export async function GET(request) {
       "2_req_source.json",
       "3_req_openai.json",
       "4_req_target.json",
-      "5_res_provider.txt"
+      "5_res_provider.txt",
+      "6_res_openai.txt",
+      "7_res_client.txt",
+      "7_res_client.json",
     ];
 
     if (!allowedFiles.includes(file)) {

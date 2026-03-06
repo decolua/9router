@@ -7,7 +7,6 @@ import QuotaTable from "./QuotaTable";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
-import { CardSkeleton } from "@/shared/components/Loading";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
@@ -21,7 +20,7 @@ export default function ProviderLimits() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -142,12 +141,26 @@ export default function ProviderLimits() {
     }
   }, [refreshingAll, fetchConnections, fetchQuota]);
 
-  // Initial load
+  // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
     const initializeData = async () => {
-      setInitialLoading(true);
-      await refreshAll();
-      setInitialLoading(false);
+      setConnectionsLoading(true);
+      const conns = await fetchConnections();
+      setConnectionsLoading(false);
+
+      const oauthConnections = conns.filter(
+        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+      );
+
+      // Mark all as loading before fetching
+      const loadingState = {};
+      oauthConnections.forEach((conn) => { loadingState[conn.id] = true; });
+      setLoading(loadingState);
+
+      await Promise.all(
+        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))
+      );
+      setLastUpdated(new Date());
     };
 
     initializeData();
@@ -271,22 +284,8 @@ export default function ProviderLimits() {
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
-  // Initial loading state
-  if (initialLoading) {
-    return (
-      <div className="space-y-4">
-        <CardSkeleton />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <CardSkeleton />
-          <CardSkeleton />
-          <CardSkeleton />
-        </div>
-      </div>
-    );
-  }
-
   // Empty state
-  if (sortedConnections.length === 0) {
+  if (!connectionsLoading && sortedConnections.length === 0) {
     return (
       <Card padding="lg">
         <div className="text-center py-12">

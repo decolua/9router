@@ -150,7 +150,12 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
       updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
       updates.expiresIn = newCredentials.expiresIn;
     }
-    if (newCredentials.providerSpecificData) updates.providerSpecificData = newCredentials.providerSpecificData;
+    if (newCredentials.providerSpecificData) {
+      updates.providerSpecificData = {
+        ...(newCredentials.existingProviderSpecificData || {}),
+        ...newCredentials.providerSpecificData,
+      };
+    }
     if (newCredentials.projectId)            updates.projectId = newCredentials.projectId;
 
     const result = await updateProviderConnection(connectionId, updates);
@@ -195,13 +200,21 @@ export async function checkAndRefreshToken(provider, credentials) {
 
       const newCreds = await getAccessToken(provider, creds);
       if (newCreds?.accessToken) {
+        const mergedCreds = {
+          ...newCreds,
+          existingProviderSpecificData: creds.providerSpecificData,
+        };
+
         // Persist to DB (non-blocking path continues below)
-        await updateProviderCredentials(creds.connectionId, newCreds);
+        await updateProviderCredentials(creds.connectionId, mergedCreds);
 
         creds = {
           ...creds,
           accessToken:  newCreds.accessToken,
           refreshToken: newCreds.refreshToken ?? creds.refreshToken,
+          providerSpecificData: newCreds.providerSpecificData
+            ? { ...creds.providerSpecificData, ...newCreds.providerSpecificData }
+            : creds.providerSpecificData,
           expiresAt:    newCreds.expiresIn
             ? toExpiresAt(newCreds.expiresIn)
             : creds.expiresAt,

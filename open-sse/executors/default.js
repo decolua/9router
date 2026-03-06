@@ -23,7 +23,6 @@ export class DefaultExecutor extends BaseExecutor {
       case "glm":
       case "kimi":
       case "kimi-coding":
-      case "cline":
       case "minimax":
       case "minimax-cn":
         return `${this.config.baseUrl}?beta=true`;
@@ -47,7 +46,6 @@ export class DefaultExecutor extends BaseExecutor {
       case "glm":
       case "kimi":
       case "kimi-coding":
-      case "cline":
       case "minimax":
       case "minimax-cn":
         headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
@@ -61,6 +59,11 @@ export class DefaultExecutor extends BaseExecutor {
           }
           if (!headers["anthropic-version"]) {
             headers["anthropic-version"] = "2023-06-01";
+          }
+        } else if (this.provider === "kilocode") {
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+          if (credentials.providerSpecificData?.orgId) {
+            headers["X-Kilocode-OrganizationID"] = credentials.providerSpecificData.orgId;
           }
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;

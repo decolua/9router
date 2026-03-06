@@ -99,7 +99,8 @@ export default function ProvidersPage() {
     );
 
     const getEffectiveStatus = (conn) => {
-      const isCooldown = conn.rateLimitedUntil && new Date(conn.rateLimitedUntil).getTime() > Date.now();
+      const isCooldown = Object.entries(conn)
+        .some(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now());
       return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
     };
 
@@ -221,7 +222,7 @@ export default function ProvidersPage() {
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
             >
-              <span className="material-symbols-outlined text-[14px]">
+              <span className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}>
                 {testingMode === "oauth" ? "sync" : "play_arrow"}
               </span>
               {testingMode === "oauth" ? "Testing..." : "Test All"}
@@ -259,7 +260,7 @@ export default function ProvidersPage() {
               title="Test all Free connections"
             aria-label="Test all Free provider connections"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}>
               {testingMode === "free" ? "sync" : "play_arrow"}
             </span>
             {testingMode === "free" ? "Testing..." : "Test All"}
@@ -296,7 +297,7 @@ export default function ProvidersPage() {
               title="Test all API Key connections"
             aria-label="Test all API Key connections"
           >
-            <span className="material-symbols-outlined text-[14px]">
+            <span className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}>
               {testingMode === "apikey" ? "sync" : "play_arrow"}
             </span>
             {testingMode === "apikey" ? "Testing..." : "Test All"}
@@ -323,7 +324,7 @@ export default function ProvidersPage() {
             API Key Compatible Providers{" "}
           </h2>
           <div className="flex gap-2">
-            {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
+            {/* {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
               <button
                 onClick={() => handleBatchTest("compatible")}
                 disabled={!!testingMode}
@@ -334,12 +335,12 @@ export default function ProvidersPage() {
                 }`}
                 title="Test all Compatible connections"
               >
-                <span className="material-symbols-outlined text-[14px]">
+                <span className={`material-symbols-outlined text-[14px]${testingMode === "compatible" ? " animate-spin" : ""}`}>
                   {testingMode === "compatible" ? "sync" : "play_arrow"}
                 </span>
                 {testingMode === "compatible" ? "Testing..." : "Test All"}
               </button>
-            )}
+            )} */}
             <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
               Add Anthropic Compatible
             </Button>

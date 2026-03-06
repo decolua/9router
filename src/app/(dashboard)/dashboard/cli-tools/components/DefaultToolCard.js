@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 
-export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false }) {
+export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
@@ -125,11 +125,11 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return (
       <div className="flex flex-col gap-2 mb-4">
         {tool.notes.map((note, index) => {
-          // Skip cloudCheck note if cloud is enabled
-          if (note.type === "cloudCheck" && cloudEnabled) return null;
+          // Skip cloudCheck note if tunnel or cloud is enabled
+          if (note.type === "cloudCheck" && (cloudEnabled || tunnelEnabled)) return null;
           
           const isWarning = note.type === "warning";
-          const isError = note.type === "cloudCheck" && !cloudEnabled;
+          const isError = note.type === "cloudCheck" && !cloudEnabled && !tunnelEnabled;
           
           let bgClass = "bg-blue-500/10 border-blue-500/30";
           let textClass = "text-blue-600 dark:text-blue-400";
@@ -160,6 +160,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const canShowGuide = () => {
+    if (tool.requiresExternalUrl && !cloudEnabled && !tunnelEnabled) return false;
     if (tool.requiresCloud && !cloudEnabled) return false;
     return true;
   };
@@ -258,7 +259,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 rounded-lg flex items-center justify-center shrink-0">

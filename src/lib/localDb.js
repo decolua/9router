@@ -57,7 +57,10 @@ const defaultData = {
     observabilityMaxRecords: 1000,
     observabilityBatchSize: 20,
     observabilityFlushIntervalMs: 5000,
-    observabilityMaxJsonSize: 1024
+    observabilityMaxJsonSize: 1024,
+    outboundProxyEnabled: false,
+    outboundProxyUrl: "",
+    outboundNoProxy: ""
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -72,15 +75,18 @@ function cloneDefaultData() {
     apiKeys: [],
     settings: {
       cloudEnabled: false,
-    tunnelEnabled: false,
-    tunnelUrl: "",
+      tunnelEnabled: false,
+      tunnelUrl: "",
       stickyRoundRobinLimit: 3,
       requireLogin: true,
       observabilityEnabled: true,
       observabilityMaxRecords: 1000,
       observabilityBatchSize: 20,
       observabilityFlushIntervalMs: 5000,
-      observabilityMaxJsonSize: 1024
+      observabilityMaxJsonSize: 1024,
+      outboundProxyEnabled: false,
+      outboundProxyUrl: "",
+      outboundNoProxy: "",
     },
     pricing: {},
   };
@@ -114,7 +120,17 @@ function ensureDbShape(data) {
     ) {
       for (const [settingKey, settingDefault] of Object.entries(defaultValue)) {
         if (next.settings[settingKey] === undefined) {
-          next.settings[settingKey] = settingDefault;
+          // Backward-compat: if users previously saved a proxy URL,
+          // default to enabled so behavior doesn't silently change.
+          if (
+            settingKey === "outboundProxyEnabled" &&
+            typeof next.settings.outboundProxyUrl === "string" &&
+            next.settings.outboundProxyUrl.trim()
+          ) {
+            next.settings.outboundProxyEnabled = true;
+          } else {
+            next.settings[settingKey] = settingDefault;
+          }
           changed = true;
         }
       }
@@ -777,6 +793,41 @@ export async function updateSettings(updates) {
   };
   await db.write();
   return db.data.settings;
+}
+
+/**
+ * Export full database payload
+ */
+export async function exportDb() {
+  const db = await getDb();
+  return db.data || cloneDefaultData();
+}
+
+/**
+ * Import full database payload
+ */
+export async function importDb(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Invalid database payload");
+  }
+
+  const nextData = {
+    ...cloneDefaultData(),
+    ...payload,
+    settings: {
+      ...cloneDefaultData().settings,
+      ...(payload.settings && typeof payload.settings === "object" && !Array.isArray(payload.settings)
+        ? payload.settings
+        : {}),
+    },
+  };
+
+  const { data: normalized } = ensureDbShape(nextData);
+  const db = await getDb();
+  db.data = normalized;
+  await db.write();
+
+  return db.data;
 }
 
 /**

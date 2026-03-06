@@ -21,11 +21,11 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || "antigravity/1.104.0 darwin/arm64",
+      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS['User-Agent'],
       [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
       ...ANTIGRAVITY_HEADERS,
       ...(sessionId && { "X-Machine-Session-Id": sessionId }),
-      ...(stream && { "Accept": "text/event-stream" })
+      "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
 

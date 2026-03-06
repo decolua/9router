@@ -14,13 +14,6 @@ import {
 } from "recharts";
 import Card from "@/shared/components/Card";
 
-const PERIODS = [
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
-
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -29,8 +22,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart() {
-  const [period, setPeriod] = useState("7d");
+export default function UsageChart({ period = "7d" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -58,32 +50,19 @@ export default function UsageChart() {
 
   return (
     <Card className="p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          <button
-            onClick={() => setViewMode("tokens")}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-          >
-            Tokens
-          </button>
-          <button
-            onClick={() => setViewMode("cost")}
-            className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-          >
-            Cost
-          </button>
-        </div>
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          {PERIODS.map((p) => (
-            <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border self-start">
+        <button
+          onClick={() => setViewMode("tokens")}
+          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        >
+          Tokens
+        </button>
+        <button
+          onClick={() => setViewMode("cost")}
+          className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+        >
+          Cost
+        </button>
       </div>
 
       {loading ? (
@@ -157,4 +136,6 @@ export default function UsageChart() {
   );
 }
 
-UsageChart.propTypes = {};
+UsageChart.propTypes = {
+  period: PropTypes.string,
+};

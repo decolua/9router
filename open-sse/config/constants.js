@@ -1,5 +1,32 @@
 import { platform, arch } from "os";
 
+function mapStainlessOs() {
+  switch (platform()) {
+    case "darwin": return "MacOS";
+    case "win32": return "Windows";
+    case "linux": return "Linux";
+    case "freebsd": return "FreeBSD";
+    default: return `Other::${platform()}`;
+  }
+}
+
+function mapStainlessArch() {
+  switch (arch()) {
+    case "x64": return "x64";
+    case "arm64": return "arm64";
+    case "ia32": return "x86";
+    default: return `other::${arch()}`;
+  }
+}
+
+// === GitHub Copilot Version Constants ===
+export const GITHUB_COPILOT = {
+  VSCODE_VERSION: "1.110.0",
+  COPILOT_CHAT_VERSION: "0.38.0",
+  USER_AGENT: "GitHubCopilotChat/0.38.0",
+  API_VERSION: "2025-04-01",
+};
+
 // === Antigravity Binary Alignment: Numeric Enums ===
 // Reference: Antigravity binary analysis - google.internal.cloud.code.v1internal.ClientMetadata
 
@@ -53,7 +80,7 @@ export function getPlatformEnum() {
 export function getPlatformUserAgent() {
   const os = platform();
   const architecture = arch();
-  return `antigravity/1.16.5 ${os}/${architecture}`;
+  return `antigravity/1.104.0 ${os}/${architecture}`;
 }
 
 // Centralized client metadata (used in request bodies for loadCodeAssist, onboardUser, etc.)
@@ -67,17 +94,33 @@ export const CLIENT_METADATA = {
 // Internal anti-loop header to identify requests originating from this proxy
 export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
-// Antigravity headers
+// Antigravity headers (for chat/stream requests)
 export const ANTIGRAVITY_HEADERS = {
   "X-Client-Name": "antigravity",
   "X-Client-Version": "1.107.0",
-  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x"
+  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x",
+  "User-Agent": "antigravity/1.107.0 darwin/arm64"
 };
 
 // Cloud Code Assist API endpoints (for Project ID discovery)
 export const CLOUD_CODE_API = {
   loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
   onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+};
+
+// Headers for loadCodeAssist / onboardUser API calls (matches CLIProxyAPI Go source)
+export const LOAD_CODE_ASSIST_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": "google-api-nodejs-client/9.15.1",
+  "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "Client-Metadata": JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
+};
+
+// Metadata body for loadCodeAssist / onboardUser (string enum, matches CLIProxyAPI Go source)
+export const LOAD_CODE_ASSIST_METADATA = {
+  ideType: "IDE_UNSPECIFIED",
+  platform: "PLATFORM_UNSPECIFIED",
+  pluginType: "GEMINI",
 };
 
 // Provider configurations
@@ -87,23 +130,23 @@ export const PROVIDERS = {
     format: "claude",
     headers: {
       "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27",
+      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
       "Anthropic-Dangerous-Direct-Browser-Access": "true",
-      "User-Agent": "claude-cli/1.0.83 (external, cli)",
+      "User-Agent": "claude-cli/2.1.63 (external, cli)",
       "X-App": "cli",
       "X-Stainless-Helper-Method": "stream",
       "X-Stainless-Retry-Count": "0",
       "X-Stainless-Runtime-Version": "v24.3.0",
-      "X-Stainless-Package-Version": "0.55.1",
+      "X-Stainless-Package-Version": "0.74.0",
       "X-Stainless-Runtime": "node",
       "X-Stainless-Lang": "js",
-      "X-Stainless-Arch": "arm64",
-      "X-Stainless-Os": "MacOS",
-      "X-Stainless-Timeout": "60"
+      "X-Stainless-Arch": mapStainlessArch(),
+      "X-Stainless-Os": mapStainlessOs(),
+      "X-Stainless-Timeout": "600"
     },
     // Claude OAuth configuration
     clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
-    tokenUrl: "https://console.anthropic.com/v1/oauth/token"
+    tokenUrl: "https://api.anthropic.com/v1/oauth/token"
   },
   gemini: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
@@ -214,17 +257,22 @@ export const PROVIDERS = {
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     }
   },
+  alicode: {
+    baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
     responsesUrl: "https://api.githubcopilot.com/responses",
     format: "openai", // GitHub Copilot uses OpenAI-compatible format
     headers: {
       "copilot-integration-id": "vscode-chat",
-      "editor-version": "vscode/1.107.1",
-      "editor-plugin-version": "copilot-chat/0.26.7",
-      "user-agent": "GitHubCopilotChat/0.26.7",
+      "editor-version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+      "editor-plugin-version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+      "user-agent": GITHUB_COPILOT.USER_AGENT,
       "openai-intent": "conversation-panel",
-      "x-github-api-version": "2025-04-01",
+      "x-github-api-version": GITHUB_COPILOT.API_VERSION,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
       "Accept": "application/json",
@@ -270,16 +318,15 @@ export const PROVIDERS = {
   },
   kilocode: {
     baseUrl: "https://api.kilo.ai/api/openrouter/chat/completions",
-    format: "openrouter",
+    format: "openai",
     headers: {}
   },
   cline: {
-    baseUrl: "https://api.cline.bot/api/v1/messages",
-    format: "claude",
+    baseUrl: "https://api.cline.bot/api/v1/chat/completions",
+    format: "openai",
     headers: {
       "HTTP-Referer": "https://cline.bot",
-      "X-Title": "Cline",
-      "Anthropic-Version": "2023-06-01"
+      "X-Title": "Cline"
     },
     tokenUrl: "https://api.cline.bot/api/v1/auth/token",
     refreshUrl: "https://api.cline.bot/api/v1/auth/refresh"
@@ -288,11 +335,87 @@ export const PROVIDERS = {
     baseUrl: "https://ramclouds.me/v1/chat/completions",
     format: "openai",
     headers: {}
+  },
+  nvidia: {
+    baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
+    format: "openai"
+  },
+  anthropic: {
+    baseUrl: "https://api.anthropic.com/v1/messages",
+    format: "claude",
+    headers: {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    }
+  },
+  deepseek: {
+    baseUrl: "https://api.deepseek.com/chat/completions",
+    format: "openai"
+  },
+  groq: {
+    baseUrl: "https://api.groq.com/openai/v1/chat/completions",
+    format: "openai"
+  },
+  xai: {
+    baseUrl: "https://api.x.ai/v1/chat/completions",
+    format: "openai"
+  },
+  mistral: {
+    baseUrl: "https://api.mistral.ai/v1/chat/completions",
+    format: "openai"
+  },
+  perplexity: {
+    baseUrl: "https://api.perplexity.ai/chat/completions",
+    format: "openai"
+  },
+  together: {
+    baseUrl: "https://api.together.xyz/v1/chat/completions",
+    format: "openai"
+  },
+  fireworks: {
+    baseUrl: "https://api.fireworks.ai/inference/v1/chat/completions",
+    format: "openai"
+  },
+  cerebras: {
+    baseUrl: "https://api.cerebras.ai/v1/chat/completions",
+    format: "openai"
+  },
+  cohere: {
+    baseUrl: "https://api.cohere.ai/v1/chat/completions",
+    format: "openai"
+  },
+  nebius: {
+    baseUrl: "https://api.studio.nebius.ai/v1/chat/completions",
+    format: "openai"
+  },
+  siliconflow: {
+    baseUrl: "https://api.siliconflow.cn/v1/chat/completions",
+    format: "openai"
+  },
+  hyperbolic: {
+    baseUrl: "https://api.hyperbolic.xyz/v1/chat/completions",
+    format: "openai"
+  },
+  deepgram: {
+    baseUrl: "https://api.deepgram.com/v1/listen",
+    format: "openai"
+  },
+  assemblyai: {
+    baseUrl: "https://api.assemblyai.com/v1/audio/transcriptions",
+    format: "openai"
+  },
+  nanobanana: {
+    baseUrl: "https://api.nanobananaapi.ai/v1/chat/completions",
+    format: "openai"
+  },
+  chutes: {
+    baseUrl: "https://llm.chutes.ai/v1/chat/completions",
+    format: "openai"
   }
 };
 
 // Claude system prompt
-export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
+export const CLAUDE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
 
 // Antigravity default system prompt (required for API to work)
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
@@ -308,8 +431,8 @@ export const OAUTH_ENDPOINTS = {
     auth: "https://auth.openai.com/oauth/authorize"
   },
   anthropic: {
-    token: "https://console.anthropic.com/v1/oauth/token",
-    auth: "https://console.anthropic.com/v1/oauth/authorize"
+    token: "https://api.anthropic.com/v1/oauth/token",
+    auth: "https://api.anthropic.com/v1/oauth/authorize"
   },
   qwen: {
     token: "https://chat.qwen.ai/api/v1/oauth2/token", // From CLIProxyAPI

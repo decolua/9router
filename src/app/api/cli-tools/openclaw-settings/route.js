@@ -17,7 +17,7 @@ const checkOpenClawInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where openclaw" : "command -v openclaw";
-    await execAsync(command);
+    await execAsync(command, { windowsHide: true });
     return true;
   } catch {
     return false;

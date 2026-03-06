@@ -84,8 +84,10 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-              if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              if (parsed.choices !== undefined) {
+                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
+                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              }
 
               // Strip Azure-specific non-standard fields from streaming chunks
               if (parsed.prompt_filter_results !== undefined) {

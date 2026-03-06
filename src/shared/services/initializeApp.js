@@ -38,8 +38,11 @@ let watchdogInterval = null;
 let networkMonitorInterval = null;
 let lastNetworkFingerprint = null;
 let lastWatchdogTick = Date.now();
+let lastTunnelRestartAt = 0;
+let tunnelRestartInProgress = false;
 const WATCHDOG_INTERVAL_MS = 60000;
 const NETWORK_CHECK_INTERVAL_MS = 5000;
+const NETWORK_RESTART_COOLDOWN_MS = 30000;
 
 /**
  * Initialize app on startup
@@ -180,15 +183,25 @@ function startNetworkMonitor() {
 
       if (!networkChanged && !wasSleep) return;
 
+      // Skip if restart already in progress or restarted recently
+      if (tunnelRestartInProgress) return;
+      if (now - lastTunnelRestartAt < NETWORK_RESTART_COOLDOWN_MS) return;
+
       const reason = wasSleep && networkChanged ? "sleep/wake + network change"
         : wasSleep ? "sleep/wake" : "network change";
       console.log(`[NetworkMonitor] ${reason} detected, restarting tunnel...`);
 
-      killCloudflared();
-      await new Promise(r => setTimeout(r, 2000));
-      await enableTunnel();
-      console.log("[NetworkMonitor] Tunnel restarted");
-      lastNetworkFingerprint = getNetworkFingerprint();
+      tunnelRestartInProgress = true;
+      lastTunnelRestartAt = now;
+      try {
+        killCloudflared();
+        await new Promise(r => setTimeout(r, 2000));
+        await enableTunnel();
+        console.log("[NetworkMonitor] Tunnel restarted");
+        lastNetworkFingerprint = getNetworkFingerprint();
+      } finally {
+        tunnelRestartInProgress = false;
+      }
     } catch (err) {
       console.log("[NetworkMonitor] Tunnel restart failed:", err.message);
     }
