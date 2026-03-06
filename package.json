@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.3.32",
+  "version": "0.3.33",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {

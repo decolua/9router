@@ -374,7 +374,7 @@ async function startServer(apiKey, sudoPassword) {
     ].join("\r\n");
     const tmpVbs = path.join(os.tmpdir(), `mitm_uac_${Date.now()}.vbs`);
     fs.writeFileSync(tmpVbs, vbs, "utf8");
-    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: false, detached: true }).unref();
+    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: true, detached: true }).unref();
 
     await new Promise((resolve, reject) => {
       const deadline = Date.now() + 90000;
@@ -511,7 +511,7 @@ async function stopServer(sudoPassword) {
     ].join("\r\n");
     const tmpVbs = path.join(os.tmpdir(), "mitm_stop_uac.vbs");
     fs.writeFileSync(tmpVbs, vbs, "utf8");
-    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: false, detached: true }).unref();
+    spawn("wscript.exe", [tmpVbs], { stdio: "ignore", windowsHide: true, detached: true }).unref();
 
     await new Promise((resolve) => {
       const deadline = Date.now() + 30000;

@@ -145,7 +145,7 @@ Default URLs:
     <tr>
       <td align="center" width="120">
         <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
-        <b>Claude Code</b>
+        <b>Claude-Code</b>
       </td>
       <td align="center" width="120">
         <img src="./public/providers/openclaw.png" width="60" alt="OpenClaw"/><br/>
@@ -193,7 +193,36 @@ Default URLs:
 
 ## 🌐 Supported Providers
 
-### 🆓 Free Providers (Unlimited)
+### 🔐 OAuth Providers
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="120">
+        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
+        <b>Claude-Code</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
+        <b>Codex</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/github.png" width="60" alt="GitHub"/><br/>
+        <b>GitHub</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
+        <b>Cursor</b>
+      </td>
+    </tr>
+  </table>
+</div>
+
+### 🆓 Free Providers
 
 <div align="center">
   <table>
@@ -217,35 +246,6 @@ Default URLs:
         <img src="./public/providers/kiro.png" width="70" alt="Kiro"/><br/>
         <b>Kiro AI</b><br/>
         <sub>Claude • Unlimited</sub>
-      </td>
-    </tr>
-  </table>
-</div>
-
-### 🔐 OAuth Providers
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="120">
-        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
-        <b>Claude Code</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
-        <b>Codex</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/github.png" width="60" alt="GitHub"/><br/>
-        <b>GitHub</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
-        <b>Cursor</b>
       </td>
     </tr>
   </table>
