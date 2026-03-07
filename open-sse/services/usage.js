@@ -56,6 +56,8 @@ export async function getUsageForProvider(connection) {
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
       return await getIflowUsage(accessToken);
+    case "ramclouds":
+      return await getRamcloudsUsage(accessToken);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -640,6 +642,71 @@ async function getIflowUsage(accessToken) {
     return { message: "iFlow connected. Usage tracked per request." };
   } catch (error) {
     return { message: "Unable to fetch iFlow usage." };
+  }
+}
+
+/**
+ * Ramclouds Usage (New-API based)
+ * Fetches quota information from the log/token endpoint
+ */
+async function getRamcloudsUsage(apiKey) {
+  try {
+    const response = await fetch("https://ramclouds.me/api/log/token?p=0&page_size=1", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 403 || response.status === 401) {
+        return {
+          message: "Ramclouds API key invalid or expired",
+          quotas: {}
+        };
+      }
+      throw new Error(`Ramclouds API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.data || data.data.length === 0) {
+      return {
+        message: "No usage data available",
+        quotas: {}
+      };
+    }
+
+    // Parse subscription info from the latest log entry
+    const latestLog = data.data[0];
+    const other = JSON.parse(latestLog.other || "{}");
+
+    const subscriptionTotal = other.subscription_total || 0;
+    const subscriptionUsed = other.subscription_used || 0;
+    const subscriptionRemain = other.subscription_remain || 0;
+
+    // Convert to USD (500,000 tokens = $1 USD based on quota_per_unit from status API)
+    const quotaPerUnit = 500000;
+    const usedUSD = (subscriptionUsed / quotaPerUnit).toFixed(2);
+    const totalUSD = (subscriptionTotal / quotaPerUnit).toFixed(2);
+    const remainingUSD = (subscriptionRemain / quotaPerUnit).toFixed(2);
+
+    return {
+      plan: other.subscription_plan_title || "Unknown",
+      quotas: {
+        tokens: {
+          used: subscriptionUsed,
+          total: subscriptionTotal,
+          remaining: subscriptionRemain,
+          unlimited: false,
+          usedUSD,
+          totalUSD,
+          remainingUSD,
+        }
+      }
+    };
+  } catch (error) {
+    return { message: `Ramclouds error: ${error.message}` };
   }
 }
 
