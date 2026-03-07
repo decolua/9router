@@ -8,25 +8,25 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
-  
+
   body.messages = body.messages.map(msg => {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
-    
+
     // Keep assistant messages with tool_calls as-is
     if (msg.role === "assistant" && msg.tool_calls) return msg;
-    
+
     // Handle string content
     if (typeof msg.content === "string") return msg;
-    
+
     // Handle array content
     if (Array.isArray(msg.content)) {
       const filteredContent = [];
-      
+
       for (const block of msg.content) {
         // Skip thinking blocks
         if (block.type === "thinking" || block.type === "redacted_thinking") continue;
-        
+
         // Only keep valid OpenAI content types
         if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
           // Remove signature field if exists
@@ -41,28 +41,28 @@ export function filterToOpenAIFormat(body) {
           filteredContent.push(cleanBlock);
         }
       }
-      
+
       // If all content was filtered, add empty text
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
-      return { ...msg, content: filteredContent };
+
+      return { ...msg, content: normalizeTextOnlyContent(filteredContent) };
     }
-    
+
     return msg;
   });
-  
+
   // Filter out messages with only empty text (but NEVER filter tool messages)
   body.messages = body.messages.filter(msg => {
     // Always keep tool messages
     if (msg.role === "tool") return true;
     // Always keep assistant messages with tool_calls
     if (msg.role === "assistant" && msg.tool_calls) return true;
-    
+
     if (typeof msg.content === "string") return msg.content.trim() !== "";
     if (Array.isArray(msg.content)) {
-      return msg.content.some(b => 
+      return msg.content.some(b =>
         (b.type === "text" && b.text?.trim()) ||
         b.type !== "text"
       );
@@ -80,7 +80,7 @@ export function filterToOpenAIFormat(body) {
     body.tools = body.tools.map(tool => {
       // Already OpenAI format
       if (tool.type === "function" && tool.function) return tool;
-      
+
       // Claude format: {name, description, input_schema}
       if (tool.name && (tool.input_schema || tool.description)) {
         return {
@@ -92,7 +92,7 @@ export function filterToOpenAIFormat(body) {
           }
         };
       }
-      
+
       // Gemini format: {functionDeclarations: [{name, description, parameters}]}
       if (tool.functionDeclarations && Array.isArray(tool.functionDeclarations)) {
         return tool.functionDeclarations.map(fn => ({
@@ -104,7 +104,7 @@ export function filterToOpenAIFormat(body) {
           }
         }));
       }
-      
+
       return tool;
     }).flat();
   }
@@ -121,6 +121,45 @@ export function filterToOpenAIFormat(body) {
       body.tool_choice = { type: "function", function: { name: choice.name } };
     }
   }
+
+  return body;
+}
+
+function normalizeTextOnlyContent(content) {
+  if (!Array.isArray(content) || content.length === 0) return "";
+
+  const textOnly = content.every((block) => block?.type === "text");
+  if (!textOnly) return content;
+
+  return content.map((block) => block.text || "").join("\n");
+}
+
+// Normalize array content to strings for providers that don't support content arrays
+// Used for providers like Ollama that strictly expect content as string
+export function normalizeContentToString(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return body;
+
+  body.messages = body.messages.map(msg => {
+    // Skip tool messages and messages with tool_calls
+    if (msg.role === "tool" || msg.tool_calls) return msg;
+
+    // Already string content
+    if (typeof msg.content === "string") return msg;
+
+    // Convert array content to string
+    if (Array.isArray(msg.content)) {
+      const textParts = msg.content
+        .filter(block => block.type === "text" && block.text)
+        .map(block => block.text);
+
+      return {
+        ...msg,
+        content: textParts.join("\n") || ""
+      };
+    }
+
+    return msg;
+  });
 
   return body;
 }
