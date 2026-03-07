@@ -1,6 +1,7 @@
 "use client";
 
 import { formatResetTime, calculatePercentage } from "./utils";
+import { translate } from "@/i18n/runtime";
 
 /**
  * Format reset time display (Today, 12:00 PM)
@@ -70,11 +71,28 @@ function getColorClasses(remainingPercentage) {
 /**
  * Quota Table Component - Table-based display for quota data
  */
-export default function QuotaTable({ quotas = [] }) {
+function getWarmupErrorMap(warmupState) {
+  const models = warmupState?.models || {};
+  const errorMap = new Map();
+
+  for (const [modelId, state] of Object.entries(models)) {
+    if (state?.status === "error" && state?.lastError) {
+      errorMap.set(modelId, state);
+      if (state.modelName) {
+        errorMap.set(state.modelName, state);
+      }
+    }
+  }
+
+  return errorMap;
+}
+
+export default function QuotaTable({ quotas = [], warmupState = null }) {
   if (!quotas || quotas.length === 0) {
     return null;
   }
 
+  const warmupErrorMap = getWarmupErrorMap(warmupState);
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed">
@@ -92,6 +110,14 @@ export default function QuotaTable({ quotas = [] }) {
             const colors = getColorClasses(remaining);
             const countdown = formatResetTime(quota.resetAt);
             const resetDisplay = formatResetTimeDisplay(quota.resetAt);
+            const warmupError = warmupErrorMap.get(quota.modelKey) || warmupErrorMap.get(quota.name) || null;
+            if (warmupError) {
+              warmupErrorMap.delete(quota.modelKey);
+              warmupErrorMap.delete(quota.name);
+              if (warmupError.modelName) {
+                warmupErrorMap.delete(warmupError.modelName);
+              }
+            }
 
             return (
               <tr 
@@ -133,7 +159,7 @@ export default function QuotaTable({ quotas = [] }) {
 
                 {/* Reset Time */}
                 <td className="py-2 px-3">
-                  {countdown !== "-" || resetDisplay ? (
+                  {(countdown !== "-" || resetDisplay || warmupError) ? (
                     <div className="space-y-0.5">
                       {countdown !== "-" && (
                         <div className="text-sm text-text-primary font-medium">
@@ -145,9 +171,14 @@ export default function QuotaTable({ quotas = [] }) {
                           {resetDisplay}
                         </div>
                       )}
+                      {warmupError && (
+                        <div className="text-xs text-red-600 dark:text-red-400">
+                          {translate("Auto-trigger failed:")} {warmupError.lastError}
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <div className="text-sm text-text-muted italic">N/A</div>
+                    <div className="text-sm text-text-muted italic">{translate("N/A")}</div>
                   )}
                 </td>
               </tr>
@@ -155,6 +186,15 @@ export default function QuotaTable({ quotas = [] }) {
           })}
         </tbody>
       </table>
+      {Array.from(new Set(warmupErrorMap.values())).length > 0 && (
+        <div className="mt-3 space-y-1 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+          {Array.from(new Set(warmupErrorMap.values())).map((state) => (
+            <div key={`${state.modelName || "unknown"}-${state.lastRunAt || "never"}`} className="text-xs text-red-600 dark:text-red-400">
+              {translate("Auto-trigger failed for")} {state.modelName || translate("Unknown model")}: {state.lastError}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
