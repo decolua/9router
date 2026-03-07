@@ -1,7 +1,6 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
-
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 /**
@@ -91,6 +90,11 @@ async function refreshAndUpdateCredentials(connection) {
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
 export async function GET(request, { params }) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { connectionId } = await params;
 

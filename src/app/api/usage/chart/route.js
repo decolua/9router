@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { getChartData } from "@/lib/usageDb";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 
 const VALID_PERIODS = new Set(["24h", "7d", "30d", "60d"]);
 
 export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "7d";

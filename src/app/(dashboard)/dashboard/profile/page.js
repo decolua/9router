@@ -24,6 +24,25 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [modelLimits, setModelLimits] = useState({});
+  const [modelLimitsLoading, setModelLimitsLoading] = useState(false);
+  const [modelLimitsStatus, setModelLimitsStatus] = useState({ type: "", message: "" });
+  
+  // Provider defaults for model limits UI
+  const modelLimitProviders = [
+    { id: "cc", name: "Claude Code", default: 200000 },
+    { id: "openai", name: "OpenAI", default: 128000 },
+    { id: "cx", name: "Codex", default: 200000 },
+    { id: "gc", name: "Gemini CLI", default: 200000 },
+    { id: "gemini", name: "Gemini API", default: 200000 },
+    { id: "qw", name: "Qwen", default: 32000 },
+    { id: "if", name: "iFlow", default: 128000 },
+    { id: "kr", name: "Kiro", default: 200000 },
+    { id: "glm", name: "GLM", default: 1000000 },
+    { id: "kimi", name: "Kimi", default: 1000000 },
+    { id: "minimax", name: "MiniMax", default: 1000000 },
+    { id: "deepseek", name: "DeepSeek", default: 64000 },
+  ];
 
   useEffect(() => {
     fetch("/api/settings")
@@ -35,6 +54,10 @@ export default function ProfilePage() {
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
         });
+        // Load model limits
+        if (data?.modelLimits) {
+          setModelLimits(data.modelLimits);
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -42,6 +65,7 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
+
 
   const updateOutboundProxy = async (e) => {
     e.preventDefault();
@@ -262,10 +286,64 @@ export default function ProfilePage() {
       if (!res.ok) return;
       const data = await res.json();
       setSettings(data);
+      // Also load model limits
+      if (data?.modelLimits) {
+        setModelLimits(data.modelLimits);
+      }
     } catch (err) {
       console.error("Failed to reload settings:", err);
     }
   };
+
+  const updateModelLimit = (provider, value) => {
+    if (value === "" || value === null) {
+      const newLimits = { ...modelLimits };
+      delete newLimits[provider];
+      setModelLimits(newLimits);
+    } else {
+      const numValue = parseInt(value);
+      if (!isNaN(numValue) && numValue > 0) {
+        setModelLimits({ ...modelLimits, [provider]: numValue });
+      }
+    }
+  };
+
+  const saveModelLimits = async () => {
+    setModelLimitsLoading(true);
+    setModelLimitsStatus({ type: "", message: "" });
+    
+    try {
+      // Filter out empty values
+      const cleanLimits = {};
+      for (const [key, value] of Object.entries(modelLimits)) {
+        if (value !== "" && value !== null && value !== undefined) {
+          const numValue = parseInt(value);
+          if (!isNaN(numValue) && numValue > 0) {
+            cleanLimits[key] = numValue;
+          }
+        }
+      }
+      
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelLimits: Object.keys(cleanLimits).length > 0 ? cleanLimits : null }),
+      });
+      
+      if (res.ok) {
+        setModelLimitsStatus({ type: "success", message: "Limits saved" });
+        await reloadSettings();
+      } else {
+        const data = await res.json();
+        setModelLimitsStatus({ type: "error", message: data.error || "Failed to save" });
+      }
+    } catch (err) {
+      setModelLimitsStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setModelLimitsLoading(false);
+    }
+  };
+
 
   const handleExportDatabase = async () => {
     setDbLoading(true);
@@ -721,6 +799,57 @@ export default function ProfilePage() {
             </div>
           </div>
         </Card>
+
+        {/* Model Input Limits */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-500">
+              <span className="material-symbols-outlined text-[20px]">text_fields</span>
+            </div>
+            <h3 className="text-lg font-semibold">Model Input Limits</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">
+              Set custom input token limits per provider. Requests exceeding these limits will be rejected with a 400 error.
+              Leave empty to use default limits.
+            </p>
+            
+            {modelLimitProviders.map((p) => (
+              <div key={p.id} className="flex items-center gap-4 p-3 rounded-lg bg-bg border border-border">
+                <div className="w-24">
+                  <span className="font-medium text-sm">{p.name}</span>
+                </div>
+                <Input
+                  type="number"
+                  placeholder={String(p.default)}
+                  value={modelLimits[p.id] || ""}
+                  onChange={(e) => updateModelLimit(p.id, e.target.value)}
+                  disabled={loading}
+                  className="flex-1"
+                />
+                <span className="text-xs text-text-muted w-20">
+                  default: {p.default.toLocaleString()}
+                </span>
+              </div>
+            ))}
+            
+            <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+              <Button 
+                variant="primary" 
+                onClick={saveModelLimits}
+                loading={modelLimitsLoading}
+              >
+                Save Limits
+              </Button>
+              {modelLimitsStatus.message && (
+                <span className={`text-sm ${modelLimitsStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                  {modelLimitsStatus.message}
+                </span>
+              )}
+            </div>
+          </div>
+        </Card>
+
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">

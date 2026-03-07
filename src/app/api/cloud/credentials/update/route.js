@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, getProviderConnections, updateProviderConnection } from "@/models";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 
 // Update provider credentials (for cloud token refresh)
 export async function PUT(request) {
+  // Require authentication (validates API key)
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse("Invalid API key");
+  }
   try {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -17,7 +23,7 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Provider and credentials required" }, { status: 400 });
     }
 
-    // Validate API key
+    // API key already validated by requireAuth
     const isValid = await validateApiKey(apiKey);
     if (!isValid) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });

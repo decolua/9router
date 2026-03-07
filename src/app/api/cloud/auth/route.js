@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { validateApiKey, getProviderConnections, getModelAliases } from "@/models";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 
 // Verify API key and return provider credentials
 export async function POST(request) {
+  // Require authentication (validates API key)
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse("Invalid API key");
+  }
   try {
     const authHeader = request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -11,7 +17,7 @@ export async function POST(request) {
 
     const apiKey = authHeader.slice(7);
 
-    // Validate API key
+    // API key already validated by requireAuth, get connections
     const isValid = await validateApiKey(apiKey);
     if (!isValid) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
