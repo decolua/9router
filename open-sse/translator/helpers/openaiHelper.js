@@ -8,25 +8,25 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
-  
+
   body.messages = body.messages.map(msg => {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
-    
+
     // Keep assistant messages with tool_calls as-is
     if (msg.role === "assistant" && msg.tool_calls) return msg;
-    
+
     // Handle string content
     if (typeof msg.content === "string") return msg;
-    
+
     // Handle array content
     if (Array.isArray(msg.content)) {
       const filteredContent = [];
-      
+
       for (const block of msg.content) {
         // Skip thinking blocks
         if (block.type === "thinking" || block.type === "redacted_thinking") continue;
-        
+
         // Only keep valid OpenAI content types
         if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
           // Remove signature field if exists
@@ -41,15 +41,23 @@ export function filterToOpenAIFormat(body) {
           filteredContent.push(cleanBlock);
         }
       }
-      
+
       // If all content was filtered, add empty text
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
+
+      // Normalize: if content is array with only text blocks, convert to string
+      // This handles cases where clients send multimodal format for simple text
+      const hasOnlyText = filteredContent.every(block => block.type === "text");
+      if (hasOnlyText && filteredContent.length > 0) {
+        const textContent = filteredContent.map(block => block.text || "").join("");
+        return { ...msg, content: textContent };
+      }
+
       return { ...msg, content: filteredContent };
     }
-    
+
     return msg;
   });
   

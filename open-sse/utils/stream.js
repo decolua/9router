@@ -55,6 +55,7 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+  let hasSeenSSEData = false; // Track if we've seen valid SSE data events
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -77,6 +78,7 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+            hasSeenSSEData = true; // Mark that we've seen valid SSE data
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
@@ -273,14 +275,15 @@ export function createSSEStream(options = {}) {
           } else {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
-          
-          // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
-          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
-          //   data: [DONE]\n\n
-          // Without it they can hang until timeout and trigger failover.
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+
+          // IMPORTANT: Only append [DONE] sentinel if we've seen valid SSE data events.
+          // This prevents mixing JSON responses with SSE terminators.
+          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel for true SSE streams.
+          if (hasSeenSSEData) {
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
 
           if (onStreamComplete) {
             onStreamComplete({
