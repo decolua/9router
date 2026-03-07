@@ -1,0 +1,322 @@
+import {
+  getApiKeys,
+  getProviderConnections,
+  getSettings,
+  updateProviderConnection,
+  updateSettings,
+} from "@/lib/localDb";
+import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import {
+  PROVIDER_ID_TO_ALIAS,
+  getModelsByProviderId,
+} from "open-sse/config/providerModels.js";
+
+export const QUOTA_AUTO_TRIGGER_TASK = "quota-auto-trigger";
+export const QUOTA_AUTO_TRIGGER_HEADER = "x-9router-internal-task";
+export const QUOTA_TARGET_CONNECTION_HEADER = "x-9router-target-connection-id";
+
+const INTERNAL_BASE_URL =
+  process.env.BASE_URL ||
+  process.env.NEXT_PUBLIC_BASE_URL ||
+  `http://127.0.0.1:${process.env.PORT || "20128"}`;
+
+const QUOTA_AUTO_TRIGGER_INTERVAL_MS = 60 * 60 * 1000;
+const ANTIGRAVITY_TARGET_MODELS = [
+  "gemini-3-flash",
+  "gemini-3.1-pro-low",
+  "claude-sonnet-4-6",
+];
+
+function getProviderPriority(provider) {
+  if (provider === "antigravity") return 1;
+  if (provider === "kiro") return 2;
+  return 3;
+}
+
+function sortQuotaConnections(connections) {
+  return [...connections].sort((a, b) => {
+    const priorityDiff = getProviderPriority(a.provider) - getProviderPriority(b.provider);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const providerDiff = a.provider.localeCompare(b.provider);
+    if (providerDiff !== 0) return providerDiff;
+
+    return (a.priority || 999) - (b.priority || 999);
+  });
+}
+
+function trimErrorMessage(error) {
+  if (!error) return "Unknown error";
+
+  const raw = typeof error === "string"
+    ? error
+    : error?.message || error?.error || "Unknown error";
+
+  return raw.replace(/\s+/g, " ").trim().slice(0, 180) || "Unknown error";
+}
+
+async function getInternalApiKey() {
+  const keys = await getApiKeys();
+  return keys.find((key) => key.isActive !== false)?.key || null;
+}
+
+export function getTargetModelsForConnection(connection) {
+  const providerId = connection?.provider;
+  if (!providerId) return [];
+
+  const models = getModelsByProviderId(providerId);
+  const modelMap = new Map(models.map((model) => [model.id, model]));
+
+  if (providerId === "antigravity") {
+    return ANTIGRAVITY_TARGET_MODELS.map((modelId) => {
+      const model = modelMap.get(modelId);
+      return {
+        id: modelId,
+        name: model?.name || modelId,
+        fullModel: `${PROVIDER_ID_TO_ALIAS[providerId] || providerId}/${modelId}`,
+      };
+    });
+  }
+
+  const firstModel = models[0];
+  if (!firstModel) return [];
+
+  return [{
+    id: firstModel.id,
+    name: firstModel.name || firstModel.id,
+    fullModel: `${PROVIDER_ID_TO_ALIAS[providerId] || providerId}/${firstModel.id}`,
+  }];
+}
+
+function getConnectionLabel(connection) {
+  return connection.name || connection.email || connection.provider || connection.id;
+}
+
+export async function getQuotaAutoTriggerConnections() {
+  const connections = await getProviderConnections();
+  const supportedConnections = connections.filter((connection) =>
+    connection.authType === "oauth"
+    && connection.isActive !== false
+    && USAGE_SUPPORTED_PROVIDERS.includes(connection.provider)
+  );
+
+  return sortQuotaConnections(supportedConnections);
+}
+
+export async function getQuotaAutoTriggerSnapshot() {
+  const settings = await getSettings();
+  const connections = await getQuotaAutoTriggerConnections();
+
+  return {
+    enabled: settings.quotaAutoTriggerEnabled === true,
+    running: false,
+    lastRunAt: settings.quotaAutoTriggerLastRunAt || null,
+    connections: connections.map((connection) => ({
+      id: connection.id,
+      provider: connection.provider,
+      name: getConnectionLabel(connection),
+      warmupState: connection.quotaWarmupState || null,
+      targetModels: getTargetModelsForConnection(connection),
+    })),
+  };
+}
+
+async function pingModel({ baseUrl, apiKey, fullModel, connectionId }) {
+  const headers = {
+    "Content-Type": "application/json",
+    [QUOTA_AUTO_TRIGGER_HEADER]: QUOTA_AUTO_TRIGGER_TASK,
+    [QUOTA_TARGET_CONNECTION_HEADER]: connectionId,
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: fullModel,
+      stream: false,
+      max_tokens: 1,
+      messages: [{ role: "user", content: "ping" }],
+      metadata: { internalTask: QUOTA_AUTO_TRIGGER_TASK },
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(async () => {
+      const text = await response.text().catch(() => "");
+      return { error: text || `HTTP ${response.status}` };
+    });
+
+    throw new Error(trimErrorMessage(data?.error || `HTTP ${response.status}`));
+  }
+
+  await response.json().catch(() => null);
+}
+
+async function updateConnectionWarmupState(connection, modelResults, startedAt) {
+  const previousState = connection.quotaWarmupState || {};
+  const previousModels = previousState.models || {};
+  const nextModels = { ...previousModels };
+  const nextLastSuccessAt = modelResults.every((result) => result.status === "success")
+    ? startedAt
+    : previousState.lastSuccessAt || null;
+
+  for (const result of modelResults) {
+    const previousModelState = previousModels[result.id] || {};
+    nextModels[result.id] = {
+      ...previousModelState,
+      status: result.status,
+      lastRunAt: startedAt,
+      lastSuccessAt: result.status === "success"
+        ? startedAt
+        : previousModelState.lastSuccessAt || null,
+      lastError: result.status === "error" ? result.error : null,
+      lastStatusCode: result.statusCode || null,
+      modelName: result.name,
+    };
+  }
+
+  await updateProviderConnection(connection.id, {
+    quotaWarmupState: {
+      lastRunAt: startedAt,
+      lastSuccessAt: nextLastSuccessAt,
+      models: nextModels,
+    },
+  });
+}
+
+async function runConnectionWarmup({ connection, baseUrl, apiKey }) {
+  const startedAt = new Date().toISOString();
+  const models = getTargetModelsForConnection(connection);
+
+  if (models.length === 0) {
+    await updateProviderConnection(connection.id, {
+      quotaWarmupState: {
+        ...(connection.quotaWarmupState || {}),
+        lastRunAt: startedAt,
+        models: {
+          ...(connection.quotaWarmupState?.models || {}),
+        },
+      },
+    });
+    return;
+  }
+
+  const results = [];
+  for (const model of models) {
+    try {
+      await pingModel({
+        baseUrl,
+        apiKey,
+        fullModel: model.fullModel,
+        connectionId: connection.id,
+      });
+      results.push({ id: model.id, name: model.name, status: "success", error: null });
+    } catch (error) {
+      results.push({
+        id: model.id,
+        name: model.name,
+        status: "error",
+        error: trimErrorMessage(error),
+      });
+    }
+  }
+
+  await updateConnectionWarmupState(connection, results, startedAt);
+}
+
+export class QuotaAutoTriggerService {
+  constructor() {
+    this.intervalId = null;
+    this.runningPromise = null;
+    this.started = false;
+  }
+
+  async start() {
+    if (this.started) return;
+    this.started = true;
+
+    this.intervalId = setInterval(() => {
+      this.run({ reason: "interval" }).catch((error) => {
+        console.error("[QuotaAutoTrigger] Interval run failed:", error);
+      });
+    }, QUOTA_AUTO_TRIGGER_INTERVAL_MS);
+
+    if (this.intervalId?.unref) {
+      this.intervalId.unref();
+    }
+
+    this.run({ reason: "startup" }).catch((error) => {
+      console.error("[QuotaAutoTrigger] Startup run failed:", error);
+    });
+  }
+
+  stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+    this.started = false;
+  }
+
+  isRunning() {
+    return this.runningPromise !== null;
+  }
+
+  async run({ reason = "manual", force = false } = {}) {
+    if (this.runningPromise) {
+      return this.runningPromise;
+    }
+
+    this.runningPromise = this.#runInternal({ reason, force })
+      .finally(() => {
+        this.runningPromise = null;
+      });
+
+    return this.runningPromise;
+  }
+
+  async #runInternal({ reason, force }) {
+    const settings = await getSettings();
+    if (!force && settings.quotaAutoTriggerEnabled !== true) {
+      return { skipped: true, reason: "disabled" };
+    }
+
+    const connections = await getQuotaAutoTriggerConnections();
+    if (connections.length === 0) {
+      await updateSettings({ quotaAutoTriggerLastRunAt: new Date().toISOString() });
+      return { skipped: true, reason: "no-connections" };
+    }
+
+    const apiKey = await getInternalApiKey();
+    const baseUrl = INTERNAL_BASE_URL;
+
+    for (const connection of connections) {
+      try {
+        await runConnectionWarmup({ connection, baseUrl, apiKey });
+      } catch (error) {
+        console.error(
+          `[QuotaAutoTrigger] ${reason} failed for ${connection.provider}/${connection.id}:`,
+          error
+        );
+      }
+    }
+
+    const lastRunAt = new Date().toISOString();
+    await updateSettings({ quotaAutoTriggerLastRunAt: lastRunAt });
+    return { ok: true, lastRunAt };
+  }
+}
+
+let quotaAutoTriggerService = null;
+
+export function getQuotaAutoTriggerService() {
+  if (!quotaAutoTriggerService) {
+    quotaAutoTriggerService = new QuotaAutoTriggerService();
+  }
+  return quotaAutoTriggerService;
+}

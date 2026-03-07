@@ -335,6 +335,9 @@ function sanitizeHeaders(headers) {
  * @see {@link flushToDatabase} for batch write implementation
  */
 export async function saveRequestDetail(detail) {
+  if (detail?.hidden === true) {
+    return;
+  }
   if (isCloud) return;
 
   const config = await getCachedObservabilityConfig();
