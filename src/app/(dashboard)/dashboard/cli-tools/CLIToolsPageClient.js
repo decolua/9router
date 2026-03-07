@@ -5,6 +5,7 @@ import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, OpenCodeToolCard } from "./components";
+import { translate } from "@/i18n/runtime";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -194,8 +195,8 @@ export default function CLIToolsPageClient({ machineId }) {
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-yellow-500">warning</span>
             <div>
-              <p className="font-medium text-yellow-600 dark:text-yellow-400">No active providers</p>
-              <p className="text-sm text-text-muted">Please add and connect providers first to configure CLI tools.</p>
+              <p className="font-medium text-yellow-600 dark:text-yellow-400">{translate("No active providers")}</p>
+              <p className="text-sm text-text-muted">{translate("Please add and connect providers first to configure CLI tools.")}</p>
             </div>
           </div>
         </Card>

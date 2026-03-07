@@ -7,6 +7,7 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { translate } from "@/i18n/runtime";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -167,7 +168,7 @@ export default function RequestDetailsTab() {
       <Card padding="md">
         <div className="flex flex-wrap gap-4">
           <div className="flex flex-col gap-2">
-            <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
+            <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">{translate("Provider")}</label>
             <select
               id="provider-filter"
               value={filters.provider}
@@ -178,7 +179,7 @@ export default function RequestDetailsTab() {
                 "cursor-pointer min-w-[150px]"
               )}
             >
-              <option value="">All Providers</option>
+              <option value="">{translate("All Providers")}</option>
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
@@ -186,9 +187,9 @@ export default function RequestDetailsTab() {
               ))}
             </select>
           </div>
-          
+
           <div className="flex flex-col gap-2">
-            <label htmlFor="start-date-filter" className="text-sm font-medium text-text-main">Start Date</label>
+            <label htmlFor="start-date-filter" className="text-sm font-medium text-text-main">{translate("Start Date")}</label>
             <input
               id="start-date-filter"
               type="datetime-local"
@@ -202,7 +203,7 @@ export default function RequestDetailsTab() {
           </div>
 
           <div className="flex flex-col gap-2">
-            <label htmlFor="end-date-filter" className="text-sm font-medium text-text-main">End Date</label>
+            <label htmlFor="end-date-filter" className="text-sm font-medium text-text-main">{translate("End Date")}</label>
             <input
               id="end-date-filter"
               type="datetime-local"
@@ -214,15 +215,15 @@ export default function RequestDetailsTab() {
               )}
             />
           </div>
-          
+
           <div className="flex flex-col gap-2">
-            <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">Clear</span>
-            <Button 
-              variant="ghost" 
+            <span className="text-sm font-medium text-text-main opacity-0" aria-hidden="true">{translate("Clear")}</span>
+            <Button
+              variant="ghost"
               onClick={handleClearFilters}
               disabled={!filters.provider && !filters.startDate && !filters.endDate}
             >
-              Clear Filters
+              {translate("Clear Filters")}
             </Button>
           </div>
         </div>
@@ -233,13 +234,13 @@ export default function RequestDetailsTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-black/5 dark:border-white/5">
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
-                <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">{translate("Timestamp")}</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">{translate("Model")}</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">{translate("Provider")}</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main">{translate("Input Tokens")}</th>
+                <th className="text-right p-4 text-sm font-semibold text-text-main">{translate("Output Tokens")}</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">{translate("Latency")}</th>
+                <th className="text-center p-4 text-sm font-semibold text-text-main">{translate("Action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -248,14 +249,14 @@ export default function RequestDetailsTab() {
                   <td colSpan="7" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                      Loading...
+                      {translate("Loading...")}
                     </div>
                   </td>
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="p-8 text-center text-text-muted">
-                    No request details found
+                    {translate("No request details found")}
                   </td>
                 </tr>
               ) : (
@@ -283,8 +284,8 @@ export default function RequestDetailsTab() {
                     </td>
                     <td className="p-4 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">
-                        <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
-                        <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
+                        <div>{translate("TTFT")}: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
+                        <div>{translate("Total")}: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
                       </div>
                     </td>
                     <td className="p-4 text-center">
@@ -293,7 +294,7 @@ export default function RequestDetailsTab() {
                         size="sm"
                         onClick={() => handleViewDetail(detail)}
                       >
-                        Detail
+                        {translate("Detail")}
                       </Button>
                     </td>
                   </tr>
@@ -319,30 +320,30 @@ export default function RequestDetailsTab() {
       <Drawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        title="Request Details"
+        title={translate("Request Details")}
         width="lg"
       >
         {selectedDetail && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="text-text-muted">ID:</span>{" "}
+                <span className="text-text-muted">{translate("ID")}:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.id}</span>
               </div>
               <div>
-                <span className="text-text-muted">Timestamp:</span>{" "}
+                <span className="text-text-muted">{translate("Timestamp")}:</span>{" "}
                 <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
               </div>
               <div>
-                 <span className="text-text-muted">Provider:</span>{" "}
+                 <span className="text-text-muted">{translate("Provider")}:</span>{" "}
                  <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
                </div>
               <div>
-                <span className="text-text-muted">Model:</span>{" "}
+                <span className="text-text-muted">{translate("Model")}:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
               </div>
               <div>
-                <span className="text-text-muted">Status:</span>{" "}
+                <span className="text-text-muted">{translate("Status")}:</span>{" "}
                 <span className={cn(
                   "font-medium",
                   selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
@@ -351,19 +352,19 @@ export default function RequestDetailsTab() {
                 </span>
               </div>
               <div>
-                <span className="text-text-muted">Latency:</span>{" "}
+                <span className="text-text-muted">{translate("Latency")}:</span>{" "}
                 <span className="text-text-main font-mono">
-                  TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
+                  {translate("TTFT")} {selectedDetail.latency?.ttft || 0}ms / {translate("Total")} {selectedDetail.latency?.total || 0}ms
                 </span>
               </div>
               <div>
-                <span className="text-text-muted">Input Tokens:</span>{" "}
+                <span className="text-text-muted">{translate("Input Tokens")}:</span>{" "}
                 <span className="text-text-main font-mono">
                   {selectedDetail.tokens?.prompt_tokens?.toLocaleString() || 0}
                 </span>
               </div>
               <div>
-                <span className="text-text-muted">Output Tokens:</span>{" "}
+                <span className="text-text-muted">{translate("Output Tokens")}:</span>{" "}
                 <span className="text-text-main font-mono">
                   {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
                 </span>
@@ -371,14 +372,14 @@ export default function RequestDetailsTab() {
             </div>
             
             <div className="space-y-4">
-              <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
+              <CollapsibleSection title={translate("1. Client Request (Input)")} defaultOpen={true} icon="input">
                 <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
                   {JSON.stringify(selectedDetail.request, null, 2)}
                 </pre>
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
-                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
+                <CollapsibleSection title={translate("2. Provider Request (Translated)")} icon="translate">
                   <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
                     {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
@@ -386,7 +387,7 @@ export default function RequestDetailsTab() {
               )}
 
               {selectedDetail.providerResponse && (
-                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
+                <CollapsibleSection title={translate("3. Provider Response (Raw)")} icon="data_object">
                   <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
                     {typeof selectedDetail.providerResponse === 'object'
                       ? JSON.stringify(selectedDetail.providerResponse, null, 2)
@@ -395,25 +396,25 @@ export default function RequestDetailsTab() {
                   </pre>
                 </CollapsibleSection>
               )}
-              
-              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
+
+              <CollapsibleSection title={translate("4. Client Response (Final)")} defaultOpen={true} icon="output">
                 {selectedDetail.response?.thinking && (
                   <div className="mb-4">
                     <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
-                      Thinking Process
+                      {translate("Thinking Process")}
                     </h4>
                     <pre className="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg overflow-auto max-h-[200px] text-xs font-mono text-amber-900 dark:text-amber-100 border border-amber-200 dark:border-amber-800">
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>
                 )}
-                
+
                 <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
-                  Content
+                  {translate("Content")}
                 </h4>
                 <pre className="bg-black/5 dark:bg-white/5 p-4 rounded-lg overflow-auto max-h-[300px] text-xs font-mono text-text-main border border-black/5 dark:border-white/5">
-                  {selectedDetail.response?.content || "[No content]"}
+                  {selectedDetail.response?.content || `[${translate("No content")}]`}
                 </pre>
               </CollapsibleSection>
             </div>

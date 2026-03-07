@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
-import ProviderLimitCard from "./ProviderLimitCard";
 import QuotaTable from "./QuotaTable";
-import { parseQuotaData, calculatePercentage } from "./utils";
+import { parseQuotaData } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { translate } from "@/i18n/runtime";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 
@@ -21,9 +21,21 @@ export default function ProviderLimits() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [quotaAutoTriggerEnabled, setQuotaAutoTriggerEnabled] = useState(false);
+  const [quotaAutoTriggerSaving, setQuotaAutoTriggerSaving] = useState(false);
+  const [quotaAutoTriggerRunning, setQuotaAutoTriggerRunning] = useState(false);
+  const [warmupStateByConnection, setWarmupStateByConnection] = useState({});
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const warmupStateRef = useRef({});
+
+  const getSupportedConnections = useCallback(
+    (connectionList) => connectionList.filter(
+      (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+    ),
+    []
+  );
 
   // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
@@ -104,6 +116,53 @@ export default function ProviderLimits() {
     }
   }, []);
 
+  const applyQuotaAutoTriggerPayload = useCallback((data) => {
+    setQuotaAutoTriggerEnabled(data?.enabled === true);
+    setQuotaAutoTriggerRunning(data?.running === true);
+
+    const nextWarmupState = {};
+    const completedConnections = [];
+
+    for (const connection of data?.connections || []) {
+      const nextState = connection.warmupState || null;
+      const previousState = warmupStateRef.current[connection.id] || null;
+
+      nextWarmupState[connection.id] = nextState;
+
+      if (previousState?.running === true && nextState?.running !== true) {
+        completedConnections.push({
+          id: connection.id,
+          provider: connection.provider,
+        });
+      }
+    }
+
+    warmupStateRef.current = nextWarmupState;
+    setWarmupStateByConnection(nextWarmupState);
+
+    return completedConnections;
+  }, []);
+
+  const fetchQuotaAutoTriggerSettings = useCallback(async () => {
+    try {
+      const response = await fetch("/api/quota/auto-trigger");
+      if (!response.ok) throw new Error("Failed to fetch auto trigger settings");
+      const data = await response.json();
+
+      const completedConnections = applyQuotaAutoTriggerPayload(data);
+      if (completedConnections.length > 0) {
+        await Promise.allSettled(
+          completedConnections.map((connection) =>
+            fetchQuota(connection.id, connection.provider)
+          )
+        );
+        setLastUpdated(new Date());
+      }
+    } catch (error) {
+      console.error("Error fetching quota auto trigger settings:", error);
+    }
+  }, [applyQuotaAutoTriggerPayload, fetchQuota]);
+
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
@@ -122,11 +181,8 @@ export default function ProviderLimits() {
 
     try {
       const conns = await fetchConnections();
-      
-      // Filter only supported OAuth providers
-      const oauthConnections = conns.filter(
-        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
-      );
+      await fetchQuotaAutoTriggerSettings();
+      const oauthConnections = getSupportedConnections(conns);
       
       // Fetch quota for supported OAuth connections only
       await Promise.all(
@@ -139,18 +195,45 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota]);
+  }, [refreshingAll, fetchConnections, fetchQuota, fetchQuotaAutoTriggerSettings, getSupportedConnections]);
+
+  const updateQuotaAutoTrigger = useCallback(async (enabled) => {
+    setQuotaAutoTriggerSaving(true);
+    if (enabled) {
+      setQuotaAutoTriggerRunning(true);
+    }
+    try {
+      const response = await fetch("/api/quota/auto-trigger", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!response.ok) throw new Error("Failed to update auto trigger");
+      const data = await response.json();
+      applyQuotaAutoTriggerPayload(data);
+
+      if (enabled) {
+        refreshAll();
+      }
+    } catch (error) {
+      console.error("Error updating quota auto trigger:", error);
+      setQuotaAutoTriggerRunning(false);
+    } finally {
+      setQuotaAutoTriggerSaving(false);
+    }
+  }, [applyQuotaAutoTriggerPayload, refreshAll]);
 
   // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
     const initializeData = async () => {
       setConnectionsLoading(true);
-      const conns = await fetchConnections();
+      const [conns] = await Promise.all([
+        fetchConnections(),
+        fetchQuotaAutoTriggerSettings(),
+      ]);
       setConnectionsLoading(false);
 
-      const oauthConnections = conns.filter(
-        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
-      );
+      const oauthConnections = getSupportedConnections(conns);
 
       // Mark all as loading before fetching
       const loadingState = {};
@@ -165,6 +248,17 @@ export default function ProviderLimits() {
 
     initializeData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!quotaAutoTriggerRunning) return undefined;
+
+    fetchQuotaAutoTriggerSettings();
+    const timer = setInterval(() => {
+      fetchQuotaAutoTriggerSettings();
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [quotaAutoTriggerRunning, fetchQuotaAutoTriggerSettings]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -243,9 +337,7 @@ export default function ProviderLimits() {
   }, [lastUpdated]);
 
   // Filter only supported providers
-  const filteredConnections = connections.filter((conn) =>
-    USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
-  );
+  const filteredConnections = getSupportedConnections(connections);
 
   // Sort providers: antigravity first, then kiro, then others alphabetically
   const sortedConnections = [...filteredConnections].sort((a, b) => {
@@ -266,23 +358,7 @@ export default function ProviderLimits() {
     return a.provider.localeCompare(b.provider);
   });
 
-  // Calculate summary stats
-  const totalProviders = sortedConnections.length;
-  const activeWithLimits = Object.values(quotaData).filter(
-    (data) => data?.quotas?.length > 0
-  ).length;
-  
-  // Count low quotas (remaining < 30%)
-  const lowQuotasCount = Object.values(quotaData).reduce((count, data) => {
-    if (!data?.quotas) return count;
-    
-    const hasLowQuota = data.quotas.some((quota) => {
-      const percentage = calculatePercentage(quota.used, quota.total);
-      return percentage < 30 && quota.total > 0;
-    });
-    
-    return count + (hasLowQuota ? 1 : 0);
-  }, 0);
+  const autoTriggerButtonBusy = quotaAutoTriggerSaving || quotaAutoTriggerRunning;
 
   // Empty state
   if (!connectionsLoading && sortedConnections.length === 0) {
@@ -309,14 +385,42 @@ export default function ProviderLimits() {
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold text-text-primary">
-            Provider Limits
+            {translate("Provider Limits")}
           </h2>
           <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
+            {translate("Last updated:")} {formatLastUpdated()}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
+          <div className="group relative">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={quotaAutoTriggerEnabled}
+              onClick={() => updateQuotaAutoTrigger(!quotaAutoTriggerEnabled)}
+              disabled={quotaAutoTriggerSaving}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+            >
+              <span
+                className={`material-symbols-outlined text-[18px] ${
+                  quotaAutoTriggerEnabled ? "text-primary" : "text-text-muted"
+                }`}
+              >
+                {quotaAutoTriggerEnabled ? "toggle_on" : "toggle_off"}
+              </span>
+              <span className="text-sm text-text-primary">{translate("Auto Window Rolling")}</span>
+              {autoTriggerButtonBusy && (
+                <span className="material-symbols-outlined text-[16px] text-primary animate-spin">
+                  progress_activity
+                </span>
+              )}
+            </button>
+            <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-lg bg-black px-3 py-2 text-xs leading-5 text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 dark:bg-neutral-900 md:left-0 md:right-auto md:w-80">
+              {translate("When enabled, it runs once immediately, then refreshes automatically once every hour. Opening or switching to this page will not trigger an extra run.")}
+            </div>
+          </div>
+
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
@@ -330,7 +434,7 @@ export default function ProviderLimits() {
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="text-sm text-text-primary">Auto-refresh</span>
+            <span className="text-sm text-text-primary">{translate("Auto-refresh")}</span>
             {autoRefresh && (
               <span className="text-xs text-text-muted">({countdown}s)</span>
             )}
@@ -345,7 +449,7 @@ export default function ProviderLimits() {
             disabled={refreshingAll}
             loading={refreshingAll}
           >
-            Refresh All
+            {translate("Refresh All")}
           </Button>
         </div>
       </div>
@@ -355,11 +459,19 @@ export default function ProviderLimits() {
         {sortedConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
+          const warmupState = warmupStateByConnection[conn.id];
+          const isWarmupRunning = warmupState?.running === true;
+          const isBusy = isLoading || isWarmupRunning;
           const error = errors[conn.id];
+          const showSkeleton = isLoading && !quota && !error;
 
           // Use table layout for all providers
           return (
-            <Card key={conn.id} padding="none">
+            <Card
+              key={conn.id}
+              padding="none"
+              className={isWarmupRunning ? "ring-1 ring-primary/20 border-primary/20" : ""}
+            >
               <div className="p-6 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -380,16 +492,28 @@ export default function ProviderLimits() {
                       {conn.name && (
                         <p className="text-sm text-text-muted">{conn.name}</p>
                       )}
+                      {isWarmupRunning && (
+                        <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">
+                          <span className="material-symbols-outlined text-[12px] animate-spin">
+                            progress_activity
+                          </span>
+                          <span>
+                            {warmupState?.currentModelName
+                              ? `${translate("Refreshing")} · ${warmupState.currentModelName}`
+                              : translate("Refreshing")}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
                   <button
                     onClick={() => refreshProvider(conn.id, conn.provider)}
-                    disabled={isLoading}
+                    disabled={isBusy}
                     className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
                     title="Refresh quota"
                   >
-                    <span className={`material-symbols-outlined text-[20px] text-text-muted ${isLoading ? "animate-spin" : ""}`}>
+                    <span className={`material-symbols-outlined text-[20px] text-text-muted ${isBusy ? "animate-spin" : ""}`}>
                       refresh
                     </span>
                   </button>
@@ -397,7 +521,7 @@ export default function ProviderLimits() {
               </div>
 
               <div className="p-6">
-                {isLoading ? (
+                {showSkeleton ? (
                   <div className="text-center py-8 text-text-muted">
                     <span className="material-symbols-outlined text-[32px] animate-spin">
                       progress_activity
@@ -415,7 +539,10 @@ export default function ProviderLimits() {
                     <p className="text-sm text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable quotas={quota?.quotas} />
+                  <QuotaTable
+                    quotas={quota?.quotas}
+                    warmupState={warmupState}
+                  />
                 )}
               </div>
             </Card>

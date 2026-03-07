@@ -99,7 +99,8 @@ export const statsEmitter = global._statsEmitter;
  * @param {boolean} started - true if started, false if finished
  * @param {boolean} [error] - true if ended with error
  */
-export function trackPendingRequest(model, provider, connectionId, started, error = false) {
+export function trackPendingRequest(model, provider, connectionId, started, error = false, options = {}) {
+  if (options.hidden) return;
   const modelKey = provider ? `${model} (${provider})` : model;
 
   // Track by model
@@ -226,6 +227,7 @@ export async function getUsageDb() {
  * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
 export async function saveRequestUsage(entry) {
+  if (entry?.hidden === true) return;
   if (isCloud) return; // Skip saving in Workers
 
   try {
@@ -303,7 +305,8 @@ function formatLogDate(date = new Date()) {
  * Append to log.txt
  * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
  */
-export async function appendRequestLog({ model, provider, connectionId, tokens, status }) {
+export async function appendRequestLog({ model, provider, connectionId, tokens, status, hidden = false }) {
+  if (hidden) return;
   if (isCloud) return; // Skip logging in Workers
 
   try {

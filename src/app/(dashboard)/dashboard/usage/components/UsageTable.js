@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, Fragment } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
+import { translate } from "@/i18n/runtime";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
@@ -132,15 +133,15 @@ export default function UsageTable({
   const valueColumns = useMemo(() => {
     if (viewMode === "tokens") {
       return [
-        { field: "promptTokens", label: "Input Tokens" },
-        { field: "completionTokens", label: "Output Tokens" },
-        { field: "totalTokens", label: "Total Tokens" },
+        { field: "promptTokens", label: translate("Input Tokens") },
+        { field: "completionTokens", label: translate("Output Tokens") },
+        { field: "totalTokens", label: translate("Total Tokens") },
       ];
     }
     return [
-      { field: "promptTokens", label: "Input Cost" },
-      { field: "completionTokens", label: "Output Cost" },
-      { field: "cost", label: "Total Cost" },
+      { field: "promptTokens", label: translate("Input Cost") },
+      { field: "completionTokens", label: translate("Output Cost") },
+      { field: "cost", label: translate("Total Cost") },
     ];
   }, [viewMode]);
 
