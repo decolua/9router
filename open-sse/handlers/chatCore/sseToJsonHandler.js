@@ -55,7 +55,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, userId, apiKeyId, clientRawRequest, onRequestSuccess, trackDone, appendLog }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && provider === "codex");
   if (!isSSE) return null; // not handled here
@@ -77,7 +77,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, userId, apiKeyId, endpoint: clientRawRequest?.endpoint });
 
       const msgItem = jsonResponse.output?.find(item => item.type === "message");
       const textContent = msgItem?.content?.find(c => c.type === "output_text")?.text || msgItem?.content?.[0]?.text || null;
@@ -138,7 +138,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, userId, apiKeyId, endpoint: clientRawRequest?.endpoint });
 
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({

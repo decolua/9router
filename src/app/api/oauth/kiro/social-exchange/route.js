@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
- * POST /api/oauth/kiro/social-exchange
+ * POST /api/oauth/kiro/social-exchange (admin only, global config)
  * Exchange authorization code for tokens (Google/GitHub social login)
  * Callback URL will be in format: kiro://kiro.kiroAgent/authenticate-success?code=XXX&state=YYY
  */
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const { code, codeVerifier, provider } = await request.json();
 
     if (!code || !codeVerifier) {
@@ -36,8 +38,9 @@ export async function POST(request) {
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
 
-    // Save to database
+    // Save to database (admin only, global config)
     const connection = await createProviderConnection({
+      userId: null,
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,

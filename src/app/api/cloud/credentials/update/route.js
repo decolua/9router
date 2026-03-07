@@ -23,8 +23,8 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
-    // Find active connection for provider
-    const connections = await getProviderConnections({ provider, isActive: true });
+    // Find active connection for provider (global config)
+    const connections = await getProviderConnections({ provider, isActive: true }, null);
     const connection = connections[0];
 
     if (!connection) {
@@ -43,7 +43,7 @@ export async function PUT(request) {
       updateData.expiresAt = new Date(Date.now() + credentials.expiresIn * 1000).toISOString();
     }
 
-    await updateProviderConnection(connection.id, updateData);
+    await updateProviderConnection(connection.id, updateData, null);
 
     return NextResponse.json({ 
       success: true, 

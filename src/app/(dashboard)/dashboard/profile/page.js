@@ -432,6 +432,12 @@ export default function ProfilePage() {
                 disabled={loading}
               />
             </div>
+            <div className="rounded-lg border border-border bg-surface/50 px-4 py-3">
+              <p className="font-medium text-text-main">Proxy API key</p>
+              <p className="text-sm text-text-muted mt-0.5">
+                Always required. All requests to the proxy must include a valid API key in the <code className="text-xs bg-black/5 dark:bg-white/5 px-1 rounded">Authorization: Bearer &lt;key&gt;</code> header. This cannot be disabled.
+              </p>
+            </div>
             {settings.requireLogin === true && (
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (

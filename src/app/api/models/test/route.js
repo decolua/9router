@@ -1,52 +1,111 @@
 import { NextResponse } from "next/server";
-import { getApiKeys } from "@/lib/localDb";
+import { getProviderConnectionById } from "@/lib/localDb";
+import { requireAdmin } from "@/lib/auth/helpers";
+import {
+  getExecutor,
+  refreshTokenByProvider,
+  detectFormat,
+  getTargetFormat,
+  getModelTargetFormat,
+  PROVIDER_ID_TO_ALIAS,
+  translateRequest,
+} from "open-sse/index.js";
 
-// POST /api/models/test - Ping a single model via internal completions
+// POST /api/models/test - Ping a model using the provider connection's credentials (no 9router API key)
 export async function POST(request) {
   try {
-    const { model } = await request.json();
+    const body = await request.json();
+    const { model, connectionId } = body || {};
     if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
+    if (!connectionId) {
+      return NextResponse.json(
+        { ok: false, error: "connectionId required (use the connection configured for this provider)." },
+        { status: 400 }
+      );
+    }
 
-    const url = new URL(request.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
+    await requireAdmin(request);
 
-    // Get an active internal API key for auth (if requireApiKey is enabled)
-    let apiKey = null;
-    try {
-      const keys = await getApiKeys();
-      apiKey = keys.find((k) => k.isActive !== false)?.key || null;
-    } catch {}
+    const connection = await getProviderConnectionById(connectionId, null);
+    if (!connection) {
+      return NextResponse.json({ ok: false, error: "Connection not found" }, { status: 404 });
+    }
 
-    const headers = { "Content-Type": "application/json" };
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const credentials = {
+      apiKey: connection.apiKey ?? connection.api_key,
+      accessToken: connection.accessToken,
+      refreshToken: connection.refreshToken,
+      copilotToken: connection.copilotToken,
+      projectId: connection.projectId,
+      providerSpecificData: connection.providerSpecificData,
+    };
 
+    const modelId = model.includes("/") ? model.split("/").slice(1).join("/") : model;
+    const minimalBody = {
+      model: modelId,
+      max_tokens: 1,
+      stream: false,
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const sourceFormat = detectFormat(minimalBody) || "openai";
+    const alias = PROVIDER_ID_TO_ALIAS[connection.provider] || connection.provider;
+    const targetFormat = getModelTargetFormat(alias, modelId) || getTargetFormat(connection.provider);
+    const translatedBody = translateRequest(sourceFormat, targetFormat, modelId, minimalBody, false, credentials, connection.provider, null);
+    if (translatedBody._toolNameMap) delete translatedBody._toolNameMap;
+    translatedBody.model = modelId;
+
+    const executor = getExecutor(connection.provider);
     const start = Date.now();
-    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model,
-        max_tokens: 1,
-        stream: false,
-        messages: [{ role: "user", content: "hi" }],
-      }),
-      signal: AbortSignal.timeout(15000),
-    });
-    const latencyMs = Date.now() - start;
 
-    const rawText = await res.text().catch(() => "");
+    let result;
+    try {
+      result = await executor.execute({
+        model,
+        body: translatedBody,
+        stream: false,
+        credentials,
+      });
+    } catch (err) {
+      const latencyMs = Date.now() - start;
+      return NextResponse.json({
+        ok: false,
+        latencyMs,
+        error: err.message || String(err),
+      });
+    }
+
+    let { response } = result;
+    if (response.status === 401 || response.status === 403) {
+      const newCreds = await refreshTokenByProvider(connection.provider, credentials);
+      if (newCreds?.accessToken || newCreds?.copilotToken) {
+        Object.assign(credentials, newCreds);
+        try {
+          result = await executor.execute({ model, body: translatedBody, stream: false, credentials });
+          response = result.response;
+        } catch (retryErr) {
+          const latencyMs = Date.now() - start;
+          return NextResponse.json({
+            ok: false,
+            latencyMs,
+            error: retryErr.message || String(retryErr),
+          });
+        }
+      }
+    }
+
+    const latencyMs = Date.now() - start;
+    const rawText = await response.text().catch(() => "");
     let parsed = null;
     try {
       parsed = rawText ? JSON.parse(rawText) : null;
     } catch {}
 
-    if (!res.ok) {
+    if (!response.ok) {
       const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
-      const error = `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`;
-      return NextResponse.json({ ok: false, latencyMs, error, status: res.status });
+      const error = `HTTP ${response.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`;
+      return NextResponse.json({ ok: false, latencyMs, error, status: response.status });
     }
 
-    // Some providers may return HTTP 200 but not a real completion for invalid models.
     const providerStatus = parsed?.status;
     const providerMsg = parsed?.msg || parsed?.message;
     const hasProviderErrorStatus = providerStatus !== undefined
@@ -57,7 +116,7 @@ export async function POST(request) {
       return NextResponse.json({
         ok: false,
         latencyMs,
-        status: res.status,
+        status: response.status,
         error: `Provider status ${providerStatus}: ${String(providerMsg).slice(0, 240)}`,
       });
     }
@@ -67,23 +126,27 @@ export async function POST(request) {
       return NextResponse.json({
         ok: false,
         latencyMs,
-        status: res.status,
+        status: response.status,
         error: String(providerError).slice(0, 240),
       });
     }
 
+    // OpenAI format: choices[]; Anthropic/GLM format: content[]
     const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
-    if (!hasChoices) {
+    const hasContent = Array.isArray(parsed?.content) && parsed.content.length > 0;
+    const hasValidCompletion = hasChoices || hasContent;
+    if (!hasValidCompletion) {
       return NextResponse.json({
         ok: false,
         latencyMs,
-        status: res.status,
-        error: "Provider returned no completion choices for this model",
+        status: response.status,
+        error: "Provider returned no completion (expected choices or content)",
       });
     }
 
-    return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
+    return NextResponse.json({ ok: true, latencyMs, error: null, status: response.status });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    const status = err.message === "Admin access required" || err.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ ok: false, error: err.message || "Test failed" }, { status });
   }
 }

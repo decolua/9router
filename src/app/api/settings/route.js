@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { requireAdmin } from "@/lib/auth/helpers";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -25,6 +26,7 @@ export async function GET() {
 
 export async function PATCH(request) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
 
     // If updating password, hash it
@@ -68,7 +70,7 @@ export async function PATCH(request) {
     const { password, ...safeSettings } = settings;
     return NextResponse.json(safeSettings);
   } catch (error) {
-    console.log("Error updating settings:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }

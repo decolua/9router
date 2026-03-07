@@ -7,7 +7,6 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -55,63 +54,65 @@ export async function handleChat(request, clientRawRequest = null) {
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
+  let userId = null;
+  let apiKeyId = null;
+  
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
   } else {
-    log.debug("AUTH", "No API key provided (local mode)");
+    log.debug("AUTH", "No API key in request (expect 401 if key required)");
   }
 
-  // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+  // API key always required for proxy access (admin policy; not configurable)
+  if (!apiKey) {
+    log.warn("AUTH", "Missing API key");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
   }
+  const keyObj = await isValidApiKey(apiKey);
+  if (!keyObj) {
+    log.warn("AUTH", "Invalid API key");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
+  userId = keyObj.userId;
+  apiKeyId = keyObj.id;
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
-  // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  // Check if model is a combo (has multiple models with fallback) — use global config
+  const comboModels = await getComboModels(modelStr, null);
   if (comboModels) {
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, userId, apiKeyId),
       log
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, userId, apiKeyId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
-  const modelInfo = await getModelInfo(modelStr);
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, userId = null, apiKeyId = null) {
+  const modelInfo = await getModelInfo(modelStr, null);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const comboModels = await getComboModels(modelStr, null);
     if (comboModels) {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, forceSourceFormat),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, userId, apiKeyId),
         log
       });
     }
@@ -137,7 +138,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionId, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionId, model, null);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -181,6 +182,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      userId,
+      apiKeyId,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

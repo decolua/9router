@@ -12,8 +12,9 @@ let selectionMutex = Promise.resolve();
  * @param {string} provider - Provider name
  * @param {string|null} excludeConnectionId - Connection ID to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {string|null} userId - User ID to scope connections (resolved from API key)
  */
-export async function getProviderCredentials(provider, excludeConnectionId = null, model = null) {
+export async function getProviderCredentials(provider, excludeConnectionId = null, model = null, userId = null) {
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -25,7 +26,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = await getProviderConnections({ provider: providerId, isActive: true }, null);
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeId: ${excludeConnectionId || "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -148,7 +149,7 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null) {
-  const connections = await getProviderConnections({ provider });
+  const connections = await getProviderConnections({ provider }, null);
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
@@ -241,9 +242,12 @@ export function extractApiKey(request) {
 }
 
 /**
- * Validate API key (optional - for local use can skip)
+ * Validate API key and return key object with userId
+ * @param {string} apiKey - The API key to validate
+ * @returns {Promise<object|null>} Key object with userId, or null if invalid
  */
 export async function isValidApiKey(apiKey) {
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  if (!apiKey) return null;
+  const keyObj = await validateApiKey(apiKey);
+  return keyObj || null;
 }

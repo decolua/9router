@@ -57,7 +57,7 @@ export async function POST(request) {
         delete translated._toolNameMap;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
-        const connections = await getProviderConnections({ provider });
+        const connections = await getProviderConnections({ provider }, null);
         const connection = connections.find(c => c.isActive !== false);
         if (!connection) {
           return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });

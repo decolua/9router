@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { getUserIdFromRequest } from "@/lib/auth/getUserIdFromRequest";
 
-// GET /api/keys/[id] - Get single key
+// GET /api/keys/[id] - Get single key (scoped by user when logged in)
 export async function GET(request, { params }) {
   try {
+    const userId = await getUserIdFromRequest(request);
     const { id } = await params;
-    const key = await getApiKeyById(id);
+    const key = await getApiKeyById(id, userId);
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
@@ -19,11 +21,12 @@ export async function GET(request, { params }) {
 // PUT /api/keys/[id] - Update key
 export async function PUT(request, { params }) {
   try {
+    const userId = await getUserIdFromRequest(request);
     const { id } = await params;
     const body = await request.json();
     const { isActive } = body;
 
-    const existing = await getApiKeyById(id);
+    const existing = await getApiKeyById(id, userId);
     if (!existing) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
@@ -31,7 +34,7 @@ export async function PUT(request, { params }) {
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    const updated = await updateApiKey(id, updateData);
+    const updated = await updateApiKey(id, updateData, userId);
 
     return NextResponse.json({ key: updated });
   } catch (error) {
@@ -43,9 +46,10 @@ export async function PUT(request, { params }) {
 // DELETE /api/keys/[id] - Delete API key
 export async function DELETE(request, { params }) {
   try {
+    const userId = await getUserIdFromRequest(request);
     const { id } = await params;
 
-    const deleted = await deleteApiKey(id);
+    const deleted = await deleteApiKey(id, userId);
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }

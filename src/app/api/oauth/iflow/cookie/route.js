@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
- * iFlow Cookie-Based Authentication
+ * iFlow Cookie-Based Authentication (admin only, global config)
  * POST /api/oauth/iflow/cookie
  * Body: { cookie: "BXAuth=xxx; ..." }
  */
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const { cookie } = await request.json();
 
     if (!cookie || typeof cookie !== "string") {
@@ -105,8 +107,9 @@ export async function POST(request) {
     const bxAuth = bxAuthMatch ? bxAuthMatch[1] : "";
     const cookieToSave = bxAuth ? `BXAuth=${bxAuth};` : "";
 
-    // Save to database
+    // Save to database (admin only, global config)
     const connection = await createProviderConnection({
+      userId: null,
       provider: "iflow",
       authType: "cookie",
       name: refreshedKey.name || keyData.name,

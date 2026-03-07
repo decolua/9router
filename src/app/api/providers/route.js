@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/providers - List all connections
-export async function GET() {
+// GET /api/providers - List all connections (admin only, global config)
+export async function GET(request) {
   try {
-    const connections = await getProviderConnections();
+    await requireAdmin(request);
+    const connections = await getProviderConnections({}, null);
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -37,14 +39,15 @@ export async function GET() {
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
-    console.log("Error fetching providers:", error);
-    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to fetch providers" }, { status });
   }
 }
 
-// POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
+// POST /api/providers - Create new connection (admin only, global config)
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
 
@@ -71,7 +74,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
 
-      const existingConnections = await getProviderConnections({ provider });
+      const existingConnections = await getProviderConnections({ provider }, null);
       if (existingConnections.length > 0) {
         return NextResponse.json({ error: "Only one connection is allowed for this OpenAI Compatible node" }, { status: 400 });
       }
@@ -88,7 +91,7 @@ export async function POST(request) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
       }
 
-      const existingConnections = await getProviderConnections({ provider });
+      const existingConnections = await getProviderConnections({ provider }, null);
       if (existingConnections.length > 0) {
         return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
       }
@@ -101,6 +104,7 @@ export async function POST(request) {
     }
 
     const newConnection = await createProviderConnection({
+      userId: null,
       provider,
       authType: "apikey",
       name,
@@ -119,7 +123,7 @@ export async function POST(request) {
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
-    console.log("Error creating provider:", error);
-    return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to create provider" }, { status });
   }
 }

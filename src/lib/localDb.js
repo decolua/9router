@@ -4,8 +4,16 @@ import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import { isPostgresEnabled } from "@/lib/db/postgres.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
+
+let pgLocalDbModule = null;
+async function usePg() {
+  if (!isPostgresEnabled()) return null;
+  if (!pgLocalDbModule) pgLocalDbModule = await import("@/lib/db/pgLocalDb.js");
+  return pgLocalDbModule;
+}
 
 // Get app name - fixed constant to avoid Windows path issues in standalone build
 function getAppName() {
@@ -41,9 +49,10 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 
 // Default data structure
 const defaultData = {
+  users: [],
   providerConnections: [],
   providerNodes: [],
-  modelAliases: {},
+  modelAliases: [], // Changed from {} to [] for user-scoped aliases
   mitmAlias: {},
   combos: [],
   apiKeys: [],
@@ -67,9 +76,10 @@ const defaultData = {
 
 function cloneDefaultData() {
   return {
+    users: [],
     providerConnections: [],
     providerNodes: [],
-    modelAliases: {},
+    modelAliases: [], // Changed from {} to [] for user-scoped aliases
     mitmAlias: {},
     combos: [],
     apiKeys: [],
@@ -205,9 +215,16 @@ export async function getDb() {
 /**
  * Get all provider connections
  */
-export async function getProviderConnections(filter = {}) {
+export async function getProviderConnections(filter = {}, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getProviderConnections(filter, userId);
   const db = await getDb();
   let connections = db.data.providerConnections || [];
+  
+  // Filter by userId if provided
+  if (userId) {
+    connections = connections.filter(c => c.userId === userId);
+  }
   
   if (filter.provider) {
     connections = connections.filter(c => c.provider === filter.provider);
@@ -228,6 +245,8 @@ export async function getProviderConnections(filter = {}) {
  * Get provider nodes
  */
 export async function getProviderNodes(filter = {}) {
+  const pg = await usePg();
+  if (pg) return pg.getProviderNodes(filter);
   const db = await getDb();
   let nodes = db.data.providerNodes || [];
 
@@ -242,6 +261,8 @@ export async function getProviderNodes(filter = {}) {
  * Get provider node by ID
  */
 export async function getProviderNodeById(id) {
+  const pg = await usePg();
+  if (pg) return pg.getProviderNodeById(id);
   const db = await getDb();
   return db.data.providerNodes.find((node) => node.id === id) || null;
 }
@@ -250,6 +271,8 @@ export async function getProviderNodeById(id) {
  * Create provider node
  */
 export async function createProviderNode(data) {
+  const pg = await usePg();
+  if (pg) return pg.createProviderNode(data);
   const db = await getDb();
   
   // Initialize providerNodes if undefined (backward compatibility)
@@ -280,6 +303,8 @@ export async function createProviderNode(data) {
  * Update provider node
  */
 export async function updateProviderNode(id, data) {
+  const pg = await usePg();
+  if (pg) return pg.updateProviderNode(id, data);
   const db = await getDb();
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
@@ -304,6 +329,8 @@ export async function updateProviderNode(id, data) {
  * Delete provider node
  */
 export async function deleteProviderNode(id) {
+  const pg = await usePg();
+  if (pg) return pg.deleteProviderNode(id);
   const db = await getDb();
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
@@ -323,6 +350,8 @@ export async function deleteProviderNode(id) {
  * Delete all provider connections by provider ID
  */
 export async function deleteProviderConnectionsByProvider(providerId) {
+  const pg = await usePg();
+  if (pg) return pg.deleteProviderConnectionsByProvider(providerId);
   const db = await getDb();
   const beforeCount = db.data.providerConnections.length;
   db.data.providerConnections = db.data.providerConnections.filter(
@@ -336,28 +365,39 @@ export async function deleteProviderConnectionsByProvider(providerId) {
 /**
  * Get provider connection by ID
  */
-export async function getProviderConnectionById(id) {
+export async function getProviderConnectionById(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getProviderConnectionById(id, userId);
   const db = await getDb();
-  return db.data.providerConnections.find(c => c.id === id) || null;
+  const connection = db.data.providerConnections.find(c => c.id === id) || null;
+  
+  // If userId provided, verify ownership
+  if (userId && connection && connection.userId && connection.userId !== userId) {
+    return null;
+  }
+  
+  return connection;
 }
 
 /**
  * Create or update provider connection (upsert by provider + email/name)
  */
 export async function createProviderConnection(data) {
+  const pg = await usePg();
+  if (pg) return pg.createProviderConnection(data);
   const db = await getDb();
   const now = new Date().toISOString();
   
-  // Check for existing connection with same provider and email (for OAuth)
-  // or same provider and name (for API key)
+  const dataUserId = data.userId ?? null;
+  // Check for existing connection with same provider and email/name within same user
   let existingIndex = -1;
   if (data.authType === "oauth" && data.email) {
     existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
+      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email && (c.userId === dataUserId)
     );
   } else if (data.authType === "apikey" && data.name) {
     existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
+      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name && (c.userId === dataUserId)
     );
   }
   
@@ -399,6 +439,7 @@ export async function createProviderConnection(data) {
   // Create new connection - only save fields with actual values
   const connection = {
     id: uuidv4(),
+    userId: data.userId || null, // User-scoped ownership
     provider: data.provider,
     authType: data.authType || "oauth",
     name: connectionName,
@@ -440,11 +481,18 @@ export async function createProviderConnection(data) {
 /**
  * Update provider connection
  */
-export async function updateProviderConnection(id, data) {
+export async function updateProviderConnection(id, data, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.updateProviderConnection(id, data, userId);
   const db = await getDb();
   const index = db.data.providerConnections.findIndex(c => c.id === id);
 
   if (index === -1) return null;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.providerConnections[index].userId && db.data.providerConnections[index].userId !== userId) {
+    return null;
+  }
 
   const providerId = db.data.providerConnections[index].provider;
 
@@ -467,11 +515,18 @@ export async function updateProviderConnection(id, data) {
 /**
  * Delete provider connection
  */
-export async function deleteProviderConnection(id) {
+export async function deleteProviderConnection(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.deleteProviderConnection(id, userId);
   const db = await getDb();
   const index = db.data.providerConnections.findIndex(c => c.id === id);
 
   if (index === -1) return false;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.providerConnections[index].userId && db.data.providerConnections[index].userId !== userId) {
+    return false;
+  }
 
   const providerId = db.data.providerConnections[index].provider;
 
@@ -488,6 +543,8 @@ export async function deleteProviderConnection(id) {
  * Reorder provider connections to ensure unique, sequential priorities
  */
 export async function reorderProviderConnections(providerId) {
+  const pg = await usePg();
+  if (pg) return pg.reorderProviderConnections(providerId);
   const db = await getDb();
   if (!db.data.providerConnections) return;
 
@@ -512,34 +569,104 @@ export async function reorderProviderConnections(providerId) {
 // ============ Model Aliases ============
 
 /**
- * Get all model aliases
+ * Get all model aliases for a user
  */
-export async function getModelAliases() {
+export async function getModelAliases(userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getModelAliases(userId);
   const db = await getDb();
-  return db.data.modelAliases || {};
+  
+  // If modelAliases is still in old format (object), migrate it
+  if (db.data.modelAliases && !Array.isArray(db.data.modelAliases)) {
+    const oldAliases = db.data.modelAliases;
+    db.data.modelAliases = [];
+    
+    // Migrate old aliases to new format (assign to null userId for backward compatibility)
+    for (const [alias, model] of Object.entries(oldAliases)) {
+      db.data.modelAliases.push({
+        alias,
+        model,
+        userId: null, // Global aliases from old format
+      });
+    }
+    await db.write();
+  }
+  
+  let aliases = db.data.modelAliases || [];
+  
+  // Filter by userId if provided
+  if (userId) {
+    aliases = aliases.filter(a => a.userId === userId || a.userId === null); // Include user's aliases + global
+  }
+  
+  // Return as object for backward compatibility
+  const result = {};
+  for (const a of aliases) {
+    result[a.alias] = a.model;
+  }
+  return result;
 }
 
 /**
- * Set model alias
+ * Set model alias for a user
  */
-export async function setModelAlias(alias, model) {
+export async function setModelAlias(alias, model, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.setModelAlias(alias, model, userId);
   const db = await getDb();
-  db.data.modelAliases[alias] = model;
+  
+  // Ensure modelAliases is array format
+  if (!Array.isArray(db.data.modelAliases)) {
+    db.data.modelAliases = [];
+  }
+  
+  // Find existing alias for this user
+  const existingIndex = db.data.modelAliases.findIndex(
+    a => a.alias === alias && (userId === null || a.userId === userId)
+  );
+  
+  if (existingIndex !== -1) {
+    // Update existing
+    db.data.modelAliases[existingIndex].model = model;
+  } else {
+    // Create new
+    db.data.modelAliases.push({
+      alias,
+      model,
+      userId,
+    });
+  }
+  
   await db.write();
 }
 
 /**
- * Delete model alias
+ * Delete model alias for a user
  */
-export async function deleteModelAlias(alias) {
+export async function deleteModelAlias(alias, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.deleteModelAlias(alias, userId);
   const db = await getDb();
-  delete db.data.modelAliases[alias];
-  await db.write();
+  
+  if (!Array.isArray(db.data.modelAliases)) {
+    return;
+  }
+  
+  const index = db.data.modelAliases.findIndex(
+    a => a.alias === alias && (userId === null || a.userId === userId)
+  );
+  
+  if (index !== -1) {
+    db.data.modelAliases.splice(index, 1);
+    await db.write();
+  }
 }
 
 // ============ MITM Alias ============
 
 export async function getMitmAlias(toolName) {
+  const pg = await usePg();
+  if (pg) return pg.getMitmAlias(toolName);
   const db = await getDb();
   const all = db.data.mitmAlias || {};
   if (toolName) return all[toolName] || {};
@@ -547,6 +674,8 @@ export async function getMitmAlias(toolName) {
 }
 
 export async function setMitmAliasAll(toolName, mappings) {
+  const pg = await usePg();
+  if (pg) return pg.setMitmAliasAll(toolName, mappings);
   const db = await getDb();
   if (!db.data.mitmAlias) db.data.mitmAlias = {};
   db.data.mitmAlias[toolName] = mappings || {};
@@ -558,37 +687,67 @@ export async function setMitmAliasAll(toolName, mappings) {
 /**
  * Get all combos
  */
-export async function getCombos() {
+export async function getCombos(userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getCombos(userId);
   const db = await getDb();
-  return db.data.combos || [];
+  let combos = db.data.combos || [];
+  
+  // Filter by userId if provided
+  if (userId) {
+    combos = combos.filter(c => c.userId === userId);
+  }
+  
+  return combos;
 }
 
 /**
  * Get combo by ID
  */
-export async function getComboById(id) {
+export async function getComboById(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getComboById(id, userId);
   const db = await getDb();
-  return (db.data.combos || []).find(c => c.id === id) || null;
+  const combo = (db.data.combos || []).find(c => c.id === id) || null;
+  
+  // Verify ownership if userId provided
+  if (userId && combo && combo.userId && combo.userId !== userId) {
+    return null;
+  }
+  
+  return combo;
 }
 
 /**
  * Get combo by name
  */
-export async function getComboByName(name) {
+export async function getComboByName(name, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getComboByName(name, userId);
   const db = await getDb();
-  return (db.data.combos || []).find(c => c.name === name) || null;
+  const combo = (db.data.combos || []).find(c => c.name === name) || null;
+  
+  // Verify ownership if userId provided
+  if (userId && combo && combo.userId && combo.userId !== userId) {
+    return null;
+  }
+  
+  return combo;
 }
 
 /**
  * Create combo
  */
-export async function createCombo(data) {
+export async function createCombo(data, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.createCombo(data, userId);
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
   
   const now = new Date().toISOString();
   const combo = {
     id: uuidv4(),
+    userId: userId, // User-scoped ownership
     name: data.name,
     models: data.models || [],
     createdAt: now,
@@ -603,12 +762,19 @@ export async function createCombo(data) {
 /**
  * Update combo
  */
-export async function updateCombo(id, data) {
+export async function updateCombo(id, data, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.updateCombo(id, data, userId);
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
   
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return null;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.combos[index].userId && db.data.combos[index].userId !== userId) {
+    return null;
+  }
   
   db.data.combos[index] = {
     ...db.data.combos[index],
@@ -623,12 +789,19 @@ export async function updateCombo(id, data) {
 /**
  * Delete combo
  */
-export async function deleteCombo(id) {
+export async function deleteCombo(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.deleteCombo(id, userId);
   const db = await getDb();
   if (!db.data.combos) return false;
   
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return false;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.combos[index].userId && db.data.combos[index].userId !== userId) {
+    return false;
+  }
   
   db.data.combos.splice(index, 1);
   await db.write();
@@ -640,9 +813,18 @@ export async function deleteCombo(id) {
 /**
  * Get all API keys
  */
-export async function getApiKeys() {
+export async function getApiKeys(userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getApiKeys(userId);
   const db = await getDb();
-  return db.data.apiKeys || [];
+  let keys = db.data.apiKeys || [];
+  
+  // Filter by userId if provided
+  if (userId) {
+    keys = keys.filter(k => k.userId === userId);
+  }
+  
+  return keys;
 }
 
 /**
@@ -661,8 +843,11 @@ function generateShortKey() {
  * Create API key
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
+ * @param {string} userId - User ID (optional, for user-scoped keys)
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.createApiKey(name, machineId, userId);
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -679,6 +864,7 @@ export async function createApiKey(name, machineId) {
     name: name,
     key: result.key,
     machineId: machineId,
+    userId: userId, // User-scoped ownership
     isActive: true,
     createdAt: now,
   };
@@ -692,11 +878,18 @@ export async function createApiKey(name, machineId) {
 /**
  * Delete API key
  */
-export async function deleteApiKey(id) {
+export async function deleteApiKey(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.deleteApiKey(id, userId);
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   
   if (index === -1) return false;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.apiKeys[index].userId && db.data.apiKeys[index].userId !== userId) {
+    return false;
+  }
   
   db.data.apiKeys.splice(index, 1);
   await db.write();
@@ -707,18 +900,35 @@ export async function deleteApiKey(id) {
 /**
  * Get API key by ID
  */
-export async function getApiKeyById(id) {
+export async function getApiKeyById(id, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.getApiKeyById(id, userId);
   const db = await getDb();
-  return db.data.apiKeys.find(k => k.id === id) || null;
+  const key = db.data.apiKeys.find(k => k.id === id) || null;
+  
+  // Verify ownership if userId provided
+  if (userId && key && key.userId && key.userId !== userId) {
+    return null;
+  }
+  
+  return key;
 }
 
 /**
  * Update API key
  */
-export async function updateApiKey(id, data) {
+export async function updateApiKey(id, data, userId = null) {
+  const pg = await usePg();
+  if (pg) return pg.updateApiKey(id, data, userId);
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
+  
+  // Verify ownership if userId provided
+  if (userId && db.data.apiKeys[index].userId && db.data.apiKeys[index].userId !== userId) {
+    return null;
+  }
+  
   db.data.apiKeys[index] = {
     ...db.data.apiKeys[index],
     ...data,
@@ -728,12 +938,19 @@ export async function updateApiKey(id, data) {
 }
 
 /**
- * Validate API key
+ * Validate API key and return key object with userId
  */
 export async function validateApiKey(key) {
+  const pg = await usePg();
+  if (pg) return pg.validateApiKey(key);
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
-  return found && found.isActive !== false;
+  
+  if (!found || found.isActive === false) {
+    return null;
+  }
+  
+  return found; // Return full key object including userId
 }
 
 // ============ Data Cleanup ============
@@ -742,6 +959,8 @@ export async function validateApiKey(key) {
  * Remove null/empty fields from all provider connections to reduce db size
  */
 export async function cleanupProviderConnections() {
+  const pg = await usePg();
+  if (pg) return pg.cleanupProviderConnections();
   const db = await getDb();
   const fieldsToCheck = [
     "displayName", "email", "globalPriority", "defaultModel",
@@ -772,12 +991,195 @@ export async function cleanupProviderConnections() {
   return cleaned;
 }
 
+// ============ Users ============
+
+/**
+ * Get all users
+ */
+export async function getUsers() {
+  const pg = await usePg();
+  if (pg) return pg.getUsers();
+  const db = await getDb();
+  return db.data.users || [];
+}
+
+/**
+ * Get user by ID
+ */
+export async function getUserById(id) {
+  const pg = await usePg();
+  if (pg) return pg.getUserById(id);
+  const db = await getDb();
+  return (db.data.users || []).find(u => u.id === id) || null;
+}
+
+/**
+ * Get user by OAuth provider and ID
+ */
+export async function getUserByOAuth(provider, oauthId) {
+  const pg = await usePg();
+  if (pg) return pg.getUserByOAuth(provider, oauthId);
+  const db = await getDb();
+  return (db.data.users || []).find(
+    u => u.oauthProvider === provider && u.oauthId === oauthId
+  ) || null;
+}
+
+/**
+ * Get user by email
+ */
+export async function getUserByEmail(email) {
+  const pg = await usePg();
+  if (pg) return pg.getUserByEmail(email);
+  const db = await getDb();
+  return (db.data.users || []).find(u => u.email === email) || null;
+}
+
+/**
+ * Create or get user by OAuth (upsert)
+ */
+export async function getOrCreateUserByOAuth(provider, oauthId, profile = {}) {
+  const pg = await usePg();
+  if (pg) return pg.getOrCreateUserByOAuth(provider, oauthId, profile);
+  const db = await getDb();
+  
+  if (!db.data.users) {
+    db.data.users = [];
+  }
+  
+  // Check for existing user
+  let user = db.data.users.find(
+    u => u.oauthProvider === provider && u.oauthId === oauthId
+  );
+  
+  if (user) {
+    // Update last login timestamp
+    user.lastLoginAt = new Date().toISOString();
+    await db.write();
+    return user;
+  }
+  
+  // Create new user
+  const now = new Date().toISOString();
+  
+  // Check if this email matches admin override
+  const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map(e => e.trim()) : [];
+  const isAdminEmail = adminEmails.length > 0 && profile.email && adminEmails.includes(profile.email);
+  
+  user = {
+    id: uuidv4(),
+    email: profile.email || null,
+    displayName: profile.displayName || profile.name || null,
+    oauthProvider: provider,
+    oauthId: oauthId,
+    tenantId: profile.tenantId || null,
+    isAdmin: isAdminEmail || db.data.users.length === 0, // Admin by email or first user
+    createdAt: now,
+    lastLoginAt: now,
+  };
+  
+  db.data.users.push(user);
+  await db.write();
+  
+  return user;
+}
+
+/**
+ * Create or get user by email (for password login)
+ */
+export async function getOrCreateUserByEmail(email, displayName = null) {
+  const pg = await usePg();
+  if (pg) return pg.getOrCreateUserByEmail(email, displayName);
+  const db = await getDb();
+  
+  if (!db.data.users) {
+    db.data.users = [];
+  }
+  
+  // Check for existing user
+  let user = db.data.users.find(u => u.email === email);
+  
+  if (user) {
+    // Update last login timestamp
+    user.lastLoginAt = new Date().toISOString();
+    await db.write();
+    return user;
+  }
+  
+  // Create new user
+  const now = new Date().toISOString();
+  
+  // Check if this email matches admin override
+  const adminEmails = process.env.ADMIN_EMAILS ? process.env.ADMIN_EMAILS.split(',').map(e => e.trim()) : [];
+  const isAdminEmail = adminEmails.length > 0 && email && adminEmails.includes(email);
+  
+  const newUser = {
+    id: uuidv4(),
+    email: email,
+    displayName: displayName || email.split('@')[0],
+    oauthProvider: null,
+    oauthId: null,
+    tenantId: null,
+    isAdmin: isAdminEmail || db.data.users.length === 0, // Admin by email or first user
+    createdAt: now,
+    lastLoginAt: now,
+  };
+  
+  db.data.users.push(newUser);
+  await db.write();
+  
+  return newUser;
+}
+
+/**
+ * Update user
+ */
+export async function updateUser(id, data) {
+  const pg = await usePg();
+  if (pg) return pg.updateUser(id, data);
+  const db = await getDb();
+  if (!db.data.users) {
+    db.data.users = [];
+  }
+  
+  const index = db.data.users.findIndex(u => u.id === id);
+  if (index === -1) return null;
+  
+  db.data.users[index] = {
+    ...db.data.users[index],
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+  
+  await db.write();
+  return db.data.users[index];
+}
+
+/**
+ * Delete user
+ */
+export async function deleteUser(id) {
+  const pg = await usePg();
+  if (pg) return pg.deleteUser(id);
+  const db = await getDb();
+  if (!db.data.users) return false;
+  
+  const index = db.data.users.findIndex(u => u.id === id);
+  if (index === -1) return false;
+  
+  db.data.users.splice(index, 1);
+  await db.write();
+  return true;
+}
+
 // ============ Settings ============
 
 /**
  * Get settings
  */
 export async function getSettings() {
+  const pg = await usePg();
+  if (pg) return pg.getSettings();
   const db = await getDb();
   return db.data.settings || { cloudEnabled: false };
 }
@@ -786,6 +1188,8 @@ export async function getSettings() {
  * Update settings
  */
 export async function updateSettings(updates) {
+  const pg = await usePg();
+  if (pg) return pg.updateSettings(updates);
   const db = await getDb();
   db.data.settings = {
     ...db.data.settings,
@@ -799,6 +1203,8 @@ export async function updateSettings(updates) {
  * Export full database payload
  */
 export async function exportDb() {
+  const pg = await usePg();
+  if (pg) return pg.exportDb();
   const db = await getDb();
   return db.data || cloneDefaultData();
 }
@@ -807,6 +1213,8 @@ export async function exportDb() {
  * Import full database payload
  */
 export async function importDb(payload) {
+  const pg = await usePg();
+  if (pg) return pg.importDb(payload);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
@@ -856,6 +1264,8 @@ export async function getCloudUrl() {
  * Returns merged user pricing with defaults
  */
 export async function getPricing() {
+  const pg = await usePg();
+  if (pg) return pg.getPricing();
   const db = await getDb();
   const userPricing = db.data.pricing || {};
 
@@ -943,6 +1353,8 @@ export async function getPricingForModel(provider, model) {
  * @param {object} pricingData - New pricing data to merge
  */
 export async function updatePricing(pricingData) {
+  const pg = await usePg();
+  if (pg) return pg.updatePricing(pricingData);
   const db = await getDb();
 
   // Ensure pricing object exists
@@ -971,6 +1383,8 @@ export async function updatePricing(pricingData) {
  * @param {string} model - Model ID (optional, if not provided resets entire provider)
  */
 export async function resetPricing(provider, model) {
+  const pg = await usePg();
+  if (pg) return pg.resetPricing(provider, model);
   const db = await getDb();
 
   if (!db.data.pricing) {
@@ -999,6 +1413,8 @@ export async function resetPricing(provider, model) {
  * Reset all pricing to defaults
  */
 export async function resetAllPricing() {
+  const pg = await usePg();
+  if (pg) return pg.resetAllPricing();
   const db = await getDb();
   db.data.pricing = {};
   await db.write();

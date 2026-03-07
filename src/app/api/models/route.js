@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 import { AI_MODELS } from "@/shared/constants/config";
 
-// GET /api/models - Get models with aliases
+// GET /api/models - Get models with aliases (global config)
 export async function GET() {
   try {
-    const modelAliases = await getModelAliases();
+    const modelAliases = await getModelAliases(null);
     
     const models = AI_MODELS.map((m) => {
       const fullModel = `${m.provider}/${m.model}`;
@@ -23,9 +24,10 @@ export async function GET() {
   }
 }
 
-// PUT /api/models - Update model alias
+// PUT /api/models - Update model alias (admin only, global config)
 export async function PUT(request) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
     const { model, alias } = body;
 
@@ -33,7 +35,7 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
     }
 
-    const modelAliases = await getModelAliases();
+    const modelAliases = await getModelAliases(null);
 
     // Check if alias already exists for different model
     const existingModel = Object.entries(modelAliases).find(
@@ -44,12 +46,12 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Alias already in use" }, { status: 400 });
     }
 
-    // Update alias
-    await setModelAlias(model, alias);
+    // Update alias (alias, model, userId)
+    await setModelAlias(alias, model, null);
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
-    console.log("Error updating alias:", error);
-    return NextResponse.json({ error: "Failed to update alias" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to update alias" }, { status });
   }
 }

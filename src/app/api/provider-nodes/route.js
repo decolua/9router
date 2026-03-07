@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -13,20 +14,22 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: "https://api.anthropic.com/v1",
 };
 
-// GET /api/provider-nodes - List all provider nodes
-export async function GET() {
+// GET /api/provider-nodes - List all provider nodes (admin only)
+export async function GET(request) {
   try {
+    await requireAdmin(request);
     const nodes = await getProviderNodes();
     return NextResponse.json({ nodes });
   } catch (error) {
-    console.log("Error fetching provider nodes:", error);
-    return NextResponse.json({ error: "Failed to fetch provider nodes" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to fetch provider nodes" }, { status });
   }
 }
 
-// POST /api/provider-nodes - Create provider node
+// POST /api/provider-nodes - Create provider node (admin only)
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
     const { name, prefix, apiType, baseUrl, type } = body;
 
@@ -77,7 +80,7 @@ export async function POST(request) {
 
     return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });
   } catch (error) {
-    console.log("Error creating provider node:", error);
-    return NextResponse.json({ error: "Failed to create provider node" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to create provider node" }, { status });
   }
 }

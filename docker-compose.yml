@@ -1,0 +1,23 @@
+# Dev stack: Postgres only. Run app with: npm run dev
+# Usage: docker compose up -d && npm run dev
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: 9router-pg
+    environment:
+      POSTGRES_USER: 9router
+      POSTGRES_PASSWORD: 9router
+      POSTGRES_DB: 9router
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U 9router -d 9router"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

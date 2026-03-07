@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
- * POST /api/oauth/kiro/import
+ * POST /api/oauth/kiro/import (admin only, global config)
  * Import and validate refresh token from Kiro IDE
  */
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const { refreshToken } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
@@ -25,8 +27,9 @@ export async function POST(request) {
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
 
-    // Save to database
+    // Save to database (admin only, global config)
     const connection = await createProviderConnection({
+      userId: null,
       provider: "kiro",
       authType: "oauth",
       accessToken: tokenData.accessToken,

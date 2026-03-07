@@ -268,12 +268,20 @@ export default function ProviderDetailPage() {
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
+    const activeConnection = connections.find((c) => c.isActive !== false) || connections[0];
+    if (!activeConnection?.id) {
+      setModelsTestError("No connection to test with");
+      return;
+    }
     setTestingModelId(modelId);
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+        body: JSON.stringify({
+          model: `${providerStorageAlias}/${modelId}`,
+          connectionId: activeConnection.id,
+        }),
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
@@ -1336,6 +1344,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [testError, setTestError] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1348,6 +1357,7 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
         apiKey: "",
       });
       setTestResult(null);
+      setTestError(null);
       setValidationResult(null);
     }
   }, [connection]);
@@ -1356,12 +1366,15 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
     if (!connection?.provider) return;
     setTesting(true);
     setTestResult(null);
+    setTestError(null);
     try {
       const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
       const data = await res.json();
       setTestResult(data.valid ? "success" : "failed");
+      setTestError(data.error || null);
     } catch {
       setTestResult("failed");
+      setTestError("Request failed");
     } finally {
       setTesting(false);
     }
@@ -1477,14 +1490,19 @@ function EditConnectionModal({ isOpen, connection, onSave, onClose }) {
 
         {/* Test Connection */}
         {!isCompatible && (
-          <div className="flex items-center gap-3">
-            <Button onClick={handleTest} variant="secondary" disabled={testing}>
-              {testing ? "Testing..." : "Test Connection"}
-            </Button>
-            {testResult && (
-              <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
-              </Badge>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-3">
+              <Button onClick={handleTest} variant="secondary" disabled={testing}>
+                {testing ? "Testing..." : "Test Connection"}
+              </Button>
+              {testResult && (
+                <Badge variant={testResult === "success" ? "success" : "error"}>
+                  {testResult === "success" ? "Valid" : "Failed"}
+                </Badge>
+              )}
+            </div>
+            {testResult === "failed" && testError && (
+              <p className="text-sm text-red-600 dark:text-red-400">{testError}</p>
             )}
           </div>
         )}

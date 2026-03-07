@@ -1,9 +1,13 @@
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
+import { getUserFromRequest } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request) {
   const encoder = new TextEncoder();
+  const user = getUserFromRequest(request);
+  const userId = user?.id || null;
+
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
   const stream = new ReadableStream({
@@ -18,8 +22,8 @@ export async function GET() {
             const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
           }
-          // Then do full recalc and update cache
-          const stats = await getUsageStats();
+          // Then do full recalc and update cache (scoped to user when multi-user)
+          const stats = await getUsageStats("all", userId);
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {

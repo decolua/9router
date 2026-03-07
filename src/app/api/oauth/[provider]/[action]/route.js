@@ -7,6 +7,7 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
  * Dynamic OAuth API Route
@@ -57,10 +58,11 @@ export async function GET(request, { params }) {
   }
 }
 
-// POST /api/oauth/[provider]/exchange - Exchange code for tokens and save
-// POST /api/oauth/[provider]/poll - Poll for token (device_code flow)
+// POST /api/oauth/[provider]/exchange - Exchange code for tokens and save (admin only, global config)
+// POST /api/oauth/[provider]/poll - Poll for token (device_code flow) (admin only)
 export async function POST(request, { params }) {
   try {
+    await requireAdmin(request);
     const { provider, action } = await params;
     let body;
     try {
@@ -81,8 +83,9 @@ export async function POST(request, { params }) {
       // Exchange code for tokens
       const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state);
 
-      // Save to database
+      // Save to database (admin only, global config)
       const connection = await createProviderConnection({
+        userId: null,
         provider,
         authType: "oauth",
         ...tokenData,
@@ -127,8 +130,9 @@ export async function POST(request, { params }) {
       }
 
       if (result.success) {
-        // Save to database
+        // Save to database (admin only, global config)
         const connection = await createProviderConnection({
+          userId: null,
           provider,
           authType: "oauth",
           ...result.tokens,
@@ -160,7 +164,7 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   } catch (error) {
-    console.log("OAuth POST error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }

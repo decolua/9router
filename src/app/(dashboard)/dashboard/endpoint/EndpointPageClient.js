@@ -41,7 +41,6 @@ export default function APIPageClient({ machineId }) {
   ========== END CLOUD STATE ========== */
 
   // Tunnel state
-  const [requireApiKey, setRequireApiKey] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
   const [tunnelShortId, setTunnelShortId] = useState("");
@@ -89,7 +88,6 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         const data = await res.json();
         setCloudEnabled(data.cloudEnabled || false);
-        setRequireApiKey(data.requireApiKey || false);
         const url = data.cloudUrl || DEFAULT_CLOUD_URL;
         setCloudUrl(url);
         setCloudUrlInput(url);
@@ -219,8 +217,7 @@ export default function APIPageClient({ machineId }) {
         fetch("/api/tunnel/status")
       ]);
       if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setRequireApiKey(data.requireApiKey || false);
+        // Settings loaded (requireApiKey is always enforced server-side; no toggle)
       }
       if (tunnelRes.ok) {
         const data = await tunnelRes.json();
@@ -230,19 +227,6 @@ export default function APIPageClient({ machineId }) {
       }
     } catch (error) {
       console.log("Error loading settings:", error);
-    }
-  };
-
-  const handleRequireApiKey = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requireApiKey: value }),
-      });
-      if (res.ok) setRequireApiKey(value);
-    } catch (error) {
-      console.log("Error updating requireApiKey:", error);
     }
   };
 
@@ -494,18 +478,9 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-          <div>
-            <p className="font-medium">Require API key</p>
-            <p className="text-sm text-text-muted">
-              Requests without a valid key will be rejected
-            </p>
-          </div>
-          <Toggle
-            checked={requireApiKey}
-            onChange={() => handleRequireApiKey(!requireApiKey)}
-          />
-        </div>
+        <p className="text-sm text-text-muted pb-4 mb-4 border-b border-border">
+          Proxy requests require a valid API key. Create a key below and use it in the <code className="text-xs bg-surface px-1 rounded">Authorization: Bearer &lt;key&gt;</code> header.
+        </p>
 
         {keys.length === 0 ? (
           <div className="text-center py-12">

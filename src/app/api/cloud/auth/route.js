@@ -17,8 +17,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
-    // Get active provider connections
-    const connections = await getProviderConnections({ isActive: true });
+    // Get active provider connections (global config)
+    const connections = await getProviderConnections({ isActive: true }, null);
 
     // Map connections
     const mappedConnections = connections.map(conn => ({
@@ -35,8 +35,8 @@ export async function POST(request) {
       isActive: conn.isActive
     }));
 
-    // Get model aliases
-    const modelAliases = await getModelAliases();
+    // Get model aliases (global config)
+    const modelAliases = await getModelAliases(null);
 
     return NextResponse.json({
       connections: mappedConnections,

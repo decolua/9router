@@ -7,6 +7,7 @@ import {
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
+import { requireAdmin } from "@/lib/auth/helpers";
 import { testSingleConnection } from "../[id]/test/testUtils.js";
 
 function getAuthGroup(providerId, connection = null) {
@@ -39,9 +40,10 @@ function isCompatibleProvider(providerId) {
   );
 }
 
-// POST /api/providers/test-batch - Test multiple connections by group
+// POST /api/providers/test-batch - Test multiple connections by group (admin only, global config)
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const body = await request.json();
     const { mode, providerId } = body;
 
@@ -49,7 +51,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "mode is required" }, { status: 400 });
     }
 
-    const allConnections = await getProviderConnections({ isActive: true });
+    const allConnections = await getProviderConnections({ isActive: true }, null);
 
     let connectionsToTest = [];
     if (mode === "provider" && providerId) {
@@ -125,7 +127,7 @@ export async function POST(request) {
       },
     });
   } catch (error) {
-    console.log("Error in batch test:", error);
-    return NextResponse.json({ error: "Batch test failed" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Batch test failed" }, { status });
   }
 }

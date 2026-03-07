@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { CursorService } from "@/lib/oauth/services/cursor";
 import { createProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
- * POST /api/oauth/cursor/import
+ * POST /api/oauth/cursor/import (admin only, global config)
  * Import and validate access token from Cursor IDE's local SQLite database
  *
  * Request body:
@@ -12,6 +13,7 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
+    await requireAdmin(request);
     const { accessToken, machineId } = await request.json();
 
     if (!accessToken || typeof accessToken !== "string") {
@@ -39,8 +41,9 @@ export async function POST(request) {
     // Try to extract user info from token
     const userInfo = cursorService.extractUserInfo(tokenData.accessToken);
 
-    // Save to database
+    // Save to database (admin only, global config)
     const connection = await createProviderConnection({
+      userId: null,
       provider: "cursor",
       authType: "oauth",
       accessToken: tokenData.accessToken,

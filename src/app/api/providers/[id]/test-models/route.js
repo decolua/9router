@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { requireAdmin } from "@/lib/auth/helpers";
 
 /**
- * Get an active API key to pass through auth when requireApiKey is enabled.
+ * Get an active API key to pass through auth (proxy always requires API key).
  */
 async function getInternalApiKey() {
-  const keys = await getApiKeys();
+  const keys = await getApiKeys(null);
   return keys.find((k) => k.isActive !== false)?.key || null;
 }
 
@@ -52,8 +53,9 @@ async function pingModel(modelId, baseUrl, apiKey) {
  */
 export async function POST(request, { params }) {
   try {
+    await requireAdmin(request);
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    const connection = await getProviderConnectionById(id, null);
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -100,8 +102,8 @@ export async function POST(request, { params }) {
 
     return NextResponse.json({ provider: providerId, connectionId: id, results });
   } catch (error) {
-    console.log("Error testing models:", error);
-    return NextResponse.json({ error: "Test failed" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Test failed" }, { status });
   }
 }
 

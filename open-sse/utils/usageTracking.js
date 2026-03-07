@@ -280,8 +280,15 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
 
 /**
  * Log usage with cache info (green color)
+ * @param {string} provider - Provider name
+ * @param {object} usage - Usage object with token counts
+ * @param {string|null} model - Model name
+ * @param {string|null} connectionId - Connection ID
+ * @param {string|null} apiKey - API key (full key)
+ * @param {string|null} userId - User ID resolved from API key
+ * @param {string|null} apiKeyId - API key ID
  */
-export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null) {
+export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null, userId = null, apiKeyId = null) {
   if (!usage || typeof usage !== "object") return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
@@ -312,7 +319,7 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
 
   console.log(msg);
 
-  // Save to usage DB
+  // Save to usage DB with userId and apiKeyId
   const tokens = {
     prompt_tokens: inTokens,
     completion_tokens: outTokens,
@@ -320,6 +327,6 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
     cache_creation_input_tokens: cacheCreation || 0,
     reasoning_tokens: reasoning || 0
   };
-  saveRequestUsage({ model, provider, connectionId, tokens, apiKey: apiKey || undefined }).catch(() => { });
-  appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK" }).catch(() => { });
+  saveRequestUsage({ model, provider, connectionId, tokens, apiKey: apiKey || undefined, userId, apiKeyId }).catch(() => { });
+  appendRequestLog({ model, provider, connectionId, tokens, status: "200 OK", userId, apiKeyId }).catch(() => { });
 }

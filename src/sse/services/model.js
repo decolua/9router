@@ -6,16 +6,20 @@ export { parseModel };
 
 /**
  * Resolve model alias from localDb
+ * @param {string} alias - The alias to resolve
+ * @param {string|null} userId - User ID for user-scoped aliases
  */
-export async function resolveModelAlias(alias) {
-  const aliases = await getModelAliases();
+export async function resolveModelAlias(alias, userId = null) {
+  const aliases = await getModelAliases(userId);
   return resolveModelAliasFromMap(alias, aliases);
 }
 
 /**
  * Get full model info (parse or resolve)
+ * @param {string} modelStr - The model string to parse
+ * @param {string|null} userId - User ID for user-scoped aliases
  */
-export async function getModelInfo(modelStr) {
+export async function getModelInfo(modelStr, userId = null) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -42,25 +46,27 @@ export async function getModelInfo(modelStr) {
 
   // Check if this is a combo name before resolving as alias
   // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
+  const combo = await getComboByName(parsed.model, userId);
   if (combo) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
     return { provider: null, model: parsed.model };
   }
 
-  return getModelInfoCore(modelStr, getModelAliases);
+  return getModelInfoCore(modelStr, () => getModelAliases(userId));
 }
 
 /**
  * Check if model is a combo and get models list
+ * @param {string} modelStr - The model string to check
+ * @param {string|null} userId - User ID for user-scoped combos
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
-export async function getComboModels(modelStr) {
+export async function getComboModels(modelStr, userId = null) {
   // Only check if it's not in provider/model format
   if (modelStr.includes("/")) return null;
 
-  const combo = await getComboByName(modelStr);
+  const combo = await getComboByName(modelStr, userId);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }

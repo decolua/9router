@@ -1254,7 +1254,8 @@ Expected behavior from recent validation:
 8. Usage/logging is recorded (`src/lib/usageDb.js`).
 9. Fallback applies on provider/account/model errors according to combo rules.
 
-Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)  
+Cách thức hoạt động (overview): [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md)
 
 ---
 

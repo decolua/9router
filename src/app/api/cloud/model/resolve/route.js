@@ -24,8 +24,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
     }
 
-    // Get model aliases
-    const modelAliases = await getModelAliases();
+    // Get model aliases (global config)
+    const modelAliases = await getModelAliases(null);
     const resolved = modelAliases[alias];
 
     if (resolved) {

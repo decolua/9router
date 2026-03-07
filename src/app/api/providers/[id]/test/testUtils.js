@@ -219,13 +219,29 @@ async function testOAuthConnection(connection) {
   }
 }
 
+/** Normalize base URL and build /models endpoint (many backends use /v1/models). */
+function buildModelsUrl(baseUrl) {
+  let base = (baseUrl || "").trim().replace(/\/$/, "");
+  if (!base) return null;
+  if (base.endsWith("/messages")) base = base.slice(0, -9);
+  if (!/\/v1$/i.test(base)) base += "/v1";
+  return `${base}/models`;
+}
+
 async function testApiKeyConnection(connection) {
+  const apiKey = (connection.apiKey ?? connection.api_key)?.trim();
+  if (!apiKey) {
+    return { valid: false, error: "Missing API key" };
+  }
+
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
+    const modelsUrl = buildModelsUrl(modelsBase);
+    if (!modelsUrl) return { valid: false, error: "Invalid base URL" };
     try {
-      const res = await fetch(`${modelsBase.replace(/\/$/, "")}/models`, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
+      const res = await fetch(modelsUrl, {
+        headers: { "Authorization": `Bearer ${apiKey}` },
       });
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
@@ -234,13 +250,13 @@ async function testApiKeyConnection(connection) {
   }
 
   if (isAnthropicCompatibleProvider(connection.provider)) {
-    let modelsBase = connection.providerSpecificData?.baseUrl;
+    const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
+    const modelsUrl = buildModelsUrl(modelsBase);
+    if (!modelsUrl) return { valid: false, error: "Invalid base URL" };
     try {
-      modelsBase = modelsBase.replace(/\/$/, "");
-      if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
-      const res = await fetch(`${modelsBase}/models`, {
-        headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
+      const res = await fetch(modelsUrl, {
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${apiKey}` },
       });
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
@@ -251,30 +267,30 @@ async function testApiKeyConnection(connection) {
   try {
     switch (connection.provider) {
       case "openai": {
-        const res = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "anthropic": {
         const res = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "gemini": {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`);
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "openrouter": {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "glm": {
         const res = await fetch("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
@@ -283,7 +299,7 @@ async function testApiKeyConnection(connection) {
       case "glm-cn": {
         const res = await fetch("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
           method: "POST",
-          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
@@ -294,7 +310,7 @@ async function testApiKeyConnection(connection) {
         const endpoints = { minimax: "https://api.minimax.io/anthropic/v1/messages", "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages" };
         const res = await fetch(endpoints[connection.provider], {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "minimax-m2", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
@@ -303,7 +319,7 @@ async function testApiKeyConnection(connection) {
       case "kimi": {
         const res = await fetch("https://api.kimi.com/coding/v1/messages", {
           method: "POST",
-          headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "kimi-latest", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
@@ -313,78 +329,78 @@ async function testApiKeyConnection(connection) {
         // Aliyun Coding Plan uses OpenAI-compatible API
         const res = await fetch("https://coding.dashscope.aliyuncs.com/v1/chat/completions", {
           method: "POST",
-          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: getDefaultModel("alicode"), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "deepseek": {
-        const res = await fetch("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "groq": {
-        const res = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "mistral": {
-        const res = await fetch("https://api.mistral.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.mistral.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "xai": {
-        const res = await fetch("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nvidia": {
-        const res = await fetch("https://integrate.api.nvidia.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://integrate.api.nvidia.com/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "perplexity": {
-        const res = await fetch("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "together": {
-        const res = await fetch("https://api.together.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.together.xyz/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "fireworks": {
-        const res = await fetch("https://api.fireworks.ai/inference/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.fireworks.ai/inference/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cerebras": {
-        const res = await fetch("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cohere": {
-        const res = await fetch("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nebius": {
-        const res = await fetch("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "siliconflow": {
-        const res = await fetch("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "hyperbolic": {
-        const res = await fetch("https://api.hyperbolic.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.hyperbolic.xyz/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "deepgram": {
-        const res = await fetch("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } });
+        const res = await fetch("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "assemblyai": {
-        const res = await fetch("https://api.assemblyai.com/v1/account", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.assemblyai.com/v1/account", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nanobanana": {
-        const res = await fetch("https://api.nanobananaapi.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://api.nanobananaapi.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "chutes": {
-        const res = await fetch("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetch("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       default:
@@ -399,7 +415,7 @@ async function testApiKeyConnection(connection) {
  * Test a single connection by ID, update DB, and return result.
  */
 export async function testSingleConnection(id) {
-  const connection = await getProviderConnectionById(id);
+  const connection = await getProviderConnectionById(id, null);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
   const start = Date.now();
@@ -427,7 +443,7 @@ export async function testSingleConnection(id) {
     }
   }
 
-  await updateProviderConnection(id, updateData);
+  await updateProviderConnection(id, updateData, null);
 
   return { valid: result.valid, error: result.error, latencyMs, testedAt: new Date().toISOString() };
 }

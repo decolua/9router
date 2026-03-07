@@ -223,7 +223,11 @@ export async function getUsageDb() {
 
 /**
  * Save request usage
- * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
+ * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey?, userId?, apiKeyId? }
+ */
+/**
+ * Save request usage to history
+ * @param {object} entry - Usage entry with userId, apiKeyId, provider, model, tokens, etc.
  */
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
@@ -243,6 +247,10 @@ export async function saveRequestUsage(entry) {
 
     const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
     entry.cost = entryCost;
+    
+    // Note: userId and apiKeyId should be passed in entry
+    // They will be stored as part of the entry object
+    
     db.data.history.push(entry);
 
     // Optional: Limit history size if needed in future
@@ -258,10 +266,16 @@ export async function saveRequestUsage(entry) {
 /**
  * Get usage history
  * @param {object} filter - Filter criteria
+ * @param {string} [filter.userId] - Filter by user ID
  */
 export async function getUsageHistory(filter = {}) {
   const db = await getUsageDb();
   let history = db.data.history || [];
+
+  // Filter by userId
+  if (filter.userId) {
+    history = history.filter(h => h.userId === filter.userId);
+  }
 
   // Apply filters
   if (filter.provider) {
@@ -301,9 +315,9 @@ function formatLogDate(date = new Date()) {
 
 /**
  * Append to log.txt
- * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
+ * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status | userId
  */
-export async function appendRequestLog({ model, provider, connectionId, tokens, status }) {
+export async function appendRequestLog({ model, provider, connectionId, tokens, status, userId, apiKeyId }) {
   if (isCloud) return; // Skip logging in Workers
 
   try {
@@ -324,8 +338,9 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
 
     const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
+    const userSuffix = userId ? ` | ${userId.slice(0, 8)}` : "";
 
-    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
+    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}${userSuffix}\n`;
 
     fs.appendFileSync(LOG_FILE, line);
 
@@ -343,9 +358,9 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
 /**
  * Get last N lines of log.txt
  */
-export async function getRecentLogs(limit = 200) {
+export async function getRecentLogs(limit = 200, userId = null) {
   if (isCloud) return []; // Skip in Workers
-  
+
   // Runtime check: ensure fs module is available
   if (!fs || typeof fs.existsSync !== "function") {
     console.error("[usageDb] fs module not available in this environment");
@@ -364,7 +379,18 @@ export async function getRecentLogs(limit = 200) {
   
   try {
     const content = fs.readFileSync(LOG_FILE, "utf-8");
-    const lines = content.trim().split("\n");
+    let lines = content.trim().split("\n").filter(Boolean);
+    
+    // Filter by userId if provided (log format: ... | status | userId_suffix, userId_suffix is first 8 chars)
+    if (userId) {
+      const prefix = userId.slice(0, 8);
+      lines = lines.filter(line => {
+        const parts = line.split("|");
+        const lastPart = parts[parts.length - 1]?.trim() || "";
+        return lastPart === prefix;
+      });
+    }
+    
     return lines.slice(-limit).reverse();
   } catch (error) {
     console.error("[usageDb] Failed to read log.txt:", error.message);
@@ -435,9 +461,14 @@ const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 
  * Get aggregated usage stats
  * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
  */
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", userId = null) {
   const db = await getUsageDb();
   let history = db.data.history || [];
+
+  // Filter by userId if provided
+  if (userId) {
+    history = history.filter(h => h.userId === userId);
+  }
 
   // Filter history by period
   if (period && PERIOD_MS[period]) {
@@ -756,11 +787,18 @@ export async function getUsageStats(period = "all") {
 /**
  * Get time-series chart data for a given period
  * @param {"24h"|"7d"|"30d"|"60d"} period
+ * @param {string|null} userId - Filter by user ID
  * @returns {Promise<Array<{label: string, tokens: number, cost: number}>>}
  */
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", userId = null) {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
+  
+  // Filter by userId if provided
+  if (userId) {
+    history = history.filter(h => h.userId === userId);
+  }
+  
   const now = Date.now();
 
   let bucketCount, bucketMs, labelFn;

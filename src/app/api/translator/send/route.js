@@ -9,7 +9,7 @@ export async function POST(request) {
       return Response.json({ success: false, error: "provider, model, and body required" }, { status: 400 });
     }
 
-    const connections = await getProviderConnections({ provider });
+    const connections = await getProviderConnections({ provider }, null);
     const connection = connections.find(c => c.isActive !== false);
     if (!connection) {
       return Response.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });

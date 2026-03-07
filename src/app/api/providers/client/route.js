@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
+import { requireAdmin } from "@/lib/auth/helpers";
 
-// GET /api/providers/client - List all connections for client (includes sensitive fields for sync)
-export async function GET() {
+// GET /api/providers/client - List all connections for client (admin only, includes sensitive fields for sync)
+export async function GET(request) {
   try {
-    const connections = await getProviderConnections();
+    await requireAdmin(request);
+    const connections = await getProviderConnections({}, null);
     
     // Include sensitive fields for sync to cloud (only accessible from same origin)
     const clientConnections = connections.map(c => ({
@@ -14,7 +16,7 @@ export async function GET() {
 
     return NextResponse.json({ connections: clientConnections });
   } catch (error) {
-    console.log("Error fetching providers for client:", error);
-    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to fetch providers" }, { status });
   }
 }

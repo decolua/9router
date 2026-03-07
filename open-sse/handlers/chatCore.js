@@ -22,8 +22,10 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
  * @param {object} options.modelInfo - { provider, model }
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
+ * @param {string} options.userId - User ID for usage tracking
+ * @param {string} options.apiKeyId - API key ID for usage tracking
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, sourceFormatOverride }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, sourceFormatOverride, userId, apiKeyId }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -138,8 +140,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, retryAfterMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
-  const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, userId, apiKeyId, clientRawRequest, onRequestSuccess };
+  const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, userId, apiKeyId, ...extra }).catch(() => {});
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON

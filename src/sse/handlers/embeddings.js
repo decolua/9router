@@ -5,7 +5,6 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -35,25 +34,27 @@ export async function handleEmbeddings(request) {
 
   // Log API key (masked)
   const apiKey = extractApiKey(request);
+  let userId = null;
+  let apiKeyId = null;
+  
   if (apiKey) {
     log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}`);
   } else {
-    log.debug("AUTH", "No API key provided (local mode)");
+    log.debug("AUTH", "No API key in request (expect 401 if key required)");
   }
 
-  // Enforce API key if enabled in settings
-  const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+  // API key always required for proxy access (admin policy; not configurable)
+  if (!apiKey) {
+    log.warn("AUTH", "Missing API key");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
   }
+  const keyObj = await isValidApiKey(apiKey);
+  if (!keyObj) {
+    log.warn("AUTH", "Invalid API key");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
+  userId = keyObj.userId;
+  apiKeyId = keyObj.id;
 
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
@@ -65,7 +66,7 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
 
-  const modelInfo = await getModelInfo(modelStr);
+  const modelInfo = await getModelInfo(modelStr, null);
   if (!modelInfo.provider) {
     log.warn("EMBEDDINGS", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -85,7 +86,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionId, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionId, model, null);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

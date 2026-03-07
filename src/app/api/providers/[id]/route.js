@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection } from "@/models";
+import { requireAdmin } from "@/lib/auth/helpers";
 
-// GET /api/providers/[id] - Get single connection
+// GET /api/providers/[id] - Get single connection (admin only, global config)
 export async function GET(request, { params }) {
   try {
+    await requireAdmin(request);
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    const connection = await getProviderConnectionById(id, null);
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
@@ -20,14 +22,15 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({ connection: result });
   } catch (error) {
-    console.log("Error fetching connection:", error);
-    return NextResponse.json({ error: "Failed to fetch connection" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to fetch connection" }, { status });
   }
 }
 
-// PUT /api/providers/[id] - Update connection
+// PUT /api/providers/[id] - Update connection (admin only)
 export async function PUT(request, { params }) {
   try {
+    await requireAdmin(request);
     const { id } = await params;
     const body = await request.json();
     const {
@@ -43,7 +46,7 @@ export async function PUT(request, { params }) {
       providerSpecificData
     } = body;
 
-    const existing = await getProviderConnectionById(id);
+    const existing = await getProviderConnectionById(id, null);
     if (!existing) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -65,7 +68,7 @@ export async function PUT(request, { params }) {
       };
     }
 
-    const updated = await updateProviderConnection(id, updateData);
+    const updated = await updateProviderConnection(id, updateData, null);
 
     // Hide sensitive fields
     const result = { ...updated };
@@ -76,24 +79,25 @@ export async function PUT(request, { params }) {
 
     return NextResponse.json({ connection: result });
   } catch (error) {
-    console.log("Error updating connection:", error);
-    return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to update connection" }, { status });
   }
 }
 
-// DELETE /api/providers/[id] - Delete connection
+// DELETE /api/providers/[id] - Delete connection (admin only)
 export async function DELETE(request, { params }) {
   try {
+    await requireAdmin(request);
     const { id } = await params;
 
-    const deleted = await deleteProviderConnection(id);
+    const deleted = await deleteProviderConnection(id, null);
     if (!deleted) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
-    console.log("Error deleting connection:", error);
-    return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
+    const status = error.message === "Admin access required" || error.message === "Authentication required" ? 403 : 500;
+    return NextResponse.json({ error: error.message || "Failed to delete connection" }, { status });
   }
 }

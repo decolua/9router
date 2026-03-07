@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getOrCreateUserByEmail } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { cookies } from "next/headers";
@@ -26,12 +26,20 @@ export async function POST(request) {
     }
 
     if (isValid) {
+      // Create or get user for password login
+      const defaultEmail = process.env.DEFAULT_USER_EMAIL || "admin@9router.local";
+      const user = await getOrCreateUserByEmail(defaultEmail);
+
       const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
       const forwardedProto = request.headers.get("x-forwarded-proto");
       const isHttpsRequest = forwardedProto === "https";
       const useSecureCookie = forceSecureCookie || isHttpsRequest;
 
-      const token = await new SignJWT({ authenticated: true })
+      const token = await new SignJWT({ 
+        userId: user.id,
+        email: user.email,
+        isAdmin: user.isAdmin 
+      })
         .setProtectedHeader({ alg: "HS256" })
         .setExpirationTime("24h")
         .sign(SECRET);

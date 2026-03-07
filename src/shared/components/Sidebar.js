@@ -9,10 +9,9 @@ import { APP_CONFIG } from "@/shared/constants/config";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
+// Shown to all authenticated users (Endpoint = API keys; Usage, Quota, MITM, CLI Tools)
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
-  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/mitm", label: "MITM", icon: "security" },
@@ -23,8 +22,12 @@ const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
 ];
 
-const systemItems = [
+// Admin only: global config (providers, combos, settings) and user management
+const adminNavItems = [
+  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  { href: "/dashboard/admin/users", label: "Users", icon: "group" },
 ];
 
 export default function Sidebar({ onClose }) {
@@ -34,6 +37,14 @@ export default function Sidebar({ onClose }) {
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data?.isAdmin) setIsAdmin(true); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -130,6 +141,38 @@ export default function Sidebar({ onClose }) {
             </Link>
           ))}
 
+          {/* Admin section – Providers, Combos, Settings, Users (admin only) */}
+          {isAdmin && adminNavItems.length > 0 && (
+            <div className="pt-4 mt-2">
+              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+                Admin
+              </p>
+              {adminNavItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    isActive(item.href)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[18px]",
+                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+
           {/* Debug section */}
           <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
@@ -177,35 +220,6 @@ export default function Sidebar({ onClose }) {
               ))}
             </div>
 
-          {/* System section */}
-          <div className="pt-4 mt-2">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-sm font-medium">{item.label}</span>
-              </Link>
-            ))}
-          </div>
         </nav>
 
         {/* Footer section */}

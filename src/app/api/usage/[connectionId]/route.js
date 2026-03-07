@@ -73,7 +73,7 @@ async function refreshAndUpdateCredentials(connection) {
   }
 
   // Update database
-  await updateProviderConnection(connection.id, updateData);
+  await updateProviderConnection(connection.id, updateData, null);
 
   // Return updated connection
   const updatedConnection = {
@@ -95,7 +95,7 @@ export async function GET(request, { params }) {
     const { connectionId } = await params;
 
     // Get connection from database
-    let connection = await getProviderConnectionById(connectionId);
+    let connection = await getProviderConnectionById(connectionId, null);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
