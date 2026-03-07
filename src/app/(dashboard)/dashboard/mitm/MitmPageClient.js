@@ -67,11 +67,15 @@ export default function MitmPageClient() {
 
   const hasActiveProviders = () => {
     const active = getActiveProviders();
-    return active.some(conn =>
-      getModelsByProviderId(conn.provider).length > 0 ||
-      isOpenAICompatibleProvider(conn.provider) ||
-      isAnthropicCompatibleProvider(conn.provider)
-    );
+    return active.some(conn => {
+      // Use dynamically fetched models if available, otherwise fall back to static models
+      const dynamicModels = conn.providerSpecificData?.models || [];
+      const staticModels = getModelsByProviderId(conn.provider);
+      return dynamicModels.length > 0 ||
+        staticModels.length > 0 ||
+        isOpenAICompatibleProvider(conn.provider) ||
+        isAnthropicCompatibleProvider(conn.provider);
+    });
   };
 
   const mitmTools = Object.entries(CLI_TOOLS).filter(([id]) => MITM_TOOL_IDS.includes(id));

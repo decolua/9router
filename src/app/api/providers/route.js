@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { autoFetchModels } from "@/lib/autoFetchModels";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,14 @@ export async function POST(request) {
       isActive: true,
       testStatus: testStatus || "unknown",
     });
+
+    // Auto-fetch models for the new connection
+    try {
+      await autoFetchModels(newConnection.id);
+    } catch (error) {
+      console.log("Failed to auto-fetch models:", error);
+      // Don't fail the connection creation if model fetching fails
+    }
 
     // Hide sensitive fields
     const result = { ...newConnection };

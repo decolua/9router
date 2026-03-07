@@ -24,6 +24,13 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [ampForm, setAmpForm] = useState({
+    ampUpstreamUrl: "https://ampcode.com",
+    ampUpstreamApiKey: "",
+    ampRestrictManagementToLocalhost: false,
+  });
+  const [ampStatus, setAmpStatus] = useState({ type: "", message: "" });
+  const [ampLoading, setAmpLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -34,6 +41,11 @@ export default function ProfilePage() {
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
+        });
+        setAmpForm({
+          ampUpstreamUrl: data?.ampUpstreamUrl || "https://ampcode.com",
+          ampUpstreamApiKey: data?.ampUpstreamApiKey || "",
+          ampRestrictManagementToLocalhost: data?.ampRestrictManagementToLocalhost === true,
         });
         setLoading(false);
       })
@@ -253,6 +265,36 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update observabilityEnabled:", err);
+    }
+  };
+
+  const updateAmpSettings = async (e) => {
+    e.preventDefault();
+    setAmpLoading(true);
+    setAmpStatus({ type: "", message: "" });
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ampUpstreamUrl: ampForm.ampUpstreamUrl,
+          ampUpstreamApiKey: ampForm.ampUpstreamApiKey,
+          ampRestrictManagementToLocalhost: ampForm.ampRestrictManagementToLocalhost,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setAmpStatus({ type: "success", message: "Amp settings updated successfully" });
+      } else {
+        setAmpStatus({ type: "error", message: data.error || "Failed to update Amp settings" });
+      }
+    } catch (err) {
+      setAmpStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setAmpLoading(false);
     }
   };
 
@@ -612,6 +654,76 @@ export default function ProfilePage() {
                 {proxyStatus.message}
               </p>
             )}
+          </div>
+        </Card>
+
+        {/* Amp CLI Upstream Configuration */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-500">
+              <span className="material-symbols-outlined text-[20px]">cloud_sync</span>
+            </div>
+            <h3 className="text-lg font-semibold">Amp CLI Upstream</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-text-muted">
+              Configure upstream Amp server for proxying management APIs and unmapped models.
+            </p>
+
+            <form onSubmit={updateAmpSettings} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <label className="font-medium">Upstream URL</label>
+                <Input
+                  placeholder="https://ampcode.com"
+                  value={ampForm.ampUpstreamUrl}
+                  onChange={(e) => setAmpForm((prev) => ({ ...prev, ampUpstreamUrl: e.target.value }))}
+                  disabled={loading || ampLoading}
+                />
+                <p className="text-sm text-text-muted">Amp upstream server URL for management APIs and model fallback.</p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="font-medium">Upstream API Key</label>
+                <Input
+                  type="password"
+                  placeholder="Your Amp API key from ampcode.com"
+                  value={ampForm.ampUpstreamApiKey}
+                  onChange={(e) => setAmpForm((prev) => ({ ...prev, ampUpstreamApiKey: e.target.value }))}
+                  disabled={loading || ampLoading}
+                />
+                <p className="text-sm text-text-muted">API key for authenticating with the upstream Amp server.</p>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                <div>
+                  <p className="font-medium">Restrict Management to Localhost</p>
+                  <p className="text-sm text-text-muted">
+                    Only allow management API requests from localhost
+                  </p>
+                </div>
+                <Toggle
+                  checked={ampForm.ampRestrictManagementToLocalhost}
+                  onChange={(checked) => setAmpForm((prev) => ({ ...prev, ampRestrictManagementToLocalhost: checked }))}
+                  disabled={loading || ampLoading}
+                />
+              </div>
+
+              <div className="pt-2 border-t border-border/50">
+                <Button
+                  type="submit"
+                  loading={ampLoading}
+                  disabled={loading}
+                >
+                  Save Amp Settings
+                </Button>
+              </div>
+
+              {ampStatus.message && (
+                <p className={`text-sm ${ampStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                  {ampStatus.message}
+                </p>
+              )}
+            </form>
           </div>
         </Card>
 

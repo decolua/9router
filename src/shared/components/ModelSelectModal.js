@@ -139,7 +139,12 @@ export default function ModelSelectModal({
           hasModels: nodeModels.length > 0,
         };
       } else {
-        const models = getModelsByProviderId(providerId);
+        // Use dynamically fetched models if available, otherwise fall back to static models
+        const connection = activeProviders.find(p => p.provider === providerId);
+        const dynamicModels = connection?.providerSpecificData?.models || [];
+        const staticModels = getModelsByProviderId(providerId);
+        const models = dynamicModels.length > 0 ? dynamicModels : staticModels;
+
         if (models.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
@@ -147,7 +152,7 @@ export default function ModelSelectModal({
             color: providerInfo.color,
             models: models.map((m) => ({
               id: m.id,
-              name: m.name,
+              name: m.name || m.id,
               value: `${alias}/${m.id}`,
             })),
           };
