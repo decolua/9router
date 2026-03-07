@@ -8,13 +8,14 @@ import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/Overview
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import { translate } from "@/i18n/runtime";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
+  if (diff < 60) return `${diff}${translate("s ago")}`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}${translate("m ago")}`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}${translate("h ago")}`;
+  return `${Math.floor(diff / 86400)}${translate("d ago")}`;
 }
 
 // Auto-update time display every second without re-rendering parent
@@ -34,20 +35,20 @@ function RecentRequests({ requests = [] }) {
     <Card className="flex flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
       <div className="px-1 py-2 border-b border-border shrink-0">
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">{translate("Recent Requests")}</span>
       </div>
 
       {!requests.length ? (
-        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
+        <div className="flex-1 flex items-center justify-center text-text-muted text-sm">{translate("No requests yet.")}</div>
       ) : (
         <div className="flex-1 overflow-y-auto">
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-bg z-10">
               <tr className="border-b border-border">
                 <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
-                <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
+                <th className="py-1.5 text-left font-semibold text-text-muted">{translate("Model")}</th>
+                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">{translate("In / Out")}</th>
+                <th className="py-1.5 text-right font-semibold text-text-muted">{translate("When")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -166,11 +167,11 @@ const ENDPOINT_COLUMNS = [
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
-const TABLE_OPTIONS = [
-  { value: "model", label: "Usage by Model" },
-  { value: "account", label: "Usage by Account" },
-  { value: "apiKey", label: "Usage by API Key" },
-  { value: "endpoint", label: "Usage by Endpoint" },
+const getTableOptions = () => [
+  { value: "model", label: translate("Usage by Model") },
+  { value: "account", label: translate("Usage by Account") },
+  { value: "apiKey", label: translate("Usage by API Key") },
+  { value: "endpoint", label: translate("Usage by Endpoint") },
 ];
 
 const PERIODS = [
@@ -276,7 +277,7 @@ export default function UsageStats() {
           columns: MODEL_COLUMNS,
           groupedData: groupDataByKey(sortData(stats.byModel, pendingMap, sortBy, sortOrder), "rawModel"),
           storageKey: "usage-stats:expanded-models",
-          emptyMessage: "No usage recorded yet.",
+          emptyMessage: translate("No usage recorded yet."),
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
@@ -309,7 +310,7 @@ export default function UsageStats() {
           columns: ACCOUNT_COLUMNS,
           groupedData: groupDataByKey(sortData(stats.byAccount, pendingMap, sortBy, sortOrder), "accountName"),
           storageKey: "usage-stats:expanded-accounts",
-          emptyMessage: "No account-specific usage recorded yet.",
+          emptyMessage: translate("No account-specific usage recorded yet."),
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
@@ -334,7 +335,7 @@ export default function UsageStats() {
           columns: API_KEY_COLUMNS,
           groupedData: groupDataByKey(sortData(stats.byApiKey, {}, sortBy, sortOrder), "keyName"),
           storageKey: "usage-stats:expanded-apikeys",
-          emptyMessage: "No API key usage recorded yet.",
+          emptyMessage: translate("No API key usage recorded yet."),
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
@@ -360,7 +361,7 @@ export default function UsageStats() {
           columns: ENDPOINT_COLUMNS,
           groupedData: groupDataByKey(sortData(stats.byEndpoint, {}, sortBy, sortOrder), "endpoint"),
           storageKey: "usage-stats:expanded-endpoints",
-          emptyMessage: "No endpoint usage recorded yet.",
+          emptyMessage: translate("No endpoint usage recorded yet."),
           renderSummaryCells: (group) => (
             <>
               <td className="px-6 py-3 text-text-muted">—</td>
@@ -383,7 +384,7 @@ export default function UsageStats() {
     }
   }, [stats, tableView, sortBy, sortOrder]);
 
-  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+  if (!stats && !loading) return <div className="text-text-muted">{translate("Failed to load usage statistics.")}</div>;
 
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
@@ -439,7 +440,7 @@ export default function UsageStats() {
             onChange={(e) => setTableView(e.target.value)}
             className="px-3 py-1.5 rounded-lg border border-border bg-bg-subtle text-sm font-medium text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
-            {TABLE_OPTIONS.map((opt) => (
+            {getTableOptions().map((opt) => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
