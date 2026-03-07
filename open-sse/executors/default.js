@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -65,6 +66,8 @@ export class DefaultExecutor extends BaseExecutor {
           if (credentials.providerSpecificData?.orgId) {
             headers["X-Kilocode-OrganizationID"] = credentials.providerSpecificData.orgId;
           }
+        } else if (this.provider === "cline") {
+          Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
