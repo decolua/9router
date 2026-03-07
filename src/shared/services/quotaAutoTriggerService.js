@@ -55,6 +55,27 @@ function trimErrorMessage(error) {
   return raw.replace(/\s+/g, " ").trim().slice(0, 180) || "Unknown error";
 }
 
+function mergeWarmupModels(previousModels = {}, nextModels = {}) {
+  return {
+    ...previousModels,
+    ...nextModels,
+  };
+}
+
+async function persistWarmupState(connectionId, previousState, patch) {
+  const nextState = {
+    ...previousState,
+    ...patch,
+    models: mergeWarmupModels(previousState?.models, patch?.models),
+  };
+
+  await updateProviderConnection(connectionId, {
+    quotaWarmupState: nextState,
+  });
+
+  return nextState;
+}
+
 async function getInternalApiKey() {
   const keys = await getApiKeys();
   return keys.find((key) => key.isActive !== false)?.key || null;
@@ -164,6 +185,9 @@ async function updateConnectionWarmupState(connection, modelResults, startedAt) 
   const nextLastSuccessAt = modelResults.every((result) => result.status === "success")
     ? startedAt
     : previousState.lastSuccessAt || null;
+  const nextPhase = modelResults.every((result) => result.status === "success")
+    ? "success"
+    : "error";
 
   for (const result of modelResults) {
     const previousModelState = previousModels[result.id] || {};
@@ -182,8 +206,16 @@ async function updateConnectionWarmupState(connection, modelResults, startedAt) 
 
   await updateProviderConnection(connection.id, {
     quotaWarmupState: {
+      ...previousState,
+      running: false,
+      phase: nextPhase,
+      currentModelId: null,
+      currentModelName: null,
       lastRunAt: startedAt,
       lastSuccessAt: nextLastSuccessAt,
+      lastError: nextPhase === "error"
+        ? modelResults.find((result) => result.status === "error")?.error || null
+        : null,
       models: nextModels,
     },
   });
@@ -192,15 +224,28 @@ async function updateConnectionWarmupState(connection, modelResults, startedAt) 
 async function runConnectionWarmup({ connection, baseUrl, apiKey }) {
   const startedAt = new Date().toISOString();
   const models = getTargetModelsForConnection(connection);
+  let currentState = await persistWarmupState(connection.id, connection.quotaWarmupState || {}, {
+    running: true,
+    phase: "running",
+    currentModelId: null,
+    currentModelName: null,
+    lastRunAt: startedAt,
+    lastError: null,
+    skipped: false,
+    skipReason: null,
+    exhaustedQuotas: [],
+  });
 
   if (models.length === 0) {
     await updateProviderConnection(connection.id, {
       quotaWarmupState: {
-        ...(connection.quotaWarmupState || {}),
+        ...currentState,
+        running: false,
+        phase: "success",
+        currentModelId: null,
+        currentModelName: null,
         lastRunAt: startedAt,
-        models: {
-          ...(connection.quotaWarmupState?.models || {}),
-        },
+        lastSuccessAt: startedAt,
       },
     });
     return;
@@ -208,6 +253,23 @@ async function runConnectionWarmup({ connection, baseUrl, apiKey }) {
 
   const results = [];
   for (const model of models) {
+    const previousModelState = currentState.models?.[model.id] || {};
+    currentState = await persistWarmupState(connection.id, currentState, {
+      running: true,
+      phase: "running",
+      currentModelId: model.id,
+      currentModelName: model.name,
+      models: {
+        [model.id]: {
+          ...previousModelState,
+          status: "running",
+          lastRunAt: startedAt,
+          lastError: null,
+          modelName: model.name,
+        },
+      },
+    });
+
     try {
       await pingModel({
         baseUrl,
@@ -226,7 +288,10 @@ async function runConnectionWarmup({ connection, baseUrl, apiKey }) {
     }
   }
 
-  await updateConnectionWarmupState(connection, results, startedAt);
+  await updateConnectionWarmupState({
+    ...connection,
+    quotaWarmupState: currentState,
+  }, results, startedAt);
 }
 
 export class QuotaAutoTriggerService {
@@ -249,10 +314,6 @@ export class QuotaAutoTriggerService {
     if (this.intervalId?.unref) {
       this.intervalId.unref();
     }
-
-    this.run({ reason: "startup" }).catch((error) => {
-      console.error("[QuotaAutoTrigger] Startup run failed:", error);
-    });
   }
 
   stop() {

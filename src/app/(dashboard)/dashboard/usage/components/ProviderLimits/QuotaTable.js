@@ -72,6 +72,10 @@ function getColorClasses(remainingPercentage) {
  * Quota Table Component - Table-based display for quota data
  */
 function getWarmupErrorMap(warmupState) {
+  if (warmupState?.running) {
+    return new Map();
+  }
+
   const models = warmupState?.models || {};
   const errorMap = new Map();
 
@@ -116,7 +120,29 @@ function formatRelativeTime(dateString) {
 function getWarmupStatusDisplay(warmupState) {
   if (!warmupState) return null;
 
-  const { skipped, skipReason, exhaustedQuotas, lastRunAt, models } = warmupState;
+  const {
+    skipped,
+    skipReason,
+    exhaustedQuotas,
+    lastRunAt,
+    models,
+    running,
+    currentModelName,
+  } = warmupState;
+
+  if (running) {
+    return {
+      type: "running",
+      icon: "progress_activity",
+      color: "text-blue-600 dark:text-blue-400",
+      bgColor: "bg-blue-500/10",
+      borderColor: "border-blue-500/20",
+      message: translate("Refreshing"),
+      details: currentModelName || "",
+      lastRunAt,
+      animate: true,
+    };
+  }
 
   // Check if skipped due to quota exhausted
   if (skipped && skipReason === "quota_exhausted") {
@@ -157,6 +183,7 @@ function getWarmupStatusDisplay(warmupState) {
       message: translate("Refresh successful"),
       details: "",
       lastRunAt,
+      animate: false,
     };
   }
 
@@ -173,11 +200,7 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed">
-        <colgroup>
-          <col className="w-[30%]" /> {/* Model Name */}
-          <col className="w-[45%]" /> {/* Limit Progress */}
-          <col className="w-[25%]" /> {/* Reset Time */}
-        </colgroup>
+        <colgroup><col className="w-[30%]" /><col className="w-[45%]" /><col className="w-[25%]" /></colgroup>
         <tbody>
           {quotas.map((quota, index) => {
             const remaining = quota.remainingPercentage !== undefined
@@ -271,7 +294,7 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
         <div className={`mt-3 rounded-lg border ${warmupStatus.borderColor} ${warmupStatus.bgColor} p-3`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className={`material-symbols-outlined text-[18px] ${warmupStatus.color}`}>{warmupStatus.icon}</span>
+              <span className={`material-symbols-outlined text-[18px] ${warmupStatus.color} ${warmupStatus.animate ? "animate-spin" : ""}`}>{warmupStatus.icon}</span>
               <div className="flex items-center gap-2">
                 <span className={`text-sm font-medium ${warmupStatus.color}`}>{warmupStatus.message}</span>
                 {warmupStatus.details && (
