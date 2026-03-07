@@ -262,6 +262,11 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
+  "alicode-intl": {
+    baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions", // GitHub Copilot API endpoint for chat
     responsesUrl: "https://api.githubcopilot.com/responses",

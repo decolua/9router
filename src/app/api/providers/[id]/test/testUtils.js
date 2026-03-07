@@ -309,12 +309,16 @@ async function testApiKeyConnection(connection) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
-      case "alicode": {
+      case "alicode":
+      case "alicode-intl": {
         // Aliyun Coding Plan uses OpenAI-compatible API
-        const res = await fetch("https://coding.dashscope.aliyuncs.com/v1/chat/completions", {
+        const aliBaseUrl = connection.provider === "alicode-intl"
+          ? "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
+          : "https://coding.dashscope.aliyuncs.com/v1/chat/completions";
+        const res = await fetch(aliBaseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("alicode"), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
         });
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };

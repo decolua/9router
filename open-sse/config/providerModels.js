@@ -12,6 +12,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
   ],
   cx: [  // OpenAI Codex
+    { id: "gpt-5.4", name: "GPT 5.4" },
     // GPT 5.3 Codex - all thinking levels
     { id: "gpt-5.3-codex", name: "GPT 5.3 Codex" },
     { id: "gpt-5.3-codex-xhigh", name: "GPT 5.3 Codex (xHigh)" },
@@ -80,6 +81,7 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.2", name: "GPT-5.2" },
     { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
     { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
+    { id: "gpt-5.4", name: "GPT-5.4" },
     // GitHub Copilot - Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
@@ -198,6 +200,15 @@ export const PROVIDER_MODELS = {
     { id: "glm-5", name: "GLM 5" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "qwen3-max-2026-01-23", name: "Qwen3 Max" },
+    { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
+    { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
+    { id: "glm-4.7", name: "GLM 4.7" },
+  ],
+  "alicode-intl": [
+    { id: "qwen3.5-plus", name: "Qwen3.5 Plus" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
     { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
     { id: "glm-4.7", name: "GLM 4.7" },
@@ -341,6 +352,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   minimax: "minimax",
   "minimax-cn": "minimax-cn",
   alicode: "alicode",
+  "alicode-intl": "alicode-intl",
   deepseek: "deepseek",
   groq: "groq",
   xai: "xai",

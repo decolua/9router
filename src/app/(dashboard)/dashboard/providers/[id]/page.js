@@ -836,10 +836,27 @@ PassthroughModelsSection.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
 };
 
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias }) {
+function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+  const borderColor = testStatus === "ok"
+    ? "border-green-500/40"
+    : testStatus === "error"
+    ? "border-red-500/40"
+    : "border-border";
+
+  const iconColor = testStatus === "ok"
+    ? "#22c55e"
+    : testStatus === "error"
+    ? "#ef4444"
+    : undefined;
+
   return (
-    <div className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-sidebar/50">
-      <span className="material-symbols-outlined text-base text-text-muted">smart_toy</span>
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+      <span
+        className="material-symbols-outlined text-base text-text-muted"
+        style={iconColor ? { color: iconColor } : undefined}
+      >
+        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+      </span>
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
@@ -855,6 +872,18 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
               {copied === `model-${modelId}` ? "check" : "content_copy"}
             </span>
           </button>
+          {onTest && (
+            <button
+              onClick={onTest}
+              disabled={isTesting}
+              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+              title="Test model"
+            >
+              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                {isTesting ? "progress_activity" : "science"}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -876,12 +905,35 @@ PassthroughModelRow.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
+  onTest: PropTypes.func,
+  testStatus: PropTypes.oneOf(["ok", "error"]),
+  isTesting: PropTypes.bool,
 };
 
 function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [testingModelId, setTestingModelId] = useState(null);
+  const [modelTestResults, setModelTestResults] = useState({});
+
+  const handleTestModel = async (modelId) => {
+    if (testingModelId) return;
+    setTestingModelId(modelId);
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+      });
+      const data = await res.json();
+      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+    } catch {
+      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+    } finally {
+      setTestingModelId(null);
+    }
+  };
 
   const providerAliases = Object.entries(modelAliases).filter(
     ([, model]) => model.startsWith(`${providerStorageAlias}/`)
@@ -1008,6 +1060,9 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
               copied={copied}
               onCopy={onCopy}
               onDeleteAlias={() => onDeleteAlias(alias)}
+              onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
+              testStatus={modelTestResults[modelId]}
+              isTesting={testingModelId === modelId}
             />
           ))}
         </div>
