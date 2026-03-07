@@ -123,9 +123,19 @@ export default function QuotaTable({ quotas = [] }) {
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-text-muted">
                         {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
+                        {quota.usedUSD && quota.totalUSD && (
+                          <span className="ml-1 text-text-muted/70">
+                            (${quota.usedUSD} / ${quota.totalUSD})
+                          </span>
+                        )}
                       </span>
                       <span className={`font-medium ${colors.text}`}>
                         {remaining}%
+                        {quota.remainingUSD && (
+                          <span className="ml-1 text-xs">
+                            (${quota.remainingUSD})
+                          </span>
+                        )}
                       </span>
                     </div>
                   </div>

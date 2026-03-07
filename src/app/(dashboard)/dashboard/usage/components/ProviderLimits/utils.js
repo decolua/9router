@@ -164,6 +164,22 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "ramclouds":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              usedUSD: quota.usedUSD,
+              totalUSD: quota.totalUSD,
+              remainingUSD: quota.remainingUSD,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

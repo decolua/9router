@@ -123,14 +123,14 @@ export default function ProviderLimits() {
     try {
       const conns = await fetchConnections();
       
-      // Filter only supported OAuth providers
-      const oauthConnections = conns.filter(
-        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+      // Filter only supported providers (OAuth or API key)
+      const supportedConnections = conns.filter(
+        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider)
       );
-      
-      // Fetch quota for supported OAuth connections only
+
+      // Fetch quota for supported connections
       await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))
+        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider))
       );
 
       setLastUpdated(new Date());
@@ -148,17 +148,17 @@ export default function ProviderLimits() {
       const conns = await fetchConnections();
       setConnectionsLoading(false);
 
-      const oauthConnections = conns.filter(
-        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+      const supportedConnections = conns.filter(
+        (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider)
       );
 
       // Mark all as loading before fetching
       const loadingState = {};
-      oauthConnections.forEach((conn) => { loadingState[conn.id] = true; });
+      supportedConnections.forEach((conn) => { loadingState[conn.id] = true; });
       setLoading(loadingState);
 
       await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))
+        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider))
       );
       setLastUpdated(new Date());
     };
@@ -244,7 +244,7 @@ export default function ProviderLimits() {
 
   // Filter only supported providers
   const filteredConnections = connections.filter((conn) =>
-    USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
+    USAGE_SUPPORTED_PROVIDERS.includes(conn.provider)
   );
 
   // Sort providers: antigravity first, then kiro, then others alphabetically
@@ -296,7 +296,7 @@ export default function ProviderLimits() {
             No Providers Connected
           </h3>
           <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            Connect to providers with OAuth to track your API quota limits and usage.
+            Connect to providers to track your API quota limits and usage.
           </p>
         </div>
       </Card>
