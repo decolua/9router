@@ -8,6 +8,8 @@ import {
   KIRO_CONFIG,
   QWEN_CONFIG,
   CLAUDE_CONFIG,
+  CLINE_CONFIG,
+  KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 
 // OAuth provider test endpoints
@@ -44,7 +46,34 @@ const OAUTH_TEST_CONFIG = {
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
+  kilocode: {
+    url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
+  cline: { refreshable: true },
 };
+
+async function probeClineAccessToken(accessToken) {
+  const res = await fetch("https://api.cline.bot/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://cline.bot",
+      "X-Title": "Cline",
+    },
+    body: JSON.stringify({
+      model: "cl/anthropic/claude-sonnet-4-20250514",
+      messages: [{ role: "user", content: "test" }],
+      max_tokens: 1,
+      stream: false,
+    }),
+  });
+
+  return res;
+}
 
 async function refreshOAuthToken(connection) {
   const provider = connection.provider;
@@ -140,6 +169,29 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
+    if (provider === "cline") {
+      const response = await fetch(CLINE_CONFIG.refreshUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          refreshToken,
+          grantType: "refresh_token",
+          clientType: "extension",
+        }),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json();
+      const data = payload?.data || payload;
+      const expiresIn = data?.expiresAt
+        ? Math.max(1, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000))
+        : 3600;
+      return {
+        accessToken: data?.accessToken,
+        expiresIn,
+        refreshToken: data?.refreshToken || refreshToken,
+      };
+    }
+
     return null;
   } catch (err) {
     console.log(`Error refreshing ${provider} token:`, err.message);
@@ -184,6 +236,31 @@ async function testOAuthConnection(connection) {
     if (refreshed) return { valid: true, error: null, refreshed, newTokens };
     if (tokenExpired) return { valid: false, error: "Token expired", refreshed: false };
     return { valid: true, error: null, refreshed: false, newTokens: null };
+  }
+
+  if (connection.provider === "cline") {
+    const tryProbe = async (token) => {
+      const res = await probeClineAccessToken(token);
+      if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+      if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
+      if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
+      return { valid: false, error: `API returned ${res.status}`, refreshed };
+    };
+
+    const initial = await tryProbe(accessToken);
+    if (initial.valid || initial.error !== "Token invalid or revoked" || !connection.refreshToken) {
+      return initial;
+    }
+
+    const tokens = await refreshOAuthToken(connection);
+    if (!tokens?.accessToken) {
+      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    }
+
+    refreshed = true;
+    newTokens = tokens;
+    accessToken = tokens.accessToken;
+    return await tryProbe(accessToken);
   }
 
   try {
