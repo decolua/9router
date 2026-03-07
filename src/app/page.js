@@ -1,5 +1,5 @@
 // Auto-initialize cloud sync when server starts
-import "@/lib/initCloudSync";
+// Removed: import "@/lib/initCloudSync"; — initialization happens at runtime via middleware
 import { redirect } from "next/navigation";
 
 export default function InitPage() {

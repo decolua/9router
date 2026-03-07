@@ -34,9 +34,17 @@ function getUserDataDir() {
 const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "db.json");
 
-// Ensure data directory exists
-if (!isCloud && !fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data directory exists (with race condition protection)
+function ensureDataDir() {
+  if (isCloud) return;
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (error) {
+    // Ignore EEXIST errors from race conditions during parallel builds
+    if (error.code !== 'EEXIST') throw error;
+  }
 }
 
 // Default data structure
@@ -60,7 +68,11 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    ampUpstreamUrl: "https://ampcode.com",
+    ampUpstreamApiKey: "",
+    ampRestrictManagementToLocalhost: false,
+    ampModelMappings: {}
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -87,6 +99,10 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      ampUpstreamUrl: "https://ampcode.com",
+      ampUpstreamApiKey: "",
+      ampRestrictManagementToLocalhost: false,
+      ampModelMappings: {}
     },
     pricing: {},
   };
@@ -166,6 +182,9 @@ export async function getDb() {
     }
     return dbInstance;
   }
+
+  // Ensure directory exists before any DB operations
+  ensureDataDir();
 
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);

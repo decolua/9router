@@ -62,9 +62,12 @@ export async function POST(request, { params }) {
     const isCompatible = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
     const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
 
-    let models = getProviderModels(alias);
+    // Prioritize dynamically fetched models over static models
+    const fetchedModels = connection?.providerSpecificData?.models;
+    const hasFetchedModels = Array.isArray(fetchedModels) && fetchedModels.length > 0;
+    let models = hasFetchedModels ? fetchedModels : getProviderModels(alias);
 
-    // Compatible providers: fetch live model list
+    // Compatible providers: fetch live model list if no models available
     if (isCompatible && models.length === 0) {
       try {
         const modelsRes = await fetch(`${getBaseUrl(request)}/api/providers/${id}/models`);

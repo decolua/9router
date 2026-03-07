@@ -85,12 +85,17 @@ export async function GET() {
       for (const [providerId, conn] of activeConnectionByProvider.entries()) {
         const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
         const outputAlias = getProviderAlias(providerId) || staticAlias;
-        const providerModels = PROVIDER_MODELS[staticAlias] || [];
+
+        // Prioritize dynamically fetched models over static models
+        const fetchedModels = conn?.providerSpecificData?.models;
+        const hasFetchedModels = Array.isArray(fetchedModels) && fetchedModels.length > 0;
+        const providerModels = hasFetchedModels ? fetchedModels : (PROVIDER_MODELS[staticAlias] || []);
+
         const enabledModels = conn?.providerSpecificData?.enabledModels;
         const hasExplicitEnabledModels =
           Array.isArray(enabledModels) && enabledModels.length > 0;
 
-        // Default: if no explicit selection, all static models are active.
+        // Default: if no explicit selection, all models are active.
         // If explicit selection exists, expose exactly those model IDs (including non-static IDs).
         const rawModelIds = hasExplicitEnabledModels
           ? Array.from(

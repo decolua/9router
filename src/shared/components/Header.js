@@ -30,6 +30,7 @@ const getPageInfo = (pathname) => {
   }
   
   if (pathname.includes("/providers")) return { title: "Providers", description: "Manage your AI provider connections", breadcrumbs: [] };
+  if (pathname.includes("/playground")) return { title: "Playground", description: "Quickly test providers and models", breadcrumbs: [] };
   if (pathname.includes("/combos")) return { title: "Combos", description: "Model combos with fallback", breadcrumbs: [] };
   if (pathname.includes("/usage")) return { title: "Usage & Analytics", description: "Monitor your API usage, token consumption, and request logs", breadcrumbs: [] };
   if (pathname.includes("/mitm")) return { title: "MITM Proxy", description: "Intercept CLI tool traffic and route through 9Router", breadcrumbs: [] };

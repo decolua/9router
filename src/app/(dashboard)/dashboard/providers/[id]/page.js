@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -43,7 +43,14 @@ export default function ProviderDetailPage() {
       }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
-  const models = getModelsByProviderId(providerId);
+
+  // Prioritize dynamically fetched models over static models
+  const models = useMemo(() => {
+    const fetchedModels = connections[0]?.providerSpecificData?.models;
+    const hasFetchedModels = Array.isArray(fetchedModels) && fetchedModels.length > 0;
+    return hasFetchedModels ? fetchedModels : getModelsByProviderId(providerId);
+  }, [connections, providerId]);
+
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
