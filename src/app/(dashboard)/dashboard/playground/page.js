@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Card, Button, Select, Input, Toggle } from "@/shared/components";
 
 const PLAYGROUND_HISTORY_KEY = "playground_history_v1";
+const PLAYGROUND_PREFS_KEY = "playground_prefs_v1";
 
 const PROMPT_TEMPLATES = [
   {
@@ -83,6 +84,11 @@ export default function PlaygroundPage() {
   const [streamChars, setStreamChars] = useState(0);
   const [authHeader, setAuthHeader] = useState("");
   const [history, setHistory] = useState([]);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [temperature, setTemperature] = useState("0.7");
+  const [topP, setTopP] = useState("1");
+  const [maxTokens, setMaxTokens] = useState("512");
+  const [chatSession, setChatSession] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -124,6 +130,18 @@ export default function PlaygroundPage() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) setHistory(parsed);
       }
+
+      const prefsRaw = globalThis.localStorage?.getItem(PLAYGROUND_PREFS_KEY);
+      if (prefsRaw) {
+        const prefs = JSON.parse(prefsRaw);
+        if (typeof prefs.model === "string" && prefs.model) {
+          setSelectedModel(prefs.model);
+        }
+        if (typeof prefs.systemPrompt === "string") setSystemPrompt(prefs.systemPrompt);
+        if (typeof prefs.temperature === "string") setTemperature(prefs.temperature);
+        if (typeof prefs.topP === "string") setTopP(prefs.topP);
+        if (typeof prefs.maxTokens === "string") setMaxTokens(prefs.maxTokens);
+      }
     } catch {
       // ignore
     }
@@ -139,6 +157,23 @@ export default function PlaygroundPage() {
     [],
   );
 
+  useEffect(() => {
+    try {
+      globalThis.localStorage?.setItem(
+        PLAYGROUND_PREFS_KEY,
+        JSON.stringify({
+          model: selectedModel,
+          systemPrompt,
+          temperature,
+          topP,
+          maxTokens,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [selectedModel, systemPrompt, temperature, topP, maxTokens]);
+
   const saveHistory = (next) => {
     setHistory(next);
     try {
@@ -148,7 +183,17 @@ export default function PlaygroundPage() {
     }
   };
 
-  const buildHeaders = () => {
+  const appendHistory = (item) => {
+    setHistory((prev) => {
+      const next = [item, ...prev].slice(0, 20);
+      try {
+        globalThis.localStorage?.setItem(PLAYGROUND_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
     const headers = { "Content-Type": "application/json" };
     const authValue = authHeader.trim();
     if (authValue) {
@@ -174,11 +219,23 @@ export default function PlaygroundPage() {
     setResultText("");
     setRawResponse("");
 
+    const parsedTemperature = Number.parseFloat(temperature);
+    const parsedTopP = Number.parseFloat(topP);
+    const parsedMaxTokens = Number.parseInt(maxTokens, 10);
+
+    const messages = [
+      ...(systemPrompt.trim() ? [{ role: "system", content: systemPrompt.trim() }] : []),
+      ...chatSession,
+      { role: "user", content: prompt.trim() },
+    ];
+
     const requestBody = {
       model: selectedModel,
       stream: streaming,
-      max_tokens: 512,
-      messages: [{ role: "user", content: prompt.trim() }],
+      max_tokens: Number.isFinite(parsedMaxTokens) && parsedMaxTokens > 0 ? parsedMaxTokens : 512,
+      temperature: Number.isFinite(parsedTemperature) ? parsedTemperature : 0.7,
+      top_p: Number.isFinite(parsedTopP) ? parsedTopP : 1,
+      messages,
     };
 
     try {
@@ -212,6 +269,11 @@ export default function PlaygroundPage() {
 
         const extracted = extractContent(data) || "No text content returned.";
         setResultText(extracted);
+        setChatSession((prev) => [
+          ...prev,
+          { role: "user", content: prompt.trim() },
+          { role: "assistant", content: extracted },
+        ]);
         appendHistory({
           id: Date.now(),
           model: selectedModel,
@@ -259,6 +321,11 @@ export default function PlaygroundPage() {
       const elapsed = Math.round(performance.now() - start);
       setLatencyMs(elapsed);
       setRawResponse(lastPacket ? JSON.stringify(lastPacket, null, 2) : "[No terminal packet]");
+      setChatSession((prev) => [
+        ...prev,
+        { role: "user", content: prompt.trim() },
+        { role: "assistant", content: streamedText },
+      ]);
       appendHistory({
         id: Date.now(),
         model: selectedModel,
@@ -332,6 +399,39 @@ export default function PlaygroundPage() {
             />
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-text-main">System Prompt (optional)</label>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={3}
+              disabled={running}
+              className="w-full py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md placeholder-text-muted/60 focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder="You are a concise assistant..."
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Input
+              label="Temperature"
+              value={temperature}
+              onChange={(e) => setTemperature(e.target.value)}
+              disabled={running}
+            />
+            <Input
+              label="Top P"
+              value={topP}
+              onChange={(e) => setTopP(e.target.value)}
+              disabled={running}
+            />
+            <Input
+              label="Max Tokens"
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(e.target.value)}
+              disabled={running}
+            />
+          </div>
+
           <Input
             label="Authorization (optional)"
             placeholder="Bearer sk-..."
@@ -374,6 +474,38 @@ export default function PlaygroundPage() {
 
       <Card title="Output" icon="chat">
         <pre className="text-sm text-text-main whitespace-pre-wrap break-words">{resultText || "No output yet."}</pre>
+      </Card>
+
+      <Card
+        title="Chat Session"
+        subtitle="Multi-turn context for follow-up prompts"
+        icon="forum"
+        action={(
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setChatSession([])}
+            disabled={chatSession.length === 0 || running}
+          >
+            Clear
+          </Button>
+        )}
+      >
+        {chatSession.length === 0 ? (
+          <p className="text-sm text-text-muted">No chat turns yet.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {chatSession.map((msg, idx) => (
+              <div
+                key={`${msg.role}-${idx}`}
+                className="p-3 rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02]"
+              >
+                <p className="text-xs uppercase tracking-wide text-text-muted mb-1">{msg.role}</p>
+                <pre className="text-sm text-text-main whitespace-pre-wrap break-words">{msg.content}</pre>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Card title="Raw Response" icon="code">
