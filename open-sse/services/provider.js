@@ -1,4 +1,5 @@
 import { PROVIDERS } from "../config/constants.js";
+import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -284,6 +285,10 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       case "openai":
       case "openrouter":
         headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        break;
+
+      case "cline":
+        Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
         break;
   
       case "glm":
