@@ -242,8 +242,19 @@ export function extractApiKey(request) {
 
 /**
  * Validate API key (optional - for local use can skip)
+ * @param {string} apiKey - API key to validate
+ * @param {string} [model] - Optional model to check against allowlist
+ * @returns {Promise<{ valid: boolean, error?: string, key?: object } | boolean>}
  */
-export async function isValidApiKey(apiKey) {
+export async function isValidApiKey(apiKey, model = null) {
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+
+  // If model is provided, return full validation result
+  if (model) {
+    return await validateApiKey(apiKey, model);
+  }
+
+  // Backward compatibility: return boolean
+  const result = await validateApiKey(apiKey);
+  return typeof result === 'boolean' ? result : result.valid;
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, AllowedModelsInput } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
@@ -24,7 +24,14 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyAllowedModels, setNewKeyAllowedModels] = useState([]);
   const [createdKey, setCreatedKey] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyAllowedModels, setEditKeyAllowedModels] = useState([]);
+  const [editKeyIsActive, setEditKeyIsActive] = useState(true);
+  const [apiError, setApiError] = useState(null);
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
@@ -328,11 +335,16 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    setApiError(null);
+
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName,
+          allowedModels: newKeyAllowedModels.length > 0 ? newKeyAllowedModels : [],
+        }),
       });
       const data = await res.json();
 
@@ -340,10 +352,14 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyAllowedModels([]);
         setShowAddModal(false);
+      } else {
+        setApiError(data.error || "Failed to create key");
       }
     } catch (error) {
       console.log("Error creating key:", error);
+      setApiError("Failed to create key");
     }
   };
 
@@ -381,6 +397,45 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleEditKey = (key) => {
+    setEditingKey(key);
+    setEditKeyName(key.name);
+    setEditKeyAllowedModels(key.allowedModels || []);
+    setEditKeyIsActive(key.isActive ?? true);
+    setShowEditModal(true);
+    setApiError(null);
+  };
+
+  const handleUpdateKey = async () => {
+    if (!editKeyName.trim() || !editingKey) return;
+
+    setApiError(null);
+
+    try {
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editKeyName,
+          isActive: editKeyIsActive,
+          allowedModels: editKeyAllowedModels,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        await fetchData();
+        setShowEditModal(false);
+        setEditingKey(null);
+      } else {
+        setApiError(data.error || "Failed to update key");
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
+      setApiError("Failed to update key");
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -393,6 +448,33 @@ export default function APIPageClient({ machineId }) {
       else next.add(keyId);
       return next;
     });
+  };
+
+  const getRestrictionDisplay = (allowedModels) => {
+    if (!allowedModels || allowedModels.length === 0) {
+      return (
+        <div className="inline-flex items-center gap-1 text-xs text-text-muted">
+          <span className="material-symbols-outlined text-[14px]">public</span>
+          <span>All Models</span>
+        </div>
+      );
+    }
+
+    // Show first 2 patterns + count
+    const display = allowedModels.slice(0, 2).join(", ");
+    const remaining = allowedModels.length - 2;
+
+    return (
+      <div className="inline-flex items-center gap-1 text-xs">
+        <span className="material-symbols-outlined text-[14px] text-blue-500">lock</span>
+        <code className="text-blue-600 dark:text-blue-400 font-mono bg-blue-500/10 px-1.5 py-0.5 rounded">
+          {display}
+        </code>
+        {remaining > 0 && (
+          <span className="text-text-muted">+{remaining} more</span>
+        )}
+      </div>
+    );
   };
 
   const [baseUrl, setBaseUrl] = useState("/v1");
@@ -549,6 +631,9 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                   </div>
+                  <div className="mt-1.5">
+                    {getRestrictionDisplay(key.allowedModels)}
+                  </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
@@ -572,8 +657,16 @@ export default function APIPageClient({ machineId }) {
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
                   <button
+                    onClick={() => handleEditKey(key)}
+                    className="p-2 hover:bg-primary/10 rounded text-primary opacity-0 group-hover:opacity-100 transition-all"
+                    title="Edit key"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                    title="Delete key"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
@@ -595,7 +688,10 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyAllowedModels([]);
+          setApiError(null);
         }}
+        size="lg"
       >
         <div className="flex flex-col gap-4">
           <Input
@@ -603,15 +699,96 @@ export default function APIPageClient({ machineId }) {
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
+            required
           />
+
+          <AllowedModelsInput
+            value={newKeyAllowedModels}
+            onChange={setNewKeyAllowedModels}
+          />
+
+          {apiError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-md p-3 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+              <span className="material-symbols-outlined text-[16px] mt-0.5">error</span>
+              <span>{apiError}</span>
+            </div>
+          )}
+
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
-              Create
+              Create Key
             </Button>
             <Button
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyAllowedModels([]);
+                setApiError(null);
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={showEditModal}
+        title="Edit API Key"
+        onClose={() => {
+          setShowEditModal(false);
+          setEditingKey(null);
+          setApiError(null);
+        }}
+        size="lg"
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="Production Key"
+            required
+          />
+
+          <div className="flex items-center gap-3 p-3 bg-black/5 dark:bg-white/5 rounded-md border border-black/10 dark:border-white/10">
+            <Toggle
+              size="sm"
+              checked={editKeyIsActive}
+              onChange={setEditKeyIsActive}
+            />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-text-main">Active</p>
+              <p className="text-xs text-text-muted">
+                {editKeyIsActive ? "Key is active and working" : "Key is paused and won't work"}
+              </p>
+            </div>
+          </div>
+
+          <AllowedModelsInput
+            value={editKeyAllowedModels}
+            onChange={setEditKeyAllowedModels}
+          />
+
+          {apiError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-md p-3 text-sm text-red-600 dark:text-red-400 flex items-start gap-2">
+              <span className="material-symbols-outlined text-[16px] mt-0.5">error</span>
+              <span>{apiError}</span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={handleUpdateKey} fullWidth disabled={!editKeyName.trim()}>
+              Save Changes
+            </Button>
+            <Button
+              onClick={() => {
+                setShowEditModal(false);
+                setEditingKey(null);
+                setApiError(null);
               }}
               variant="ghost"
               fullWidth

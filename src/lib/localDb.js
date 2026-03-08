@@ -136,11 +136,16 @@ function ensureDbShape(data) {
       }
     }
 
-    // Migrate existing API keys to have isActive
+    // Migrate existing API keys to have isActive and allowedModels
     if (key === "apiKeys" && Array.isArray(next.apiKeys)) {
       for (const apiKey of next.apiKeys) {
         if (apiKey.isActive === undefined || apiKey.isActive === null) {
           apiKey.isActive = true;
+          changed = true;
+        }
+        // NEW: Add allowedModels field for backward compatibility (empty = unrestricted)
+        if (!apiKey.allowedModels) {
+          apiKey.allowedModels = [];
           changed = true;
         }
       }
@@ -661,19 +666,20 @@ function generateShortKey() {
  * Create API key
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
+ * @param {string[]} [allowedModels] - Optional allowed model patterns
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, allowedModels = []) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
-  
+
   const db = await getDb();
   const now = new Date().toISOString();
-  
+
   // Always use new format: sk-{machineId}-{keyId}-{crc8}
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
-  
+
   const apiKey = {
     id: uuidv4(),
     name: name,
@@ -681,11 +687,12 @@ export async function createApiKey(name, machineId) {
     machineId: machineId,
     isActive: true,
     createdAt: now,
+    allowedModels: allowedModels || [], // Accept parameter or default to empty (unrestricted)
   };
-  
+
   db.data.apiKeys.push(apiKey);
   await db.write();
-  
+
   return apiKey;
 }
 
@@ -719,6 +726,20 @@ export async function updateApiKey(id, data) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
+
+  // Validate allowedModels if provided
+  if (data.allowedModels !== undefined) {
+    if (!Array.isArray(data.allowedModels)) {
+      throw new Error('allowedModels must be an array');
+    }
+    // Validate each pattern is a string
+    for (const pattern of data.allowedModels) {
+      if (typeof pattern !== 'string') {
+        throw new Error('allowedModels must contain only strings');
+      }
+    }
+  }
+
   db.data.apiKeys[index] = {
     ...db.data.apiKeys[index],
     ...data,
@@ -728,12 +749,50 @@ export async function updateApiKey(id, data) {
 }
 
 /**
- * Validate API key
+ * Validate API key and check model permissions
+ * @param {string} apiKey - API key to validate
+ * @param {string} [model] - Optional model to check against allowlist
+ * @returns {Promise<{ valid: boolean, key?: object, error?: string }>}
  */
-export async function validateApiKey(key) {
+export async function validateApiKey(apiKey, model = null) {
+  const { isModelAllowed } = await import('../shared/utils/model-pattern-matcher.js');
+
   const db = await getDb();
-  const found = db.data.apiKeys.find(k => k.key === key);
-  return found && found.isActive !== false;
+  const key = db.data.apiKeys.find(k => k.key === apiKey);
+
+  // Key not found
+  if (!key) {
+    return {
+      valid: false,
+      error: 'Invalid API key'
+    };
+  }
+
+  // Key is inactive
+  if (key.isActive === false) {
+    return {
+      valid: false,
+      error: 'API key is inactive'
+    };
+  }
+
+  // No model check requested (backward compatible)
+  if (!model) {
+    return { valid: true, key };
+  }
+
+  // Check model allowlist
+  const allowResult = isModelAllowed(model, key.allowedModels);
+
+  if (!allowResult.allowed) {
+    return {
+      valid: false,
+      error: allowResult.reason || 'Model not allowed for this API key',
+      key // Include key for logging purposes
+    };
+  }
+
+  return { valid: true, key };
 }
 
 // ============ Data Cleanup ============
