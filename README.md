@@ -110,6 +110,25 @@ npm run build
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
+**System Tray Mode (Desktop App):**
+
+Run 9Router with a system tray icon for easy access:
+
+```bash
+npm run build
+npm run start:tray
+```
+
+The system tray provides:
+- Quick access to dashboard
+- Real-time model and usage information
+- Context statistics (input/output/total tokens)
+- Quota tracker for all providers
+- MITM server toggle
+- Autostart option
+
+See [bin/README.md](bin/README.md) for more details.
+
 Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
