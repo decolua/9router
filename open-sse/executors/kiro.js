@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/constants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -33,17 +34,17 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Custom execute for Kiro - handles AWS EventStream binary response
    */
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl(model, stream, 0);
     const headers = this.buildHeaders(credentials, stream);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };

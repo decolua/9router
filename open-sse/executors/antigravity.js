@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/constants.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const MAX_RETRY_AFTER_MS = 10000;
 
@@ -161,7 +162,7 @@ export class AntigravityExecutor extends BaseExecutor {
     return totalMs > 0 ? totalMs : null;
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -180,12 +181,12 @@ export class AntigravityExecutor extends BaseExecutor {
       }
 
       try {
-        const response = await fetch(url, {
+        const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
           signal
-        });
+        }, proxyOptions);
 
         if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
           // Try to get retry time from headers first

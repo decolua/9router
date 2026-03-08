@@ -1,7 +1,24 @@
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 
-const DEFAULT_TEST_URL = "https://example.com/";
+const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
+
+function getErrorMessage(err) {
+  if (!err) return "Unknown error";
+  const base = err?.message || String(err);
+  const causeCode = err?.cause?.code || err?.code;
+  const causeMessage = err?.cause?.message;
+
+  if (causeMessage && causeMessage !== base) {
+    return causeCode ? `${base}: ${causeMessage} (${causeCode})` : `${base}: ${causeMessage}`;
+  }
+
+  if (causeCode && !base.includes(causeCode)) {
+    return `${base} (${causeCode})`;
+  }
+
+  return base;
+}
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -59,7 +76,7 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
       const message =
         err?.name === "AbortError"
           ? "Proxy test timed out"
-          : err?.message || String(err);
+          : getErrorMessage(err);
       return { ok: false, status: 500, error: message };
     } finally {
       clearTimeout(timer);
