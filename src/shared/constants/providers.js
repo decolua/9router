@@ -104,5 +104,42 @@ export const ID_TO_ALIAS = Object.values(AI_PROVIDERS).reduce((acc, p) => {
   return acc;
 }, {});
 
-// Providers that support usage/quota API
-export const USAGE_SUPPORTED_PROVIDERS = ["antigravity", "kiro", "github", "codex"];
+// Providers that support usage/quota API (OAuth). Claude shows card with message when API not available.
+export const USAGE_SUPPORTED_PROVIDERS = ["antigravity", "kiro", "github", "codex", "claude"];
+
+/**
+ * Detailed info for Quota Tracker: what each provider exposes and how to connect.
+ * Used to show "Supported providers" section on the quota page.
+ */
+export const QUOTA_SUPPORTED_PROVIDERS_DETAIL = [
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    description: "Per-model limits (Claude, Gemini, GPT, etc.) with remaining % and reset time. Requires Google OAuth.",
+    quotaTypes: ["Per-model limits", "Reset countdown"],
+  },
+  {
+    id: "kiro",
+    name: "Kiro (AWS CodeWhisperer)",
+    description: "Usage limits by resource type (e.g. agentic requests), free trial if applicable. Requires AWS/CodeWhisperer OAuth.",
+    quotaTypes: ["Resource limits", "Free trial usage"],
+  },
+  {
+    id: "github",
+    name: "GitHub Copilot",
+    description: "Chat, completions, and premium interaction quotas. Monthly reset. Requires GitHub OAuth.",
+    quotaTypes: ["Chat", "Completions", "Premium interactions"],
+  },
+  {
+    id: "codex",
+    name: "Codex (ChatGPT)",
+    description: "Session and weekly usage percentages from ChatGPT backend. Requires OpenAI OAuth.",
+    quotaTypes: ["Session usage", "Weekly usage"],
+  },
+  {
+    id: "claude",
+    name: "Claude (Anthropic)",
+    description: "Usage may be shown if your org has API access; otherwise a status message. Requires Anthropic OAuth.",
+    quotaTypes: ["Org usage (when available)"],
+  },
+];

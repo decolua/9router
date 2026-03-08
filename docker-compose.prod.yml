@@ -1,0 +1,81 @@
+# Full production stack: app + Postgres
+# Usage:
+#   cp .env.example .env   # then edit .env (JWT_SECRET, INITIAL_PASSWORD, DATABASE_URL, etc.)
+#   docker compose -f docker-compose.prod.yml up -d
+#   # App: http://localhost:20128
+#
+# Build and run:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: egs-proxy-ai-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-egs_proxy_ai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-egs_proxy_ai}
+      POSTGRES_DB: ${POSTGRES_DB:-egs_proxy_ai}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-egs_proxy_ai} -d ${POSTGRES_DB:-egs_proxy_ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: egs-proxy-ai:latest
+    container_name: egs-proxy-ai-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-20128}:20128"
+    environment:
+      NODE_ENV: production
+      PORT: 20128
+      HOSTNAME: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-egs_proxy_ai}:${POSTGRES_PASSWORD:-egs_proxy_ai}@postgres:5432/${POSTGRES_DB:-egs_proxy_ai}
+      DATA_DIR: /app/data
+      # Cloudflare Tunnel: binary pre-installed in image; state under /app/data/tunnel (persisted)
+      CLOUDFLARED_PATH: /app/bin/cloudflared
+      TUNNEL_WORKER_URL: ${TUNNEL_WORKER_URL:-https://tunnel.egsproxy.ai}
+      TUNNEL_CUSTOM_DOMAIN: ${TUNNEL_CUSTOM_DOMAIN:-}
+      TUNNEL_SUBDOMAIN: ${TUNNEL_SUBDOMAIN:-tunnel}
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-secret}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-change-me}
+      # Optional: pass through from host .env
+      API_KEY_SECRET: ${API_KEY_SECRET:-}
+      MACHINE_ID_SALT: ${MACHINE_ID_SALT:-}
+      BASE_URL: ${BASE_URL:-http://localhost:20128}
+      NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL:-http://localhost:20128}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY:-false}
+      REQUIRE_LOGIN: ${REQUIRE_LOGIN:-true}
+      USE_MICROSOFT_OAUTH: ${USE_MICROSOFT_OAUTH:-false}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_PUBLIC_CLIENT: ${MICROSOFT_PUBLIC_CLIENT:-true}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-common}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      PG_POOL_MAX: ${PG_POOL_MAX:-3}
+    env_file:
+      - .env
+    volumes:
+      - appdata:/app/data
+    networks:
+      - app
+
+volumes:
+  pgdata:
+  appdata:
+
+networks:
+  app:
+    driver: bridge

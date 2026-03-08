@@ -618,8 +618,8 @@ export async function getOrCreateUserByOAuth(provider, oauthId, profile = {}) {
   const isFirst = Number(countRes.rows[0]?.c) === 0;
   const isAdmin = isAdminEmail || isFirst;
   await p.query(
-    `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, created_at, last_login_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, status, created_at, last_login_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9)`,
     [
       id,
       profile.email ?? null,
@@ -633,6 +633,54 @@ export async function getOrCreateUserByOAuth(provider, oauthId, profile = {}) {
     ]
   );
   user = await getUserById(id);
+  const settingsRes = await p.query("SELECT id FROM settings WHERE user_id = $1", [
+    id,
+  ]);
+  if (settingsRes.rows.length === 0) {
+    await p.query(
+      `INSERT INTO settings (id, user_id, cloud_enabled, tunnel_enabled, tunnel_url, sticky_round_robin_limit, require_login, observability_enabled, observability_max_records, observability_batch_size, observability_flush_interval_ms, observability_max_json_size, outbound_proxy_enabled, outbound_proxy_url, outbound_no_proxy, fallback_strategy, created_at, updated_at)
+       VALUES ($1, $2, false, false, '', 3, true, true, 1000, 20, 5000, 1024, false, '', '', 'fill-first', $3, $3)`,
+      [uuidv4(), id, now]
+    );
+  }
+  return user;
+}
+
+/**
+ * Create a new user with email/password (registration). New user has status 'pending'.
+ * Returns the created user or null if email already exists.
+ */
+export async function createUserWithPassword(email, passwordHash, displayName = null) {
+  const existing = await getUserByEmail(email);
+  if (existing) return null;
+  const p = await pool();
+  const id = uuidv4();
+  const now = new Date();
+  const adminEmails = process.env.ADMIN_EMAILS
+    ? process.env.ADMIN_EMAILS.split(",").map((e) => e.trim())
+    : [];
+  const isAdminEmail =
+    adminEmails.length > 0 && email && adminEmails.includes(email);
+  const countRes = await p.query("SELECT COUNT(*) AS c FROM users");
+  const isFirst = Number(countRes.rows[0]?.c) === 0;
+  const isAdmin = isAdminEmail || isFirst;
+  // First user can be active so admin can log in; otherwise pending
+  const status = isFirst ? "active" : "pending";
+  await p.query(
+    `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, status, password_hash, created_at, last_login_at)
+     VALUES ($1, $2, $3, NULL, NULL, NULL, $4, $5, $6, $7, $8)`,
+    [
+      id,
+      email,
+      displayName || email.split("@")[0],
+      isAdmin,
+      status,
+      passwordHash,
+      now,
+      now,
+    ]
+  );
+  const user = await getUserById(id);
   const settingsRes = await p.query("SELECT id FROM settings WHERE user_id = $1", [
     id,
   ]);
@@ -668,8 +716,8 @@ export async function getOrCreateUserByEmail(email, displayName = null) {
   const isFirst = Number(countRes.rows[0]?.c) === 0;
   const isAdmin = isAdminEmail || isFirst;
   await p.query(
-    `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, created_at, last_login_at)
-     VALUES ($1, $2, $3, NULL, NULL, NULL, $4, $5, $6)`,
+    `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, status, created_at, last_login_at)
+     VALUES ($1, $2, $3, NULL, NULL, NULL, $4, 'active', $5, $6)`,
     [
       id,
       email,
@@ -702,11 +750,20 @@ export async function updateUser(id, data) {
     "oauth_id",
     "tenant_id",
     "is_admin",
+    "status",
+    "password_hash",
   ];
   const updates = [];
   const values = [];
   let i = 1;
-  const map = { displayName: "display_name", oauthProvider: "oauth_provider", oauthId: "oauth_id", tenantId: "tenant_id", isAdmin: "is_admin" };
+  const map = {
+    displayName: "display_name",
+    oauthProvider: "oauth_provider",
+    oauthId: "oauth_id",
+    tenantId: "tenant_id",
+    isAdmin: "is_admin",
+    passwordHash: "password_hash",
+  };
   for (const [k, v] of Object.entries(data)) {
     const col = map[k] || k;
     if (cols.includes(col)) {
@@ -904,8 +961,8 @@ export async function importDb(payload) {
       const existing = await getUserByEmail(u.email);
       if (!existing) {
         await p.query(
-          `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, created_at, last_login_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `INSERT INTO users (id, email, display_name, oauth_provider, oauth_id, tenant_id, is_admin, status, password_hash, created_at, last_login_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (id) DO NOTHING`,
           [
             u.id,
@@ -915,6 +972,8 @@ export async function importDb(payload) {
             u.oauthId ?? null,
             u.tenantId ?? null,
             u.isAdmin ?? false,
+            u.status ?? "active",
+            u.passwordHash ?? null,
             u.createdAt ?? new Date(),
             u.lastLoginAt ?? null,
           ]
@@ -978,12 +1037,23 @@ export async function getPricing() {
   return merged;
 }
 
+/** Get first available pricing object for a provider (for fallback when model not found). */
+function getProviderFallbackPricing(providerPricing) {
+  if (!providerPricing || typeof providerPricing !== "object") return null;
+  // Prefer "auto" for OpenRouter-style providers
+  if (providerPricing.auto) return providerPricing.auto;
+  const first = Object.values(providerPricing)[0];
+  return first && typeof first === "object" ? first : null;
+}
+
 export async function getPricingForModel(provider, model) {
   const pricing = await getPricing();
   if (pricing[provider]?.[model]) return pricing[provider][model];
+
   const PROVIDER_ID_TO_ALIAS = {
     claude: "cc",
     codex: "cx",
+    cursor: "anthropic", // Cursor IDE uses Claude/Anthropic models
     "gemini-cli": "gc",
     qwen: "qw",
     iflow: "if",
@@ -997,10 +1067,25 @@ export async function getPricingForModel(provider, model) {
     glm: "glm",
     kimi: "kimi",
     minimax: "minimax",
+    deepseek: "deepseek",
+    groq: "groq",
+    xai: "xai",
+    mistral: "mistral",
   };
+
   const alias = PROVIDER_ID_TO_ALIAS[provider];
-  if (alias && pricing[alias]) return pricing[alias][model] || null;
-  return null;
+  const providerKey = alias && pricing[alias] ? alias : provider;
+  const providerPricing = pricing[providerKey];
+  if (providerPricing?.[model]) return providerPricing[model];
+  // Cursor/Claude style model names (e.g. claude-4.5-sonnet) -> Anthropic keys (claude-sonnet-4.5)
+  const MODEL_ID_ALIAS = {
+    "claude-4.5-sonnet": "claude-sonnet-4.5",
+    "claude-4.5-haiku": "claude-haiku-4.5",
+  };
+  const modelAlias = MODEL_ID_ALIAS[model];
+  if (modelAlias && providerPricing?.[modelAlias]) return providerPricing[modelAlias];
+  // Fallback: use "auto" or first model for this provider so cost is never 0 when we have tokens
+  return getProviderFallbackPricing(providerPricing) ?? (alias && pricing[alias] ? getProviderFallbackPricing(pricing[alias]) : null);
 }
 
 export async function updatePricing(pricingData) {

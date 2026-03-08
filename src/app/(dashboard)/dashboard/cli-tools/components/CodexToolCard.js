@@ -88,10 +88,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setApplying(true);
     setMessage(null);
     try {
-      // Use sk_9router for localhost if no key, otherwise use selected key
+      // Use sk_egs_proxy_ai for localhost if no key, otherwise use selected key
       const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
         ? selectedApiKey 
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_egs_proxy_ai" : selectedApiKey);
       
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
@@ -140,14 +140,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_egs_proxy_ai" : "<API_KEY_FROM_DASHBOARD>");
     
-    const configContent = `# 9Router Configuration for Codex CLI
+    const configContent = `# EGS Proxy AI Configuration for Codex CLI
 model = "${selectedModel}"
-model_provider = "9router"
+model_provider = "egs-proxy-ai"
 
-[model_providers.9router]
-name = "9Router"
+[model_providers.egs-proxy-ai]
+name = "EGS Proxy AI"
 base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 `;
@@ -277,7 +277,7 @@ wire_api = "responses"
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_egs_proxy_ai (default)"}
                     </span>
                   )}
                 </div>
@@ -303,7 +303,7 @@ wire_api = "responses"
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedApiKey || !selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.hasEgsProxyAi} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>

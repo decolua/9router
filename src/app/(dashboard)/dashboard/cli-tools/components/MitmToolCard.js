@@ -176,7 +176,7 @@ export default function MitmToolCard({
           <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
             {/* Info */}
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
-              <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
+              <p>Toggle DNS to redirect {tool.name} traffic through EGS Proxy AI via MITM.</p>
               {!dnsActive && (
                 <p className="text-amber-600 text-[10px] mt-1">
                   ⚠️ Enable DNS to edit model mappings

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "egs-proxy-ai-default-secret-change-me"
 );
 
 /**

@@ -28,10 +28,10 @@ export default function FlowAnimation() {
 
   return (
     <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center animate-[float_6s_ease-in-out_infinite]">
-      {/* 9Router Hub - Center */}
+      {/* EGS Proxy AI Hub - Center */}
       <div className="relative z-20 w-32 h-32 rounded-full bg-[#23180f] border-2 border-[#f97815] shadow-[0_0_40px_rgba(249,120,21,0.3)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
         <span className="material-symbols-outlined text-4xl text-[#f97815]">hub</span>
-        <span className="text-xs font-bold text-white tracking-widest uppercase">9Router</span>
+        <span className="text-xs font-bold text-white tracking-widest uppercase">EGS Proxy AI</span>
         <div className="absolute inset-0 rounded-full border border-[#f97815]/30 animate-ping opacity-20"></div>
       </div>
 
@@ -56,7 +56,7 @@ export default function FlowAnimation() {
         ))}
       </div>
 
-      {/* SVG Lines from CLI to 9Router */}
+      {/* SVG Lines from CLI to EGS Proxy AI */}
       <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none stroke-yellow-700" xmlns="http://www.w3.org/2000/svg">
         <path className="animate-[dash_2s_linear_infinite]" d="M 60 50 C 250 70, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
         <path className="animate-[dash_2s_linear_infinite]" d="M 60 140 C 250 140, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
@@ -64,7 +64,7 @@ export default function FlowAnimation() {
         <path className="animate-[dash_2s_linear_infinite]" d="M 60 300 C 250 280, 250 180, 360 180" fill="none" strokeDasharray="5,5" strokeWidth="2"></path>
       </svg>
 
-      {/* SVG Lines from 9Router to Providers */}
+      {/* SVG Lines from EGS Proxy AI to Providers */}
       <svg className="absolute inset-0 w-full h-full z-10 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
         <path 
           d="M 440 180 C 550 180, 550 50, 740 50" 

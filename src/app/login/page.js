@@ -5,6 +5,7 @@ import { Card, Button, Input } from "@/shared/components";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -71,11 +72,21 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError("Email is required");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({
+          email: trimmedEmail.toLowerCase(),
+          password,
+        }),
       });
 
       if (res.ok) {
@@ -83,7 +94,7 @@ export default function LoginPage() {
         router.refresh();
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || "Invalid email or password");
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -142,8 +153,8 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-bg p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
-          <p className="text-text-muted">Enter your password to access the dashboard</p>
+          <h1 className="text-3xl font-bold text-primary mb-2">EGS Proxy AI</h1>
+          <p className="text-text-muted">Sign in with your account</p>
         </div>
 
         <Card>
@@ -174,6 +185,18 @@ export default function LoginPage() {
           
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium">Email</label>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Password</label>
               <Input
                 type="password"
@@ -181,10 +204,10 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                autoFocus
+                autoComplete="current-password"
               />
-              {error && <p className="text-xs text-red-500">{error}</p>}
             </div>
+            {error && <p className="text-xs text-red-500">{error}</p>}
 
             <Button
               type="submit"
@@ -192,11 +215,14 @@ export default function LoginPage() {
               className="w-full"
               loading={loading}
             >
-              Login
+              Sign in
             </Button>
 
             <p className="text-xs text-center text-text-muted mt-2">
-              Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+              Don&apos;t have an account?{" "}
+              <a href="/register" className="text-primary hover:underline">
+                Register
+              </a>
             </p>
           </form>
         </Card>

@@ -9,7 +9,7 @@ import { SignJWT } from "jose";
 import { cookies } from "next/headers";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "egs-proxy-ai-default-secret-change-me"
 );
 
 export async function GET(request) {
@@ -69,14 +69,25 @@ export async function GET(request) {
       displayName: profile.displayName,
       tenantId: profile.tenantId,
     });
-    
+
+    const status = user.status ?? "active";
+    if (status !== "active") {
+      return NextResponse.redirect(
+        new URL(
+          "/login?error=" + encodeURIComponent("Account pending approval"),
+          request.url
+        )
+      );
+    }
+
     // Create JWT with user info
-    const token = await new SignJWT({ 
+    const token = await new SignJWT({
       userId: user.id,
       email: user.email,
       displayName: user.displayName,
       isAdmin: user.isAdmin,
       tenantId: user.tenantId,
+      status,
     })
       .setProtectedHeader({ alg: "HS256" })
       .setExpirationTime("24h")

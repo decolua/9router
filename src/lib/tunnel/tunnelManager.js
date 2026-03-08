@@ -3,9 +3,13 @@ import { loadState, saveState, clearState } from "./state.js";
 import { spawnCloudflared, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
-const TUNNEL_WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://tunnel.9router.com";
-const MACHINE_ID_SALT = "9router-tunnel-salt";
-const API_KEY_SECRET = "9router-tunnel-api-key-secret";
+const TUNNEL_WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://tunnel.egsproxy.ai";
+/** Custom domain for tunnel hostname, e.g. eastgate-software.com → <shortId>.tunnel.eastgate-software.com */
+const TUNNEL_CUSTOM_DOMAIN = process.env.TUNNEL_CUSTOM_DOMAIN || "";
+/** Subdomain label under custom domain, e.g. "tunnel" → <shortId>.tunnel.eastgate-software.com */
+const TUNNEL_SUBDOMAIN = process.env.TUNNEL_SUBDOMAIN || "tunnel";
+const MACHINE_ID_SALT = "egs-proxy-ai-tunnel-salt";
+const API_KEY_SECRET = "egs-proxy-ai-tunnel-api-key-secret";
 const SHORT_ID_LENGTH = 6;
 const SHORT_ID_CHARS = "abcdefghijklmnpqrstuvwxyz23456789";
 const RECONNECT_DELAYS_MS = [5000, 15000, 30000];
@@ -66,9 +70,14 @@ export async function enableTunnel() {
     body: JSON.stringify({ apiKey, shortId })
   });
 
+  const createBody = { apiKey, shortId };
+  if (TUNNEL_CUSTOM_DOMAIN) {
+    createBody.customDomain = TUNNEL_CUSTOM_DOMAIN;
+    createBody.subdomain = TUNNEL_SUBDOMAIN;
+  }
   const tunnelResult = await workerFetch("/api/tunnel/create", {
     method: "POST",
-    body: JSON.stringify({ apiKey })
+    body: JSON.stringify(createBody)
   });
 
   if (tunnelResult.error) {

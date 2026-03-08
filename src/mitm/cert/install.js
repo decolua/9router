@@ -44,7 +44,7 @@ function checkCertInstalledMac(certPath) {
 function checkCertInstalledWindows(certPath) {
   return new Promise((resolve) => {
     // Check Root store for our Root CA by common name
-    exec("certutil -store Root \"9Router MITM Root CA\"", (error) => {
+    exec("certutil -store Root \"EGS Proxy AI MITM Root CA\"", (error) => {
       resolve(!error);
     });
   });
@@ -130,7 +130,7 @@ async function uninstallCertMac(sudoPassword, certPath) {
 }
 
 async function uninstallCertWindows() {
-  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','9Router MITM Root CA' -Verb RunAs -Wait -WindowStyle Hidden`;
+  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','EGS Proxy AI MITM Root CA' -Verb RunAs -Wait -WindowStyle Hidden`;
   return new Promise((resolve, reject) => {
     exec(
       `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
@@ -144,12 +144,12 @@ async function uninstallCertWindows() {
 }
 
 function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const certFile = `${LINUX_CERT_DIR}/egs-proxy-ai-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
 }
 
 async function installCertLinux(sudoPassword, certPath) {
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/egs-proxy-ai-root-ca.crt`;
   // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
   const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
@@ -161,7 +161,7 @@ async function installCertLinux(sudoPassword, certPath) {
 }
 
 async function uninstallCertLinux(sudoPassword) {
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/egs-proxy-ai-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
     await execWithPassword(cmd, sudoPassword);

@@ -33,9 +33,9 @@ const readConfig = async () => {
   }
 };
 
-const has9RouterConfig = (config) => {
+const hasEgsProxyAiConfig = (config) => {
   if (!config?.provider) return false;
-  return !!config.provider["9router"];
+  return !!config.provider["egs-proxy-ai"];
 };
 
 // GET - Check opencode CLI and read current settings
@@ -56,7 +56,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       config,
-      has9Router: has9RouterConfig(config),
+      hasEgsProxyAi: hasEgsProxyAiConfig(config),
       configPath: getConfigPath(),
     });
   } catch (error) {
@@ -65,7 +65,7 @@ export async function GET() {
   }
 }
 
-// POST - Apply 9Router as openai-compatible provider
+// POST - Apply EGS Proxy AI as openai-compatible provider
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model } = await request.json();
@@ -87,11 +87,11 @@ export async function POST(request) {
     } catch { /* No existing config */ }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "sk_9router";
+    const keyToUse = apiKey || "sk_egs_proxy_ai";
 
-    // Merge 9router provider
+    // Merge egs-proxy-ai provider
     if (!config.provider) config.provider = {};
-    config.provider["9router"] = {
+    config.provider["egs-proxy-ai"] = {
       npm: "@ai-sdk/openai-compatible",
       options: {
         baseURL: normalizedBaseUrl,
@@ -103,7 +103,7 @@ export async function POST(request) {
     };
 
     // Set as active model
-    config.model = `9router/${model}`;
+    config.model = `egs-proxy-ai/${model}`;
 
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
@@ -118,7 +118,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router provider from config
+// DELETE - Remove EGS Proxy AI provider from config
 export async function DELETE() {
   try {
     const configPath = getConfigPath();
@@ -134,17 +134,17 @@ export async function DELETE() {
       throw error;
     }
 
-    // Remove 9router provider
-    if (config.provider) delete config.provider["9router"];
+    // Remove egs-proxy-ai provider
+    if (config.provider) delete config.provider["egs-proxy-ai"];
 
-    // Reset model if it was pointing to 9router
-    if (config.model?.startsWith("9router/")) delete config.model;
+    // Reset model if it was pointing to egs-proxy-ai
+    if (config.model?.startsWith("egs-proxy-ai/")) delete config.model;
 
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
     return NextResponse.json({
       success: true,
-      message: "9Router settings removed from OpenCode",
+      message: "EGS Proxy AI settings removed from OpenCode",
     });
   } catch (error) {
     console.log("Error resetting opencode settings:", error);

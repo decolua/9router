@@ -15,7 +15,7 @@ async function migrateToMultiUser() {
   
   // Get app name for data directory
   function getAppName() {
-    return "9router";
+    return "egs-proxy-ai";
   }
 
   // Get user data directory
@@ -50,7 +50,7 @@ async function migrateToMultiUser() {
   // Create default user
   const defaultUser = {
     id: uuidv4(),
-    email: process.env.DEFAULT_USER_EMAIL || "admin@9router.local",
+    email: process.env.DEFAULT_USER_EMAIL || "admin@egsproxy.local",
     displayName: "Default Admin",
     oauthProvider: null,
     oauthId: null,

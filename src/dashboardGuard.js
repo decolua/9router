@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "egs-proxy-ai-default-secret-change-me"
 );
 
 function applyAuthHeaders(request, payload) {
@@ -27,6 +27,13 @@ export async function proxy(request) {
     if (token) {
       try {
         const { payload } = await jwtVerify(token, SECRET);
+        const status = payload.status ?? "active";
+        if (status !== "active") {
+          return NextResponse.json(
+            { error: "Account pending approval", code: "PENDING_APPROVAL" },
+            { status: 403 }
+          );
+        }
         if (isAdminRoute && !payload.isAdmin) {
           return NextResponse.json({ error: "Admin access required" }, { status: 403 });
         }
@@ -53,12 +60,19 @@ export async function proxy(request) {
     if (token) {
       try {
         const { payload } = await jwtVerify(token, SECRET);
-        
+        const status = payload.status ?? "active";
+        if (status !== "active") {
+          return NextResponse.redirect(
+            new URL(
+              "/login?error=" + encodeURIComponent("Account pending approval"),
+              request.url
+            )
+          );
+        }
         // Check admin-only routes
         if (pathname.startsWith("/dashboard/admin") && !payload.isAdmin) {
           return NextResponse.redirect(new URL("/dashboard", request.url));
         }
-        
         const requestHeaders = applyAuthHeaders(request, payload);
         return NextResponse.next({
           request: { headers: requestHeaders },

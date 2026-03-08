@@ -36,10 +36,10 @@ const readSettings = async () => {
   }
 };
 
-// Check if settings has 9Router config
-const has9RouterConfig = (settings) => {
+// Check if settings has EGS Proxy AI config
+const hasEgsProxyAiConfig = (settings) => {
   if (!settings || !settings.models || !settings.models.providers) return false;
-  return !!settings.models.providers["9router"];
+  return !!settings.models.providers["egs-proxy-ai"];
 };
 
 // GET - Check openclaw CLI and read current settings
@@ -60,7 +60,7 @@ export async function GET() {
     return NextResponse.json({
       installed: true,
       settings,
-      has9Router: has9RouterConfig(settings),
+      hasEgsProxyAi: hasEgsProxyAiConfig(settings),
       settingsPath: getOpenClawSettingsPath(),
     });
   } catch (error) {
@@ -69,7 +69,7 @@ export async function GET() {
   }
 }
 
-// POST - Update 9Router settings (merge with existing settings)
+// POST - Update EGS Proxy AI settings (merge with existing settings)
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model } = await request.json();
@@ -102,10 +102,10 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
     // Update agents.defaults.model.primary
-    settings.agents.defaults.model.primary = `9router/${model}`;
+    settings.agents.defaults.model.primary = `egs-proxy-ai/${model}`;
 
-    // Update models.providers.9router
-    settings.models.providers["9router"] = {
+    // Update models.providers.egs-proxy-ai
+    settings.models.providers["egs-proxy-ai"] = {
       baseUrl: normalizedBaseUrl,
       apiKey: apiKey || "your_api_key",
       api: "openai-completions",
@@ -131,7 +131,7 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router settings only (keep other settings)
+// DELETE - Remove EGS Proxy AI settings only (keep other settings)
 export async function DELETE() {
   try {
     const settingsPath = getOpenClawSettingsPath();
@@ -151,9 +151,9 @@ export async function DELETE() {
       throw error;
     }
 
-    // Remove 9Router from models.providers
+    // Remove EGS Proxy AI from models.providers
     if (settings.models && settings.models.providers) {
-      delete settings.models.providers["9router"];
+      delete settings.models.providers["egs-proxy-ai"];
       
       // Remove providers object if empty
       if (Object.keys(settings.models.providers).length === 0) {
@@ -161,8 +161,8 @@ export async function DELETE() {
       }
     }
 
-    // Reset agents.defaults.model.primary if it uses 9router
-    if (settings.agents?.defaults?.model?.primary?.startsWith("9router/")) {
+    // Reset agents.defaults.model.primary if it uses egs-proxy-ai
+    if (settings.agents?.defaults?.model?.primary?.startsWith("egs-proxy-ai/")) {
       delete settings.agents.defaults.model.primary;
     }
 
@@ -171,7 +171,7 @@ export async function DELETE() {
 
     return NextResponse.json({
       success: true,
-      message: "9Router settings removed successfully",
+      message: "EGS Proxy AI settings removed successfully",
     });
   } catch (error) {
     console.log("Error resetting openclaw settings:", error);

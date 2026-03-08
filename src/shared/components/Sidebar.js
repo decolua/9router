@@ -9,24 +9,25 @@ import { APP_CONFIG } from "@/shared/constants/config";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
-// Shown to all authenticated users (Endpoint = API keys; Usage, Quota, MITM, CLI Tools)
+// Shown to all authenticated users (Endpoint = API keys; Usage, Quota, MITM, CLI Tools, Profile)
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/profile", label: "Profile", icon: "person" },
 ];
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
 ];
 
-// Admin only: global config (providers, combos, settings) and user management
+// Admin only: global config (providers, combos), usage overview, and user management
 const adminNavItems = [
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
+  { href: "/dashboard/admin/usage", label: "Usage Overview", icon: "bar_chart" },
   { href: "/dashboard/admin/users", label: "Users", icon: "group" },
 ];
 
@@ -109,7 +110,7 @@ export default function Sidebar({ onClose }) {
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                npm install -g egs-proxy-ai@latest
               </code>
             </div>
           )}
@@ -141,7 +142,7 @@ export default function Sidebar({ onClose }) {
             </Link>
           ))}
 
-          {/* Admin section – Providers, Combos, Settings, Users (admin only) */}
+          {/* Admin section – Providers, Combos, Users (admin only) */}
           {isAdmin && adminNavItems.length > 0 && (
             <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
@@ -173,8 +174,9 @@ export default function Sidebar({ onClose }) {
             </div>
           )}
 
-          {/* Debug section */}
-          <div className="pt-4 mt-2">
+          {/* Debug section – Admin only */}
+          {isAdmin && (
+            <div className="pt-4 mt-2">
               <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
                 Debug
               </p>
@@ -219,6 +221,7 @@ export default function Sidebar({ onClose }) {
                 </Link>
               ))}
             </div>
+          )}
 
         </nav>
 
@@ -236,31 +239,35 @@ export default function Sidebar({ onClose }) {
             </div>
           </div>
 
-          {/* Shutdown button */}
-          <Button
-            variant="outline"
-            fullWidth
-            icon="power_settings_new"
-            onClick={() => setShowShutdownModal(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-          >
-            Shutdown
-          </Button>
+          {/* Shutdown button — admin only */}
+          {isAdmin && (
+            <Button
+              variant="outline"
+              fullWidth
+              icon="power_settings_new"
+              onClick={() => setShowShutdownModal(true)}
+              className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+            >
+              Shutdown
+            </Button>
+          )}
         </div>
       </aside>
 
-      {/* Shutdown Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showShutdownModal}
-        onClose={() => setShowShutdownModal(false)}
-        onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
-        variant="danger"
-        loading={isShuttingDown}
-      />
+      {/* Shutdown Confirmation Modal — admin only */}
+      {isAdmin && (
+        <ConfirmModal
+          isOpen={showShutdownModal}
+          onClose={() => setShowShutdownModal(false)}
+          onConfirm={handleShutdown}
+          title="Close Proxy"
+          message="Are you sure you want to close the proxy server?"
+          confirmText="Close"
+          cancelText="Cancel"
+          variant="danger"
+          loading={isShuttingDown}
+        />
+      )}
 
       {/* Disconnected Overlay */}
       {isDisconnected && (

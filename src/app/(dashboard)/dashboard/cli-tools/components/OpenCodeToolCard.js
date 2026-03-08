@@ -38,8 +38,8 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
   // Sync model from existing config
   useEffect(() => {
-    if (status?.config?.model?.startsWith("9router/")) {
-      setSelectedModel(status.config.model.replace("9router/", ""));
+    if (status?.config?.model?.startsWith("egs-proxy-ai/")) {
+      setSelectedModel(status.config.model.replace("egs-proxy-ai/", ""));
     }
   }, [status]);
 
@@ -56,9 +56,9 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const getConfigStatus = () => {
     if (!status?.installed) return null;
     if (!status.config) return "not_configured";
-    const url = status.config?.provider?.["9router"]?.options?.baseURL || "";
+    const url = status.config?.provider?.["egs-proxy-ai"]?.options?.baseURL || "";
     const isLocal = url.includes("localhost") || url.includes("127.0.0.1");
-    return status.has9Router && (isLocal || url.includes(baseUrl)) ? "configured" : status.has9Router ? "other" : "not_configured";
+    return status.hasEgsProxyAi && (isLocal || url.includes(baseUrl)) ? "configured" : status.hasEgsProxyAi ? "other" : "not_configured";
   };
 
   const configStatus = getConfigStatus();
@@ -89,7 +89,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     try {
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_egs_proxy_ai" : selectedApiKey);
 
       const res = await fetch("/api/cli-tools/opencode-settings", {
         method: "POST",
@@ -133,19 +133,19 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_egs_proxy_ai" : "<API_KEY_FROM_DASHBOARD>");
 
     return [{
       filename: "~/.config/opencode/opencode.json",
       content: JSON.stringify({
         provider: {
-          "9router": {
+          "egs-proxy-ai": {
             npm: "@ai-sdk/openai-compatible",
             options: { baseURL: getEffectiveBaseUrl(), apiKey: keyToUse },
             models: { [selectedModel || "provider/model-id"]: { name: selectedModel || "provider/model-id" } },
           },
         },
-        model: `9router/${selectedModel || "provider/model-id"}`,
+        model: `egs-proxy-ai/${selectedModel || "provider/model-id"}`,
       }, null, 2),
     }];
   };
@@ -211,12 +211,12 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
             <>
               <div className="flex flex-col gap-2">
                 {/* Current base URL */}
-                {status?.config?.provider?.["9router"]?.options?.baseURL && (
+                {status?.config?.provider?.["egs-proxy-ai"]?.options?.baseURL && (
                   <div className="flex items-center gap-2">
                     <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
                     <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                     <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
-                      {status.config.provider["9router"].options.baseURL}
+                      {status.config.provider["egs-proxy-ai"].options.baseURL}
                     </span>
                   </div>
                 )}
@@ -249,7 +249,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_egs_proxy_ai (default)"}
                     </span>
                   )}
                 </div>
@@ -275,7 +275,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.hasEgsProxyAi} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>

@@ -5,9 +5,9 @@ const os = require("os");
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   if (process.platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router");
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "egs-proxy-ai");
   }
-  return path.join(os.homedir(), ".9router");
+  return path.join(os.homedir(), ".egs-proxy-ai");
 }
 
 const DATA_DIR = getDataDir();

@@ -1,4 +1,4 @@
-# 9Router Embeddings Tests
+# EGS Proxy AI Embeddings Tests
 
 Unit tests for the `/v1/embeddings` endpoint implementation.
 

@@ -67,6 +67,7 @@ export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] = useState(false);
   const [testingMode, setTestingMode] = useState(null);
@@ -76,14 +77,17 @@ export default function ProvidersPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [connectionsRes, nodesRes] = await Promise.all([
+        const [connectionsRes, nodesRes, meRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/provider-nodes"),
+          fetch("/api/auth/me", { credentials: "include" }),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
+        const meData = meRes.ok ? await meRes.json() : {};
         if (connectionsRes.ok) setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        if (meData.isAdmin) setIsAdmin(true);
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -211,22 +215,24 @@ export default function ProvidersPage() {
           </h2>
           <div className="flex items-center gap-2">
             <ModelAvailabilityBadge />
-            <button
-              onClick={() => handleBatchTest("oauth")}
-              disabled={!!testingMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-              }`}
-              title="Test all OAuth connections"
-              aria-label="Test all OAuth connections"
-            >
-              <span className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}>
-                {testingMode === "oauth" ? "sync" : "play_arrow"}
-              </span>
-              {testingMode === "oauth" ? "Testing..." : "Test All"}
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => handleBatchTest("oauth")}
+                disabled={!!testingMode}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  testingMode === "oauth"
+                    ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                    : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+                }`}
+                title="Test all OAuth connections"
+                aria-label="Test all OAuth connections"
+              >
+                <span className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}>
+                  {testingMode === "oauth" ? "sync" : "play_arrow"}
+                </span>
+                {testingMode === "oauth" ? "Testing..." : "Test All"}
+              </button>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -238,6 +244,7 @@ export default function ProvidersPage() {
               stats={getProviderStats(key, "oauth")}
               authType="oauth"
               onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              canEdit={isAdmin}
             />
           ))}
         </div>
@@ -249,22 +256,24 @@ export default function ProvidersPage() {
           <h2 className="text-xl font-semibold flex items-center gap-2">
             Free Providers
           </h2>
-          <button
-            onClick={() => handleBatchTest("free")}
-            disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+          {isAdmin && (
+            <button
+              onClick={() => handleBatchTest("free")}
+              disabled={!!testingMode}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                testingMode === "free"
+                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
               }`}
               title="Test all Free connections"
-            aria-label="Test all Free provider connections"
-          >
-            <span className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}>
-              {testingMode === "free" ? "sync" : "play_arrow"}
-            </span>
-            {testingMode === "free" ? "Testing..." : "Test All"}
-          </button>
+              aria-label="Test all Free provider connections"
+            >
+              <span className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}>
+                {testingMode === "free" ? "sync" : "play_arrow"}
+              </span>
+              {testingMode === "free" ? "Testing..." : "Test All"}
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(FREE_PROVIDERS).map(([key, info]) => (
@@ -275,6 +284,7 @@ export default function ProvidersPage() {
               stats={getProviderStats(key, "oauth")}
               authType="free"
               onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              canEdit={isAdmin}
             />
           ))}
         </div>
@@ -286,22 +296,24 @@ export default function ProvidersPage() {
           <h2 className="text-xl font-semibold flex items-center gap-2">
             API Key Providers{" "}
           </h2>
-          <button
-            onClick={() => handleBatchTest("apikey")}
-            disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+          {isAdmin && (
+            <button
+              onClick={() => handleBatchTest("apikey")}
+              disabled={!!testingMode}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                testingMode === "apikey"
+                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
               }`}
               title="Test all API Key connections"
-            aria-label="Test all API Key connections"
-          >
-            <span className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}>
-              {testingMode === "apikey" ? "sync" : "play_arrow"}
-            </span>
-            {testingMode === "apikey" ? "Testing..." : "Test All"}
-          </button>
+              aria-label="Test all API Key connections"
+            >
+              <span className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}>
+                {testingMode === "apikey" ? "sync" : "play_arrow"}
+              </span>
+              {testingMode === "apikey" ? "Testing..." : "Test All"}
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
@@ -312,6 +324,7 @@ export default function ProvidersPage() {
               stats={getProviderStats(key, "apikey")}
               authType="apikey"
               onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+              canEdit={isAdmin}
             />
           ))}
         </div>
@@ -324,35 +337,22 @@ export default function ProvidersPage() {
             API Key Compatible Providers{" "}
           </h2>
           <div className="flex gap-2">
-            {/* {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
-              <button
-                onClick={() => handleBatchTest("compatible")}
-                disabled={!!testingMode}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                  testingMode === "compatible"
-                    ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                    : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-                }`}
-                title="Test all Compatible connections"
-              >
-                <span className={`material-symbols-outlined text-[14px]${testingMode === "compatible" ? " animate-spin" : ""}`}>
-                  {testingMode === "compatible" ? "sync" : "play_arrow"}
-                </span>
-                {testingMode === "compatible" ? "Testing..." : "Test All"}
-              </button>
-            )} */}
-            <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
-              Add Anthropic Compatible
-            </Button>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="add"
-              onClick={() => setShowAddCompatibleModal(true)}
-              className="!bg-white !text-black hover:!bg-gray-100"
-            >
-              Add OpenAI Compatible
-            </Button>
+            {isAdmin && (
+              <>
+                <Button size="sm" icon="add" onClick={() => setShowAddAnthropicCompatibleModal(true)}>
+                  Add Anthropic Compatible
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="add"
+                  onClick={() => setShowAddCompatibleModal(true)}
+                  className="!bg-white !text-black hover:!bg-gray-100"
+                >
+                  Add OpenAI Compatible
+                </Button>
+              </>
+            )}
           </div>
         </div>
         {compatibleProviders.length === 0 && anthropicCompatibleProviders.length === 0 ? (
@@ -373,6 +373,7 @@ export default function ProvidersPage() {
                 stats={getProviderStats(info.id, "apikey")}
                 authType="compatible"
                 onToggle={(active) => handleToggleProvider(info.id, "apikey", active)}
+                canEdit={isAdmin}
               />
             ))}
           </div>
@@ -427,7 +428,7 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
+function ProviderCard({ providerId, provider, stats, authType, onToggle, canEdit = true }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const [imgError, setImgError] = useState(false);
 
@@ -489,7 +490,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {stats.total > 0 && (
+            {canEdit && stats.total > 0 && (
               <div
                 className="opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => {
@@ -529,9 +530,10 @@ ProviderCard.propTypes = {
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
+  canEdit: PropTypes.bool,
 };
 
-function ApiKeyProviderCard({ providerId, provider, stats, authType, onToggle }) {
+function ApiKeyProviderCard({ providerId, provider, stats, authType, onToggle, canEdit = true }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
@@ -609,7 +611,7 @@ function ApiKeyProviderCard({ providerId, provider, stats, authType, onToggle })
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {stats.total > 0 && (
+            {canEdit && stats.total > 0 && (
               <div
                 className="opacity-0 group-hover:opacity-100 transition-opacity"
                 onClick={(e) => {
@@ -650,6 +652,7 @@ ApiKeyProviderCard.propTypes = {
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
+  canEdit: PropTypes.bool,
 };
 
 function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {

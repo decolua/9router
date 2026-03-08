@@ -10,6 +10,8 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [userHasPassword, setUserHasPassword] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -26,19 +28,23 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
-        setSettings(data);
+    Promise.all([
+      fetch("/api/settings").then((res) => res.json()),
+      fetch("/api/profile").then((res) => (res.ok ? res.json() : { hasPassword: false })),
+    ])
+      .then(([settingsData, profileData]) => {
+        setSettings(settingsData);
+        setUserHasPassword(!!profileData?.hasPassword);
+        setIsAdmin(!!profileData?.isAdmin);
         setProxyForm({
-          outboundProxyEnabled: data?.outboundProxyEnabled === true,
-          outboundProxyUrl: data?.outboundProxyUrl || "",
-          outboundNoProxy: data?.outboundNoProxy || "",
+          outboundProxyEnabled: settingsData?.outboundProxyEnabled === true,
+          outboundProxyUrl: settingsData?.outboundProxyUrl || "",
+          outboundNoProxy: settingsData?.outboundNoProxy || "",
         });
         setLoading(false);
       })
       .catch((err) => {
-        console.error("Failed to fetch settings:", err);
+        console.error("Failed to fetch settings or profile:", err);
         setLoading(false);
       });
   }, []);
@@ -146,25 +152,29 @@ export default function ProfilePage() {
       setPassStatus({ type: "error", message: "Passwords do not match" });
       return;
     }
+    if (userHasPassword && !passwords.current?.trim()) {
+      setPassStatus({ type: "error", message: "Current password is required" });
+      return;
+    }
 
     setPassLoading(true);
     setPassStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const body = { newPassword: passwords.new };
+      if (userHasPassword) body.currentPassword = passwords.current;
+      const res = await fetch("/api/profile/password", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword: passwords.current,
-          newPassword: passwords.new,
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: "Password updated successfully" });
+        setPassStatus({ type: "success", message: userHasPassword ? "Password updated successfully" : "Password set successfully" });
         setPasswords({ current: "", new: "", confirm: "" });
+        setUserHasPassword(true);
       } else {
         setPassStatus({ type: "error", message: data.error || "Failed to update password" });
       }
@@ -284,7 +294,7 @@ export default function ProfilePage() {
       const anchor = document.createElement("a");
       const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      anchor.download = `egs-proxy-ai-backup-${stamp}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -370,44 +380,46 @@ export default function ProfilePage() {
               ))}
             </div>
           </div>
-          <div className="flex flex-col gap-3 pt-4 border-t border-border">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
-              <div>
-                <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+          {isAdmin && (
+            <div className="flex flex-col gap-3 pt-4 border-t border-border">
+              <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
+                <div>
+                  <p className="font-medium">Database Location</p>
+                  <p className="text-sm text-text-muted font-mono">~/.egs-proxy-ai/db.json</p>
+                </div>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  icon="download"
+                  onClick={handleExportDatabase}
+                  loading={dbLoading}
+                >
+                  Download Backup
+                </Button>
+                <Button
+                  variant="outline"
+                  icon="upload"
+                  onClick={() => importFileRef.current?.click()}
+                  disabled={dbLoading}
+                >
+                  Import Backup
+                </Button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportDatabase}
+                />
+              </div>
+              {dbStatus.message && (
+                <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                  {dbStatus.message}
+                </p>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                icon="download"
-                onClick={handleExportDatabase}
-                loading={dbLoading}
-              >
-                Download Backup
-              </Button>
-              <Button
-                variant="outline"
-                icon="upload"
-                onClick={() => importFileRef.current?.click()}
-                disabled={dbLoading}
-              >
-                Import Backup
-              </Button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={handleImportDatabase}
-              />
-            </div>
-            {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                {dbStatus.message}
-              </p>
-            )}
-          </div>
+          )}
         </Card>
 
         {/* Security */}
@@ -419,19 +431,21 @@ export default function ProfilePage() {
             <h3 className="text-lg font-semibold">Security</h3>
           </div>
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Require login</p>
-                <p className="text-sm text-text-muted">
-                  When ON, dashboard requires password. When OFF, access without login.
-                </p>
+            {isAdmin && (
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium">Require login</p>
+                  <p className="text-sm text-text-muted">
+                    When ON, dashboard requires password. When OFF, access without login.
+                  </p>
+                </div>
+                <Toggle
+                  checked={settings.requireLogin === true}
+                  onChange={() => updateRequireLogin(!settings.requireLogin)}
+                  disabled={loading}
+                />
               </div>
-              <Toggle
-                checked={settings.requireLogin === true}
-                onChange={() => updateRequireLogin(!settings.requireLogin)}
-                disabled={loading}
-              />
-            </div>
+            )}
             <div className="rounded-lg border border-border bg-surface/50 px-4 py-3">
               <p className="font-medium text-text-main">Proxy API key</p>
               <p className="text-sm text-text-muted mt-0.5">
@@ -440,7 +454,7 @@ export default function ProfilePage() {
             </div>
             {settings.requireLogin === true && (
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
-                {settings.hasPassword && (
+                {userHasPassword === true && (
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">Current Password</label>
                     <Input
@@ -452,13 +466,13 @@ export default function ProfilePage() {
                     />
                   </div>
                 )}
-                {/* {!settings.hasPassword && (
+                {userHasPassword === false && (
                   <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                     <p className="text-sm text-blue-600 dark:text-blue-400">
-                      Setting password for the first time. Leave current password empty or use default: <code className="bg-blue-500/20 px-1 rounded">123456</code>
+                      You don&apos;t have a password yet (e.g. signed in with Microsoft). Set one to sign in with email and password.
                     </p>
                   </div>
-                )} */}
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
                     <label className="text-sm font-medium">New Password</label>
@@ -490,7 +504,7 @@ export default function ProfilePage() {
 
                 <div className="pt-2">
                   <Button type="submit" variant="primary" loading={passLoading}>
-                    {settings.hasPassword ? "Update Password" : "Set Password"}
+                    {userHasPassword ? "Update Password" : "Set Password"}
                   </Button>
                 </div>
               </form>
@@ -498,7 +512,8 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Routing Preferences */}
+        {/* Routing Preferences – Admin only */}
+        {isAdmin && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
@@ -549,8 +564,10 @@ export default function ProfilePage() {
             </p>
           </div>
         </Card>
+        )}
 
-        {/* Network */}
+        {/* Network – Admin only */}
+        {isAdmin && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
@@ -620,8 +637,10 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+        )}
 
-        {/* Observability Settings */}
+        {/* Observability Settings – Admin only */}
+        {isAdmin && (
         <Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
@@ -727,6 +746,7 @@ export default function ProfilePage() {
             </div>
           </div>
         </Card>
+        )}
 
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">

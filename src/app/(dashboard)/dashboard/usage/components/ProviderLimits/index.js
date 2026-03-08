@@ -7,7 +7,7 @@ import QuotaTable from "./QuotaTable";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
-import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_SUPPORTED_PROVIDERS, QUOTA_SUPPORTED_PROVIDERS_DETAIL, AI_PROVIDERS } from "@/shared/constants/providers";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 
@@ -21,23 +21,46 @@ export default function ProviderLimits() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [connectionsError, setConnectionsError] = useState(null);
+  /** null = show all; Set of provider names = show only those */
+  const [visibleProviders, setVisibleProviders] = useState(null);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
 
-  // Fetch all provider connections
+  // Fetch current user's provider connections (no admin required)
   const fetchConnections = useCallback(async () => {
+    setConnectionsError(null);
     try {
-      const response = await fetch("/api/providers/client");
-      if (!response.ok) throw new Error("Failed to fetch connections");
-      
+      const response = await fetch("/api/providers/me");
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const apiMessage = body.error || body.message;
+        const friendlyMessage =
+          response.status === 401
+            ? "Please sign in again to load your providers."
+            : response.status === 403
+              ? (apiMessage || "You don’t have permission to view provider connections.") + " If you need access, contact your administrator."
+              : response.status >= 500
+                ? "Something went wrong on our side. Please try again in a moment."
+                : apiMessage || `Request failed (${response.status}). Please try again.`;
+        setConnectionsError(friendlyMessage);
+        setConnections([]);
+        return [];
+      }
+
       const data = await response.json();
       const connectionList = data.connections || [];
       setConnections(connectionList);
       return connectionList;
     } catch (error) {
-      console.error("Error fetching connections:", error);
+      const isNetwork = error.name === "TypeError" && error.message.includes("fetch");
+      const friendlyMessage = isNetwork
+        ? "Unable to reach the server. Check your connection and try again."
+        : error.message || "Something went wrong. Please try again.";
+      setConnectionsError(friendlyMessage);
       setConnections([]);
+      console.error("Error fetching connections:", error);
       return [];
     }
   }, []);
@@ -65,11 +88,12 @@ export default function ProviderLimits() {
         if (response.status === 401) {
           // Auth error - show message instead of throwing
           console.warn(`[ProviderLimits] Auth error for ${provider}:`, errorMsg);
+          const contactAdminHint = " If you need access, contact your administrator.";
           setQuotaData((prev) => ({
             ...prev,
             [connectionId]: {
               quotas: [],
-              message: errorMsg,
+              message: (errorMsg || "Authentication required.") + contactAdminHint,
             },
           }));
           return;
@@ -266,8 +290,43 @@ export default function ProviderLimits() {
     return a.provider.localeCompare(b.provider);
   });
 
-  // Calculate summary stats
-  const totalProviders = sortedConnections.length;
+  // Filter by user-selected providers (visibleProviders null = show all)
+  const displayConnections =
+    visibleProviders === null
+      ? sortedConnections
+      : sortedConnections.filter((c) => visibleProviders.has(c.provider));
+
+  const uniqueProviderNames = [...new Set(sortedConnections.map((c) => c.provider))];
+
+  const toggleProviderFilter = useCallback((provider) => {
+    if (provider === null) {
+      setVisibleProviders(null);
+      return;
+    }
+    setVisibleProviders((prev) => {
+      const next = new Set(prev === null ? [] : prev);
+      if (next.has(provider)) {
+        next.delete(provider);
+        return next.size === 0 ? null : next;
+      }
+      next.add(provider);
+      return next;
+    });
+  }, []);
+
+  // Sync visibleProviders when sortedConnections change (e.g. after fetch) so Set stays valid
+  useEffect(() => {
+    if (visibleProviders !== null && visibleProviders.size > 0) {
+      setVisibleProviders((prev) => {
+        const valid = new Set(sortedConnections.map((c) => c.provider));
+        const next = new Set([...prev].filter((p) => valid.has(p)));
+        return next.size === 0 ? null : next;
+      });
+    }
+  }, [sortedConnections.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Calculate summary stats (from displayed set)
+  const totalProviders = displayConnections.length;
   const activeWithLimits = Object.values(quotaData).filter(
     (data) => data?.quotas?.length > 0
   ).length;
@@ -284,22 +343,87 @@ export default function ProviderLimits() {
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
-  // Empty state
+  // Error state (fetch failed)
+  if (connectionsError) {
+    return (
+      <div className="space-y-6">
+        <Card padding="lg">
+          <div className="text-center py-12">
+            <span className="material-symbols-outlined text-[64px] text-amber-500 dark:text-amber-400 opacity-80">
+              error_outline
+            </span>
+            <h3 className="mt-4 text-lg font-semibold text-text-primary">
+              Couldn’t load providers
+            </h3>
+            <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+              {connectionsError}
+            </p>
+            <Button
+              variant="primary"
+              size="md"
+              icon="refresh"
+              className="mt-6"
+              onClick={() => {
+                setConnectionsLoading(true);
+                fetchConnections().finally(() => setConnectionsLoading(false));
+              }}
+              disabled={connectionsLoading}
+              loading={connectionsLoading}
+            >
+              Try again
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Empty state (no connections)
   if (!connectionsLoading && sortedConnections.length === 0) {
     return (
-      <Card padding="lg">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            cloud_off
-          </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
-            No Providers Connected
-          </h3>
-          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            Connect to providers with OAuth to track your API quota limits and usage.
+      <div className="space-y-6">
+        <Card padding="lg">
+          <div className="text-center py-12">
+            <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
+              cloud_off
+            </span>
+            <h3 className="mt-4 text-lg font-semibold text-text-primary">
+              No Providers Connected
+            </h3>
+            <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+              Connect to providers with OAuth (in CLI tools or profile) to track your API quota limits and usage.
+            </p>
+          </div>
+        </Card>
+        <Card padding="lg">
+          <h3 className="text-sm font-semibold text-text-primary mb-2">Providers that support quota tracking</h3>
+          <p className="text-sm text-text-muted mb-4">
+            These providers expose usage/limits when connected via OAuth:
           </p>
-        </div>
-      </Card>
+          <ul className="space-y-3">
+            {QUOTA_SUPPORTED_PROVIDERS_DETAIL.map((p) => {
+              const meta = AI_PROVIDERS[p.id];
+              const iconName = meta?.icon || "code";
+              return (
+                <li key={p.id} className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="material-symbols-outlined text-[20px] text-text-muted shrink-0"
+                      style={meta?.color ? { color: meta.color } : undefined}
+                      aria-hidden
+                    >
+                      {iconName}
+                    </span>
+                    <span className="text-sm font-medium text-text-primary capitalize">{p.name}</span>
+                    <span className="text-xs text-text-muted">— {p.quotaTypes.join(", ")}</span>
+                  </div>
+                  <p className="text-xs text-text-muted pl-7">{p.description}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      </div>
     );
   }
 
@@ -350,9 +474,81 @@ export default function ProviderLimits() {
         </div>
       </div>
 
+      {/* Provider filter: choose which providers to show */}
+      {uniqueProviderNames.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-text-muted mr-1">Show:</span>
+          <button
+            type="button"
+            onClick={() => toggleProviderFilter(null)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              visibleProviders === null
+                ? "bg-primary text-white"
+                : "bg-bg-subtle text-text-muted hover:bg-black/5 dark:hover:bg-white/5"
+            }`}
+          >
+            All
+          </button>
+          {uniqueProviderNames.map((name) => {
+            const isActive = visibleProviders === null || visibleProviders.has(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => toggleProviderFilter(name)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
+                  isActive
+                    ? "bg-primary/15 text-primary dark:bg-primary/20"
+                    : "bg-bg-subtle text-text-muted hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Supported providers detail */}
+      <Card padding="lg">
+        <div className="flex items-start gap-3">
+          <span className="material-symbols-outlined text-primary text-[24px] shrink-0" aria-hidden>
+            info
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-text-primary mb-1">Providers that support quota tracking</h3>
+            <p className="text-sm text-text-muted mb-4">
+              Connect via OAuth in CLI tools or profile to see limits and usage below. Each provider exposes different quota types.
+            </p>
+            <ul className="space-y-3">
+              {QUOTA_SUPPORTED_PROVIDERS_DETAIL.map((p) => {
+                const meta = AI_PROVIDERS[p.id];
+                const iconName = meta?.icon || "code";
+                return (
+                  <li key={p.id} className="flex flex-col gap-0.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="material-symbols-outlined text-[20px] text-text-muted shrink-0"
+                        style={meta?.color ? { color: meta.color } : undefined}
+                        aria-hidden
+                      >
+                        {iconName}
+                      </span>
+                      <span className="text-sm font-medium text-text-primary capitalize">{p.name}</span>
+                      <span className="text-xs text-text-muted">— {p.quotaTypes.join(", ")}</span>
+                    </div>
+                    <p className="text-xs text-text-muted pl-7">{p.description}</p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      </Card>
+
       {/* Provider Cards Grid */}
       <div className="flex flex-col gap-4">
-        {sortedConnections.map((conn) => {
+        {displayConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
@@ -414,8 +610,14 @@ export default function ProviderLimits() {
                   <div className="text-center py-8">
                     <p className="text-sm text-text-muted">{quota.message}</p>
                   </div>
+                ) : quota?.quotas?.length > 0 ? (
+                  <QuotaTable quotas={quota.quotas} />
                 ) : (
-                  <QuotaTable quotas={quota?.quotas} />
+                  <div className="text-center py-8 text-text-muted">
+                    <span className="material-symbols-outlined text-[32px] opacity-50 block mb-2">pie_chart</span>
+                    <p className="text-sm">No quota data available</p>
+                    <p className="text-xs mt-1 opacity-80">Provider may not expose usage API or limits.</p>
+                  </div>
                 )}
               </div>
             </Card>

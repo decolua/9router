@@ -1,6 +1,6 @@
-# Contributing to 9Router
+# Contributing to EGS Proxy AI
 
-Thank you for considering contributing to 9Router.
+Thank you for considering contributing to EGS Proxy AI.
 
 ## Development guidelines
 

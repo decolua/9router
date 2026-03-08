@@ -51,6 +51,16 @@ function getProviderName(providerId, cache) {
   return providerConfig?.name || providerId;
 }
 
+/** Normalize token counts for display (support both prompt_tokens/completion_tokens and input_tokens/output_tokens). */
+function getInputTokens(tokens) {
+  if (!tokens || typeof tokens !== "object") return 0;
+  return tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+}
+function getOutputTokens(tokens) {
+  if (!tokens || typeof tokens !== "object") return 0;
+  return tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+}
+
 function CollapsibleSection({ title, children, defaultOpen = false, icon = null }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
@@ -276,10 +286,10 @@ export default function RequestDetailsTab() {
                        </span>
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {detail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                      {getInputTokens(detail.tokens).toLocaleString()}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {detail.tokens?.completion_tokens?.toLocaleString() || 0}
+                      {getOutputTokens(detail.tokens).toLocaleString()}
                     </td>
                     <td className="p-4 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">
@@ -359,13 +369,13 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                  {getInputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
               <div>
                 <span className="text-text-muted">Output Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
+                  {getOutputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
             </div>

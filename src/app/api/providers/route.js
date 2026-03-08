@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { requireAdmin } from "@/lib/auth/helpers";
+import { requireAuth, requireAdmin } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/providers - List all connections (admin only, global config)
+// GET /api/providers - List all connections (any authenticated user can view; config is global)
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireAuth(request);
     const connections = await getProviderConnections({}, null);
 
     // Build nodeNameMap for compatible providers (id → name)

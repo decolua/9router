@@ -58,7 +58,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       if (action === "start") {
         const keyToUse = selectedApiKey?.trim()
           || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-          || (!cloudEnabled ? "sk_9router" : null);
+          || (!cloudEnabled ? "sk_egs_proxy_ai" : null);
 
         const res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
@@ -138,10 +138,10 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Purpose & How it works */}
           <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router
+              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from EGS Proxy AI
             </p>
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot
+              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → EGS Proxy AI → response to Antigravity/Copilot
             </p>
           </div>
 
@@ -159,7 +159,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 </select>
               ) : (
                 <span className="text-xs text-text-muted">
-                  {cloudEnabled ? "No API keys — create one in Keys page" : "sk_9router (default)"}
+                  {cloudEnabled ? "No API keys — create one in Keys page" : "sk_egs_proxy_ai (default)"}
                 </span>
               )}
             </div>
@@ -202,7 +202,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {!isRunning && isWindows && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
               <span className="material-symbols-outlined text-[14px]">warning</span>
-              <span>Windows: Run 9Router terminal as Administrator</span>
+              <span>Windows: Run EGS Proxy AI terminal as Administrator</span>
             </div>
           )}
         </div>

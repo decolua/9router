@@ -1,5 +1,5 @@
 /**
- * PostgreSQL adapter skeleton for 9Router (Phase 5 – multi-user storage).
+ * PostgreSQL adapter skeleton for EGS Proxy AI (Phase 5 – multi-user storage).
  * When DATABASE_URL is set, this module can be used to back localDb/usageDb
  * instead of JSON files. Current implementation: pool only; data access
  * still goes through localDb/usageDb (file-based) until full migration.

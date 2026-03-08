@@ -55,6 +55,16 @@ export function extractUsageFromResponse(responseBody) {
   return null;
 }
 
+/** Normalize tokens to always have prompt_tokens and completion_tokens (for DB and UI). */
+function normalizeTokensForStorage(tokens) {
+  if (!tokens || typeof tokens !== "object") return { prompt_tokens: 0, completion_tokens: 0 };
+  return {
+    ...tokens,
+    prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
+    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
+  };
+}
+
 export function buildRequestDetail(base, overrides = {}) {
   return {
     provider: base.provider || "unknown",
@@ -62,7 +72,7 @@ export function buildRequestDetail(base, overrides = {}) {
     connectionId: base.connectionId || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
-    tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
+    tokens: normalizeTokensForStorage(base.tokens),
     request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,

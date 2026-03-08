@@ -1,7 +1,7 @@
 export default function manifest() {
   return {
-    name: '9Router - AI Infrastructure Management',
-    short_name: '9Router',
+    name: 'EGS Proxy AI - AI Infrastructure Management',
+    short_name: 'EGS Proxy AI',
     description: 'One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.',
     start_url: '/',
     display: 'standalone',

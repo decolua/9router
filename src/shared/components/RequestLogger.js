@@ -114,7 +114,7 @@ export default function RequestLogger() {
         </div>
       </Card>
       <div className="text-[10px] text-text-muted italic">
-        Logs are saved to log.txt in the application data directory.
+        Logs are stored in the database (PostgreSQL). When DATABASE_URL is not set, they are saved to log.txt in the application data directory.
       </div>
     </div>
   );

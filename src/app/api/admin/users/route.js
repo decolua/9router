@@ -1,26 +1,42 @@
 import { NextResponse } from "next/server";
 import { getUsers } from "@/lib/localDb";
-import { requireAdmin, getUserFromRequest } from "@/lib/auth/helpers";
+import { getUsageStats } from "@/lib/usageDb";
+import { requireAdmin } from "@/lib/auth/helpers";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
-    // Verify admin access
-    const admin = requireAdmin(request);
-    
-    // Get all users
+    requireAdmin(request);
+
     const users = await getUsers();
-    
-    // Return user list (excluding sensitive fields)
-    const userList = users.map(user => ({
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      oauthProvider: user.oauthProvider,
-      isAdmin: user.isAdmin,
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt,
-    }));
-    
+
+    const userList = await Promise.all(
+      users.map(async (user) => {
+        let usageSummary = { requests7d: 0, cost7d: 0 };
+        try {
+          const stats = await getUsageStats("7d", user.id);
+          usageSummary = {
+            requests7d: stats.totalRequests ?? 0,
+            cost7d: stats.totalCost ?? 0,
+          };
+        } catch {
+          // Ignore per-user usage fetch errors
+        }
+        return {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          oauthProvider: user.oauthProvider,
+          isAdmin: user.isAdmin,
+          status: user.status ?? "active",
+          createdAt: user.createdAt,
+          lastLoginAt: user.lastLoginAt,
+          usageSummary,
+        };
+      })
+    );
+
     return NextResponse.json(userList);
   } catch (error) {
     console.error("[API] Failed to get users:", error);

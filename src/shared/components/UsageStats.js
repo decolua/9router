@@ -180,19 +180,47 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
+const VALID_PERIODS = new Set(PERIODS.map((p) => p.value));
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const sortBy = searchParams.get("sortBy") || "rawModel";
   const sortOrder = searchParams.get("sortOrder") || "asc";
+  const periodFromUrl = searchParams.get("period");
+  const initialPeriod = periodFromUrl && VALID_PERIODS.has(periodFromUrl) ? periodFromUrl : "7d";
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [providers, setProviders] = useState([]);
-  const [period, setPeriod] = useState("7d");
+  const [period, setPeriodState] = useState(initialPeriod);
+
+  const setPeriod = useCallback(
+    (value) => {
+      setPeriodState(value);
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("period", value);
+      router.replace(`/dashboard/usage?${params.toString()}`, { scroll: false });
+    },
+    [searchParams, router]
+  );
+
+  useEffect(() => {
+    if (periodFromUrl && VALID_PERIODS.has(periodFromUrl) && periodFromUrl !== period) {
+      setPeriodState(periodFromUrl);
+    }
+  }, [periodFromUrl]);
 
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
@@ -391,10 +419,37 @@ export default function UsageStats() {
     </div>
   );
 
+  const handleExportCSV = () => {
+    if (!stats?.recentRequests?.length) return;
+    const rows = stats.recentRequests;
+    const headers = ["Timestamp", "Model", "Provider", "Prompt Tokens", "Completion Tokens", "Status"];
+    const csvRows = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [
+          r.timestamp ?? "",
+          `"${(r.model ?? "").replace(/"/g, '""')}"`,
+          r.provider ?? "",
+          r.promptTokens ?? 0,
+          r.completionTokens ?? 0,
+          r.status ?? "ok",
+        ].join(",")
+      ),
+    ];
+    const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    downloadBlob(blob, `usage-${period}-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  const handleExportJSON = () => {
+    if (!stats) return;
+    const blob = new Blob([JSON.stringify(stats, null, 2)], { type: "application/json" });
+    downloadBlob(blob, `usage-${period}-${new Date().toISOString().slice(0, 10)}.json`);
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Period selector */}
-      <div className="flex items-center gap-2 self-end">
+      {/* Period selector + Export */}
+      <div className="flex flex-wrap items-center gap-2 justify-end">
         <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
           {PERIODS.map((p) => (
             <button
@@ -407,6 +462,25 @@ export default function UsageStats() {
             </button>
           ))}
         </div>
+        {stats && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={!stats?.recentRequests?.length}
+              className="px-3 py-1 rounded-md text-sm font-medium border border-border bg-bg-subtle text-text-muted hover:text-text hover:bg-bg-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={handleExportJSON}
+              className="px-3 py-1 rounded-md text-sm font-medium border border-border bg-bg-subtle text-text-muted hover:text-text hover:bg-bg-hover"
+            >
+              Export JSON
+            </button>
+          </div>
+        )}
         {fetching && (
           <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
         )}

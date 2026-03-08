@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
-import { requireAdmin } from "@/lib/auth/helpers";
+import { requireAuth, requireAdmin } from "@/lib/auth/helpers";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +14,10 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: "https://api.anthropic.com/v1",
 };
 
-// GET /api/provider-nodes - List all provider nodes (admin only)
+// GET /api/provider-nodes - List all provider nodes (any authenticated user can view; config is global)
 export async function GET(request) {
   try {
-    await requireAdmin(request);
+    await requireAuth(request);
     const nodes = await getProviderNodes();
     return NextResponse.json({ nodes });
   } catch (error) {

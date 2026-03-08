@@ -32,7 +32,7 @@ export default function DroidToolCard({
 
   const getConfigStatus = () => {
     if (!droidStatus?.installed) return null;
-    const currentConfig = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+    const currentConfig = droidStatus.settings?.customModels?.find(m => m.id === "custom:EGSProxyAI-0");
     if (!currentConfig) return "not_configured";
     const localMatch = currentConfig.baseUrl?.includes("localhost") || currentConfig.baseUrl?.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentConfig.baseUrl?.startsWith(CLOUD_URL);
@@ -74,7 +74,7 @@ export default function DroidToolCard({
   useEffect(() => {
     if (droidStatus?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
-      const customModel = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+      const customModel = droidStatus.settings?.customModels?.find(m => m.id === "custom:EGSProxyAI-0");
       if (customModel) {
         if (customModel.model) setSelectedModel(customModel.model);
         if (customModel.apiKey && apiKeys?.some(k => k.key === customModel.apiKey)) {
@@ -113,7 +113,7 @@ export default function DroidToolCard({
     try {
       const keyToUse = selectedApiKey?.trim() 
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+        || (!cloudEnabled ? "sk_egs_proxy_ai" : null);
 
       const res = await fetch("/api/cli-tools/droid-settings", {
         method: "POST",
@@ -167,13 +167,13 @@ export default function DroidToolCard({
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_egs_proxy_ai" : "<API_KEY_FROM_DASHBOARD>");
 
     const settingsContent = {
       customModels: [
         {
           model: selectedModel || "provider/model-id",
-          id: "custom:9Router-0",
+          id: "custom:EGSProxyAI-0",
           index: 0,
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
@@ -242,12 +242,12 @@ export default function DroidToolCard({
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}
-                {droidStatus?.settings?.customModels?.find(m => m.id === "custom:9Router-0")?.baseUrl && (
+                {droidStatus?.settings?.customModels?.find(m => m.id === "custom:EGSProxyAI-0")?.baseUrl && (
                   <div className="flex items-center gap-2">
                     <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
                     <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                     <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
-                      {droidStatus.settings.customModels.find(m => m.id === "custom:9Router-0").baseUrl}
+                      {droidStatus.settings.customModels.find(m => m.id === "custom:EGSProxyAI-0").baseUrl}
                     </span>
                   </div>
                 )}
@@ -280,7 +280,7 @@ export default function DroidToolCard({
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_egs_proxy_ai (default)"}
                     </span>
                   )}
                 </div>
@@ -306,7 +306,7 @@ export default function DroidToolCard({
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!droidStatus?.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!droidStatus?.hasEgsProxyAi} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>

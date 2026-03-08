@@ -1,5 +1,6 @@
 import "open-sse/index.js";
 
+import { getSettings } from "@/lib/localDb";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -34,8 +35,18 @@ export async function handleChat(request, clientRawRequest = null) {
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
     const url = new URL(request.url);
+    let endpoint = url.pathname;
+    try {
+      const settings = await getSettings();
+      const tunnelUrl = settings?.tunnelUrl;
+      if (tunnelUrl && typeof tunnelUrl === "string") {
+        const tunnelHost = new URL(tunnelUrl.startsWith("http") ? tunnelUrl : `https://${tunnelUrl}`).hostname;
+        const reqHost = request.headers.get("host")?.split(":")[0]?.toLowerCase();
+        if (reqHost === tunnelHost) endpoint = `tunnel:${endpoint}`;
+      }
+    } catch (_) { /* ignore */ }
     clientRawRequest = {
-      endpoint: url.pathname,
+      endpoint,
       body,
       headers: Object.fromEntries(request.headers.entries())
     };

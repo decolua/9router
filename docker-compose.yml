@@ -3,18 +3,18 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: 9router-pg
+    container_name: egs-proxy-ai-pg
     environment:
-      POSTGRES_USER: 9router
-      POSTGRES_PASSWORD: 9router
-      POSTGRES_DB: 9router
+      POSTGRES_USER: egs_proxy_ai
+      POSTGRES_PASSWORD: egs_proxy_ai
+      POSTGRES_DB: egs_proxy_ai
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U 9router -d 9router"]
+      test: ["CMD-SHELL", "pg_isready -U egs_proxy_ai -d egs_proxy_ai"]
       interval: 2s
       timeout: 5s
       retries: 10

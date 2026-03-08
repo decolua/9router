@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { translate } from "@/i18n/runtime";
+import { APIKEY_PROVIDERS, FREE_PROVIDERS, OAUTH_PROVIDERS } from "@/shared/constants/providers.js";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -18,6 +20,61 @@ const TUNNEL_BENEFITS = [
 ];
 
 const TUNNEL_ACTION_TIMEOUT_MS = 90000;
+
+/** Example model string for basic usage table (provider/model-id). */
+function getExampleModelForProvider(providerId, _providerName) {
+  const examples = {
+    openai: "openai/gpt-4o",
+    anthropic: "anthropic/claude-3-5-sonnet",
+    openrouter: "openrouter/meta-llama/llama-3.1-8b-instruct",
+    deepseek: "deepseek/deepseek-chat",
+    gemini: "gemini/gemini-2.0-flash",
+    groq: "groq/llama-3.3-70b-versatile",
+    xai: "xai/grok-3-mini",
+    mistral: "mistral/mistral-large-latest",
+    glm: "glm/glm-4-flash",
+    "glm-cn": "glm-cn/glm-4-flash",
+    kimi: "kimi/moonshot-v1",
+    minimax: "minimax/abab6.5s-chat",
+    "minimax-cn": "minimax-cn/abab6.5s-chat",
+    alicode: "alicode/qwen-plus",
+    "alicode-intl": "alicode-intl/qwen-plus",
+    qwen: "qwen/qwen-2.5-coder-32b",
+    "gemini-cli": "gemini-cli/gemini-2.0-flash",
+    iflow: "iflow/iflow-model",
+    kiro: "kiro/amazon-codewhisperer",
+    claude: "claude/claude-3-5-sonnet",
+    antigravity: "antigravity/claude-3-5-sonnet",
+    codex: "codex/gpt-4o",
+    github: "github/copilot",
+    cursor: "cursor/claude-3-5-sonnet",
+    kilocode: "kilocode/model",
+    cline: "cline/claude-3-5-sonnet",
+    perplexity: "perplexity/sonar",
+    together: "together/meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    fireworks: "fireworks/llama-v3p3-70b-instruct",
+    cerebras: "cerebras/llama-3.3-70b",
+    cohere: "cohere/command-r-plus",
+    nvidia: "nvidia/nemotron-nano-12b-v2",
+    nebius: "nebius/llama-3.3-70b",
+    siliconflow: "siliconflow/deepseek-v3",
+    hyperbolic: "hyperbolic/model",
+    deepgram: "deepgram/nova-2",
+    assemblyai: "assemblyai/model",
+    nanobanana: "nanobanana/model",
+    chutes: "chutes/model",
+  };
+  return examples[providerId] || `${providerId}/model-id`;
+}
+
+/** Short note for provider (auth type / config). Keys for i18n. */
+function getProviderUsageNote(providerId) {
+  const oauthIds = new Set(Object.keys(OAUTH_PROVIDERS));
+  const freeIds = new Set(Object.keys(FREE_PROVIDERS));
+  if (oauthIds.has(providerId)) return "OAuth — sign in at Dashboard → Providers";
+  if (freeIds.has(providerId)) return "Free — configure at Dashboard → Providers";
+  return "API key — add key at Dashboard → Providers";
+}
 
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -49,6 +106,7 @@ export default function APIPageClient({ machineId }) {
   const [tunnelStatus, setTunnelStatus] = useState(null);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [showEnableModal, setShowEnableModal] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
@@ -212,9 +270,10 @@ export default function APIPageClient({ machineId }) {
 
   const loadSettings = async () => {
     try {
-      const [settingsRes, tunnelRes] = await Promise.all([
+      const [settingsRes, tunnelRes, meRes] = await Promise.all([
         fetch("/api/settings"),
-        fetch("/api/tunnel/status")
+        fetch("/api/tunnel/status"),
+        fetch("/api/auth/me", { credentials: "include" })
       ]);
       if (settingsRes.ok) {
         // Settings loaded (requireApiKey is always enforced server-side; no toggle)
@@ -225,6 +284,8 @@ export default function APIPageClient({ machineId }) {
         setTunnelUrl(data.tunnelUrl || "");
         setTunnelShortId(data.shortId || "");
       }
+      const meData = meRes.ok ? await meRes.json() : {};
+      if (meData.isAdmin) setIsAdmin(true);
     } catch (error) {
       console.log("Error loading settings:", error);
     }
@@ -332,7 +393,7 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleDeleteKey = async (id) => {
-    if (!confirm("Delete this API key?")) return;
+    if (!confirm(translate("Delete this API key?"))) return;
 
     try {
       const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
@@ -411,32 +472,37 @@ export default function APIPageClient({ machineId }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {tunnelEnabled ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                icon="cloud_off"
-                onClick={() => setShowDisableModal(true)}
-                disabled={tunnelLoading}
-                className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
-              >
-                Disable Tunnel
-              </Button>
-            ) : (
-              <Button
-                variant="primary"
-                icon="cloud_upload"
-                onClick={() => setShowEnableModal(true)}
-                disabled={tunnelLoading}
-                className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
-              >
-                {tunnelLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                    {tunnelProgress || "Creating tunnel..."}
-                  </span>
-                ) : "Enable Tunnel"}
-              </Button>
+            {isAdmin && (
+              tunnelEnabled ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="cloud_off"
+                  onClick={() => setShowDisableModal(true)}
+                  disabled={tunnelLoading}
+                  className="bg-red-500/10! text-red-500! hover:bg-red-500/20! border-red-500/30!"
+                >
+                  Disable Tunnel
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  icon="cloud_upload"
+                  onClick={() => setShowEnableModal(true)}
+                  disabled={tunnelLoading}
+                  className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
+                >
+                  {tunnelLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                      {tunnelProgress || "Creating tunnel..."}
+                    </span>
+                  ) : "Enable Tunnel"}
+                </Button>
+              )
+            )}
+            {!isAdmin && tunnelEnabled && (
+              <span className="text-xs text-text-muted">Only admins can turn the tunnel off</span>
             )}
           </div>
         </div>
@@ -467,6 +533,91 @@ export default function APIPageClient({ machineId }) {
             {tunnelStatus.message}
           </div>
         )}
+      </Card>
+
+      {/* Basic usage per provider */}
+      <Card>
+        <h2 className="text-lg font-semibold mb-1">Basic usage</h2>
+        <p className="text-sm text-text-muted mb-4">
+          Send requests to the endpoint with your API key; use model format <code className="text-xs bg-surface px-1 rounded" data-i18n-skip="true">provider/model-id</code>. Configure API keys or OAuth at Dashboard → Providers.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Authentication</p>
+            <code className="block text-sm bg-surface border border-border rounded px-2 py-1.5 font-mono" data-i18n-skip="true">
+              Authorization: Bearer &lt;api_key&gt;
+            </code>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Main endpoints</p>
+            <div className="overflow-x-auto rounded border border-border">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-sidebar/50 border-b border-border">
+                    <th className="text-left py-2 px-3 font-medium">Method</th>
+                    <th className="text-left py-2 px-3 font-medium">Path</th>
+                    <th className="text-left py-2 px-3 font-medium">Description</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  <tr><td className="py-2 px-3 font-mono" data-i18n-skip="true">GET</td><td className="py-2 px-3 font-mono" data-i18n-skip="true">/v1/models</td><td className="py-2 px-3 text-text-muted">List models (from configured providers)</td></tr>
+                  <tr><td className="py-2 px-3 font-mono" data-i18n-skip="true">POST</td><td className="py-2 px-3 font-mono" data-i18n-skip="true">/v1/chat/completions</td><td className="py-2 px-3 text-text-muted">Chat (OpenAI format), used for most providers</td></tr>
+                  <tr><td className="py-2 px-3 font-mono" data-i18n-skip="true">POST</td><td className="py-2 px-3 font-mono" data-i18n-skip="true">/v1/messages</td><td className="py-2 px-3 text-text-muted">Chat (Claude/Anthropic format)</td></tr>
+                  <tr><td className="py-2 px-3 font-mono" data-i18n-skip="true">POST</td><td className="py-2 px-3 font-mono" data-i18n-skip="true">/v1/embeddings</td><td className="py-2 px-3 text-text-muted">Embeddings (OpenAI-compatible)</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">Example model per provider</p>
+            <p className="text-sm text-text-muted mb-2">
+              In the request body, set <code className="text-xs bg-surface px-1 rounded" data-i18n-skip="true">model</code> = <code className="text-xs bg-surface px-1 rounded" data-i18n-skip="true">provider/model-id</code>. Examples:
+            </p>
+            <div className="overflow-x-auto rounded border border-border max-h-[320px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-sidebar z-10">
+                  <tr className="border-b border-border">
+                    <th className="text-left py-2 px-3 font-medium">Provider</th>
+                    <th className="text-left py-2 px-3 font-medium">Example model</th>
+                    <th className="text-left py-2 px-3 font-medium">Note</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {[
+                    ...Object.entries(FREE_PROVIDERS),
+                    ...Object.entries(OAUTH_PROVIDERS),
+                    ...Object.entries(APIKEY_PROVIDERS),
+                  ].map(([id, p]) => {
+                    const example = getExampleModelForProvider(id, p.name);
+                    return (
+                      <tr key={id}>
+                        <td className="py-2 px-3">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-text-muted ml-1 text-xs">({id})</span>
+                        </td>
+                        <td className="py-2 px-3 font-mono text-xs" data-i18n-skip="true">{example}</td>
+                        <td className="py-2 px-3 text-xs text-text-muted">{getProviderUsageNote(id)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-1">Example curl (chat)</p>
+            <pre className="text-xs bg-surface border border-border rounded p-3 overflow-x-auto font-mono text-text-muted">
+{`curl -X POST "${currentEndpoint}/chat/completions" \\
+  -H "Authorization: Bearer YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'`}
+            </pre>
+          </div>
+        </div>
       </Card>
 
       {/* API Keys */}
@@ -537,7 +688,8 @@ export default function APIPageClient({ machineId }) {
                     checked={key.isActive ?? true}
                     onChange={(checked) => {
                       if (key.isActive && !checked) {
-                        if (confirm(`Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`)) {
+                        const msg = translate("Pause API key? This key will stop working immediately but can be resumed later.");
+                        if (confirm(`${msg}\n\n"${key.name}"`)) {
                           handleToggleKey(key.id, checked);
                         }
                       } else {
@@ -647,7 +799,7 @@ export default function APIPageClient({ machineId }) {
                   Cloudflare Tunnel
                 </p>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                  Expose your local EGS Proxy AI to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
                 </p>
               </div>
             </div>

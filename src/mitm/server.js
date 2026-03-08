@@ -190,7 +190,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
-      throw new Error(`9Router ${response.status}: ${errText}`);
+      throw new Error(`EGS Proxy AI ${response.status}: ${errText}`);
     }
 
     const ct = response.headers.get("content-type") || "application/json";
@@ -222,7 +222,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
   const bodyBuffer = await collectBodyRaw(req);
   if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
 
-  // Anti-loop: requests originating from 9Router bypass interception
+  // Anti-loop: requests originating from EGS Proxy AI bypass interception
   if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
     return passthrough(req, res, bodyBuffer);
   }

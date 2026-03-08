@@ -125,10 +125,10 @@ export default function ClaudeToolCard({
     try {
       const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
       
-      // Get key from dropdown, fallback to first key or sk_9router for localhost
+      // Get key from dropdown, fallback to first key or sk_egs_proxy_ai for localhost
       const keyToUse = selectedApiKey?.trim() 
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+        || (!cloudEnabled ? "sk_egs_proxy_ai" : null);
       
       if (keyToUse) {
         env.ANTHROPIC_AUTH_TOKEN = keyToUse;
@@ -190,7 +190,7 @@ export default function ClaudeToolCard({
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_egs_proxy_ai" : "<API_KEY_FROM_DASHBOARD>");
     const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
     tool.defaultModels.forEach((model) => {
       const targetModel = modelMappings[model.alias];
@@ -304,7 +304,7 @@ export default function ClaudeToolCard({
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_egs_proxy_ai (default)"}
                     </span>
                   )}
                 </div>
@@ -332,7 +332,7 @@ export default function ClaudeToolCard({
                 <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!hasActiveProviders} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!claudeStatus?.has9Router} loading={restoring}>
+                <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!claudeStatus?.hasEgsProxyAi} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>

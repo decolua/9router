@@ -5,11 +5,13 @@ import os from "os";
 import { execSync, spawn } from "child_process";
 import { savePid, loadPid, clearPid } from "./state.js";
 
-const BIN_DIR = path.join(os.homedir(), ".9router", "bin");
+const BIN_DIR = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, "bin")
+  : path.join(os.homedir(), ".egs-proxy-ai", "bin");
 const BINARY_NAME = "cloudflared";
 const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
-const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
+const BIN_PATH = process.env.CLOUDFLARED_PATH || path.join(BIN_DIR, BIN_NAME);
 
 const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
 
@@ -83,6 +85,13 @@ function downloadFile(url, dest) {
 }
 
 export async function ensureCloudflared() {
+  if (process.env.CLOUDFLARED_PATH && fs.existsSync(process.env.CLOUDFLARED_PATH)) {
+    if (!IS_WINDOWS) {
+      try { fs.chmodSync(process.env.CLOUDFLARED_PATH, "755"); } catch (_) { /* ignore */ }
+    }
+    return process.env.CLOUDFLARED_PATH;
+  }
+
   if (!fs.existsSync(BIN_DIR)) {
     fs.mkdirSync(BIN_DIR, { recursive: true });
   }

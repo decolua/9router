@@ -1,33 +1,40 @@
-import Database from "better-sqlite3";
-import path from "path";
-import os from "os";
-import fs from "fs";
-
-const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
-
-// ============================================================================
-// CONFIGURATION: Batch Processing Settings
-// ============================================================================
-
 /**
- * Get observability configuration from settings.
- * Falls back to environment variables, then defaults.
+ * Request details (observability) stored in PostgreSQL.
+ * Requires DATABASE_URL. No SQLite dependency.
  */
+import { getPool } from "@/lib/db/postgres.js";
+
+const isCloud = typeof caches !== "undefined" || typeof caches === "object";
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
 async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("@/lib/localDb");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.observabilityEnabled === "boolean"
-      ? settings.observabilityEnabled
-      : envEnabled;
+    const enabled =
+      typeof settings.observabilityEnabled === "boolean"
+        ? settings.observabilityEnabled
+        : envEnabled;
 
     return {
       enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || '1000', 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || '20', 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || '5000', 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || '1024', 10)) * 1024
+      maxRecords:
+        settings.observabilityMaxRecords ||
+        parseInt(process.env.OBSERVABILITY_MAX_RECORDS || "1000", 10),
+      batchSize:
+        settings.observabilityBatchSize ||
+        parseInt(process.env.OBSERVABILITY_BATCH_SIZE || "20", 10),
+      flushIntervalMs:
+        settings.observabilityFlushIntervalMs ||
+        parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || "5000", 10),
+      maxJsonSize:
+        (settings.observabilityMaxJsonSize ||
+          parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "1024", 10)) *
+        1024,
     };
   } catch (error) {
     console.error("[requestDetailsDb] Failed to load observability config:", error);
@@ -36,252 +43,146 @@ async function getObservabilityConfig() {
       maxRecords: 1000,
       batchSize: 20,
       flushIntervalMs: 5000,
-      maxJsonSize: 1024 * 1024
+      maxJsonSize: 1024 * 1024,
     };
   }
 }
 
-// Cache config to avoid repeated database reads
 let cachedConfig = null;
 let cachedConfigTs = 0;
 const CONFIG_CACHE_TTL_MS = 5000;
 
 async function getCachedObservabilityConfig() {
-  if (!cachedConfig || (Date.now() - cachedConfigTs) > CONFIG_CACHE_TTL_MS) {
+  if (!cachedConfig || Date.now() - cachedConfigTs > CONFIG_CACHE_TTL_MS) {
     cachedConfig = await getObservabilityConfig();
     cachedConfigTs = Date.now();
   }
-
   return cachedConfig;
 }
 
-let dbInstance = null;
-
-// Get app name
-function getAppName() {
-  return "9router";
-}
-
-// Get user data directory based on platform
-function getUserDataDir() {
-  if (isCloud) return "/tmp";
-
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  try {
-    const platform = process.platform;
-    const homeDir = os.homedir();
-    const appName = getAppName();
-
-    if (platform === "win32") {
-      return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-    } else {
-      return path.join(homeDir, `.${appName}`);
-    }
-  } catch (error) {
-    console.error("[requestDetailsDb] Failed to get user data directory:", error.message);
-    return path.join(process.cwd(), ".9router");
-  }
-}
-
-// Database file path
-const DATA_DIR = getUserDataDir();
-const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.sqlite");
-
-// Ensure data directory exists
-if (!isCloud && fs && typeof fs.existsSync === "function") {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (error) {
-    console.error("[requestDetailsDb] Failed to create data directory:", error.message);
-  }
+async function pool() {
+  const p = await getPool();
+  if (!p) return null;
+  return p;
 }
 
 // ============================================================================
 // BATCH WRITE QUEUE
 // ============================================================================
 
-/**
- * In-memory buffer for batch writes.
- * Accumulates request details before flushing to database in a transaction.
- * @type {Array<object>}
- */
 let writeBuffer = [];
-
-/**
- * Timer reference for auto-flush mechanism.
- * Ensures data is written even during low traffic periods.
- * @type {NodeJS.Timeout|null}
- */
 let flushTimer = null;
-
-/**
- * Flag indicating if a flush operation is currently in progress.
- * Prevents concurrent flushes.
- * @type {boolean}
- */
 let isFlushing = false;
 
-/**
- * Get SQLite database instance (singleton)
- */
-export async function getRequestDetailsDb() {
-  if (isCloud) {
-    // In-memory mock for Workers
-    if (!dbInstance) {
-      dbInstance = {
-        prepare: () => ({
-          run: () => {},
-          get: () => null,
-          all: () => []
-        }),
-        exec: () => {},
-        pragma: () => {}
-      };
-    }
-    return dbInstance;
-  }
-
-  if (!dbInstance) {
-    const db = new Database(DB_FILE);
-
-    // Configure for better concurrency
-    db.pragma('journal_mode = WAL');        // Write-Ahead Logging for concurrent access
-    db.pragma('synchronous = NORMAL');       // Faster than FULL, still safe
-    db.pragma('cache_size = -64000');        // 64MB cache
-    db.pragma('temp_store = MEMORY');        // Use memory for temp tables
-
-    // Create table with indexes
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS request_details (
-        id TEXT PRIMARY KEY,
-        provider TEXT,
-        model TEXT,
-        connection_id TEXT,
-        timestamp INTEGER NOT NULL,
-        status TEXT,
-        latency TEXT,
-        tokens TEXT,
-        request TEXT,
-        provider_request TEXT,
-        provider_response TEXT,
-        response TEXT
-      );
-
-      -- Indexes for common queries
-      CREATE INDEX IF NOT EXISTS idx_timestamp
-        ON request_details(timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_provider
-        ON request_details(provider);
-      CREATE INDEX IF NOT EXISTS idx_model
-        ON request_details(model);
-      CREATE INDEX IF NOT EXISTS idx_connection
-        ON request_details(connection_id);
-      CREATE INDEX IF NOT EXISTS idx_status
-        ON request_details(status);
-    `);
-
-    dbInstance = db;
-
-    // Register shutdown handler on first database initialization
-    ensureShutdownHandler();
-  }
-
-  return dbInstance;
-}
-
-/**
- * Generate unique ID for request detail
- */
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
   const random = Math.random().toString(36).substring(2, 8);
-  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, '-') : 'unknown';
+  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, "-") : "unknown";
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-/**
- * Flush all buffered items to database in a single transaction.
- * This function is called automatically when:
- * 1. Buffer size reaches OBSERVABILITY_BATCH_SIZE
- * 2. OBSERVABILITY_FLUSH_INTERVAL_MS elapses
- * 3. Process is shutting down (graceful shutdown)
- *
- * @private
- */
-async function flushToDatabase() {
-  if (isCloud || isFlushing || writeBuffer.length === 0) {
-    return;
+function safeJsonStringify(obj, maxSize) {
+  try {
+    const str = JSON.stringify(obj);
+    if (str.length > maxSize) {
+      return JSON.stringify({
+        _truncated: true,
+        _originalSize: str.length,
+        _preview: str.substring(0, 200),
+      });
+    }
+    return str;
+  } catch (error) {
+    return JSON.stringify({
+      error: "Failed to stringify object",
+      message: error.message,
+    });
   }
+}
+
+function sanitizeHeaders(headers) {
+  if (!headers || typeof headers !== "object") return {};
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
+  const sanitized = { ...headers };
+  for (const key of Object.keys(sanitized)) {
+    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) {
+      delete sanitized[key];
+    }
+  }
+  return sanitized;
+}
+
+async function flushToDatabase() {
+  const p = await pool();
+  if (!p || isCloud || isFlushing || writeBuffer.length === 0) return;
 
   isFlushing = true;
+  const itemsToSave = [...writeBuffer];
+  writeBuffer = [];
 
   try {
-    // Take a snapshot of the buffer and clear it immediately
-    const itemsToSave = [...writeBuffer];
-    writeBuffer = [];
-
-    const db = await getRequestDetailsDb();
     const config = await getObservabilityConfig();
+    const maxJsonSize = config.maxJsonSize;
 
-    // Prepare statements outside transaction for better performance
-    const insertStmt = db.prepare(`
-      INSERT OR REPLACE INTO request_details
-      (id, provider, model, connection_id, timestamp, status, latency, tokens,
-       request, provider_request, provider_response, response)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const client = await p.connect();
+    try {
+      await client.query("BEGIN");
 
-    const deleteStmt = db.prepare(`
-      DELETE FROM request_details
-      WHERE id NOT IN (
-        SELECT id FROM request_details
-        ORDER BY timestamp DESC
-        LIMIT ?
-      )
-    `);
-
-    // Execute all writes in a single transaction for atomicity
-    const transaction = db.transaction((items) => {
-      const maxJsonSize = config.maxJsonSize;
-
-      for (const item of items) {
-        if (!item.id) {
-          item.id = generateDetailId(item.model);
-        }
-
-        if (!item.timestamp) {
-          item.timestamp = new Date().toISOString();
-        }
-
-        // Sanitize headers if present
-        if (item.request && item.request.headers) {
+      for (const item of itemsToSave) {
+        if (!item.id) item.id = generateDetailId(item.model);
+        if (!item.timestamp) item.timestamp = new Date().toISOString();
+        if (item.request?.headers) {
           item.request.headers = sanitizeHeaders(item.request.headers);
         }
 
-        insertStmt.run(
-          item.id,
-          item.provider || null,
-          item.model || null,
-          item.connectionId || null,
-          new Date(item.timestamp).getTime(),
-          item.status || null,
-          JSON.stringify(item.latency || {}),
-          JSON.stringify(item.tokens || {}),
-          safeJsonStringify(item.request || {}, maxJsonSize),
-          safeJsonStringify(item.providerRequest || {}, maxJsonSize),
-          safeJsonStringify(item.providerResponse || {}, maxJsonSize),
-          safeJsonStringify(item.response || {}, maxJsonSize)
+        await client.query(
+          `INSERT INTO request_details (
+            id, provider, model, connection_id, timestamp, status, latency, tokens,
+            request, provider_request, provider_response, response
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT (id) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            model = EXCLUDED.model,
+            connection_id = EXCLUDED.connection_id,
+            timestamp = EXCLUDED.timestamp,
+            status = EXCLUDED.status,
+            latency = EXCLUDED.latency,
+            tokens = EXCLUDED.tokens,
+            request = EXCLUDED.request,
+            provider_request = EXCLUDED.provider_request,
+            provider_response = EXCLUDED.provider_response,
+            response = EXCLUDED.response`,
+          [
+            item.id,
+            item.provider || null,
+            item.model || null,
+            item.connectionId || null,
+            new Date(item.timestamp),
+            item.status || null,
+            JSON.stringify(item.latency || {}),
+            JSON.stringify(item.tokens || {}),
+            safeJsonStringify(item.request || {}, maxJsonSize),
+            safeJsonStringify(item.providerRequest || {}, maxJsonSize),
+            safeJsonStringify(item.providerResponse || {}, maxJsonSize),
+            safeJsonStringify(item.response || {}, maxJsonSize),
+          ]
         );
       }
 
-      // Cleanup old records once per batch (not per item)
-      deleteStmt.run(config.maxRecords);
-    });
+      await client.query(
+        `DELETE FROM request_details
+         WHERE id NOT IN (
+           SELECT id FROM request_details
+           ORDER BY timestamp DESC
+           LIMIT $1
+         )`,
+        [config.maxRecords]
+      );
 
-    transaction(itemsToSave);
+      await client.query("COMMIT");
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error("[requestDetailsDb] Batch write failed:", error);
   } finally {
@@ -289,64 +190,70 @@ async function flushToDatabase() {
   }
 }
 
+// ============================================================================
+// PUBLIC API
+// ============================================================================
+
 /**
- * Safely stringify an object with a size limit.
- * Truncates the result if it exceeds the limit.
- * @param {object} obj - Object to stringify
- * @param {number} maxSize - Maximum string size in bytes
- * @returns {string}
+ * Legacy: returns a no-op db for callers that still use getRequestDetailsDb().
+ * Prefer getDistinctRequestDetailProviders() for listing providers.
  */
-function safeJsonStringify(obj, maxSize) {
-  try {
-    const str = JSON.stringify(obj);
-    if (str.length > maxSize) {
-      // Return valid JSON instead of truncated invalid string
-      return JSON.stringify({ _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) });
-    }
-    return str;
-  } catch (error) {
-    return JSON.stringify({ error: "Failed to stringify object", message: error.message });
+export async function getRequestDetailsDb() {
+  if (isCloud) {
+    return {
+      prepare: () => ({ run: () => {}, get: () => null, all: () => [] }),
+      exec: () => {},
+      pragma: () => {},
+    };
   }
+  const p = await pool();
+  if (!p) {
+    return {
+      prepare: () => ({ run: () => {}, get: () => null, all: () => [] }),
+      exec: () => {},
+      pragma: () => {},
+    };
+  }
+  return {
+    prepare: (sql) => ({
+      run: () => {},
+      get: () => null,
+      all: () => [],
+    }),
+    exec: () => {},
+    pragma: () => {},
+  };
 }
 
 /**
- * Sanitize sensitive headers from request
+ * Returns distinct provider identifiers from request_details (for usage UI).
+ * @returns {Promise<string[]>}
  */
-function sanitizeHeaders(headers) {
-  if (!headers || typeof headers !== 'object') return {};
+export async function getDistinctRequestDetailProviders() {
+  const p = await pool();
+  if (!p || isCloud) return [];
 
-  const sensitiveKeys = ['authorization', 'x-api-key', 'cookie', 'token', 'api-key'];
-  const sanitized = { ...headers };
-
-  for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some(sensitive => key.toLowerCase().includes(sensitive))) {
-      delete sanitized[key];
-    }
-  }
-
-  return sanitized;
+  const res = await p.query(
+    `SELECT DISTINCT provider FROM request_details
+     WHERE provider IS NOT NULL AND provider != ''
+     ORDER BY provider ASC`
+  );
+  return (res.rows || []).map((r) => r.provider);
 }
 
-/**
- * Save request detail to SQLite (batched for performance).
- * Details are accumulated in memory and flushed to database in batches.
- *
- * @param {object} detail - Request detail object
- * @see {@link flushToDatabase} for batch write implementation
- */
 export async function saveRequestDetail(detail) {
   if (isCloud) return;
 
+  const p = await pool();
+  if (!p) return;
+
   const config = await getCachedObservabilityConfig();
-  if (!config.enabled) {
-    return;
-  }
+  if (!config.enabled) return;
 
   writeBuffer.push(detail);
 
   if (writeBuffer.length >= config.batchSize) {
     await flushToDatabase();
-
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
@@ -359,114 +266,118 @@ export async function saveRequestDetail(detail) {
   }
 }
 
-// ============================================================================
-// GRACEFUL SHUTDOWN HANDLER
-// ============================================================================
-
 let shutdownHandlerRegistered = false;
 
-/**
- * Register process shutdown handlers to flush remaining data before exit.
- * Should be called once when the module initializes.
- */
 function ensureShutdownHandler() {
-  if (shutdownHandlerRegistered || isCloud) {
-    return;
-  }
-
+  if (shutdownHandlerRegistered || isCloud) return;
   const handler = async () => {
-    // Clear timer to prevent any pending flush
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
     }
-
-    // Flush any remaining data in buffer
     if (writeBuffer.length > 0) {
       console.log(`[requestDetailsDb] Flushing ${writeBuffer.length} items before shutdown...`);
       await flushToDatabase();
     }
   };
-
-  // Register handlers for various termination signals
-  process.on('beforeExit', handler);
-  process.on('SIGINT', handler);
-  process.on('SIGTERM', handler);
-  process.on('exit', handler);
-
+  process.on("beforeExit", handler);
+  process.on("SIGINT", handler);
+  process.on("SIGTERM", handler);
+  process.on("exit", handler);
   shutdownHandlerRegistered = true;
 }
 
+// Register shutdown on first save (when we have a pool)
+async function maybeRegisterShutdown() {
+  const p = await pool();
+  if (p) ensureShutdownHandler();
+}
+
 /**
- * Get request details with filtering and pagination
- * @param {object} filter - Filter options
- * @returns {Promise<object>} Details with pagination info
+ * Get request details with filtering and pagination.
  */
 export async function getRequestDetails(filter = {}) {
-  const db = await getRequestDetailsDb();
-
-  if (isCloud) {
-    return { details: [], pagination: { page: 1, pageSize: filter.pageSize || 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+  const p = await pool();
+  if (!p || isCloud) {
+    return {
+      details: [],
+      pagination: {
+        page: filter.page || 1,
+        pageSize: filter.pageSize || 50,
+        totalItems: 0,
+        totalPages: 0,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
   }
 
-  let query = 'SELECT * FROM request_details WHERE 1=1';
+  const conditions = [];
   const params = [];
+  let i = 1;
 
   if (filter.provider) {
-    query += ' AND provider = ?';
+    conditions.push(`provider = $${i++}`);
     params.push(filter.provider);
   }
-
   if (filter.model) {
-    query += ' AND model = ?';
+    conditions.push(`model = $${i++}`);
     params.push(filter.model);
   }
-
   if (filter.connectionId) {
-    query += ' AND connection_id = ?';
+    conditions.push(`connection_id = $${i++}`);
     params.push(filter.connectionId);
   }
-
   if (filter.status) {
-    query += ' AND status = ?';
+    conditions.push(`status = $${i++}`);
     params.push(filter.status);
   }
-
   if (filter.startDate) {
-    query += ' AND timestamp >= ?';
-    params.push(new Date(filter.startDate).getTime());
+    conditions.push(`timestamp >= $${i++}`);
+    params.push(new Date(filter.startDate));
   }
-
   if (filter.endDate) {
-    query += ' AND timestamp <= ?';
-    params.push(new Date(filter.endDate).getTime());
+    conditions.push(`timestamp <= $${i++}`);
+    params.push(new Date(filter.endDate));
   }
 
-  // Get total count first
-  const countQuery = query.replace('SELECT *', 'SELECT COUNT(*)');
-  const countStmt = db.prepare(countQuery);
-  const totalResult = countStmt.get(...params);
-  const total = totalResult['COUNT(*)'];
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  // Add pagination
-  query += ' ORDER BY timestamp DESC';
+  const countRes = await p.query(
+    `SELECT COUNT(*)::int AS total FROM request_details ${where}`,
+    params
+  );
+  const total = countRes.rows[0]?.total ?? 0;
+
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
-  query += ' LIMIT ? OFFSET ?';
   params.push(pageSize, (page - 1) * pageSize);
 
-  // Execute query
-  const stmt = db.prepare(query);
-  const rows = stmt.all(...params);
+  const rowsRes = await p.query(
+    `SELECT * FROM request_details ${where} ORDER BY timestamp DESC LIMIT $${i} OFFSET $${i + 1}`,
+    params
+  );
+  const rows = rowsRes.rows || [];
 
-  // Safe JSON parse — returns fallback on corrupt/truncated data
   const safeJsonParse = (str, fallback = {}) => {
-    try { return JSON.parse(str || '{}'); }
-    catch { return fallback; }
+    try {
+      return JSON.parse(str || "{}");
+    } catch {
+      return fallback;
+    }
   };
 
-  // Convert back to original format
-  const details = rows.map(row => ({
+  /** Normalize tokens so UI always has prompt_tokens and completion_tokens (from input_tokens/output_tokens if needed). */
+  function normalizeTokens(tokens) {
+    if (!tokens || typeof tokens !== "object") return { prompt_tokens: 0, completion_tokens: 0 };
+    return {
+      ...tokens,
+      prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
+      completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
+    };
+  }
+
+  const details = rows.map((row) => ({
     id: row.id,
     provider: row.provider,
     model: row.model,
@@ -474,11 +385,11 @@ export async function getRequestDetails(filter = {}) {
     timestamp: new Date(row.timestamp).toISOString(),
     status: row.status,
     latency: safeJsonParse(row.latency),
-    tokens: safeJsonParse(row.tokens),
+    tokens: normalizeTokens(safeJsonParse(row.tokens)),
     request: safeJsonParse(row.request),
     providerRequest: safeJsonParse(row.provider_request),
     providerResponse: safeJsonParse(row.provider_response),
-    response: safeJsonParse(row.response)
+    response: safeJsonParse(row.response),
   }));
 
   return {
@@ -489,30 +400,38 @@ export async function getRequestDetails(filter = {}) {
       totalItems: total,
       totalPages: Math.ceil(total / pageSize),
       hasNext: page < Math.ceil(total / pageSize),
-      hasPrev: page > 1
-    }
+      hasPrev: page > 1,
+    },
   };
 }
 
 /**
- * Get single request detail by ID
- * @param {string} id - Request detail ID
- * @returns {Promise<object|null>} Request detail or null
+ * Get single request detail by ID.
  */
 export async function getRequestDetailById(id) {
-  const db = await getRequestDetailsDb();
+  const p = await pool();
+  if (!p || isCloud) return null;
 
-  if (isCloud) return null;
-
-  const stmt = db.prepare('SELECT * FROM request_details WHERE id = ?');
-  const row = stmt.get(id);
-
+  const res = await p.query("SELECT * FROM request_details WHERE id = $1", [id]);
+  const row = res.rows[0];
   if (!row) return null;
 
   const safeJsonParse = (str, fallback = {}) => {
-    try { return JSON.parse(str || '{}'); }
-    catch { return fallback; }
+    try {
+      return JSON.parse(str || "{}");
+    } catch {
+      return fallback;
+    }
   };
+
+  function normalizeTokens(tokens) {
+    if (!tokens || typeof tokens !== "object") return { prompt_tokens: 0, completion_tokens: 0 };
+    return {
+      ...tokens,
+      prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
+      completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
+    };
+  }
 
   return {
     id: row.id,
@@ -522,10 +441,13 @@ export async function getRequestDetailById(id) {
     timestamp: new Date(row.timestamp).toISOString(),
     status: row.status,
     latency: safeJsonParse(row.latency),
-    tokens: safeJsonParse(row.tokens),
+    tokens: normalizeTokens(safeJsonParse(row.tokens)),
     request: safeJsonParse(row.request),
     providerRequest: safeJsonParse(row.provider_request),
     providerResponse: safeJsonParse(row.provider_response),
-    response: safeJsonParse(row.response)
+    response: safeJsonParse(row.response),
   };
 }
+
+// Register shutdown handler when module is loaded and pool is available
+maybeRegisterShutdown().catch(() => {});

@@ -11,7 +11,7 @@ import {
   translateRequest,
 } from "open-sse/index.js";
 
-// POST /api/models/test - Ping a model using the provider connection's credentials (no 9router API key)
+// POST /api/models/test - Ping a model using the provider connection's credentials (no EGS Proxy AI API key)
 export async function POST(request) {
   try {
     const body = await request.json();

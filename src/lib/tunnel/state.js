@@ -2,7 +2,9 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
-const TUNNEL_DIR = path.join(os.homedir(), ".9router", "tunnel");
+const TUNNEL_DIR = process.env.DATA_DIR
+  ? path.join(process.env.DATA_DIR, "tunnel")
+  : path.join(os.homedir(), ".egs-proxy-ai", "tunnel");
 const STATE_FILE = path.join(TUNNEL_DIR, "state.json");
 const PID_FILE = path.join(TUNNEL_DIR, "cloudflared.pid");
 
