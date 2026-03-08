@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
+import { sanitizeApiKeyData } from "@/lib/sanitize.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { id } = await params;
     const key = await getApiKeyById(id);
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
-    return NextResponse.json({ key });
+    const sanitized = sanitizeApiKeyData(key);
+    return NextResponse.json({ key: sanitized });
   } catch (error) {
     console.log("Error fetching key:", error);
     return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
@@ -18,6 +26,11 @@ export async function GET(request, { params }) {
 
 // PUT /api/keys/[id] - Update key
 export async function PUT(request, { params }) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { id } = await params;
     const body = await request.json();
@@ -42,6 +55,11 @@ export async function PUT(request, { params }) {
 
 // DELETE /api/keys/[id] - Delete API key
 export async function DELETE(request, { params }) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { id } = await params;
 

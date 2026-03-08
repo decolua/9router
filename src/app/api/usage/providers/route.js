@@ -2,12 +2,18 @@ import { NextResponse } from "next/server";
 import { getRequestDetailsDb } from "@/lib/requestDetailsDb";
 import { getProviderNodes } from "@/lib/localDb";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 
 /**
  * GET /api/usage/providers
  * Returns list of unique providers from request details
  */
-export async function GET() {
+export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const db = await getRequestDetailsDb();
 
