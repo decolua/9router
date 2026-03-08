@@ -49,7 +49,6 @@ source/*
 docs/*
 !docs/ARCHITECTURE.md
 test/*
-bin/*
 open-sse/test/*
 RM.vn.md
 RM.md
