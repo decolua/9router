@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -364,35 +364,6 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const selectionToolbar = connections.length > 0 ? (
-    <div className="rounded-lg border border-border/50 bg-black/[0.02] dark:bg-white/[0.02] p-3 mb-3 flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={toggleSelectAllConnections}
-          className="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-muted"
-        >
-          {allSelected ? "Unselect all" : "Select all"}
-        </button>
-        {selectedConnectionIds.length > 0 && (
-          <button
-            type="button"
-            onClick={clearSelection}
-            className="text-xs px-2 py-1 rounded bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-text-muted"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-text-muted">{selectedConnectionIds.length} selected</span>
-        <Button size="sm" variant="secondary" onClick={openBulkProxyModal} disabled={selectedConnectionIds.length === 0}>
-          Proxy Action
-        </Button>
-      </div>
-    </div>
-  ) : null;
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
@@ -402,16 +373,6 @@ export default function ProviderDetailPage() {
         .sort((a, b) => (a.priority || 0) - (b.priority || 0))
         .map((conn, index) => (
           <div key={conn.id} className="flex items-stretch">
-            <div className="pr-2 flex items-center">
-              <input
-                type="checkbox"
-                checked={isSelected(conn.id)}
-                onChange={() => toggleSelectConnection(conn.id)}
-                className="size-4 rounded border-border bg-transparent"
-                title="Select connection"
-                aria-label={`Select ${conn.name || conn.email || conn.id}`}
-              />
-            </div>
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -422,6 +383,24 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
                 onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onUpdateProxy={async (proxyPoolId) => {
+                  try {
+                    const res = await fetch(`/api/providers/${conn.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
+                    });
+                    if (res.ok) {
+                      setConnections(prev => prev.map(c =>
+                        c.id === conn.id
+                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
+                          : c
+                      ));
+                    }
+                  } catch (error) {
+                    console.log("Error updating proxy:", error);
+                  }
+                }}
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
@@ -770,7 +749,6 @@ export default function ProviderDetailPage() {
           </div>
         ) : (
           <>
-            {selectionToolbar}
             {connectionsList}
           </>
         )}
@@ -1322,7 +1300,11 @@ CooldownTimer.propTypes = {
   until: PropTypes.string.isRequired,
 };
 
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+  const [showProxyDropdown, setShowProxyDropdown] = useState(false);
+  const [updatingProxy, setUpdatingProxy] = useState(false);
+  const proxyDropdownRef = useRef(null);
+
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
   const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
@@ -1336,13 +1318,6 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
 
-  let proxyBadgeVariant = "default";
-  if (boundProxyPool?.isActive === true) {
-    proxyBadgeVariant = "success";
-  } else if (boundProxyPoolId || hasLegacyProxy) {
-    proxyBadgeVariant = "error";
-  }
-
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
     const rawProxyUrl = boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl;
@@ -1355,6 +1330,35 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   }
 
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
+
+  let proxyBadgeVariant = "default";
+  if (boundProxyPool?.isActive === true) {
+    proxyBadgeVariant = "success";
+  } else if (boundProxyPoolId || hasLegacyProxy) {
+    proxyBadgeVariant = "error";
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showProxyDropdown) return;
+    const handler = (e) => {
+      if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target)) {
+        setShowProxyDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showProxyDropdown]);
+
+  const handleSelectProxy = async (poolId) => {
+    setUpdatingProxy(true);
+    try {
+      await onUpdateProxy(poolId === "__none__" ? null : poolId);
+    } finally {
+      setUpdatingProxy(false);
+      setShowProxyDropdown(false);
+    }
+  };
 
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
@@ -1464,20 +1468,56 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Proxy button with inline dropdown */}
+          {(proxyPools || []).length > 0 && (
+            <div className="relative" ref={proxyDropdownRef}>
+              <button
+                onClick={() => setShowProxyDropdown((v) => !v)}
+                className={`flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
+                disabled={updatingProxy}
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {updatingProxy ? "progress_activity" : "lan"}
+                </span>
+                <span className="text-[10px] leading-tight">Proxy</span>
+              </button>
+              {showProxyDropdown && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                  <button
+                    onClick={() => handleSelectProxy("__none__")}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                  >
+                    None
+                  </button>
+                  {(proxyPools || []).map((pool) => (
+                    <button
+                      key={pool.id}
+                      onClick={() => handleSelectProxy(pool.id)}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
+                    >
+                      {pool.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
+            <span className="material-symbols-outlined text-[18px]">edit</span>
+            <span className="text-[10px] leading-tight">Edit</span>
+          </button>
+          <button onClick={onDelete} className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500">
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+            <span className="text-[10px] leading-tight">Delete</span>
+          </button>
+        </div>
         <Toggle
           size="sm"
           checked={connection.isActive ?? true}
           onChange={onToggleActive}
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
-        <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-          </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -1509,6 +1549,7 @@ ConnectionRow.propTypes = {
   onMoveUp: PropTypes.func.isRequired,
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
+  onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
@@ -1672,13 +1713,10 @@ AddApiKeyModal.propTypes = {
 };
 
 function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
-  const NONE_PROXY_POOL_VALUE = "__none__";
-
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
-    proxyPoolId: NONE_PROXY_POOL_VALUE,
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -1692,7 +1730,6 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
-        proxyPoolId: connection.providerSpecificData?.proxyPoolId || NONE_PROXY_POOL_VALUE,
       });
       setTestResult(null);
       setValidationResult(null);
@@ -1739,7 +1776,6 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
       const updates = {
         name: formData.name,
         priority: formData.priority,
-        proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -1800,58 +1836,6 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
-
-        <Select
-          label="Proxy Pool"
-          value={formData.proxyPoolId}
-          onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
-          options={[
-            { value: NONE_PROXY_POOL_VALUE, label: "None" },
-            ...(proxyPools || []).map((pool) => ({ value: pool.id, label: pool.name })),
-          ]}
-          placeholder="None"
-        />
-
-        {(proxyPools || []).length === 0 && (
-          <p className="text-xs text-text-muted">
-            No active proxy pools available. Create one in Proxy Pools page first.
-          </p>
-        )}
-
-        <p className="text-xs text-text-muted">
-          Runtime prefers proxy pool settings. Legacy proxy fields are still supported as fallback.
-        </p>
-
-        {connection.providerSpecificData?.connectionProxyEnabled === true && !connection.providerSpecificData?.proxyPoolId && (
-          <p className="text-xs text-amber-500">
-            This connection is still using legacy manual proxy settings until you bind a proxy pool.
-          </p>
-        )}
-
-        {connection.providerSpecificData?.proxyPoolId && formData.proxyPoolId === NONE_PROXY_POOL_VALUE && (
-          <p className="text-xs text-amber-500">
-            Saving with None will unbind this connection from proxy pool and fallback to legacy/global proxy behavior.
-          </p>
-        )}
-
-        {connection.providerSpecificData?.proxyPoolId && formData.proxyPoolId !== NONE_PROXY_POOL_VALUE && connection.providerSpecificData?.proxyPoolId !== formData.proxyPoolId && (
-          <p className="text-xs text-amber-500">
-            You changed proxy pool binding. Use Test Connection to verify connectivity.
-          </p>
-        )}
-
-        {connection.providerSpecificData?.proxyPoolId && !(proxyPools || []).some((pool) => pool.id === connection.providerSpecificData.proxyPoolId) && (
-          <p className="text-xs text-red-500">
-            Current bound proxy pool is inactive or missing. Runtime will fallback to legacy proxy if available.
-          </p>
-        )}
-
-        {!connection.providerSpecificData?.proxyPoolId && (connection.providerSpecificData?.connectionProxyUrl || connection.providerSpecificData?.connectionNoProxy) && (
-          <p className="text-xs text-text-muted">
-            Legacy proxy: {connection.providerSpecificData?.connectionProxyUrl || "(empty)"}
-            {connection.providerSpecificData?.connectionNoProxy ? ` · no_proxy: ${connection.providerSpecificData.connectionNoProxy}` : ""}
-          </p>
-        )}
 
         {!isOAuth && (
           <>
