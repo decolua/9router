@@ -1270,7 +1270,7 @@ Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 Thanks to all contributors who helped make 9Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=200&columns=10&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
