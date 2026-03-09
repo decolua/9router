@@ -8,32 +8,39 @@ export const DEFAULT_PRICING = {
   // Claude Code (cc)
   cc: {
     "claude-opus-4-6": {
-      input: 15.00,
+      input: 5.00,
       output: 25.00,
-      cached: 2.50,
-      reasoning: 15.00,
-      cache_creation: 15.00
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
     },
     "claude-opus-4-5-20251101": {
-      input: 15.00,
+      input: 5.00,
       output: 25.00,
-      cached: 2.50,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
+    },
+    "claude-sonnet-4-6": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
       reasoning: 15.00,
-      cache_creation: 15.00
+      cache_creation: 3.75
     },
     "claude-sonnet-4-5-20250929": {
       input: 3.00,
       output: 15.00,
-      cached: 1.50,
+      cached: 0.30,
       reasoning: 15.00,
-      cache_creation: 3.00
+      cache_creation: 3.75
     },
     "claude-haiku-4-5-20251001": {
-      input: 0.50,
-      output: 2.50,
-      cached: 0.25,
-      reasoning: 2.50,
-      cache_creation: 0.50
+      input: 1.00,
+      output: 5.00,
+      cached: 0.10,
+      reasoning: 5.00,
+      cache_creation: 1.25
     }
   },
 
