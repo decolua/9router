@@ -461,6 +461,12 @@ export const DEFAULT_MAX_TOKENS = 64000;
 // Minimum max tokens for tool calling (to prevent truncated arguments)
 export const DEFAULT_MIN_TOKENS = 32000;
 
+// Retry config for 429 responses (used by BaseExecutor)
+export const RETRY_CONFIG = {
+  maxAttempts: 2,
+  delayMs: 2000
+};
+
 // HTTP status codes
 export const HTTP_STATUS = {
   BAD_REQUEST: 400,

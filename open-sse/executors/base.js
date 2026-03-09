@@ -1,4 +1,4 @@
-import { HTTP_STATUS } from "../config/constants.js";
+import { HTTP_STATUS, RETRY_CONFIG } from "../config/constants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
@@ -80,11 +80,14 @@ export class BaseExecutor {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
+    const retryAttemptsByUrl = {};
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
+
+      if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
       try {
         const response = await proxyAwareFetch(url, {
@@ -93,6 +96,15 @@ export class BaseExecutor {
           body: JSON.stringify(transformedBody),
           signal
         }, proxyOptions);
+
+        // Retry 429 with fixed delay before falling back to next URL
+        if (response.status === HTTP_STATUS.RATE_LIMITED && retryAttemptsByUrl[urlIndex] < RETRY_CONFIG.maxAttempts) {
+          retryAttemptsByUrl[urlIndex]++;
+          log?.debug?.("RETRY", `429 retry ${retryAttemptsByUrl[urlIndex]}/${RETRY_CONFIG.maxAttempts} after ${RETRY_CONFIG.delayMs / 1000}s`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+          urlIndex--;
+          continue;
+        }
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
