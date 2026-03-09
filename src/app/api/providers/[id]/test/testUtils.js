@@ -13,6 +13,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -58,19 +59,10 @@ const OAUTH_TEST_CONFIG = {
 };
 
 async function probeClineAccessToken(accessToken) {
-  const res = await fetch("https://api.cline.bot/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://cline.bot",
-      "X-Title": "Cline",
-    },
-    body: JSON.stringify({
-      model: "cl/anthropic/claude-sonnet-4-20250514",
-      messages: [{ role: "user", content: "test" }],
-      max_tokens: 1,
-      stream: false,
+  const res = await fetch("https://api.cline.bot/api/v1/users/me", {
+    method: "GET",
+    headers: buildClineHeaders(accessToken, {
+      Accept: "application/json",
     }),
   });
 
