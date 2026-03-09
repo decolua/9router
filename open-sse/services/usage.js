@@ -702,7 +702,34 @@ async function getRamcloudsUsage(apiKey) {
     const totalUSD = (subscriptionTotal / quotaPerUnit).toFixed(2);
     const remainingUSD = (subscriptionRemain / quotaPerUnit).toFixed(2);
 
-    return {
+    // Calculate next reset time: daily at 0h ICT (UTC+7)
+    // ICT midnight = 17:00 UTC previous day (since UTC+7 means 00:00 ICT = 17:00 UTC-1)
+    let resetAt;
+    try {
+      const now = new Date();
+
+      // Get today's date in UTC
+      const year = now.getUTCFullYear();
+      const month = now.getUTCMonth();
+      const date = now.getUTCDate();
+      const hours = now.getUTCHours();
+
+      // Today's midnight ICT in UTC (17:00 UTC)
+      let nextResetUTC = new Date(Date.UTC(year, month, date, 17, 0, 0, 0));
+
+      // If current UTC time is >= 17:00, next reset is tomorrow at 17:00 UTC
+      if (hours >= 17) {
+        nextResetUTC = new Date(nextResetUTC.getTime() + 24 * 60 * 60 * 1000);
+      }
+
+      resetAt = nextResetUTC.toISOString();
+      console.log('[Ramclouds] Calculated resetAt:', resetAt);
+    } catch (err) {
+      console.error('[Ramclouds] Error calculating resetAt:', err);
+      resetAt = null;
+    }
+
+    const result = {
       plan: other.subscription_plan_title || "Unknown",
       quotas: {
         tokens: {
@@ -713,9 +740,13 @@ async function getRamcloudsUsage(apiKey) {
           usedUSD,
           totalUSD,
           remainingUSD,
+          resetAt,
         }
       }
     };
+
+    console.log('[Ramclouds Usage] Response:', JSON.stringify(result, null, 2));
+    return result;
   } catch (error) {
     return { message: `Ramclouds error: ${error.message}` };
   }
