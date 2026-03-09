@@ -6,10 +6,33 @@ const path = require('path');
 
 console.log('Running postbuild tasks...');
 
-// Ensure bin directory exists
-const binDir = path.join(__dirname, '..');
-if (!fs.existsSync(binDir)) {
-  fs.mkdirSync(binDir, { recursive: true });
+const projectRoot = path.join(__dirname, '..');
+const standaloneDir = path.join(projectRoot, '.next', 'standalone');
+const standaloneNextDir = path.join(standaloneDir, '.next');
+
+// Ensure standalone .next directory exists
+if (!fs.existsSync(standaloneNextDir)) {
+  fs.mkdirSync(standaloneNextDir, { recursive: true });
+}
+
+// Copy .next/static so client assets are available in standalone mode
+const staticSrc = path.join(projectRoot, '.next', 'static');
+const staticDest = path.join(standaloneNextDir, 'static');
+if (fs.existsSync(staticSrc)) {
+  fs.cpSync(staticSrc, staticDest, { recursive: true });
+  console.log('✓ Copied .next/static into standalone bundle');
+} else {
+  console.warn('⚠ .next/static not found, skipping static asset copy');
+}
+
+// Copy public assets so browser requests can resolve in standalone mode
+const publicSrc = path.join(projectRoot, 'public');
+const publicDest = path.join(standaloneDir, 'public');
+if (fs.existsSync(publicSrc)) {
+  fs.cpSync(publicSrc, publicDest, { recursive: true });
+  console.log('✓ Copied public assets into standalone bundle');
+} else {
+  console.warn('⚠ public directory not found, skipping public asset copy');
 }
 
 // Make cli.js executable

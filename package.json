@@ -1,6 +1,6 @@
 {
   "name": "9router-fdk",
-  "version": "0.3.33-b",
+  "version": "0.3.34",
   "description": "9Router web dashboard",
   "bin": {
     "9router-fdk": "./bin/cli.js"
@@ -13,8 +13,8 @@
     "dev": "next dev --webpack",
     "dev:alt": "next dev -p 20127 --webpack",
     "build": "NODE_ENV=production next build --webpack && node ./bin/postbuild.js",
-    "start": "NODE_ENV=production node .next/standalone/server.js",
-    "start:tray": "electron ./bin/cli.js",
+    "start": "node ./bin/cli.js",
+    "start:tray": "node ./bin/cli.js --tray",
     "dev:bun": "bun --bun next dev --webpack",
     "build:bun": "NODE_ENV=production bun --bun next build --webpack",
     "start:bun": "NODE_ENV=production bun ./.next/standalone/server.js",
@@ -23,11 +23,8 @@
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
-    "9router-fdk": "^0.3.33",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.6.2",
-    "canvas": "^2.11.2",
-    "electron": "^34.2.0",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
@@ -44,6 +41,7 @@
     "recharts": "^3.7.0",
     "selfsigned": "^5.5.0",
     "socks-proxy-agent": "^8.0.5",
+    "systray": "^1.0.5",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"

@@ -648,6 +648,51 @@ async function getIflowUsage(accessToken) {
   }
 }
 
+// Ramclouds reset time constants
+const RAMCLOUDS_RESET_HOUR_UTC = 17; // Midnight ICT (UTC+7) = 17:00 UTC
+const RAMCLOUDS_CACHE_TTL = 3600000; // Cache for 1 hour (resetAt only changes once per day)
+
+// Cache for resetAt calculation
+let cachedResetAt = null;
+let resetAtCacheTime = 0;
+
+/**
+ * Calculate next reset time for Ramclouds (daily at 0h ICT / 17:00 UTC)
+ * Cached for 1 hour since value only changes once per day
+ */
+function calculateRamcloudsResetTime() {
+  const now = Date.now();
+
+  // Return cached value if still valid
+  if (cachedResetAt && (now - resetAtCacheTime) < RAMCLOUDS_CACHE_TTL) {
+    return cachedResetAt;
+  }
+
+  try {
+    const nowDate = new Date(now);
+    const year = nowDate.getUTCFullYear();
+    const month = nowDate.getUTCMonth();
+    const date = nowDate.getUTCDate();
+    const hours = nowDate.getUTCHours();
+
+    // Today's midnight ICT in UTC (17:00 UTC)
+    let nextResetUTC = new Date(Date.UTC(year, month, date, RAMCLOUDS_RESET_HOUR_UTC, 0, 0, 0));
+
+    // If current UTC time is >= 17:00, next reset is tomorrow
+    if (hours >= RAMCLOUDS_RESET_HOUR_UTC) {
+      nextResetUTC = new Date(nextResetUTC.getTime() + 86400000); // 24 hours in ms
+    }
+
+    cachedResetAt = nextResetUTC.toISOString();
+    resetAtCacheTime = now;
+
+    return cachedResetAt;
+  } catch (err) {
+    console.error('[Ramclouds] Error calculating resetAt:', err);
+    return null;
+  }
+}
+
 /**
  * Ramclouds Usage (New-API based)
  * Fetches quota information from the log/token endpoint
@@ -697,37 +742,13 @@ async function getRamcloudsUsage(apiKey) {
     const subscriptionRemain = other.subscription_remain || 0;
 
     // Convert to USD (500,000 tokens = $1 USD based on quota_per_unit from status API)
-    const quotaPerUnit = 500000;
-    const usedUSD = (subscriptionUsed / quotaPerUnit).toFixed(2);
-    const totalUSD = (subscriptionTotal / quotaPerUnit).toFixed(2);
-    const remainingUSD = (subscriptionRemain / quotaPerUnit).toFixed(2);
+    const RAMCLOUDS_QUOTA_PER_UNIT = 500000;
+    const usedUSD = (subscriptionUsed / RAMCLOUDS_QUOTA_PER_UNIT).toFixed(2);
+    const totalUSD = (subscriptionTotal / RAMCLOUDS_QUOTA_PER_UNIT).toFixed(2);
+    const remainingUSD = (subscriptionRemain / RAMCLOUDS_QUOTA_PER_UNIT).toFixed(2);
 
-    // Calculate next reset time: daily at 0h ICT (UTC+7)
-    // ICT midnight = 17:00 UTC previous day (since UTC+7 means 00:00 ICT = 17:00 UTC-1)
-    let resetAt;
-    try {
-      const now = new Date();
-
-      // Get today's date in UTC
-      const year = now.getUTCFullYear();
-      const month = now.getUTCMonth();
-      const date = now.getUTCDate();
-      const hours = now.getUTCHours();
-
-      // Today's midnight ICT in UTC (17:00 UTC)
-      let nextResetUTC = new Date(Date.UTC(year, month, date, 17, 0, 0, 0));
-
-      // If current UTC time is >= 17:00, next reset is tomorrow at 17:00 UTC
-      if (hours >= 17) {
-        nextResetUTC = new Date(nextResetUTC.getTime() + 24 * 60 * 60 * 1000);
-      }
-
-      resetAt = nextResetUTC.toISOString();
-      console.log('[Ramclouds] Calculated resetAt:', resetAt);
-    } catch (err) {
-      console.error('[Ramclouds] Error calculating resetAt:', err);
-      resetAt = null;
-    }
+    // Calculate next reset time with caching (value only changes once per day)
+    const resetAt = calculateRamcloudsResetTime();
 
     const result = {
       plan: other.subscription_plan_title || "Unknown",
@@ -745,7 +766,6 @@ async function getRamcloudsUsage(apiKey) {
       }
     };
 
-    console.log('[Ramclouds Usage] Response:', JSON.stringify(result, null, 2));
     return result;
   } catch (error) {
     return { message: `Ramclouds error: ${error.message}` };
