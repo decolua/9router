@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { translate } from "@/i18n/runtime";
 
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
@@ -224,7 +225,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     <div className="w-full rounded-lg border border-border bg-bg-subtle/30" style={{ height: 480 }}>
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
-          No providers connected
+          {translate("No providers connected")}
         </div>
       ) : (
         <ReactFlow

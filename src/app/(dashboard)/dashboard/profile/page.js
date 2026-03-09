@@ -5,6 +5,7 @@ import { Card, Button, Toggle, Input } from "@/shared/components";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { translate } from "@/i18n/runtime";
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
@@ -62,12 +63,12 @@ export default function ProfilePage() {
       const data = await res.json();
       if (res.ok) {
         setSettings((prev) => ({ ...prev, ...data }));
-        setProxyStatus({ type: "success", message: "Proxy settings applied" });
+        setProxyStatus({ type: "success", message: translate("Proxy settings applied") });
       } else {
-        setProxyStatus({ type: "error", message: data.error || "Failed to update proxy settings" });
+        setProxyStatus({ type: "error", message: data.error || translate("Failed to update proxy settings") });
       }
     } catch (err) {
-      setProxyStatus({ type: "error", message: "An error occurred" });
+      setProxyStatus({ type: "error", message: translate("An error occurred") });
     } finally {
       setProxyLoading(false);
     }
@@ -78,7 +79,7 @@ export default function ProfilePage() {
 
     const proxyUrl = (proxyForm.outboundProxyUrl || "").trim();
     if (!proxyUrl) {
-      setProxyStatus({ type: "error", message: "Please enter a Proxy URL to test" });
+      setProxyStatus({ type: "error", message: translate("Please enter a Proxy URL to test") });
       return;
     }
 
@@ -96,16 +97,16 @@ export default function ProfilePage() {
       if (res.ok && data?.ok) {
         setProxyStatus({
           type: "success",
-          message: `Proxy test OK (${data.status}) in ${data.elapsedMs}ms`,
+          message: `${translate("Proxy test OK")} (${data.status}) in ${data.elapsedMs}ms`,
         });
       } else {
         setProxyStatus({
           type: "error",
-          message: data?.error || "Proxy test failed",
+          message: data?.error || translate("Proxy test failed"),
         });
       }
     } catch (err) {
-      setProxyStatus({ type: "error", message: "An error occurred" });
+      setProxyStatus({ type: "error", message: translate("An error occurred") });
     } finally {
       setProxyTestLoading(false);
     }
@@ -128,13 +129,13 @@ export default function ProfilePage() {
         setProxyForm((prev) => ({ ...prev, outboundProxyEnabled: data?.outboundProxyEnabled === true }));
         setProxyStatus({
           type: "success",
-          message: outboundProxyEnabled ? "Proxy enabled" : "Proxy disabled",
+          message: outboundProxyEnabled ? translate("Proxy enabled") : translate("Proxy disabled"),
         });
       } else {
-        setProxyStatus({ type: "error", message: data.error || "Failed to update proxy settings" });
+        setProxyStatus({ type: "error", message: data.error || translate("Failed to update proxy settings") });
       }
     } catch (err) {
-      setProxyStatus({ type: "error", message: "An error occurred" });
+      setProxyStatus({ type: "error", message: translate("An error occurred") });
     } finally {
       setProxyLoading(false);
     }
@@ -143,7 +144,7 @@ export default function ProfilePage() {
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
-      setPassStatus({ type: "error", message: "Passwords do not match" });
+      setPassStatus({ type: "error", message: translate("Passwords do not match") });
       return;
     }
 
@@ -163,13 +164,13 @@ export default function ProfilePage() {
       const data = await res.json();
 
       if (res.ok) {
-        setPassStatus({ type: "success", message: "Password updated successfully" });
+        setPassStatus({ type: "success", message: translate("Password updated successfully") });
         setPasswords({ current: "", new: "", confirm: "" });
       } else {
-        setPassStatus({ type: "error", message: data.error || "Failed to update password" });
+        setPassStatus({ type: "error", message: data.error || translate("Failed to update password") });
       }
     } catch (err) {
-      setPassStatus({ type: "error", message: "An error occurred" });
+      setPassStatus({ type: "error", message: translate("An error occurred") });
     } finally {
       setPassLoading(false);
     }
@@ -345,8 +346,8 @@ export default function ProfilePage() {
                 <span className="material-symbols-outlined text-2xl">computer</span>
               </div>
               <div>
-                <h2 className="text-xl font-semibold">Local Mode</h2>
-                <p className="text-text-muted">Running on your machine</p>
+                <h2 className="text-xl font-semibold">{translate("Local Mode")}</h2>
+                <p className="text-text-muted">{translate("Running on your machine")}</p>
               </div>
             </div>
             <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5">
@@ -373,7 +374,7 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
               <div>
-                <p className="font-medium">Database Location</p>
+                <p className="font-medium">{translate("Database Location")}</p>
                 <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
               </div>
             </div>
@@ -384,7 +385,7 @@ export default function ProfilePage() {
                 onClick={handleExportDatabase}
                 loading={dbLoading}
               >
-                Download Backup
+                {translate("Download Backup")}
               </Button>
               <Button
                 variant="outline"
@@ -392,7 +393,7 @@ export default function ProfilePage() {
                 onClick={() => importFileRef.current?.click()}
                 disabled={dbLoading}
               >
-                Import Backup
+                {translate("Import Backup")}
               </Button>
               <input
                 ref={importFileRef}
@@ -416,14 +417,14 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-primary/10 text-primary">
               <span className="material-symbols-outlined text-[20px]">shield</span>
             </div>
-            <h3 className="text-lg font-semibold">Security</h3>
+            <h3 className="text-lg font-semibold">{translate("Security")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Require login</p>
+                <p className="font-medium">{translate("Require login")}</p>
                 <p className="text-sm text-text-muted">
-                  When ON, dashboard requires password. When OFF, access without login.
+                  {translate("When ON, dashboard requires password. When OFF, access without login.")}
                 </p>
               </div>
               <Toggle
@@ -436,10 +437,10 @@ export default function ProfilePage() {
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Current Password</label>
+                    <label className="text-sm font-medium">{translate("Current Password")}</label>
                     <Input
                       type="password"
-                      placeholder="Enter current password"
+                      placeholder={translate("Enter current password")}
                       value={passwords.current}
                       onChange={(e) => setPasswords({ ...passwords, current: e.target.value })}
                       required
@@ -455,20 +456,20 @@ export default function ProfilePage() {
                 )} */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">New Password</label>
+                    <label className="text-sm font-medium">{translate("New Password")}</label>
                     <Input
                       type="password"
-                      placeholder="Enter new password"
+                      placeholder={translate("Enter new password")}
                       value={passwords.new}
                       onChange={(e) => setPasswords({ ...passwords, new: e.target.value })}
                       required
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <label className="text-sm font-medium">Confirm New Password</label>
+                    <label className="text-sm font-medium">{translate("Confirm New Password")}</label>
                     <Input
                       type="password"
-                      placeholder="Confirm new password"
+                      placeholder={translate("Confirm new password")}
                       value={passwords.confirm}
                       onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
                       required
@@ -484,7 +485,7 @@ export default function ProfilePage() {
 
                 <div className="pt-2">
                   <Button type="submit" variant="primary" loading={passLoading}>
-                    {settings.hasPassword ? "Update Password" : "Set Password"}
+                    {settings.hasPassword ? translate("Update Password") : translate("Set Password")}
                   </Button>
                 </div>
               </form>
@@ -498,14 +499,14 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500">
               <span className="material-symbols-outlined text-[20px]">route</span>
             </div>
-            <h3 className="text-lg font-semibold">Routing Strategy</h3>
+            <h3 className="text-lg font-semibold">{translate("Routing Strategy")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Round Robin</p>
+                <p className="font-medium">{translate("Round Robin")}</p>
                 <p className="text-sm text-text-muted">
-                  Cycle through accounts to distribute load
+                  {translate("Cycle through accounts to distribute load")}
                 </p>
               </div>
               <Toggle
@@ -519,9 +520,9 @@ export default function ProfilePage() {
             {settings.fallbackStrategy === "round-robin" && (
               <div className="flex items-center justify-between pt-2 border-t border-border/50">
                 <div>
-                  <p className="font-medium">Sticky Limit</p>
+                  <p className="font-medium">{translate("Sticky Limit")}</p>
                   <p className="text-sm text-text-muted">
-                    Calls per account before switching
+                    {translate("Calls per account before switching")}
                   </p>
                 </div>
                 <Input
@@ -538,8 +539,8 @@ export default function ProfilePage() {
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
-                ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
-                : "Currently using accounts in priority order (Fill First)."}
+                ? `${translate("Currently distributing requests across all available accounts with")} ${settings.stickyRoundRobinLimit || 3} ${translate("calls per account.")}`
+                : translate("Currently using accounts in priority order (Fill First).")}
             </p>
           </div>
         </Card>
@@ -550,14 +551,14 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
               <span className="material-symbols-outlined text-[20px]">wifi</span>
             </div>
-            <h3 className="text-lg font-semibold">Network</h3>
+            <h3 className="text-lg font-semibold">{translate("Network")}</h3>
           </div>
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Outbound Proxy</p>
-                <p className="text-sm text-text-muted">Enable proxy for OAuth + provider outbound requests.</p>
+                <p className="font-medium">{translate("Outbound Proxy")}</p>
+                <p className="text-sm text-text-muted">{translate("Enable proxy for OAuth + provider outbound requests.")}</p>
               </div>
               <Toggle
                 checked={settings.outboundProxyEnabled === true}
@@ -569,25 +570,25 @@ export default function ProfilePage() {
             {settings.outboundProxyEnabled === true && (
               <form onSubmit={updateOutboundProxy} className="flex flex-col gap-4 pt-2 border-t border-border/50">
                 <div className="flex flex-col gap-2">
-                  <label className="font-medium">Proxy URL</label>
+                  <label className="font-medium">{translate("Proxy URL")}</label>
                   <Input
                     placeholder="http://127.0.0.1:7897"
                     value={proxyForm.outboundProxyUrl}
                     onChange={(e) => setProxyForm((prev) => ({ ...prev, outboundProxyUrl: e.target.value }))}
                     disabled={loading || proxyLoading}
                   />
-                  <p className="text-sm text-text-muted">Leave empty to inherit existing env proxy (if any).</p>
+                  <p className="text-sm text-text-muted">{translate("Leave empty to inherit existing env proxy (if any).")}</p>
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-                  <label className="font-medium">No Proxy</label>
+                  <label className="font-medium">{translate("No Proxy")}</label>
                   <Input
                     placeholder="localhost,127.0.0.1"
                     value={proxyForm.outboundNoProxy}
                     onChange={(e) => setProxyForm((prev) => ({ ...prev, outboundNoProxy: e.target.value }))}
                     disabled={loading || proxyLoading}
                   />
-                  <p className="text-sm text-text-muted">Comma-separated hostnames/domains to bypass the proxy.</p>
+                  <p className="text-sm text-text-muted">{translate("Comma-separated hostnames/domains to bypass the proxy.")}</p>
                 </div>
 
                 <div className="pt-2 border-t border-border/50 flex items-center gap-2">
@@ -598,10 +599,10 @@ export default function ProfilePage() {
                     disabled={loading || proxyLoading}
                     onClick={testOutboundProxy}
                   >
-                    Test proxy URL
+                    {translate("Test proxy URL")}
                   </Button>
                   <Button type="submit" variant="primary" loading={proxyLoading}>
-                    Apply
+                    {translate("Apply")}
                   </Button>
                 </div>
               </form>
@@ -621,14 +622,14 @@ export default function ProfilePage() {
             <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500">
               <span className="material-symbols-outlined text-[20px]">monitoring</span>
             </div>
-            <h3 className="text-lg font-semibold">Observability</h3>
+            <h3 className="text-lg font-semibold">{translate("Observability")}</h3>
           </div>
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Enable Observability</p>
+                <p className="font-medium">{translate("Enable Observability")}</p>
                 <p className="text-sm text-text-muted">
-                  Turn request detail recording on/off globally
+                  {translate("Turn request detail recording on/off globally")}
                 </p>
               </div>
               <Toggle
@@ -641,9 +642,9 @@ export default function ProfilePage() {
             <div className={cn("flex flex-col gap-4", !observabilityEnabled && "opacity-60")}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Max Records</p>
+                <p className="font-medium">{translate("Max Records")}</p>
                 <p className="text-sm text-text-muted">
-                  Maximum request detail records to keep (older records are auto-deleted)
+                  {translate("Maximum request detail records to keep (older records are auto-deleted)")}
                 </p>
               </div>
               <Input
@@ -660,9 +661,9 @@ export default function ProfilePage() {
 
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Batch Size</p>
+                <p className="font-medium">{translate("Batch Size")}</p>
                 <p className="text-sm text-text-muted">
-                  Number of items to accumulate before writing to database (higher = better performance)
+                  {translate("Number of items to accumulate before writing to database (higher = better performance)")}
                 </p>
               </div>
               <Input
@@ -679,9 +680,9 @@ export default function ProfilePage() {
 
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Flush Interval (ms)</p>
+                <p className="font-medium">{translate("Flush Interval (ms)")}</p>
                 <p className="text-sm text-text-muted">
-                  Maximum time to wait before flushing buffer (prevents data loss during low traffic)
+                  {translate("Maximum time to wait before flushing buffer (prevents data loss during low traffic)")}
                 </p>
               </div>
               <Input
@@ -698,9 +699,9 @@ export default function ProfilePage() {
 
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium">Max JSON Size (KB)</p>
+                <p className="font-medium">{translate("Max JSON Size (KB)")}</p>
                 <p className="text-sm text-text-muted">
-                  Maximum size for each JSON field (request/response) before truncation
+                  {translate("Maximum size for each JSON field (request/response) before truncation")}
                 </p>
               </div>
               <Input
@@ -716,7 +717,7 @@ export default function ProfilePage() {
             </div>
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
-              Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
+              {translate("Current: Keeps")} {settings.observabilityMaxRecords || 1000} {translate("records, batches every")} {settings.observabilityBatchSize || 20} {translate("requests, max")} {settings.observabilityMaxJsonSize || 1024}KB {translate("per field")}
             </p>
             </div>
           </div>
@@ -725,7 +726,7 @@ export default function ProfilePage() {
         {/* App Info */}
         <div className="text-center text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">Local Mode - All data stored on your machine</p>
+          <p className="mt-1">{translate("Local Mode - All data stored on your machine")}</p>
         </div>
       </div>
     </div>

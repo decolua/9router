@@ -14,7 +14,7 @@ let selectionMutex = Promise.resolve();
  * @param {string|null} excludeConnectionId - Connection ID to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
-export async function getProviderCredentials(provider, excludeConnectionId = null, model = null) {
+export async function getProviderCredentials(provider, excludeConnectionId = null, model = null, preferredConnectionId = null) {
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -37,6 +37,8 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     // Filter out model-locked and excluded connections
     const availableConnections = connections.filter(c => {
       if (excludeConnectionId && c.id === excludeConnectionId) return false;
+      if (preferredConnectionId && c.id !== preferredConnectionId) return false;
+      if (preferredConnectionId) return true;
       if (isModelLockActive(c, model)) return false;
       return true;
     });
@@ -75,7 +77,9 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     const strategy = settings.fallbackStrategy || "fill-first";
 
     let connection;
-    if (strategy === "round-robin") {
+    if (preferredConnectionId) {
+      connection = availableConnections[0];
+    } else if (strategy === "round-robin") {
       const stickyLimit = settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate

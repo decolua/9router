@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { translate } from "@/i18n/runtime";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -55,20 +56,20 @@ export default function UsageChart({ period = "7d" }) {
           onClick={() => setViewMode("tokens")}
           className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
         >
-          Tokens
+          {translate("Tokens")}
         </button>
         <button
           onClick={() => setViewMode("cost")}
           className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "cost" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
         >
-          Cost
+          {translate("Cost")}
         </button>
       </div>
 
       {loading ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">Loading...</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">{translate("Loading...")}</div>
       ) : !hasData ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">No data for this period</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">{translate("No data for this period")}</div>
       ) : (
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
