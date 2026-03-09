@@ -4,6 +4,7 @@ import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-res
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import { initState } from "../translator/index.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -86,7 +87,7 @@ export class GithubExecutor extends BaseExecutor {
       body: this.sanitizeMessagesForChatCompletions(options.body)
     };
 
-    const result = await super.execute(sanitizedOptions);
+    const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
@@ -101,7 +102,7 @@ export class GithubExecutor extends BaseExecutor {
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log }) {
+  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
@@ -109,12 +110,12 @@ export class GithubExecutor extends BaseExecutor {
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };

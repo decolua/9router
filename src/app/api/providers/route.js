@@ -1,9 +1,49 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById, getProviderNodes } from "@/models";
+import {
+  getProviderConnections,
+  createProviderConnection,
+  getProviderNodeById,
+  getProviderNodes,
+  getProxyPoolById,
+} from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 export const dynamic = "force-dynamic";
+
+function normalizeProxyConfig(body = {}) {
+  const enabled = body?.connectionProxyEnabled === true;
+  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
+  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+
+  if (enabled && !url) {
+    return { error: "Connection proxy URL is required when connection proxy is enabled" };
+  }
+
+  return {
+    connectionProxyEnabled: enabled,
+    connectionProxyUrl: url,
+    connectionNoProxy: noProxy,
+  };
+}
+
+async function normalizeProxyPoolId(proxyPoolId) {
+  if (proxyPoolId === undefined || proxyPoolId === null || proxyPoolId === "" || proxyPoolId === "__none__") {
+    return { proxyPoolId: null };
+  }
+
+  const normalizedId = String(proxyPoolId).trim();
+  if (!normalizedId) {
+    return { proxyPoolId: null };
+  }
+
+  const proxyPool = await getProxyPoolById(normalizedId);
+  if (!proxyPool) {
+    return { error: "Proxy pool not found" };
+  }
+
+  return { proxyPoolId: normalizedId };
+}
 
 // GET /api/providers - List all connections
 export async function GET() {
@@ -47,6 +87,16 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
+    const proxyConfig = normalizeProxyConfig(body);
+    if (proxyConfig.error) {
+      return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
+    }
+
+    const proxyPoolResult = await normalizeProxyPoolId(body.proxyPoolId);
+    if (proxyPoolResult.error) {
+      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+    }
+    const proxyPoolId = proxyPoolResult.proxyPoolId;
 
     // Validation
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
@@ -100,6 +150,17 @@ export async function POST(request) {
       };
     }
 
+    const mergedProviderSpecificData = {
+      ...(providerSpecificData || {}),
+      connectionProxyEnabled: proxyConfig.connectionProxyEnabled,
+      connectionProxyUrl: proxyConfig.connectionProxyUrl,
+      connectionNoProxy: proxyConfig.connectionNoProxy,
+    };
+
+    if (proxyPoolId !== null) {
+      mergedProviderSpecificData.proxyPoolId = proxyPoolId;
+    }
+
     const newConnection = await createProviderConnection({
       provider,
       authType: "apikey",
@@ -108,7 +169,7 @@ export async function POST(request) {
       priority: priority || 1,
       globalPriority: globalPriority || null,
       defaultModel: defaultModel || null,
-      providerSpecificData,
+      providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
     });

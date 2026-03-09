@@ -1,5 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, buildClearModelLocksUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -118,13 +119,22 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       connection = availableConnections[0];
     }
 
+    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+
     return {
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
       projectId: connection.projectId,
+      connectionName: connection.displayName || connection.name || connection.email || connection.id,
       copilotToken: connection.providerSpecificData?.copilotToken,
-      providerSpecificData: connection.providerSpecificData,
+      providerSpecificData: {
+        ...(connection.providerSpecificData || {}),
+        connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+        connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+        connectionNoProxy: resolvedProxy.connectionNoProxy,
+        connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
+      },
       connectionId: connection.id,
       // Include current status for optimization check
       testStatus: connection.testStatus,

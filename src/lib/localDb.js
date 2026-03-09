@@ -43,6 +43,7 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 const defaultData = {
   providerConnections: [],
   providerNodes: [],
+  proxyPools: [],
   modelAliases: {},
   mitmAlias: {},
   combos: [],
@@ -69,6 +70,7 @@ function cloneDefaultData() {
   return {
     providerConnections: [],
     providerNodes: [],
+    proxyPools: [],
     modelAliases: {},
     mitmAlias: {},
     combos: [],
@@ -308,12 +310,110 @@ export async function deleteProviderNode(id) {
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
   }
-  
+
   const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
   if (index === -1) return null;
 
   const [removed] = db.data.providerNodes.splice(index, 1);
+  await db.write();
+
+  return removed;
+}
+
+// ============ Proxy Pools ============
+
+/**
+ * Get proxy pools
+ */
+export async function getProxyPools(filter = {}) {
+  const db = await getDb();
+  let pools = db.data.proxyPools || [];
+
+  if (filter.isActive !== undefined) {
+    pools = pools.filter((pool) => pool.isActive === filter.isActive);
+  }
+
+  if (filter.testStatus) {
+    pools = pools.filter((pool) => pool.testStatus === filter.testStatus);
+  }
+
+  return pools.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
+
+/**
+ * Get proxy pool by ID
+ */
+export async function getProxyPoolById(id) {
+  const db = await getDb();
+  return (db.data.proxyPools || []).find((pool) => pool.id === id) || null;
+}
+
+/**
+ * Create proxy pool
+ */
+export async function createProxyPool(data) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const now = new Date().toISOString();
+  const pool = {
+    id: data.id || uuidv4(),
+    name: data.name,
+    proxyUrl: data.proxyUrl,
+    noProxy: data.noProxy || "",
+    isActive: data.isActive !== undefined ? data.isActive : true,
+    strictProxy: data.strictProxy === true,
+    testStatus: data.testStatus || "unknown",
+    lastTestedAt: data.lastTestedAt || null,
+    lastError: data.lastError || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  db.data.proxyPools.push(pool);
+  await db.write();
+
+  return pool;
+}
+
+/**
+ * Update proxy pool
+ */
+export async function updateProxyPool(id, data) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const index = db.data.proxyPools.findIndex((pool) => pool.id === id);
+  if (index === -1) return null;
+
+  db.data.proxyPools[index] = {
+    ...db.data.proxyPools[index],
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.write();
+  return db.data.proxyPools[index];
+}
+
+/**
+ * Delete proxy pool
+ */
+export async function deleteProxyPool(id) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const index = db.data.proxyPools.findIndex((pool) => pool.id === id);
+  if (index === -1) return null;
+
+  const [removed] = db.data.proxyPools.splice(index, 1);
   await db.write();
 
   return removed;

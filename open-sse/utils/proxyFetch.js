@@ -1,8 +1,7 @@
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
 const originalFetch = globalThis.fetch;
-let proxyDispatcher = null;
-let proxyDispatcherUrl = null;
+const proxyDispatchers = new Map();
 
 // Constants
 const DNS_CACHE = {};
@@ -14,12 +13,17 @@ const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
 
+function normalizeString(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
+
 /**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
 async function resolveRealIP(hostname) {
   if (DNS_CACHE[hostname]) return DNS_CACHE[hostname];
-  
+
   try {
     const dns = await import("dns");
     const { promisify } = await import("util");
@@ -40,11 +44,11 @@ async function resolveRealIP(hostname) {
  */
 function shouldBypassMitmDns(url, options) {
   if (!options?.headers) return false;
-  
+
   const headers = options.headers;
-  const hasLocalMarker = headers[MITM_BYPASS_HEADER] === MITM_BYPASS_VALUE || 
+  const hasLocalMarker = headers[MITM_BYPASS_HEADER] === MITM_BYPASS_VALUE ||
                          headers[MITM_BYPASS_HEADER.charAt(0).toUpperCase() + MITM_BYPASS_HEADER.slice(1)] === MITM_BYPASS_VALUE;
-  
+
   if (!hasLocalMarker) {
     // Debug: log when bypass is not triggered
     const hostname = new URL(url).hostname;
@@ -53,37 +57,39 @@ function shouldBypassMitmDns(url, options) {
     }
     return false;
   }
-  
+
   const hostname = new URL(url).hostname;
   return MITM_BYPASS_HOSTS.some(host => hostname.includes(host));
+}
+
+function shouldBypassByNoProxy(targetUrl, noProxyValue) {
+  const noProxy = normalizeString(noProxyValue);
+  if (!noProxy) return false;
+
+  const hostname = new URL(targetUrl).hostname.toLowerCase();
+  const patterns = noProxy.split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+
+  return patterns.some((pattern) => {
+    if (pattern === "*") return true;
+    if (pattern.startsWith(".")) return hostname.endsWith(pattern) || hostname === pattern.slice(1);
+    return hostname === pattern || hostname.endsWith(`.${pattern}`);
+  });
 }
 
 /**
  * Get proxy URL from environment
  */
-function getProxyUrl(targetUrl) {
+function getEnvProxyUrl(targetUrl) {
   const noProxy = process.env.NO_PROXY || process.env.no_proxy;
-  
-  if (noProxy) {
-    const hostname = new URL(targetUrl).hostname.toLowerCase();
-    const patterns = noProxy.split(",").map(p => p.trim().toLowerCase());
-    
-    const shouldBypass = patterns.some(pattern => {
-      if (pattern === "*") return true;
-      if (pattern.startsWith(".")) return hostname.endsWith(pattern) || hostname === pattern.slice(1);
-      return hostname === pattern || hostname.endsWith(`.${pattern}`);
-    });
-    
-    if (shouldBypass) return null;
-  }
+  if (shouldBypassByNoProxy(targetUrl, noProxy)) return null;
 
   const protocol = new URL(targetUrl).protocol;
-  
+
   if (protocol === "https:") {
-    return process.env.HTTPS_PROXY || process.env.https_proxy || 
+    return process.env.HTTPS_PROXY || process.env.https_proxy ||
            process.env.ALL_PROXY || process.env.all_proxy;
   }
-  
+
   return process.env.HTTP_PROXY || process.env.http_proxy ||
          process.env.ALL_PROXY || process.env.all_proxy;
 }
@@ -92,33 +98,45 @@ function getProxyUrl(targetUrl) {
  * Normalize proxy URL (allow host:port)
  */
 function normalizeProxyUrl(proxyUrl) {
-  if (!proxyUrl) return null;
+  const normalizedInput = normalizeString(proxyUrl);
+  if (!normalizedInput) return null;
+
   try {
     // eslint-disable-next-line no-new
-    new URL(proxyUrl);
-    return proxyUrl;
+    new URL(normalizedInput);
+    return normalizedInput;
   } catch {
     // Allow "127.0.0.1:7890" style values
-    return `http://${proxyUrl}`;
+    return `http://${normalizedInput}`;
   }
+}
+
+function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
+  const enabled = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
+  if (!enabled) return null;
+
+  const proxyUrlRaw = normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
+  if (!proxyUrlRaw) return null;
+
+  const noProxy = normalizeString(proxyOptions?.noProxy ?? proxyOptions?.connectionNoProxy);
+  if (noProxy && shouldBypassByNoProxy(targetUrl, noProxy)) return null;
+
+  return normalizeProxyUrl(proxyUrlRaw);
 }
 
 /**
  * Create proxy dispatcher lazily (undici-compatible)
- * Closes old dispatcher when proxy URL changes to prevent connection pool leak
  */
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
 
-  if (!proxyDispatcher || proxyDispatcherUrl !== normalized) {
-    try { proxyDispatcher?.close?.(); } catch { /* ignore */ }
+  if (!proxyDispatchers.has(normalized)) {
     const { ProxyAgent } = await import("undici");
-    proxyDispatcher = new ProxyAgent({ uri: normalized });
-    proxyDispatcherUrl = normalized;
+    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
   }
 
-  return proxyDispatcher;
+  return proxyDispatchers.get(normalized);
 }
 
 /**
@@ -128,10 +146,10 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   const https = await import("https");
   const net = await import("net");
   const { Readable } = require("stream");
-  
+
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
-    
+
     socket.connect(HTTPS_PORT, realIP, () => {
       const reqOptions = {
         socket,
@@ -144,7 +162,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
           Host: parsedUrl.hostname,
         },
       };
-      
+
       const req = https.request(reqOptions, (res) => {
         const response = {
           ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
@@ -161,24 +179,21 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         };
         resolve(response);
       });
-      
+
       req.on("error", reject);
       if (options.body) {
         req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
       }
       req.end();
     });
-    
+
     socket.on("error", reject);
   });
 }
 
-/**
- * Patched fetch with proxy support and MITM DNS bypass
- */
-async function patchedFetch(url, options = {}) {
+export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
-  
+
   // MITM DNS bypass: resolve real IP for googleapis.com when x-request-source: local
   if (shouldBypassMitmDns(targetUrl, options)) {
     try {
@@ -189,20 +204,33 @@ async function patchedFetch(url, options = {}) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }
-  
-  // Normal proxy handling
-  const proxyUrl = normalizeProxyUrl(getProxyUrl(targetUrl));
+
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  const proxyUrl = connectionProxyUrl || envProxyUrl;
+
   if (proxyUrl) {
     try {
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, { ...options, dispatcher });
     } catch (proxyError) {
+      // If strictProxy is enabled, fail hard instead of falling back to direct
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
+      }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
       return originalFetch(url, options);
     }
   }
-  
+
   return originalFetch(url, options);
+}
+
+/**
+ * Patched global fetch with env-proxy support and MITM DNS bypass
+ */
+async function patchedFetch(url, options = {}) {
+  return proxyAwareFetch(url, options, null);
 }
 
 // Idempotency guard — only patch once to avoid wrapping multiple times
