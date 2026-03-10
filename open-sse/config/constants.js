@@ -19,6 +19,34 @@ function mapStainlessArch() {
   }
 }
 
+// === Gemini CLI Version Constants ===
+export const GEMINI_CLI_VERSION = "0.31.0";
+export const GEMINI_CLI_API_CLIENT = "google-genai-sdk/1.41.0 gl-node/v22.19.0";
+
+function mapGeminiCLIOs() {
+  switch (platform()) {
+    case "darwin": return "darwin";
+    case "win32": return "windows";
+    case "linux": return "linux";
+    case "freebsd": return "freebsd";
+    default: return platform();
+  }
+}
+
+function mapGeminiCLIArch() {
+  switch (arch()) {
+    case "x64": return "x64";
+    case "arm64": return "arm64";
+    case "ia32": return "x86";
+    default: return arch();
+  }
+}
+
+/** Returns User-Agent matching native Gemini CLI format: GeminiCLI/<version>/<model> (<os>; <arch>) */
+export function geminiCLIUserAgent(model = "unknown") {
+  return `GeminiCLI/${GEMINI_CLI_VERSION}/${model || "unknown"} (${mapGeminiCLIOs()}; ${mapGeminiCLIArch()})`;
+}
+
 // === GitHub Copilot Version Constants ===
 export const GITHUB_COPILOT = {
   VSCODE_VERSION: "1.110.0",
