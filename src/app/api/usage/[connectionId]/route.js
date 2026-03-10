@@ -33,8 +33,8 @@ async function refreshAndUpdateCredentials(connection) {
   const refreshResult = await executor.refreshCredentials(credentials, console);
 
   if (!refreshResult) {
-    // For GitHub, if refreshCredentials fails but we still have accessToken, try to use it directly
-    if (connection.provider === "github" && connection.accessToken) {
+    // Refresh failed but we still have an accessToken — try with existing token
+    if (connection.accessToken) {
       return { connection, refreshed: false };
     }
     throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
