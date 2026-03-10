@@ -2,22 +2,25 @@ name: Build and Push Docker Image
 
 on:
   push:
-    branches:
-      - master
     tags:
       - 'v*'
-    paths:
-      - 'src/**'
-      - 'open-sse/**'
-      - 'public/**'
-      - 'package*.json'
-      - 'next.config.*'
-      - 'Dockerfile'
+    # Uncomment to also build on master pushes (rolling latest).
+    # Pair with concurrency + paths below to avoid excessive builds.
+    # branches:
+    #   - master
+    # paths:
+    #   - 'src/**'
+    #   - 'open-sse/**'
+    #   - 'public/**'
+    #   - 'package*.json'
+    #   - 'next.config.*'
+    #   - 'Dockerfile'
   workflow_dispatch:
 
-concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: true
+# Uncomment if re-enabling master push trigger.
+# concurrency:
+#   group: docker-${{ github.ref }}
+#   cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
