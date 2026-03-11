@@ -72,11 +72,13 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
     }
 
     const settings = await getSettings();
-    const strategy = settings.fallbackStrategy || "fill-first";
+    // Per-provider strategy overrides global setting
+    const providerOverride = (settings.providerStrategies || {})[providerId] || {};
+    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
     let connection;
     if (strategy === "round-robin") {
-      const stickyLimit = settings.stickyRoundRobinLimit || 3;
+      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
       const byRecency = [...availableConnections].sort((a, b) => {
@@ -178,7 +180,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  log.warn("AUTH", `${connectionId.slice(0, 8)} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
@@ -228,7 +231,8 @@ export async function clearAccountError(connectionId, currentConnection, model =
   }
 
   await updateProviderConnection(connectionId, clearObj);
-  log.info("AUTH", `Account ${connectionId.slice(0, 8)} cleared lock for model=${model || "__all"}`);
+  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+  log.info("AUTH", `Account ${connName} cleared lock for model=${model || "__all"}`);
 }
 
 /**

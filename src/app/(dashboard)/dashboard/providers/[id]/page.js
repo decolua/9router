@@ -34,6 +34,8 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
+  const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -75,14 +77,16 @@ export default function ProviderDetailPage() {
 
   const fetchConnections = useCallback(async () => {
     try {
-      const [connectionsRes, nodesRes, proxyPoolsRes] = await Promise.all([
+      const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
         fetch("/api/providers", { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
         fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
+        fetch("/api/settings", { cache: "no-store" }),
       ]);
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
       const proxyPoolsData = await proxyPoolsRes.json();
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);
@@ -90,6 +94,10 @@ export default function ProviderDetailPage() {
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
+      // Load per-provider strategy override
+      const override = (settingsData.providerStrategies || {})[providerId] || {};
+      setProviderStrategy(override.fallbackStrategy || null);
+      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -131,6 +139,49 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error updating provider node:", error);
     }
+  };
+
+  const saveProviderStrategy = async (strategy, stickyLimit) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerStrategies || {};
+
+      // Build override: null strategy means remove override, use global
+      const override = {};
+      if (strategy) override.fallbackStrategy = strategy;
+      if (strategy === "round-robin" && stickyLimit !== "") {
+        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      }
+
+      const updated = { ...current };
+      if (Object.keys(override).length === 0) {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = override;
+      }
+
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerStrategies: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving provider strategy:", error);
+    }
+  };
+
+  const handleRoundRobinToggle = (enabled) => {
+    const strategy = enabled ? "round-robin" : null;
+    const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
+    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
+    setProviderStrategy(strategy);
+    saveProviderStrategy(strategy, sticky);
+  };
+
+  const handleStickyLimitChange = (value) => {
+    setProviderStickyLimit(value);
+    saveProviderStrategy("round-robin", value);
   };
 
   useEffect(() => {
@@ -703,28 +754,27 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Connections</h2>
-          {!isCompatible && (
-            <div className="flex gap-2">
-              {providerId === "iflow" && (
-                <Button
-                  size="sm"
-                  icon="cookie"
-                  variant="secondary"
-                  onClick={() => setShowIFlowCookieModal(true)}
-                  title="Add connection using browser cookie"
-                >
-                  Cookie
-                </Button>
-              )}
-              <Button
-                size="sm"
-                icon="add"
-                onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-              >
-                Add
-              </Button>
-            </div>
-          )}
+          {/* Round Robin toggle */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-muted font-medium">Round Robin</span>
+            <Toggle
+              checked={providerStrategy === "round-robin"}
+              onChange={handleRoundRobinToggle}
+            />
+            {providerStrategy === "round-robin" && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-text-muted">Sticky:</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={providerStickyLimit}
+                  onChange={(e) => handleStickyLimitChange(e.target.value)}
+                  placeholder="1"
+                  className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {connections.length === 0 ? (
@@ -750,6 +800,28 @@ export default function ProviderDetailPage() {
         ) : (
           <>
             {connectionsList}
+            {!isCompatible && (
+              <div className="flex gap-2 mt-4">
+                {providerId === "iflow" && (
+                  <Button
+                    size="sm"
+                    icon="cookie"
+                    variant="secondary"
+                    onClick={() => setShowIFlowCookieModal(true)}
+                    title="Add connection using browser cookie"
+                  >
+                    Cookie
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  icon="add"
+                  onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+                >
+                  Add
+                </Button>
+              </div>
+            )}
           </>
         )}
       </Card>

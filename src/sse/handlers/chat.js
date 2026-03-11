@@ -156,8 +156,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Log account selection
-    const accountId = credentials.connectionId.slice(0, 8);
-    log.info("AUTH", `Using ${provider} account: ${accountId}...`);
+    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -202,7 +201,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 
     if (shouldFallback) {
-      log.warn("AUTH", `Account ${accountId}... unavailable (${result.status}), trying fallback`);
+      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
       excludeConnectionId = credentials.connectionId;
       lastError = result.error;
       lastStatus = result.status;
