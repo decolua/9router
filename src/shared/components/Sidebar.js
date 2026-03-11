@@ -43,7 +43,7 @@ export default function Sidebar({ onClose }) {
       .catch(() => {});
   }, []);
 
-  // Lazy check for new npm version on mount
+  // Check for update metadata on mount.
   useEffect(() => {
     fetch("/api/version")
       .then(res => res.json())
@@ -98,9 +98,11 @@ export default function Sidebar({ onClose }) {
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
-              <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
-              </code>
+              {updateInfo.installCommand && (
+                <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
+                  {updateInfo.installCommand}
+                </code>
+              )}
             </div>
           )}
         </div>
