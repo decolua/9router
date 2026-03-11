@@ -389,13 +389,6 @@ async function calculateCost(provider, model, tokens) {
 
     if (!pricing) return 0;
 
-    // Kiro uses credit-based pricing, not token-based
-    // Cost should be tracked from AWS CodeWhisperer API, not calculated from tokens
-    // Return 0 to avoid showing fake token-based costs
-    if (provider === "kiro" || pricing.type === "credit-based") {
-      return 0;
-    }
-
     let cost = 0;
 
     // Input tokens (non-cached)
@@ -612,11 +605,6 @@ export async function getUsageStats(options = {}) {
     const pricing = pricingCache[combo];
 
     if (!pricing) return 0;
-
-    // Kiro uses credit-based pricing
-    if (provider === "kiro" || pricing.type === "credit-based") {
-      return 0;
-    }
 
     let cost = 0;
 

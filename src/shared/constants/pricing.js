@@ -565,30 +565,21 @@ export const DEFAULT_PRICING = {
     }
   },
 
-  // Kiro AI (kr) - Credit-based subscription (NOT token-based)
-  // Kiro uses a credit system where 1 credit ≠ 1 token
-  // Credits are "units of work per prompt" - simple requests use <1 credit, complex ones use multiple
-  // Subscription tiers: Free (50), Pro (1000), Pro+ (2000), Power (10000) credits/month
-  // Overage rate: $0.04 per credit
-  // NOTE: Cost calculation for Kiro should NOT use token-based pricing
-  // Instead, dashboard should show credit usage from AWS CodeWhisperer API
+  // Kiro AI (kr) - AWS CodeWhisperer
   kr: {
-    type: "credit-based",
-    subscriptionTiers: {
-      free: { credits: 50, cost: 0 },
-      pro: { credits: 1000, cost: 20 },
-      "pro+": { credits: 2000, cost: 40 },
-      power: { credits: 10000, cost: 200 }
-    },
-    overageRate: 0.04, // $0.04 per credit
-    // Placeholder models - actual credit cost varies by request complexity
     "claude-sonnet-4.5": {
-      type: "credit-based",
-      estimatedCreditsPerRequest: null // Unknown - varies by complexity
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
     },
     "claude-haiku-4.5": {
-      type: "credit-based",
-      estimatedCreditsPerRequest: null // Unknown - varies by complexity
+      input: 0.50,
+      output: 2.50,
+      cached: 0.05,
+      reasoning: 3.75,
+      cache_creation: 0.50
     }
   },
 
