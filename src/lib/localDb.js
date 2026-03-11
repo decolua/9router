@@ -62,7 +62,8 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    kiroAuthUrl: "https://view.awsapps.com/start"
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -91,6 +92,7 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      kiroAuthUrl: "https://view.awsapps.com/start"
     },
     pricing: {},
   };
@@ -452,6 +454,7 @@ export async function createProviderConnection(data) {
   
   // Check for existing connection with same provider and email (for OAuth)
   // or same provider and name (for API key)
+  // or same provider and clientId (for Kiro)
   let existingIndex = -1;
   if (data.authType === "oauth" && data.email) {
     existingIndex = db.data.providerConnections.findIndex(
@@ -460,6 +463,11 @@ export async function createProviderConnection(data) {
   } else if (data.authType === "apikey" && data.name) {
     existingIndex = db.data.providerConnections.findIndex(
       c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
+    );
+  } else if (data.provider === "kiro" && data.providerSpecificData?.clientId) {
+    // For Kiro, use clientId as unique identifier (each AWS org registration has unique clientId)
+    existingIndex = db.data.providerConnections.findIndex(
+      c => c.provider === "kiro" && c.providerSpecificData?.clientId === data.providerSpecificData.clientId
     );
   }
   

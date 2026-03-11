@@ -1665,6 +1665,19 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               )}
             </div>
           )}
+          {isOAuth && (
+            <button
+              onClick={handleRefreshToken}
+              disabled={refreshing}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Manually refresh OAuth token"
+            >
+              <span className={`material-symbols-outlined text-[18px] ${refreshing ? "animate-spin" : ""}`}>
+                {refreshing ? "progress_activity" : "refresh"}
+              </span>
+              <span className="text-[10px] leading-tight">Refresh</span>
+            </button>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -1680,26 +1693,6 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
           onChange={onToggleActive}
           title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
         />
-        <div className="flex gap-1 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          {isOAuth && (
-            <button
-              onClick={handleRefreshToken}
-              disabled={refreshing}
-              className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
-              title="Manually refresh OAuth token"
-            >
-              <span className={`material-symbols-outlined text-[18px] ${refreshing ? "animate-spin" : ""}`}>
-                {refreshing ? "progress_activity" : "refresh"}
-              </span>
-            </button>
-          )}
-          <button onClick={onEdit} className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-          </button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-500/10 rounded text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -13,12 +13,14 @@ import KiroSocialOAuthModal from "./KiroSocialOAuthModal";
 export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onClose }) {
   const [authMethod, setAuthMethod] = useState(null); // null | "builder-id" | "idc" | "social" | "import"
   const [socialProvider, setSocialProvider] = useState(null); // "google" | "github"
+  const [builderIdConfig, setBuilderIdConfig] = useState(null);
   const [idcConfig, setIdcConfig] = useState(null);
 
   const handleMethodSelect = useCallback((method, config) => {
     if (method === "builder-id") {
-      // Use device code flow (AWS Builder ID)
+      // Use device code flow (AWS Builder ID) with config
       setAuthMethod("builder-id");
+      setBuilderIdConfig(config);
     } else if (method === "idc") {
       // Use device code flow with IDC config
       setAuthMethod("idc");
@@ -36,6 +38,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
   const handleBack = () => {
     setAuthMethod(null);
     setSocialProvider(null);
+    setBuilderIdConfig(null);
     setIdcConfig(null);
   };
 
@@ -48,6 +51,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
 
   const handleDeviceSuccess = () => {
     setAuthMethod(null);
+    setBuilderIdConfig(null);
     setIdcConfig(null);
     onSuccess?.();
     onClose?.(); // Close modal after success
@@ -66,6 +70,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
 
   // Show device code flow (Builder ID or IDC)
   if (authMethod === "builder-id" || authMethod === "idc") {
+    const deviceConfig = authMethod === "builder-id" ? builderIdConfig : idcConfig;
     return (
       <OAuthModal
         isOpen={isOpen}
@@ -73,7 +78,7 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
         providerInfo={providerInfo}
         onSuccess={handleDeviceSuccess}
         onClose={handleBack}
-        idcConfig={idcConfig}
+        deviceConfig={deviceConfig}
       />
     );
   }

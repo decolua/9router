@@ -1,16 +1,18 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getExecutor } from "open-sse/executors/index.js";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
-import { getMachineId } from "@/shared/utils/machine";
+import { isCloudEnabled } from "@/models";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 
-/**
- * Sync to cloud if enabled
- */
 async function syncToCloudIfEnabled() {
   try {
-    const machineId = await getMachineId();
-    if (!machineId) return;
-    await syncToCloud(machineId);
+    const cloudEnabled = await isCloudEnabled();
+    if (!cloudEnabled) return;
+    const machineId = await getConsistentMachineId();
+    await fetch(`${process.env.INTERNAL_BASE_URL || "http://localhost:20130"}/api/sync/cloud`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machineId, action: "sync" }),
+    });
   } catch (error) {
     console.error("[OAuth Refresh API] Error syncing to cloud:", error);
   }

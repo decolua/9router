@@ -5,7 +5,6 @@ import { join } from "path";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection, isCloudEnabled } from "@/models";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
 
 /**
  * GET /api/oauth/kiro/auto-import
@@ -154,7 +153,11 @@ async function syncToCloudIfEnabled() {
     if (!cloudEnabled) return;
 
     const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
+    await fetch(`${process.env.INTERNAL_BASE_URL || "http://localhost:20130"}/api/sync/cloud`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machineId, action: "sync" }),
+    });
   } catch (error) {
     console.log("Error syncing to cloud after Kiro auto-import:", error);
   }
