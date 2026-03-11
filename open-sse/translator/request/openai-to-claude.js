@@ -3,8 +3,9 @@ import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/constants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
-// Prefix for Claude OAuth tool names to avoid conflicts
-const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
+// Empty prefix matches real Claude Code behavior (no tool name prefix).
+// Previously "proxy_" was used but this is a detectable fingerprint difference.
+const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
 export function openaiToClaudeRequest(model, body, stream) {
@@ -96,6 +97,21 @@ export function openaiToClaudeRequest(model, body, stream) {
           break;
         }
       }
+    }
+  }
+
+  // Handle response_format for JSON mode
+  if (body.response_format) {
+    const responseFormat = body.response_format;
+    if (responseFormat.type === "json_schema" && responseFormat.json_schema?.schema) {
+      const schemaJson = JSON.stringify(responseFormat.json_schema.schema, null, 2);
+      systemParts.push(`You must respond with valid JSON that strictly follows this JSON schema:
+\`\`\`json
+${schemaJson}
+\`\`\`
+Respond ONLY with the JSON object, no other text.`);
+    } else if (responseFormat.type === "json_object") {
+      systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text.");
     }
   }
 
