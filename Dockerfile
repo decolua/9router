@@ -18,13 +18,13 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Runtime writable location for localDb when DATA_DIR is configured to /app/data
-RUN mkdir -p /app/data && chown node:node /app/data
-
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
+
+# Runtime writable location for localDb — must be AFTER COPY to avoid permission overwrite
+RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node
 
