@@ -466,9 +466,15 @@ export default function UsageStats() {
       {/* Time Range Modal */}
       {showTimeRangeModal && (
         <TimeRangeModal
+          isOpen={showTimeRangeModal}
           onClose={() => setShowTimeRangeModal(false)}
-          onApply={(range) => {
-            handleCustomRange(range);
+          currentRange={period}
+          onRangeChange={(range) => {
+            if (typeof range === "object" && range.type === "custom") {
+              handleCustomRange(range);
+            } else {
+              setPeriod(range);
+            }
             setShowTimeRangeModal(false);
           }}
         />
