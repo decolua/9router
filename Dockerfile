@@ -23,11 +23,13 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
 
-# Runtime writable location for localDb — must be AFTER COPY to avoid permission overwrite
-RUN mkdir -p /app/data && chown node:node /app/data
+RUN mkdir -p /app/data
 
-USER node
+# Fix permissions at runtime (handles mounted volumes)
+RUN printf '#!/bin/sh\nchown -R node:node /app/data 2>/dev/null; exec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+RUN apk add --no-cache su-exec
 
 EXPOSE 20128
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "server.js"]
