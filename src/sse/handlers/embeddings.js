@@ -6,6 +6,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { isModelAllowed } from "../services/modelAccess.js";
+import { getCachedApiKeyRecord } from "../services/apiKeyCache.js";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -58,6 +60,18 @@ export async function handleEmbeddings(request) {
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Check per-key model restrictions (only for active keys with restrictions)
+  if (apiKey) {
+    const keyRecord = await getCachedApiKeyRecord(apiKey);
+    if (keyRecord?.isActive !== false && keyRecord?.allowedModels?.length > 0) {
+      const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
+      if (!allowed) {
+        log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+      }
+    }
   }
 
   if (!body.input) {

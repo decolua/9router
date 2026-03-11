@@ -145,11 +145,15 @@ function ensureDbShape(data) {
       }
     }
 
-    // Migrate existing API keys to have isActive
+    // Migrate existing API keys to have isActive and allowedModels
     if (key === "apiKeys" && Array.isArray(next.apiKeys)) {
       for (const apiKey of next.apiKeys) {
         if (apiKey.isActive === undefined || apiKey.isActive === null) {
           apiKey.isActive = true;
+          changed = true;
+        }
+        if (apiKey.allowedModels === undefined) {
+          apiKey.allowedModels = [];
           changed = true;
         }
       }
@@ -840,8 +844,9 @@ function generateShortKey() {
  * Create API key
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
+ * @param {string[]} [allowedModels] - Optional model restrictions
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, allowedModels) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -859,6 +864,7 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId: machineId,
     isActive: true,
+    allowedModels: Array.isArray(allowedModels) ? allowedModels : [],
     createdAt: now,
   };
   
@@ -913,6 +919,15 @@ export async function validateApiKey(key) {
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
   return found && found.isActive !== false;
+}
+
+/**
+ * Get API key record by key string (sk-...)
+ * Returns full key object or null
+ */
+export async function getApiKeyByKey(key) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.key === key) || null;
 }
 
 // ============ Data Cleanup ============
