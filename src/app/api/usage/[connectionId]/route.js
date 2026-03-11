@@ -6,7 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 /**
  * Refresh credentials using executor and update database
- * @returns {{ connection, refreshed: boolean }}
+ * @returns Promise<{ connection, refreshed: boolean }>
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
