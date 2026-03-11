@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 
 /**
@@ -10,6 +10,37 @@ import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelpe
 export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
+  }
+
+  async refreshCredentials(credentials, log) {
+    if (!credentials.refreshToken) return null;
+
+    try {
+      const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: credentials.refreshToken,
+          client_id: this.config.clientId,
+          scope: "openid profile email offline_access"
+        })
+      });
+
+      if (!response.ok) return null;
+
+      const tokens = await response.json();
+      log?.info?.("TOKEN", "Codex refreshed");
+
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || credentials.refreshToken,
+        expiresIn: tokens.expires_in
+      };
+    } catch (error) {
+      log?.error?.("TOKEN", `Codex refresh error: ${error.message}`);
+      return null;
+    }
   }
 
   /**
