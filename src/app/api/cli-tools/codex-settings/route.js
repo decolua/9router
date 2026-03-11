@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { parseTOML, stringifyTOML } from "confbox";
 
 const execAsync = promisify(exec);
 
@@ -13,62 +14,31 @@ const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
-// Parse TOML config to object (simple parser for codex config)
-const parseToml = (content) => {
-  const result = { _root: {}, _sections: {} };
-  let currentSection = "_root";
-  
-  content.split("\n").forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) return;
-    
-    // Section header like [model_providers.9router]
-    const sectionMatch = trimmed.match(/^\[(.+)\]$/);
-    if (sectionMatch) {
-      currentSection = sectionMatch[1];
-      result._sections[currentSection] = {};
-      return;
+// Flatten confbox-parsed TOML into a writable object, preserving nested tables
+const parsedToWritable = (obj) => obj ?? {};
+
+// Set a nested key from a flat dotted path, creating intermediate objects as needed
+const setNestedSection = (obj, dottedKey, value) => {
+  const keys = dottedKey.split(".");
+  let cur = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (cur[keys[i]] == null || typeof cur[keys[i]] !== "object") {
+      cur[keys[i]] = {};
     }
-    
-    // Key = value
-    const kvMatch = trimmed.match(/^([^=]+)\s*=\s*(.+)$/);
-    if (kvMatch) {
-      const key = kvMatch[1].trim();
-      let value = kvMatch[2].trim();
-      // Remove quotes
-      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-        value = value.slice(1, -1);
-      }
-      if (currentSection === "_root") {
-        result._root[key] = value;
-      } else {
-        result._sections[currentSection][key] = value;
-      }
-    }
-  });
-  
-  return result;
+    cur = cur[keys[i]];
+  }
+  cur[keys[keys.length - 1]] = value;
 };
 
-// Convert parsed object back to TOML string
-const toToml = (parsed) => {
-  let lines = [];
-  
-  // Root level keys
-  Object.entries(parsed._root).forEach(([key, value]) => {
-    lines.push(`${key} = "${value}"`);
-  });
-  
-  // Sections
-  Object.entries(parsed._sections).forEach(([section, values]) => {
-    lines.push("");
-    lines.push(`[${section}]`);
-    Object.entries(values).forEach(([key, value]) => {
-      lines.push(`${key} = "${value}"`);
-    });
-  });
-  
-  return lines.join("\n") + "\n";
+// Delete a nested key from a flat dotted path
+const deleteNestedSection = (obj, dottedKey) => {
+  const keys = dottedKey.split(".");
+  let cur = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    cur = cur?.[keys[i]];
+    if (cur == null) return;
+  }
+  delete cur[keys[keys.length - 1]];
 };
 
 // Check if codex CLI is installed
@@ -144,27 +114,27 @@ export async function POST(request) {
     await fs.mkdir(codexDir, { recursive: true });
 
     // Read and parse existing config
-    let parsed = { _root: {}, _sections: {} };
+    let parsed = {};
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
-      parsed = parseToml(existingConfig);
+      parsed = parsedToWritable(parseTOML(existingConfig));
     } catch { /* No existing config */ }
 
     // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
-    parsed._root.model = model;
-    parsed._root.model_provider = "9router";
-    
+    parsed.model = model;
+    parsed.model_provider = "9router";
+
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    parsed._sections["model_providers.9router"] = {
+    setNestedSection(parsed, "model_providers.9router", {
       name: "9Router",
       base_url: normalizedBaseUrl,
       wire_api: "responses",
-    };
+    });
 
     // Write merged config
-    const configContent = toToml(parsed);
+    const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
 
     // Update auth.json with OPENAI_API_KEY (Codex reads this first)
@@ -195,10 +165,10 @@ export async function DELETE() {
     const configPath = getCodexConfigPath();
 
     // Read and parse existing config
-    let parsed = { _root: {}, _sections: {} };
+    let parsed = {};
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
-      parsed = parseToml(existingConfig);
+      parsed = parsedToWritable(parseTOML(existingConfig));
     } catch (error) {
       if (error.code === "ENOENT") {
         return NextResponse.json({
@@ -210,16 +180,16 @@ export async function DELETE() {
     }
 
     // Remove 9Router related root fields only if they point to 9router
-    if (parsed._root.model_provider === "9router") {
-      delete parsed._root.model;
-      delete parsed._root.model_provider;
+    if (parsed.model_provider === "9router") {
+      delete parsed.model;
+      delete parsed.model_provider;
     }
-    
+
     // Remove 9router provider section
-    delete parsed._sections["model_providers.9router"];
+    deleteNestedSection(parsed, "model_providers.9router");
 
     // Write updated config
-    const configContent = toToml(parsed);
+    const configContent = stringifyTOML(parsed);
     await fs.writeFile(configPath, configContent);
 
     // Remove OPENAI_API_KEY from auth.json
