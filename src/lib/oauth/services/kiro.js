@@ -197,9 +197,31 @@ export class KiroService {
       }
 
       const data = await response.json();
+
+      // AWS SSO OIDC returns profileArn directly in response
+      // If not in response, try to extract from idToken if available
+      let profileArn = data.profileArn || null;
+
+      if (!profileArn && data.idToken) {
+        try {
+          const parts = data.idToken.split(".");
+          if (parts.length === 3) {
+            let payload = parts[1];
+            while (payload.length % 4) {
+              payload += "=";
+            }
+            const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+            profileArn = decoded.arn || decoded.profileArn || null;
+          }
+        } catch (e) {
+          // Silently fail - profileArn extraction is optional
+        }
+      }
+
       return {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken || refreshToken,
+        profileArn: profileArn,
         expiresIn: data.expiresIn,
       };
     }

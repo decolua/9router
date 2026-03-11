@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { readFile, readdir } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
+import { KiroService } from "@/lib/oauth/services/kiro";
+import { createProviderConnection, isCloudEnabled } from "@/models";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { syncToCloud } from "@/app/api/sync/cloud/route";
 
 /**
  * GET /api/oauth/kiro/auto-import
  * Auto-detect and extract Kiro refresh token from AWS SSO cache
+ * Returns the refresh token for manual import
  */
 export async function GET() {
   try {
@@ -81,5 +86,76 @@ export async function GET() {
       { found: false, error: error.message },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * POST /api/oauth/kiro/auto-import
+ * Complete the auto-import by validating token and storing connection with profileArn
+ */
+export async function POST(request) {
+  try {
+    const { refreshToken } = await request.json();
+
+    if (!refreshToken || typeof refreshToken !== "string") {
+      return NextResponse.json(
+        { error: "Refresh token is required" },
+        { status: 400 }
+      );
+    }
+
+    const kiroService = new KiroService();
+
+    // Validate and refresh token to get profileArn
+    const tokenData = await kiroService.validateImportToken(refreshToken.trim());
+
+    // Extract email from JWT if available
+    const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+
+    // Save to database with profileArn
+    const connection = await createProviderConnection({
+      provider: "kiro",
+      authType: "oauth",
+      accessToken: tokenData.accessToken,
+      refreshToken: tokenData.refreshToken,
+      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      email: email || null,
+      providerSpecificData: {
+        profileArn: tokenData.profileArn,
+        authMethod: "auto-import",
+        provider: "AWS SSO",
+      },
+      testStatus: "active",
+    });
+
+    // Auto sync to Cloud if enabled
+    await syncToCloudIfEnabled();
+
+    return NextResponse.json({
+      success: true,
+      connection: {
+        id: connection.id,
+        provider: connection.provider,
+        email: connection.email,
+      },
+    });
+  } catch (error) {
+    console.log("Kiro auto-import complete error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+/**
+ * Sync to Cloud if enabled
+ */
+async function syncToCloudIfEnabled() {
+  try {
+    const cloudEnabled = await isCloudEnabled();
+    if (!cloudEnabled) return;
+
+    const machineId = await getConsistentMachineId();
+    await syncToCloud(machineId);
+  } catch (error) {
+    console.log("Error syncing to cloud after Kiro auto-import:", error);
   }
 }
