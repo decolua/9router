@@ -182,6 +182,10 @@ export async function getActiveRequests() {
   return { activeRequests, recentRequests, errorProvider };
 }
 
+export function getPendingRequests() {
+  return pendingRequests;
+}
+
 /**
  * Get usage database instance (singleton)
  */
