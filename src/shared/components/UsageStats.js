@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Badge from "./Badge";
 import Card from "./Card";
+import { CardSkeleton } from "./Loading";
+import TimeRangeModal from "./TimeRangeModal";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
@@ -184,15 +186,28 @@ export default function UsageStats() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const sortBy = searchParams.get("sortBy") || "rawModel";
-  const sortOrder = searchParams.get("sortOrder") || "asc";
+  const modelSortBy = searchParams.get("modelSortBy") || "rawModel";
+  const modelSortOrder = searchParams.get("modelSortOrder") || "asc";
+  const accountSortBy = searchParams.get("accountSortBy") || "rawModel";
+  const accountSortOrder = searchParams.get("accountSortOrder") || "asc";
+  const apiKeySortBy = searchParams.get("apiKeySortBy") || "keyName";
+  const apiKeySortOrder = searchParams.get("apiKeySortOrder") || "asc";
+  const timeRangeParam = searchParams.get("timeRange") || "all";
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [fetching, setFetching] = useState(false);
-  const [tableView, setTableView] = useState("model");
-  const [providers, setProviders] = useState([]);
-  const [period, setPeriod] = useState("7d");
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [viewMode, setViewMode] = useState("tokens"); // 'tokens' or 'costs'
+  const [timeRange, setTimeRange] = useState(timeRangeParam);
+  const [refreshInterval, setRefreshInterval] = useState(5000); // Start with 5s
+  const [prevTotalRequests, setPrevTotalRequests] = useState(0);
+  const [expandedModels, setExpandedModels] = useState(new Set());
+  const [expandedAccounts, setExpandedAccounts] = useState(new Set());
+  const [expandedApiKeys, setExpandedApiKeys] = useState(new Set());
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [showTimeRangeModal, setShowTimeRangeModal] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0);
 
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
@@ -391,41 +406,459 @@ export default function UsageStats() {
     </div>
   );
 
+  const groupedModels = useMemo(
+    () => groupDataByKey(sortedModels, 'rawModel'),
+    [sortedModels, groupDataByKey]
+  );
+  const sortedAccounts = useMemo(() => {
+    const accountPendingMap = {};
+    if (stats?.pending?.byAccount) {
+      Object.entries(stats.byAccount || {}).forEach(([accountKey, data]) => {
+        const connPending = stats.pending.byAccount[data.connectionId];
+        if (connPending) {
+          const modelKey = data.provider
+            ? `${data.rawModel} (${data.provider})`
+            : data.rawModel;
+          accountPendingMap[accountKey] = connPending[modelKey] || 0;
+        }
+      });
+    }
+    return sortData(stats?.byAccount, accountPendingMap, accountSortBy, accountSortOrder);
+  }, [stats?.byAccount, stats?.pending?.byAccount, accountSortBy, accountSortOrder, sortData]);
+
+  const groupedAccounts = useMemo(
+    () => groupDataByKey(sortedAccounts, 'accountName'),
+    [sortedAccounts, groupDataByKey]
+  );
+
+  const sortedApiKeys = useMemo(() => sortData(stats?.byApiKey, {}, apiKeySortBy, apiKeySortOrder), [stats?.byApiKey, apiKeySortBy, apiKeySortOrder, sortData]);
+
+  const groupedApiKeys = useMemo(
+    () => groupDataByKey(sortedApiKeys, 'keyName'),
+    [sortedApiKeys, groupDataByKey]
+  );
+
+  const fetchStats = useCallback(async (showLoading = true) => {
+    // Save scroll position before fetching (only if not showing loading skeleton)
+    if (!showLoading && window.scrollY > 0) {
+      setScrollPosition(window.scrollY);
+    }
+
+    if (showLoading) setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (timeRange && timeRange !== "all") {
+        if (typeof timeRange === "object" && timeRange.type === "custom") {
+          // Custom date range
+          params.set("startDate", timeRange.startDate);
+          params.set("endDate", timeRange.endDate);
+        } else {
+          // Predefined range
+          params.set("range", timeRange);
+        }
+      }
+      const url = `/api/usage/history${params.toString() ? `?${params.toString()}` : ""}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+
+        // Smart polling: adjust interval based on activity
+        const currentTotal = data.totalRequests || 0;
+        if (currentTotal > prevTotalRequests) {
+          // New requests detected - reset to fast polling
+          setRefreshInterval(5000);
+        } else {
+          // No change - increase interval (exponential backoff)
+          setRefreshInterval((prev) => Math.min(prev * 2, 60000)); // Max 60s
+        }
+        setPrevTotalRequests(currentTotal);
+      }
+    } catch (error) {
+      console.error("Failed to fetch usage stats:", error);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }, [prevTotalRequests, timeRange]);
+
+  const handleClearMetrics = async () => {
+    setClearing(true);
+    try {
+      const res = await fetch("/api/usage/clear", {
+        method: "POST"
+      });
+
+      if (res.ok) {
+        // Clear local state
+        setStats({
+          totalRequests: 0,
+          totalPromptTokens: 0,
+          totalCompletionTokens: 0,
+          totalCost: 0,
+          byProvider: {},
+          byModel: {},
+          byAccount: {},
+          byApiKey: {},
+          last10Minutes: [],
+          pending: { byModel: {}, byAccount: {} },
+          activeRequests: []
+        });
+        setPrevTotalRequests(0);
+        setShowClearConfirm(false);
+        // Refresh stats to get fresh data
+        await fetchStats(false);
+      } else {
+        console.error("Failed to clear metrics");
+      }
+    } catch (error) {
+      console.error("Error clearing metrics:", error);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  // Restore scroll position after stats update
+  useEffect(() => {
+    if (scrollPosition > 0 && !loading) {
+      window.scrollTo({ top: scrollPosition, behavior: 'instant' });
+      setScrollPosition(0);
+    }
+  }, [stats, scrollPosition, loading]);
+
+  // Sync timeRange state with URL parameter
+  useEffect(() => {
+    try {
+      // Try to parse as JSON (custom range)
+      const parsed = JSON.parse(timeRangeParam);
+      if (parsed && parsed.type === "custom") {
+        setTimeRange(parsed);
+        return;
+      }
+    } catch (e) {
+      // Not JSON, treat as regular string
+    }
+    setTimeRange(timeRangeParam);
+  }, [timeRangeParam]);
+
+  // Update URL when timeRange changes
+  const handleTimeRangeChange = useCallback((newRange) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (typeof newRange === "object" && newRange.type === "custom") {
+      // Store custom range as JSON string in URL
+      params.set("timeRange", JSON.stringify(newRange));
+    } else {
+      params.set("timeRange", newRange);
+    }
+    router.replace(`?${params.toString()}`, { scroll: false });
+    setTimeRange(newRange);
+  }, [searchParams, router]);
+
+  // Get label for current time range
+  const getTimeRangeLabel = useCallback(() => {
+    if (typeof timeRange === "object" && timeRange.type === "custom") {
+      return "Custom";
+    }
+    if (timeRange === "all") {
+      return "All Time";
+    }
+    return `Last ${timeRange}`;
+  }, [timeRange]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-models');
+      if (saved) {
+        setExpandedModels(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded models from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-models', JSON.stringify([...expandedModels]));
+    } catch (error) {
+      console.error("Failed to save expanded models to localStorage:", error);
+    }
+  }, [expandedModels]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-accounts');
+      if (saved) {
+        setExpandedAccounts(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded accounts from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-accounts', JSON.stringify([...expandedAccounts]));
+    } catch (error) {
+      console.error("Failed to save expanded accounts to localStorage:", error);
+    }
+  }, [expandedAccounts]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('usage-stats:expanded-apikeys');
+      if (saved) {
+        setExpandedApiKeys(new Set(JSON.parse(saved)));
+      }
+    } catch (error) {
+      console.error("Failed to load expanded API keys from localStorage:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('usage-stats:expanded-apikeys', JSON.stringify([...expandedApiKeys]));
+    } catch (error) {
+      console.error("Failed to save expanded API keys to localStorage:", error);
+    }
+  }, [expandedApiKeys]);
+
+  const toggleModelGroup = useCallback((groupKey) => {
+    setExpandedModels(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAccountGroup = useCallback((groupKey) => {
+    setExpandedAccounts(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleApiKeyGroup = useCallback((groupKey) => {
+    setExpandedApiKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) {
+        next.delete(groupKey);
+      } else {
+        next.add(groupKey);
+      }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    let intervalId;
+    let isPageVisible = true;
+
+    // Page Visibility API - pause when tab is hidden
+    const handleVisibilityChange = () => {
+      isPageVisible = !document.hidden;
+      if (isPageVisible && autoRefresh) {
+        fetchStats(false); // Fetch immediately when tab becomes visible
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    if (autoRefresh) {
+      // Clear any existing interval first
+      if (intervalId) clearInterval(intervalId);
+      
+      intervalId = setInterval(() => {
+        if (isPageVisible) {
+          fetchStats(false); // fetch without loading skeleton
+        }
+      }, refreshInterval);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [autoRefresh, refreshInterval, fetchStats]);
+
+  if (loading) return <CardSkeleton />;
+
+  if (!stats)
+    return (
+      <div className="text-text-muted">Failed to load usage statistics.</div>
+    );
+
+  // Format number with commas
+  const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+
+  // Format cost with dollar sign and 2 decimals
+  const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+
+  // Time format for "Last Used"
+  const fmtTime = (iso) => {
+    if (!iso) return "Never";
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Period selector */}
-      <div className="flex items-center gap-2 self-end">
-        <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
-          {PERIODS.map((p) => (
+      {/* Header with Time Range Filter, Auto Refresh Toggle and View Toggle */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Usage Overview</h2>
+        <div className="flex items-center gap-2">
+          {/* Time Range Filter - Compact Button */}
+          <button
+            onClick={() => setShowTimeRangeModal(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors bg-bg-subtle hover:bg-bg-hover border border-border"
+          >
+            <span className="material-symbols-outlined text-[18px]">calendar_month</span>
+            <span>{getTimeRangeLabel()}</span>
+            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+          </button>
+
+          {/* View Toggle */}
+          <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
             <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
-              disabled={fetching}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${period === p.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+              onClick={() => setViewMode("costs")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                viewMode === "costs"
+                  ? "bg-primary text-white shadow-sm"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
             >
-              {p.label}
+              Costs
             </button>
-          ))}
+          </div>
+
+          {/* Clear Metrics Button */}
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            disabled={!stats || stats.totalRequests === 0}
+            className="px-3 py-1 rounded-md text-sm font-medium transition-colors bg-red-500/10 text-red-600 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed border border-red-500/20"
+          >
+            Clear Metrics
+          </button>
+
+          {/* Auto Refresh Toggle */}
+          <div className="text-sm font-medium text-text-muted flex items-center gap-2">
+            <span>Auto Refresh ({refreshInterval / 1000}s)</span>
+            <button
+              type="button"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              role="switch"
+              aria-checked={autoRefresh}
+              aria-label="Toggle auto refresh"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary/50 ${
+                autoRefresh ? "bg-primary" : "bg-bg-subtle border border-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                  autoRefresh ? "translate-x-5" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
         </div>
         {fetching && (
           <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
         )}
       </div>
 
-      {/* Overview cards */}
-      {loading ? spinner : <OverviewCards stats={stats} />}
+      {/* Time Range Modal */}
+      <TimeRangeModal
+        isOpen={showTimeRangeModal}
+        onClose={() => setShowTimeRangeModal(false)}
+        currentRange={timeRange}
+        onRangeChange={handleTimeRangeChange}
+      />
 
-      {/* Provider topology + Recent Requests */}
-      {loading ? spinner : (
-        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-2 items-stretch">
-          <ProviderTopology
-            providers={providers}
-            activeRequests={stats.activeRequests || []}
-            lastProvider={stats.recentRequests?.[0]?.provider || ""}
-            errorProvider={stats.errorProvider || ""}
-          />
-          <RecentRequests requests={stats.recentRequests || []} />
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-bg border border-border rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">Clear All Usage Metrics?</h3>
+            <p className="text-text-muted mb-4">
+              This will permanently delete all usage history, including request counts, token usage, and cost data. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearing}
+                className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-bg-subtle hover:bg-bg-hover border border-border disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearMetrics}
+                disabled={clearing}
+                className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {clearing ? (
+                  <>
+                    <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Clearing...
+                  </>
+                ) : (
+                  "Clear All Data"
+                )}
+              </button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Active Requests Summary */}
+      {(stats.activeRequests || []).length > 0 && (
+        <Card className="p-3 border-primary/20 bg-primary/5">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-primary font-semibold text-sm uppercase tracking-wider">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+              </span>
+              Active Requests
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {stats.activeRequests.map((req) => (
+                <div
+                  key={`${req.model}-${req.provider}-${req.account}`}
+                  className="px-3 py-1.5 rounded-md bg-bg-subtle border border-primary/20 text-xs font-mono shadow-sm"
+                >
+                  <span className="text-primary font-bold">{req.model}</span>
+                  <span className="mx-1 text-text-muted">|</span>
+                  <span className="text-text">{req.provider}</span>
+                  <span className="mx-1 text-text-muted">|</span>
+                  <span className="text-text font-medium">{req.account}</span>
+                  {req.count > 1 && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded bg-primary text-white font-bold">
+                      x{req.count}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Token / Cost chart - sync period */}
