@@ -15,6 +15,7 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
+    "confbox": "^0.2.4",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
