@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
+import { CLAUDE_SYSTEM_PROMPT } from "../../config/constants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
@@ -106,10 +106,9 @@ export function openaiToClaudeRequest(model, body, stream) {
     if (responseFormat.type === "json_schema" && responseFormat.json_schema?.schema) {
       const schemaJson = JSON.stringify(responseFormat.json_schema.schema, null, 2);
       systemParts.push(`You must respond with valid JSON that strictly follows this JSON schema:
-\`\`\`json
-${schemaJson}
-\`\`\`
-Respond ONLY with the JSON object, no other text.`);
+Schema: ${schemaJson}
+
+IMPORTANT: Return ONLY the raw JSON object without markdown formatting, code blocks, or backticks.`);
     } else if (responseFormat.type === "json_object") {
       systemParts.push("You must respond with valid JSON. Respond ONLY with a JSON object, no other text.");
     }

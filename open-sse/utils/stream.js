@@ -1,3 +1,4 @@
+import { extractJSON } from './jsonExtractor.js';
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
@@ -159,7 +160,7 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed, targetFormat);
+        const parsed = parseSSELine(trimmed);
         if (!parsed) continue;
 
         if (parsed && parsed.done) {
@@ -278,13 +279,16 @@ export function createSSEStream(options = {}) {
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          // Only emit data: [DONE] for streaming requests
+          if (body?.stream === true) {
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+          }
 
           if (onStreamComplete) {
             onStreamComplete({
-              content: accumulatedContent,
+              content: extractJSON(accumulatedContent, body?.response_format),
               thinking: accumulatedThinking
             }, usage, ttftAt);
           }
@@ -330,9 +334,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
+        // Only emit data: [DONE] for streaming requests
+          if (body?.stream === true) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
@@ -346,7 +353,7 @@ export function createSSEStream(options = {}) {
         
         if (onStreamComplete) {
           onStreamComplete({
-            content: accumulatedContent,
+            content: extractJSON(accumulatedContent, body?.response_format),
             thinking: accumulatedThinking
           }, state?.usage, ttftAt);
         }
