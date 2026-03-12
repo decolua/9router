@@ -69,7 +69,10 @@ export function claudeToOpenAIResponse(chunk, state) {
       if (chunk.index === state.serverToolBlockIndex) break;
       const delta = chunk.delta;
       if (delta?.type === "text_delta" && delta.text) {
-        results.push(createChunk(state, { content: delta.text }));
+        let text = delta.text;
+        // Strip markdown code block markers
+        text = text.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
+        results.push(createChunk(state, { content: text }));
       } else if (delta?.type === "thinking_delta" && delta.thinking) {
         results.push(createChunk(state, { reasoning_content: delta.thinking }));
       } else if (delta?.type === "input_json_delta" && delta.partial_json) {

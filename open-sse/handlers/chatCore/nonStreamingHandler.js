@@ -1,9 +1,8 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
-import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
-import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { HTTP_STATUS } from "../../config/constants.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -77,8 +76,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     const toolCalls = [];
 
     for (const block of responseBody.content) {
-      if (block.type === "text") textContent += block.text;
-      else if (block.type === "thinking") thinkingContent += block.thinking || "";
+      if (block.type === "text") {
+        let text = block.text;
+        text = text.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
+        textContent += text;
+      }
       else if (block.type === "tool_use") {
         toolCalls.push({ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
       }
@@ -110,11 +112,6 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       };
     }
     return result;
-  }
-
-  // Ollama
-  if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
   }
 
   return responseBody;
