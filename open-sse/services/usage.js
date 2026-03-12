@@ -2,6 +2,8 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
+import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+
 // GitHub API config
 const GITHUB_CONFIG = {
   apiVersion: "2022-11-28",
@@ -15,7 +17,7 @@ const ANTIGRAVITY_CONFIG = {
   tokenUrl: "https://oauth2.googleapis.com/token",
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
   clientSecret: "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",
-  userAgent: "antigravity/1.11.3 Darwin/arm64",
+  userAgent: getPlatformUserAgent(),
 };
 
 // Codex (OpenAI) API config
@@ -25,8 +27,10 @@ const CODEX_CONFIG = {
 
 // Claude API config
 const CLAUDE_CONFIG = {
+  oauthUsageUrl: "https://api.anthropic.com/api/oauth/usage",
   usageUrl: "https://api.anthropic.com/v1/organizations/{org_id}/usage",
   settingsUrl: "https://api.anthropic.com/v1/settings",
+  apiVersion: "2023-06-01",
 };
 
 /**
@@ -65,23 +69,23 @@ export async function getUsageForProvider(connection) {
  */
 function parseResetTime(resetValue) {
   if (!resetValue) return null;
-  
+
   try {
     // If it's already a Date object
     if (resetValue instanceof Date) {
       return resetValue.toISOString();
     }
-    
+
     // If it's a number (Unix timestamp in milliseconds)
     if (typeof resetValue === 'number') {
       return new Date(resetValue).toISOString();
     }
-    
+
     // If it's a string (ISO date or any parseable date string)
     if (typeof resetValue === 'string') {
       return new Date(resetValue).toISOString();
     }
-    
+
     return null;
   } catch (error) {
     console.warn(`Failed to parse reset time: ${resetValue}`, error);
@@ -98,7 +102,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
     if (!accessToken) {
       throw new Error("No GitHub access token available. Please re-authorize the connection.");
     }
-    
+
     // copilot_internal/user API requires GitHub OAuth token, not copilotToken
     const response = await fetch("https://api.github.com/copilot_internal/user", {
       headers: {
@@ -123,7 +127,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       // Paid plan format
       const snapshots = data.quota_snapshots;
       const resetAt = parseResetTime(data.quota_reset_date);
-      
+
       return {
         plan: data.copilot_plan,
         resetDate: data.quota_reset_date,
@@ -138,7 +142,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
       const monthlyQuotas = data.monthly_quotas || {};
       const usedQuotas = data.limited_user_quotas || {};
       const resetAt = parseResetTime(data.limited_user_reset_date);
-      
+
       return {
         plan: data.copilot_plan || data.access_type_sku,
         resetDate: data.limited_user_reset_date,
@@ -167,7 +171,7 @@ async function getGitHubUsage(accessToken, providerSpecificData) {
 
 function formatGitHubQuotaSnapshot(quota) {
   if (!quota) return { used: 0, total: 0, unlimited: true };
-  
+
   return {
     used: quota.entitlement - quota.remaining,
     total: quota.entitlement,
@@ -211,20 +215,41 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
   try {
     // First get project ID from subscription info
     const projectId = await getAntigravityProjectId(accessToken);
+
+    // Fetch quota data with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
     
-    // Fetch quota data
     const response = await fetch(ANTIGRAVITY_CONFIG.quotaApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "X-Client-Name": "antigravity",
+        "X-Client-Version": "1.107.0",
+        "x-request-source": "local", // MITM bypass
       },
-      body: JSON.stringify(projectId ? { project: projectId } : {}),
+      body: JSON.stringify({
+        ...(projectId ? { project: projectId } : {})
+      }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (response.status === 403) {
-      return { message: "Antigravity access forbidden. Check subscription." };
+      return {
+        message: "Antigravity quota API access forbidden. Chat may still work.",
+        quotas: {}
+      };
+    }
+
+    if (response.status === 401) {
+      return {
+        message: "Antigravity quota API authentication expired. Chat may still work.",
+        quotas: {}
+      };
     }
 
     if (!response.ok) {
@@ -233,41 +258,38 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
 
     const data = await response.json();
     const quotas = {};
-    
+
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
     if (data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
         'claude-opus-4-6-thinking',
-        'claude-opus-4-5-thinking',
-        'claude-opus-4-5',
-        'claude-sonnet-4-5-thinking',
-        'claude-sonnet-4-5',
-        'gemini-3-pro-high',
-        'gemini-3-pro-low',
+        'claude-sonnet-4-6',
+        'gemini-3.1-pro-high',
+        'gemini-3.1-pro-low',
         'gemini-3-flash',
-        'gemini-2.5-flash',
+        'gpt-oss-120b-medium',
       ];
-      
+
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
         if (!info.quotaInfo) {
           continue;
         }
-        
+
         // Skip internal models and non-important models
         if (info.isInternal || !importantModels.includes(modelKey)) {
           continue;
         }
-        
+
         const remainingFraction = info.quotaInfo.remainingFraction || 0;
         const remainingPercentage = remainingFraction * 100;
-        
+
         // Convert percentage to used/total for UI compatibility
         const total = 1000; // Normalized base
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
-        
+
         // Use modelKey as key (matches PROVIDER_MODELS id)
         quotas[modelKey] = {
           used,
@@ -289,6 +311,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData) {
       subscriptionInfo,
     };
   } catch (error) {
+    console.error("[Antigravity Usage] Error:", error.message, error.cause);
     return { message: `Antigravity error: ${error.message}` };
   }
 }
@@ -310,52 +333,123 @@ async function getAntigravityProjectId(accessToken) {
  */
 async function getAntigravitySubscriptionInfo(accessToken) {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    
     const response = await fetch(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "x-request-source": "local", // MITM bypass
       },
-      body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
+      body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) return null;
 
     return await response.json();
-  } catch {
+  } catch (error) {
+    console.error("[Antigravity Subscription] Error:", error.message);
     return null;
   }
 }
 
 /**
- * Claude Usage - Try to fetch from Anthropic API
+ * Claude Usage - Primary: OAuth endpoint, Fallback: legacy settings/org endpoint
  */
 async function getClaudeUsage(accessToken) {
   try {
-    // Try to get organization/account settings first
-    const settingsResponse = await fetch("https://api.anthropic.com/v1/settings", {
+    // Primary: OAuth usage endpoint (Claude Code consumer OAuth tokens)
+    const oauthResponse = await fetch(CLAUDE_CONFIG.oauthUsageUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "oauth-2025-04-20",
+        "anthropic-version": CLAUDE_CONFIG.apiVersion,
+      },
+    });
+
+    if (oauthResponse.ok) {
+      const data = await oauthResponse.json();
+      const quotas = {};
+
+      // utilization = % USED (e.g. 87 means 87% used, 13% remaining)
+      const hasUtilization = (window) =>
+        window && typeof window === "object" && typeof window.utilization === "number";
+
+      const createQuotaObject = (window) => {
+        const used = window.utilization;
+        const remaining = Math.max(0, 100 - used);
+        return {
+          used,
+          total: 100,
+          remaining,
+          remainingPercentage: remaining,
+          resetAt: parseResetTime(window.resets_at),
+          unlimited: false,
+        };
+      };
+
+      if (hasUtilization(data.five_hour)) {
+        quotas["session (5h)"] = createQuotaObject(data.five_hour);
+      }
+
+      if (hasUtilization(data.seven_day)) {
+        quotas["weekly (7d)"] = createQuotaObject(data.seven_day);
+      }
+
+      // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus)
+      for (const [key, value] of Object.entries(data)) {
+        if (key.startsWith("seven_day_") && key !== "seven_day" && hasUtilization(value)) {
+          const modelName = key.replace("seven_day_", "");
+          quotas[`weekly ${modelName} (7d)`] = createQuotaObject(value);
+        }
+      }
+
+      return {
+        plan: "Claude Code",
+        extraUsage: data.extra_usage ?? null,
+        quotas,
+      };
+    }
+
+    // Fallback: legacy settings + org usage endpoint
+    console.warn(`[Claude Usage] OAuth endpoint returned ${oauthResponse.status}, falling back to legacy`);
+    return await getClaudeUsageLegacy(accessToken);
+  } catch (error) {
+    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+/**
+ * Legacy Claude usage for API key / org admin users
+ */
+async function getClaudeUsageLegacy(accessToken) {
+  try {
+    const settingsResponse = await fetch(CLAUDE_CONFIG.settingsUrl, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "anthropic-version": CLAUDE_CONFIG.apiVersion,
       },
     });
 
     if (settingsResponse.ok) {
       const settings = await settingsResponse.json();
-      
-      // Try usage endpoint if we have org info
+
       if (settings.organization_id) {
         const usageResponse = await fetch(
-          `https://api.anthropic.com/v1/organizations/${settings.organization_id}/usage`,
+          CLAUDE_CONFIG.usageUrl.replace("{org_id}", settings.organization_id),
           {
             method: "GET",
             headers: {
               "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-              "anthropic-version": "2023-06-01",
+              "anthropic-version": CLAUDE_CONFIG.apiVersion,
             },
           }
         );
@@ -377,7 +471,6 @@ async function getClaudeUsage(accessToken) {
       };
     }
 
-    // If settings API fails, OAuth token may not have required scope
     return { message: "Claude connected. Usage API requires admin permissions." };
   } catch (error) {
     return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
@@ -402,7 +495,7 @@ async function getCodexUsage(accessToken) {
     }
 
     const data = await response.json();
-    
+
     // Parse rate limit info
     const rateLimit = data.rate_limit || {};
     const primaryWindow = rateLimit.primary_window || {};
@@ -441,13 +534,12 @@ async function getCodexUsage(accessToken) {
  * Kiro (AWS CodeWhisperer) Usage
  */
 async function getKiroUsage(accessToken, providerSpecificData) {
-  try {
-    const profileArn = providerSpecificData?.profileArn;
-    if (!profileArn) {
-      return { message: "Kiro connected. Profile ARN not available for quota tracking." };
-    }
+  // Default profileArn fallback
+  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
 
-    // Kiro uses AWS CodeWhisperer GetUsageLimits API
+  try {
+    // Try old API first (POST method)
     const payload = {
       origin: "AI_EDITOR",
       profileArn: profileArn,
@@ -467,6 +559,15 @@ async function getKiroUsage(accessToken, providerSpecificData) {
 
     if (!response.ok) {
       const errorText = await response.text();
+
+      // Handle authentication errors gracefully
+      if (response.status === 403 || response.status === 401) {
+        return {
+          message: "Kiro quota API authentication expired. Chat may still work.",
+          quotas: {}
+        };
+      }
+
       throw new Error(`Kiro API error (${response.status}): ${errorText}`);
     }
 
@@ -475,7 +576,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     // Parse usage data from usageBreakdownList
     const usageList = data.usageBreakdownList || [];
     const quotaInfo = {};
-    
+
     // Parse reset time - supports multiple formats (nextDateReset, resetDate, etc.)
     const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
 
@@ -483,7 +584,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
       const used = breakdown.currentUsageWithPrecision || 0;
       const total = breakdown.usageLimitWithPrecision || 0;
-      
+
       quotaInfo[resourceType] = {
         used,
         total,
@@ -496,7 +597,7 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       if (breakdown.freeTrialInfo) {
         const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
         const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-        
+
         quotaInfo[`${resourceType}_freetrial`] = {
           used: freeUsed,
           total: freeTotal,
@@ -512,7 +613,68 @@ async function getKiroUsage(accessToken, providerSpecificData) {
       quotas: quotaInfo,
     };
   } catch (error) {
-    throw new Error(`Failed to fetch Kiro usage: ${error.message}`);
+    // Fallback to new API (GET method)
+    try {
+      const params = new URLSearchParams({
+        origin: "AI_EDITOR",
+        profileArn: profileArn,
+        resourceType: "AGENTIC_REQUEST",
+      });
+
+      const fallbackResponse = await fetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Accept": "application/json",
+        },
+      });
+
+      if (!fallbackResponse.ok) {
+        throw new Error(`Fallback API error (${fallbackResponse.status})`);
+      }
+
+      const fallbackData = await fallbackResponse.json();
+
+      // Parse new API response structure
+      const usageList = fallbackData.usageBreakdownList || [];
+      const quotaInfo = {};
+      const resetAt = parseResetTime(fallbackData.nextDateReset || fallbackData.resetDate);
+
+      usageList.forEach((breakdown) => {
+        const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
+        const used = breakdown.currentUsageWithPrecision || 0;
+        const total = breakdown.usageLimitWithPrecision || 0;
+
+        quotaInfo[resourceType] = {
+          used,
+          total,
+          remaining: total - used,
+          resetAt,
+          unlimited: false,
+        };
+
+        // Add free trial if available
+        if (breakdown.freeTrialInfo) {
+          const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
+          const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
+
+          quotaInfo[`${resourceType}_freetrial`] = {
+            used: freeUsed,
+            total: freeTotal,
+            remaining: freeTotal - freeUsed,
+            resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry),
+            unlimited: false,
+          };
+        }
+      });
+
+      return {
+        plan: fallbackData.subscriptionInfo?.subscriptionTitle || "Kiro",
+        quotas: quotaInfo,
+      };
+    } catch (fallbackError) {
+      throw new Error(`Failed to fetch Kiro usage: ${error.message} | Fallback: ${fallbackError.message}`);
+    }
   }
 }
 

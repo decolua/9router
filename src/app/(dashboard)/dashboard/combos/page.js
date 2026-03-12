@@ -31,10 +31,7 @@ export default function CombosPage() {
       
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
-        const active = (providersData.connections || []).filter(
-          c => c.testStatus === "active" || c.testStatus === "success"
-        );
-        setActiveProviders(active);
+        setActiveProviders(providersData.connections || []);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -228,6 +225,80 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
   );
 }
 
+// Inline editable model item
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(model);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== model) onEdit(trimmed);
+    else setDraft(model); // revert if empty or unchanged
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") { setDraft(model); setEditing(false); }
+  };
+
+  return (
+    <div className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors">
+      {/* Index badge */}
+      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+
+      {/* Inline editable model value */}
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono bg-white dark:bg-black/20 border border-primary/40 rounded outline-none text-text-main"
+        />
+      ) : (
+        <div
+          className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono text-text-main truncate cursor-text hover:bg-black/5 dark:hover:bg-white/5 rounded"
+          onClick={() => setEditing(true)}
+          title="Click to edit"
+        >
+          {model}
+        </div>
+      )}
+
+      {/* Priority arrows */}
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={onMoveUp}
+          disabled={isFirst}
+          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move up"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+        </button>
+        <button
+          onClick={onMoveDown}
+          disabled={isLast}
+          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move down"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+        </button>
+      </div>
+
+      {/* Remove */}
+      <button
+        onClick={onRemove}
+        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        title="Remove"
+      >
+        <span className="material-symbols-outlined text-[12px]">close</span>
+      </button>
+    </div>
+  );
+}
+
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
@@ -236,25 +307,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
-  const [providerNodes, setProviderNodes] = useState([]);
 
   const fetchModalData = async () => {
     try {
-      const [aliasesRes, nodesRes] = await Promise.all([
-        fetch("/api/models/alias"),
-        fetch("/api/provider-nodes"),
-      ]);
-
-      if (!aliasesRes.ok || !nodesRes.ok) {
-        throw new Error(`Failed to fetch data: aliases=${aliasesRes.status}, nodes=${nodesRes.status}`);
-      }
-
-      const [aliasesData, nodesData] = await Promise.all([
-        aliasesRes.json(),
-        nodesRes.json(),
-      ]);
+      const aliasesRes = await fetch("/api/models/alias");
+      if (!aliasesRes.ok) return;
+      const aliasesData = await aliasesRes.json();
       setModelAliases(aliasesData.aliases || {});
-      setProviderNodes(nodesData.nodes || []);
     } catch (error) {
       console.error("Error fetching modal data:", error);
     }
@@ -293,21 +352,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const handleRemoveModel = (index) => {
     setModels(models.filter((_, i) => i !== index));
   };
-
-  // Format model display name with readable provider name
-  const formatModelDisplay = useCallback((modelValue) => {
-    const parts = modelValue.split('/');
-    if (parts.length !== 2) return modelValue;
-    
-    const [providerId, modelId] = parts;
-    const matchedNode = providerNodes.find(node => node.id === providerId);
-    
-    if (matchedNode) {
-      return `${matchedNode.name}/${modelId}`;
-    }
-    
-    return modelValue;
-  }, [providerNodes]);
 
   const handleMoveUp = (index) => {
     if (index === 0) return;
@@ -366,52 +410,26 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             ) : (
               <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
                 {models.map((model, index) => (
-                  <div
+                  <ModelItem
                     key={index}
-                    className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
-                  >
-                    {/* Index badge */}
-                    <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
-
-                    {/* Model display - show readable name only */}
-                    <div className="flex-1 min-w-0 px-1.5 py-0.5 text-xs text-text-main truncate">
-                      {formatModelDisplay(model)}
-                    </div>
-
-                    {/* Priority arrows - horizontal, always visible */}
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => handleMoveUp(index)}
-                        disabled={index === 0}
-                        className={`p-0.5 rounded ${index === 0 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-                        title="Move up"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-                      </button>
-                      <button
-                        onClick={() => handleMoveDown(index)}
-                        disabled={index === models.length - 1}
-                        className={`p-0.5 rounded ${index === models.length - 1 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-                        title="Move down"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-                      </button>
-                    </div>
-
-                    {/* Remove - always visible */}
-                    <button
-                      onClick={() => handleRemoveModel(index)}
-                      className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
-                      title="Remove"
-                    >
-                      <span className="material-symbols-outlined text-[12px]">close</span>
-                    </button>
-                  </div>
+                    index={index}
+                    model={model}
+                    isFirst={index === 0}
+                    isLast={index === models.length - 1}
+                    onEdit={(newVal) => {
+                      const updated = [...models];
+                      updated[index] = newVal;
+                      setModels(updated);
+                    }}
+                    onMoveUp={() => handleMoveUp(index)}
+                    onMoveDown={() => handleMoveDown(index)}
+                    onRemove={() => handleRemoveModel(index)}
+                  />
                 ))}
               </div>
             )}
 
-            {/* Add Model button - moved to bottom */}
+            {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-text-muted hover:text-primary hover:border-primary/30 transition-colors flex items-center justify-center gap-1"
@@ -450,4 +468,3 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     </>
   );
 }
-

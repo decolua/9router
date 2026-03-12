@@ -1,7 +1,63 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById, updateProviderConnection, deleteProviderConnection, isCloudEnabled } from "@/models";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import {
+  getProviderConnectionById,
+  getProxyPoolById,
+  updateProviderConnection,
+  deleteProviderConnection,
+} from "@/models";
+
+function normalizeProxyConfig(body = {}) {
+  const hasAnyProxyField =
+    Object.prototype.hasOwnProperty.call(body, "connectionProxyEnabled") ||
+    Object.prototype.hasOwnProperty.call(body, "connectionProxyUrl") ||
+    Object.prototype.hasOwnProperty.call(body, "connectionNoProxy");
+
+  if (!hasAnyProxyField) return { hasAnyProxyField: false };
+
+  const enabled = body?.connectionProxyEnabled === true;
+  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
+  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+
+  if (enabled && !url) {
+    return {
+      hasAnyProxyField: true,
+      error: "Connection proxy URL is required when connection proxy is enabled",
+    };
+  }
+
+  return {
+    hasAnyProxyField: true,
+    connectionProxyEnabled: enabled,
+    connectionProxyUrl: url,
+    connectionNoProxy: noProxy,
+  };
+}
+
+async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
+  if (proxyPoolIdInput === undefined) {
+    return { hasProxyPoolField: false, proxyPoolId: null };
+  }
+
+  if (proxyPoolIdInput === null || proxyPoolIdInput === "" || proxyPoolIdInput === "__none__") {
+    return { hasProxyPoolField: true, proxyPoolId: null };
+  }
+
+  const proxyPoolId = String(proxyPoolIdInput).trim();
+  if (!proxyPoolId) {
+    return { hasProxyPoolField: true, proxyPoolId: null };
+  }
+
+  const proxyPool = await getProxyPoolById(proxyPoolId);
+  if (!proxyPool) {
+    return { hasProxyPoolField: true, error: "Proxy pool not found" };
+  }
+
+  return { hasProxyPoolField: true, proxyPoolId };
+}
+
+function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
+  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+}
 
 // GET /api/providers/[id] - Get single connection
 export async function GET(request, { params }) {
@@ -32,11 +88,32 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, priority, globalPriority, defaultModel, isActive, apiKey, testStatus, lastError, lastErrorAt } = body;
+    const {
+      name,
+      priority,
+      globalPriority,
+      defaultModel,
+      isActive,
+      apiKey,
+      testStatus,
+      lastError,
+      lastErrorAt,
+      providerSpecificData
+    } = body;
 
     const existing = await getProviderConnectionById(id);
     if (!existing) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    const proxyConfig = normalizeProxyConfig(body);
+    if (proxyConfig.error) {
+      return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
+    }
+
+    const proxyPoolResult = await normalizeProxyPoolUpdate(body.proxyPoolId);
+    if (proxyPoolResult.error) {
+      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
     }
 
     const updateData = {};
@@ -50,6 +127,34 @@ export async function PUT(request, { params }) {
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
 
+    if (
+      shouldMergeProviderSpecificData(
+        existing.providerSpecificData,
+        providerSpecificData,
+        proxyConfig.hasAnyProxyField,
+        proxyPoolResult.hasProxyPoolField
+      )
+    ) {
+      updateData.providerSpecificData = {
+        ...(existing.providerSpecificData || {}),
+        ...(providerSpecificData || {}),
+      };
+
+      if (proxyConfig.hasAnyProxyField) {
+        updateData.providerSpecificData.connectionProxyEnabled = proxyConfig.connectionProxyEnabled;
+        updateData.providerSpecificData.connectionProxyUrl = proxyConfig.connectionProxyUrl;
+        updateData.providerSpecificData.connectionNoProxy = proxyConfig.connectionNoProxy;
+      }
+
+      if (proxyPoolResult.hasProxyPoolField) {
+        if (proxyPoolResult.proxyPoolId === null) {
+          delete updateData.providerSpecificData.proxyPoolId;
+        } else {
+          updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+        }
+      }
+    }
+
     const updated = await updateProviderConnection(id, updateData);
 
     // Hide sensitive fields
@@ -58,9 +163,6 @@ export async function PUT(request, { params }) {
     delete result.accessToken;
     delete result.refreshToken;
     delete result.idToken;
-
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
 
     return NextResponse.json({ connection: result });
   } catch (error) {
@@ -79,27 +181,9 @@ export async function DELETE(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
     console.log("Error deleting connection:", error);
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
-  }
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing providers to cloud:", error);
   }
 }

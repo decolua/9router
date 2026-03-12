@@ -1,34 +1,21 @@
+// Ensure proxyFetch is loaded to patch globalThis.fetch
+import "open-sse/index.js";
+
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
-import { getMachineId } from "@/shared/utils/machine";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
-
-/**
- * Sync to cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const machineId = await getMachineId();
-    if (!machineId) return;
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.error("[Usage API] Error syncing to cloud:", error);
-  }
-}
-
 /**
  * Refresh credentials using executor and update database
- * @returns {{ connection, refreshed: boolean }}
+ * @returns Promise<{ connection, refreshed: boolean }>
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
-  
+
   // Build credentials object from connection
   const credentials = {
     accessToken: connection.accessToken,
     refreshToken: connection.refreshToken,
-    expiresAt: connection.tokenExpiresAt,
+    expiresAt: connection.expiresAt || connection.tokenExpiresAt,
     providerSpecificData: connection.providerSpecificData,
     // For GitHub
     copilotToken: connection.providerSpecificData?.copilotToken,
@@ -37,7 +24,7 @@ async function refreshAndUpdateCredentials(connection) {
 
   // Check if refresh is needed
   const needsRefresh = executor.needsRefresh(credentials);
-  
+
   if (!needsRefresh) {
     return { connection, refreshed: false };
   }
@@ -46,8 +33,8 @@ async function refreshAndUpdateCredentials(connection) {
   const refreshResult = await executor.refreshCredentials(credentials, console);
 
   if (!refreshResult) {
-    // For GitHub, if refreshCredentials fails but we still have accessToken, try to use it directly
-    if (connection.provider === "github" && connection.accessToken) {
+    // Refresh failed but we still have an accessToken — try with existing token
+    if (connection.accessToken) {
       return { connection, refreshed: false };
     }
     throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
@@ -71,9 +58,9 @@ async function refreshAndUpdateCredentials(connection) {
 
   // Update token expiry
   if (refreshResult.expiresIn) {
-    updateData.tokenExpiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
+    updateData.expiresAt = new Date(Date.now() + refreshResult.expiresIn * 1000).toISOString();
   } else if (refreshResult.expiresAt) {
-    updateData.tokenExpiresAt = refreshResult.expiresAt;
+    updateData.expiresAt = refreshResult.expiresAt;
   }
 
   // Handle provider-specific data (copilotToken for GitHub, etc.)
@@ -93,7 +80,7 @@ async function refreshAndUpdateCredentials(connection) {
     ...connection,
     ...updateData,
   };
-  
+
   return {
     connection: updatedConnection,
     refreshed: true,
@@ -106,7 +93,7 @@ async function refreshAndUpdateCredentials(connection) {
 export async function GET(request, { params }) {
   try {
     const { connectionId } = await params;
-    
+
     // Get connection from database
     let connection = await getProviderConnectionById(connectionId);
     if (!connection) {
@@ -119,20 +106,13 @@ export async function GET(request, { params }) {
     }
 
     // Refresh credentials if needed using executor
-    let refreshed = false;
     try {
       const result = await refreshAndUpdateCredentials(connection);
       connection = result.connection;
-      refreshed = result.refreshed;
-      
-      // Sync to cloud only if token was refreshed
-      if (refreshed) {
-        await syncToCloudIfEnabled();
-      }
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
-      return Response.json({ 
-        error: `Credential refresh failed: ${refreshError.message}` 
+      return Response.json({
+        error: `Credential refresh failed: ${refreshError.message}`
       }, { status: 401 });
     }
 
@@ -140,8 +120,7 @@ export async function GET(request, { params }) {
     const usage = await getUsageForProvider(connection);
     return Response.json(usage);
   } catch (error) {
-    console.error("[Usage API] Error fetching usage:", error);
-    console.error("[Usage API] Error stack:", error.stack);
+    console.warn(`[Usage] ${connection?.provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

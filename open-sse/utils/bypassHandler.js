@@ -1,7 +1,7 @@
 import { detectFormat } from "../services/provider.js";
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { SKIP_PATTERNS } from "../config/constants.js";
+import { SKIP_PATTERNS } from "../config/runtimeConfig.js";
 import { formatSSE } from "./stream.js";
 
 /**

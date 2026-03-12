@@ -82,6 +82,27 @@ export function createSSEStream(options = {}) {
 
               const idFixed = fixInvalidId(parsed);
 
+              // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
+              let fieldsInjected = false;
+              if (parsed.choices !== undefined) {
+                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
+                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              }
+
+              // Strip Azure-specific non-standard fields from streaming chunks
+              if (parsed.prompt_filter_results !== undefined) {
+                delete parsed.prompt_filter_results;
+                fieldsInjected = true;
+              }
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (choice.content_filter_results !== undefined) {
+                    delete choice.content_filter_results;
+                    fieldsInjected = true;
+                  }
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -115,7 +136,7 @@ export function createSSEStream(options = {}) {
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
-              } else if (idFixed) {
+              } else if (idFixed || fieldsInjected) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
@@ -138,7 +159,7 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed);
+        const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
         if (parsed && parsed.done) {
@@ -253,6 +274,14 @@ export function createSSEStream(options = {}) {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
           
+          // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
+          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
+          //   data: [DONE]\n\n
+          // Without it they can hang until timeout and trigger failover.
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+
           if (onStreamComplete) {
             onStreamComplete({
               content: accumulatedContent,

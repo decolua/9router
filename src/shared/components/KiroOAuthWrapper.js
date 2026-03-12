@@ -43,12 +43,14 @@ export default function KiroOAuthWrapper({ isOpen, providerInfo, onSuccess, onCl
     setAuthMethod(null);
     setSocialProvider(null);
     onSuccess?.();
+    onClose?.(); // Close modal after success
   };
 
   const handleDeviceSuccess = () => {
     setAuthMethod(null);
     setIdcConfig(null);
     onSuccess?.();
+    onClose?.(); // Close modal after success
   };
 
   // Show method selection first

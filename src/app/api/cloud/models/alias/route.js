@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { validateApiKey, getModelAliases, setModelAlias, isCloudEnabled } from "@/models";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { syncToCloud } from "@/app/api/sync/cloud/route";
+import { validateApiKey, getModelAliases, setModelAlias } from "@/models";
 
 // PUT /api/cloud/models/alias - Set model alias (for cloud/CLI)
 export async function PUT(request) {
@@ -37,9 +35,6 @@ export async function PUT(request) {
     // Update alias
     await setModelAlias(alias, model);
 
-    // Auto sync to Cloud if enabled
-    await syncToCloudIfEnabled();
-
     return NextResponse.json({ 
       success: true, 
       model, 
@@ -49,21 +44,6 @@ export async function PUT(request) {
   } catch (error) {
     console.log("Error updating alias:", error);
     return NextResponse.json({ error: "Failed to update alias" }, { status: 500 });
-  }
-}
-
-/**
- * Sync to Cloud if enabled
- */
-async function syncToCloudIfEnabled() {
-  try {
-    const cloudEnabled = await isCloudEnabled();
-    if (!cloudEnabled) return;
-
-    const machineId = await getConsistentMachineId();
-    await syncToCloud(machineId);
-  } catch (error) {
-    console.log("Error syncing aliases to cloud:", error);
   }
 }
 

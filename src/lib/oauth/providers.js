@@ -3,6 +3,9 @@
  * Centralized DRY approach for all OAuth providers
  */
 
+// Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
+import "open-sse/index.js";
+
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
   CLAUDE_CONFIG,
@@ -14,6 +17,9 @@ import {
   GITHUB_CONFIG,
   KIRO_CONFIG,
   CURSOR_CONFIG,
+  KIMI_CODING_CONFIG,
+  KILOCODE_CONFIG,
+  CLINE_CONFIG,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -184,7 +190,8 @@ const PROVIDERS = {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              metadata: { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" },
+              metadata: getOAuthClientMetadata(),
+              mode: 1,
             }),
           }
         );
@@ -247,18 +254,23 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      const headers = {
-        Authorization: `Bearer ${tokens.access_token}`,
+      // Matches CLIProxyAPI Go source: string enum, no mode field
+      const loadHeaders = {
+        "Authorization": `Bearer ${tokens.access_token}`,
         "Content-Type": "application/json",
         "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
+        "x-request-source": "local",
       };
       const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          "x-request-source": "local",
+        },
       });
       const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
 
@@ -268,13 +280,12 @@ const PROVIDERS = {
       try {
         const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
           method: "POST",
-          headers,
+          headers: loadHeaders,
           body: JSON.stringify({ metadata }),
         });
         if (loadRes.ok) {
           const data = await loadRes.json();
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
-          // Extract tier ID
           if (Array.isArray(data.allowedTiers)) {
             for (const tier of data.allowedTiers) {
               if (tier.isDefault && tier.id) {
@@ -288,32 +299,27 @@ const PROVIDERS = {
         console.log("Failed to load code assist:", e);
       }
 
-      // Onboard user to enable Gemini Code Assist
+      // Fire-and-forget onboarding — does not block DB save
       if (projectId) {
-        try {
+        const doOnboard = async () => {
           for (let i = 0; i < 10; i++) {
-            const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId }),
-            });
-            if (onboardRes.ok) {
-              const result = await onboardRes.json();
-              if (result.done === true) {
-                // Extract final project ID from response
-                if (result.response?.cloudaicompanionProject) {
-                  const respProject = result.response.cloudaicompanionProject;
-                  projectId = typeof respProject === 'string' ? respProject.trim() : (respProject.id || projectId);
-                }
-                break;
+            try {
+              const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
+                method: "POST",
+                headers: loadHeaders,
+                body: JSON.stringify({ tierId, metadata }),
+              });
+              if (onboardRes.ok) {
+                const result = await onboardRes.json();
+                if (result.done === true) break;
               }
+            } catch (e) {
+              break;
             }
-            // Wait 5 seconds before retry
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
-        } catch (e) {
-          console.log("Failed to onboard user:", e);
-        }
+        };
+        doOnboard().catch(() => {});
       }
 
       return { userInfo, projectId };
@@ -371,7 +377,7 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      // Fetch user info
+      // Fetch user info (MUST succeed to get API key)
       const userInfoRes = await fetch(
         `${IFLOW_CONFIG.userInfoUrl}?accessToken=${encodeURIComponent(tokens.access_token)}`,
         {
@@ -380,8 +386,30 @@ const PROVIDERS = {
           },
         }
       );
-      const result = userInfoRes.ok ? await userInfoRes.json() : {};
-      const userInfo = result.success ? result.data : {};
+      
+      if (!userInfoRes.ok) {
+        const errorText = await userInfoRes.text();
+        throw new Error(`Failed to fetch user info: ${errorText}`);
+      }
+      
+      const result = await userInfoRes.json();
+      if (!result.success) {
+        throw new Error(`User info request failed: ${result.message || 'Unknown error'}`);
+      }
+      
+      const userInfo = result.data || {};
+      
+      // Validate API key (critical for iFlow)
+      if (!userInfo.apiKey || userInfo.apiKey.trim() === "") {
+        throw new Error("Empty API key returned from iFlow");
+      }
+      
+      // Validate email/phone
+      const email = userInfo.email?.trim() || userInfo.phone?.trim();
+      if (!email) {
+        throw new Error("Missing account email/phone in user info");
+      }
+      
       return { userInfo };
     },
     mapTokens: (tokens, extra) => ({
@@ -632,6 +660,7 @@ const PROVIDERS = {
             access_token: data.accessToken,
             refresh_token: data.refreshToken,
             expires_in: data.expiresIn,
+            profile_arn: data?.profileArn || null,
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
@@ -647,15 +676,19 @@ const PROVIDERS = {
         },
       };
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      providerSpecificData: {
-        clientId: tokens._clientId,
-        clientSecret: tokens._clientSecret,
-      },
-    }),
+    mapTokens: (tokens) => {
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        providerSpecificData: {
+          profileArn: tokens?.profile_arn || null,
+          clientId: tokens._clientId,
+          clientSecret: tokens._clientSecret,
+        },
+      };
+      return mapped;
+    },
   },
 
   cursor: {
@@ -671,6 +704,173 @@ const PROVIDERS = {
         machineId: tokens.machineId,
         authMethod: "imported",
       },
+    }),
+  },
+
+  "kimi-coding": {
+    config: KIMI_CODING_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const response = await fetch(config.deviceCodeUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams({ client_id: config.clientId }),
+      });
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Device code request failed: ${error}`);
+      }
+      const data = await response.json();
+      return {
+        device_code: data.device_code,
+        user_code: data.user_code,
+        verification_uri: data.verification_uri || "https://www.kimi.com/code/authorize_device",
+        verification_uri_complete:
+          data.verification_uri_complete ||
+          `https://www.kimi.com/code/authorize_device?user_code=${data.user_code}`,
+        expires_in: data.expires_in,
+        interval: data.interval || 5,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          client_id: config.clientId,
+          device_code: deviceCode,
+        }),
+      });
+      let data;
+      try {
+        data = await response.json();
+      } catch (e) {
+        const text = await response.text();
+        data = { error: "invalid_response", error_description: text };
+      }
+      return { ok: response.ok, data };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+    }),
+  },
+
+  kilocode: {
+    config: KILOCODE_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const response = await fetch(config.initiateUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("Too many pending authorization requests. Please try again later.");
+        }
+        const error = await response.text();
+        throw new Error(`Device auth initiation failed: ${error}`);
+      }
+      const data = await response.json();
+      return {
+        device_code: data.code,
+        user_code: data.code,
+        verification_uri: data.verificationUrl,
+        verification_uri_complete: data.verificationUrl,
+        expires_in: data.expiresIn || 300,
+        interval: 3,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      const response = await fetch(`${config.pollUrlBase}/${deviceCode}`);
+      if (response.status === 202) return { ok: false, data: { error: "authorization_pending" } };
+      if (response.status === 403) return { ok: false, data: { error: "access_denied", error_description: "Authorization denied by user" } };
+      if (response.status === 410) return { ok: false, data: { error: "expired_token", error_description: "Authorization code expired" } };
+      if (!response.ok) return { ok: false, data: { error: "poll_failed", error_description: `Poll failed: ${response.status}` } };
+      const data = await response.json();
+      if (data.status === "approved" && data.token) {
+        // Fetch profile to get orgId for X-Kilocode-OrganizationID header
+        let orgId = null;
+        try {
+          const profileRes = await fetch(`${config.apiBaseUrl}/api/profile`, {
+            headers: { "Authorization": `Bearer ${data.token}` }
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            orgId = profile.organizations?.[0]?.id || null;
+          }
+        } catch {}
+        return { ok: true, data: { access_token: data.token, _userEmail: data.userEmail, _orgId: orgId } };
+      }
+      return { ok: false, data: { error: "authorization_pending" } };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: null,
+      expiresIn: null,
+      email: tokens._userEmail,
+      ...(tokens._orgId ? { providerSpecificData: { orgId: tokens._orgId } } : {}),
+    }),
+  },
+
+  cline: {
+    config: CLINE_CONFIG,
+    flowType: "authorization_code",
+    buildAuthUrl: (config, redirectUri) => {
+      const params = new URLSearchParams({
+        client_type: "extension",
+        callback_url: redirectUri,
+        redirect_uri: redirectUri,
+      });
+      return `${config.authorizeUrl}?${params.toString()}`;
+    },
+    exchangeToken: async (config, code, redirectUri) => {
+      try {
+        // Cline encodes token data as base64 in the code param
+        let base64 = code;
+        const padding = 4 - (base64.length % 4);
+        if (padding !== 4) base64 += "=".repeat(padding);
+        const decoded = Buffer.from(base64, "base64").toString("utf-8");
+        const lastBrace = decoded.lastIndexOf("}");
+        if (lastBrace === -1) throw new Error("No JSON found in decoded code");
+        const tokenData = JSON.parse(decoded.substring(0, lastBrace + 1));
+        return {
+          access_token: tokenData.accessToken,
+          refresh_token: tokenData.refreshToken,
+          email: tokenData.email,
+          firstName: tokenData.firstName,
+          lastName: tokenData.lastName,
+          expires_at: tokenData.expiresAt,
+        };
+      } catch (e) {
+        const response = await fetch(config.tokenExchangeUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ grant_type: "authorization_code", code, client_type: "extension", redirect_uri: redirectUri }),
+        });
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Cline token exchange failed: ${error}`);
+        }
+        const data = await response.json();
+        return {
+          access_token: data.data?.accessToken || data.accessToken,
+          refresh_token: data.data?.refreshToken || data.refreshToken,
+          email: data.data?.userInfo?.email || "",
+          expires_at: data.data?.expiresAt || data.expiresAt,
+        };
+      }
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_at
+        ? Math.floor((new Date(tokens.expires_at).getTime() - Date.now()) / 1000)
+        : 3600,
+      email: tokens.email,
+      providerSpecificData: { firstName: tokens.firstName, lastName: tokens.lastName },
     }),
   },
 };
@@ -727,9 +927,9 @@ export function generateAuthData(providerName, redirectUri) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state) {
   const provider = getProvider(providerName);
-  
+
   const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state);
-  
+
   let extra = null;
   if (provider.postExchange) {
     extra = await provider.postExchange(tokens);
@@ -761,9 +961,9 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  
+
   const result = await provider.pollToken(provider.config, deviceCode, codeVerifier, extraData);
-  
+
   if (result.ok) {
     // For device code flows, success is only when we have an access token
     if (result.data.access_token) {
@@ -777,23 +977,23 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       // Check if it's still pending authorization
       if (result.data.error === 'authorization_pending' || result.data.error === 'slow_down') {
         // This is not a failure, just still waiting
-        return { 
-          success: false, 
-          error: result.data.error, 
+        return {
+          success: false,
+          error: result.data.error,
           errorDescription: result.data.error_description || result.data.message,
           pending: result.data.error === 'authorization_pending'
         };
       } else {
         // Actual error
-        return { 
-          success: false, 
-          error: result.data.error || 'no_access_token', 
-          errorDescription: result.data.error_description || result.data.message || 'No access token received' 
+        return {
+          success: false,
+          error: result.data.error || 'no_access_token',
+          errorDescription: result.data.error_description || result.data.message || 'No access token received'
         };
       }
     }
   }
-  
+
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
 

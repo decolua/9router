@@ -6,6 +6,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -25,7 +26,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
 
-  for (const item of body.input) {
+  const inputItems = normalizeResponsesInput(body.input);
+  if (!inputItems) return body;
+
+  for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? "message" : null);
@@ -44,11 +48,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         pendingToolResults = [];
       }
 
-      // Convert content: input_text → text, output_text → text
+      // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
         ? item.content.map(c => {
           if (c.type === "input_text") return { type: "text", text: c.text };
           if (c.type === "output_text") return { type: "text", text: c.text };
+          if (c.type === "input_image") {
+            const url = c.image_url || c.file_id || "";
+            return { type: "image_url", image_url: { url, detail: c.detail || "auto" } };
+          }
           return c;
         })
         : item.content;
@@ -108,20 +116,31 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     }
   }
 
-  // Convert tools format
+  // Convert tools format.
+  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
+  // explicit `name` field and cannot be represented as Chat Completions function declarations.
+  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
+  // such as Gemini, which strictly validates function names.
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => {
-      if (tool.function) return tool;
-      return {
-        type: "function",
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.parameters,
-          strict: tool.strict
-        }
-      };
-    });
+    result.tools = body.tools
+      .map(tool => {
+        // Already in Chat Completions format: { type: "function", function: { name, ... } }
+        if (tool.function) return tool;
+        // Responses API function tool: { type: "function", name, description, parameters }
+        // Only convert when a non-empty name is present; skip hosted tools without one.
+        const name = tool.name;
+        if (!name || typeof name !== "string" || name.trim() === "") return null;
+        return {
+          type: "function",
+          function: {
+            name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: tool.strict
+          }
+        };
+      })
+      .filter(Boolean);
   }
 
   // Cleanup Responses API specific fields
@@ -139,6 +158,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
+  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
+  if (body.input) return { ...body, model, stream: true };
+
   const result = {
     model,
     input: [],
@@ -168,16 +190,30 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         : Array.isArray(msg.content)
           ? msg.content.map(c => {
             if (c.type === "text") return { type: contentType, text: c.text };
-            if (c.type === "image_url") return { type: contentType, text: "[Image content]" };
-            return c;
+            // Convert Chat Completions image_url → Responses API input_image
+            // Responses API expects: { type: "input_image", image_url: "<url string>" }
+            // Chat Completions sends: { type: "image_url", image_url: { url: "...", detail: "..." } }
+            if (c.type === "image_url") {
+              const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+              return { type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" };
+            }
+            if (c.type === "input_image") return c;
+            // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
+            const text = c.text || c.content || JSON.stringify(c);
+            return { type: contentType, text: typeof text === "string" ? text : JSON.stringify(text) };
           })
           : [];
 
-      result.input.push({
-        type: "message",
-        role: msg.role,
-        content
-      });
+      // Only push a message block if content is non-empty.
+      // Assistant messages with only tool_calls have content: null — skip the
+      // message block in that case; the tool_calls are pushed separately below.
+      if (content.length > 0) {
+        result.input.push({
+          type: "message",
+          role: msg.role,
+          content
+        });
+      }
     }
 
     // Convert tool calls
@@ -234,4 +270,3 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 // Register both directions
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, openaiResponsesToOpenAIRequest, null);
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, openaiToOpenAIResponsesRequest, null);
-

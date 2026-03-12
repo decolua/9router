@@ -1,5 +1,6 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
+import { EventEmitter } from "events";
 import path from "path";
 import os from "os";
 import fs from "fs";
@@ -25,6 +26,8 @@ function getAppName() {
 // Get user data directory based on platform
 function getUserDataDir() {
   if (isCloud) return "/tmp"; // Fallback for Workers
+
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
 
   try {
     const platform = process.platform;
@@ -69,11 +72,24 @@ const defaultData = {
 // Singleton instance
 let dbInstance = null;
 
-// Track in-flight requests in memory
-const pendingRequests = {
-  byModel: {},
-  byAccount: {}
-};
+// Use global to share pending state across Next.js route modules
+if (!global._pendingRequests) {
+  global._pendingRequests = { byModel: {}, byAccount: {} };
+}
+const pendingRequests = global._pendingRequests;
+
+// Track last error provider for UI edge coloring (auto-clears after 10s)
+if (!global._lastErrorProvider) {
+  global._lastErrorProvider = { provider: "", ts: 0 };
+}
+const lastErrorProvider = global._lastErrorProvider;
+
+// Use global to share singleton across Next.js route modules
+if (!global._statsEmitter) {
+  global._statsEmitter = new EventEmitter();
+  global._statsEmitter.setMaxListeners(50);
+}
+export const statsEmitter = global._statsEmitter;
 
 /**
  * Track a pending request
@@ -81,8 +97,9 @@ const pendingRequests = {
  * @param {string} provider
  * @param {string} connectionId
  * @param {boolean} started - true if started, false if finished
+ * @param {boolean} [error] - true if ended with error
  */
-export function trackPendingRequest(model, provider, connectionId, started) {
+export function trackPendingRequest(model, provider, connectionId, started, error = false) {
   const modelKey = provider ? `${model} (${provider})` : model;
 
   // Track by model
@@ -91,11 +108,78 @@ export function trackPendingRequest(model, provider, connectionId, started) {
 
   // Track by account
   if (connectionId) {
-    const accountKey = connectionId; // We use connectionId as key here
+    const accountKey = connectionId;
     if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
     if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
     pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
   }
+
+  // Track error provider (auto-clears after 10s)
+  if (!started && error && provider) {
+    lastErrorProvider.provider = provider.toLowerCase();
+    lastErrorProvider.ts = Date.now();
+  }
+
+  const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
+  statsEmitter.emit("pending");
+}
+
+/**
+ * Lightweight: get only activeRequests + recentRequests without full stats recalc
+ */
+export async function getActiveRequests() {
+  const activeRequests = [];
+
+  // Build active requests from pending state
+  let connectionMap = {};
+  try {
+    const { getProviderConnections } = await import("@/lib/localDb.js");
+    const allConnections = await getProviderConnections();
+    for (const conn of allConnections) {
+      connectionMap[conn.id] = conn.name || conn.email || conn.id;
+    }
+  } catch {}
+
+  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    for (const [modelKey, count] of Object.entries(models)) {
+      if (count > 0) {
+        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        const modelName = match ? match[1] : modelKey;
+        const providerName = match ? match[2] : "unknown";
+        activeRequests.push({ model: modelName, provider: providerName, account: accountName, count });
+      }
+    }
+  }
+
+  // Get recent requests from history (re-read to get latest)
+  const db = await getUsageDb();
+  await db.read();
+  const history = db.data.history || [];
+  const seen = new Set();
+  const recentRequests = [...history]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .map((e) => {
+      const t = e.tokens || {};
+      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
+      const completionTokens = t.completion_tokens || t.output_tokens || 0;
+      return { timestamp: e.timestamp, model: e.model, provider: e.provider || "", promptTokens, completionTokens, status: e.status || "ok" };
+    })
+    .filter((e) => {
+      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+
+  // Error provider (auto-clear after 10s)
+  const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
+
+  return { activeRequests, recentRequests, errorProvider };
 }
 
 /**
@@ -157,12 +241,15 @@ export async function saveRequestUsage(entry) {
       db.data.history = [];
     }
 
+    const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.cost = entryCost;
     db.data.history.push(entry);
 
     // Optional: Limit history size if needed in future
     // if (db.data.history.length > 10000) db.data.history.shift();
 
     await db.write();
+    statsEmitter.emit("update");
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
@@ -342,15 +429,24 @@ async function calculateCost(provider, model, tokens) {
   }
 }
 
+const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+
 /**
  * Get aggregated usage stats
+ * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
  */
-export async function getUsageStats() {
+export async function getUsageStats(period = "all") {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
+
+  // Filter history by period
+  if (period && PERIOD_MS[period]) {
+    const cutoff = Date.now() - PERIOD_MS[period];
+    history = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+  }
 
   // Import localDb to get provider connection names and API keys
-  const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
+  const { getProviderConnections, getApiKeys, getProviderNodes } = await import("@/lib/localDb.js");
 
   // Fetch all provider connections to get account names
   let allConnections = [];
@@ -366,6 +462,15 @@ export async function getUsageStats() {
   for (const conn of allConnections) {
     connectionMap[conn.id] = conn.name || conn.email || conn.id;
   }
+
+  // Build map from compatible provider ID → friendly name (from providerNodes)
+  const providerNodeNameMap = {};
+  try {
+    const nodes = await getProviderNodes();
+    for (const node of nodes) {
+      if (node.id && node.name) providerNodeNameMap[node.id] = node.name;
+    }
+  } catch {}
 
   // Fetch all API keys to get key names
   let allApiKeys = [];
@@ -385,6 +490,34 @@ export async function getUsageStats() {
     };
   }
 
+  // 20 most recent requests from history (always in sync with SSE emit)
+  const seen = new Set();
+  const recentRequests = [...history]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .map((e) => {
+      const t = e.tokens || {};
+      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
+      const completionTokens = t.completion_tokens || t.output_tokens || 0;
+      return {
+        timestamp: e.timestamp,
+        model: e.model,
+        provider: e.provider || "",
+        promptTokens,
+        completionTokens,
+        status: e.status || "ok",
+      };
+    })
+    .filter((e) => {
+      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
+      // Deduplicate: same model+provider+tokens within same minute
+      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
+      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 20);
+
   const stats = {
     totalRequests: history.length,
     totalPromptTokens: 0,
@@ -394,9 +527,12 @@ export async function getUsageStats() {
     byModel: {},
     byAccount: {},
     byApiKey: {},
+    byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
-    activeRequests: []
+    activeRequests: [],
+    recentRequests,
+    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
   // Build active requests list from pending counts
@@ -444,8 +580,8 @@ export async function getUsageStats() {
     const completionTokens = entry.tokens?.completion_tokens || 0;
     const entryTime = new Date(entry.timestamp);
 
-    // Calculate cost for this entry
-    const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    // Use pre-stored cost (saved at request time), avoid recalculating
+    const entryCost = entry.cost || 0;
 
     stats.totalPromptTokens += promptTokens;
     stats.totalCompletionTokens += completionTokens;
@@ -479,6 +615,8 @@ export async function getUsageStats() {
     // By Model
     // Format: "modelName (provider)" if provider is known
     const modelKey = entry.provider ? `${entry.model} (${entry.provider})` : entry.model;
+    // Resolve friendly name for compatible providers
+    const providerDisplayName = providerNodeNameMap[entry.provider] || entry.provider;
 
     if (!stats.byModel[modelKey]) {
       stats.byModel[modelKey] = {
@@ -487,7 +625,7 @@ export async function getUsageStats() {
         completionTokens: 0,
         cost: 0,
         rawModel: entry.model,
-        provider: entry.provider,
+        provider: providerDisplayName,
         lastUsed: entry.timestamp
       };
     }
@@ -512,7 +650,7 @@ export async function getUsageStats() {
           completionTokens: 0,
           cost: 0,
           rawModel: entry.model,
-          provider: entry.provider,
+          provider: providerDisplayName,
           connectionId: entry.connectionId,
           accountName: accountName,
           lastUsed: entry.timestamp
@@ -543,7 +681,7 @@ export async function getUsageStats() {
           completionTokens: 0,
           cost: 0,
           rawModel: entry.model,
-          provider: entry.provider,
+          provider: providerDisplayName,
           apiKey: entry.apiKey,
           keyName: keyName,
           apiKeyKey: apiKeyKey,
@@ -569,7 +707,7 @@ export async function getUsageStats() {
           completionTokens: 0,
           cost: 0,
           rawModel: entry.model,
-          provider: entry.provider,
+          provider: providerDisplayName,
           apiKey: null,
           keyName: keyName,
           apiKeyKey: apiKeyKey,
@@ -585,9 +723,83 @@ export async function getUsageStats() {
         apiKeyEntry.lastUsed = entry.timestamp;
       }
     }
+
+    // By Endpoint (endpoint + model + provider combination)
+    const endpoint = entry.endpoint || "Unknown";
+    const endpointModelKey = `${endpoint}|${entry.model}|${entry.provider || 'unknown'}`;
+
+    if (!stats.byEndpoint[endpointModelKey]) {
+      stats.byEndpoint[endpointModelKey] = {
+        requests: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cost: 0,
+        endpoint: endpoint,
+        rawModel: entry.model,
+        provider: providerDisplayName,
+        lastUsed: entry.timestamp
+      };
+    }
+    const endpointEntry = stats.byEndpoint[endpointModelKey];
+    endpointEntry.requests++;
+    endpointEntry.promptTokens += promptTokens;
+    endpointEntry.completionTokens += completionTokens;
+    endpointEntry.cost += entryCost;
+    if (new Date(entry.timestamp) > new Date(endpointEntry.lastUsed)) {
+      endpointEntry.lastUsed = entry.timestamp;
+    }
   }
 
   return stats;
+}
+
+/**
+ * Get time-series chart data for a given period
+ * @param {"24h"|"7d"|"30d"|"60d"} period
+ * @returns {Promise<Array<{label: string, tokens: number, cost: number}>>}
+ */
+export async function getChartData(period = "7d") {
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const now = Date.now();
+
+  let bucketCount, bucketMs, labelFn;
+  if (period === "24h") {
+    bucketCount = 24;
+    bucketMs = 3600000; // 1 hour
+    labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  } else if (period === "7d") {
+    bucketCount = 7;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } else if (period === "30d") {
+    bucketCount = 30;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } else {
+    bucketCount = 60;
+    bucketMs = 86400000;
+    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  }
+
+  const startTime = now - bucketCount * bucketMs;
+  const buckets = Array.from({ length: bucketCount }, (_, i) => {
+    const ts = startTime + i * bucketMs;
+    return { label: labelFn(ts), tokens: 0, cost: 0, _ts: ts };
+  });
+
+  for (const entry of history) {
+    const entryTime = new Date(entry.timestamp).getTime();
+    if (entryTime < startTime || entryTime > now) continue;
+    const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
+    const promptTokens = entry.tokens?.prompt_tokens || 0;
+    const completionTokens = entry.tokens?.completion_tokens || 0;
+    buckets[idx].tokens += promptTokens + completionTokens;
+    // Use pre-stored cost if available, else 0
+    buckets[idx].cost += entry.cost || 0;
+  }
+
+  return buckets.map(({ label, tokens, cost }) => ({ label, tokens, cost }));
 }
 
 // Re-export request details functions from new SQLite-based module

@@ -17,11 +17,13 @@ export { default as OAuthModal } from "./OAuthModal";
 export { default as ModelSelectModal } from "./ModelSelectModal";
 export { default as ManualConfigModal } from "./ManualConfigModal";
 export { default as UsageStats } from "./UsageStats";
+export { default as LanguageSwitcher } from "./LanguageSwitcher";
 export { default as RequestLogger } from "./RequestLogger";
 export { default as KiroAuthModal } from "./KiroAuthModal";
 export { default as KiroOAuthWrapper } from "./KiroOAuthWrapper";
 export { default as KiroSocialOAuthModal } from "./KiroSocialOAuthModal";
 export { default as CursorAuthModal } from "./CursorAuthModal";
+export { default as IFlowCookieModal } from "./IFlowCookieModal";
 export { default as SegmentedControl } from "./SegmentedControl";
 
 // Layouts

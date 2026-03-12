@@ -91,7 +91,8 @@ export class AntigravityService {
   }
 
   /**
-   * Get metadata object for API calls
+   * Get metadata object for loadCodeAssist / onboardUser API calls.
+   * Uses string enum values matching CLIProxyAPI Go source.
    */
   getMetadata() {
     return {
@@ -117,7 +118,7 @@ export class AntigravityService {
     }
 
     const data = await response.json();
-    
+
     // Extract project ID
     let projectId = data.cloudaicompanionProject;
     if (typeof projectId === 'object' && projectId !== null && projectId.id) {
@@ -145,11 +146,7 @@ export class AntigravityService {
     const response = await fetch(this.config.onboardUserEndpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
-      body: JSON.stringify({
-        tierId,
-        metadata: this.getMetadata(),
-        cloudaicompanionProject: projectId,
-      }),
+      body: JSON.stringify({ tierId, metadata: this.getMetadata() }),
     });
 
     if (!response.ok) {
@@ -166,7 +163,7 @@ export class AntigravityService {
   async completeOnboarding(accessToken, projectId, tierId, maxRetries = 10) {
     for (let i = 0; i < maxRetries; i++) {
       const result = await this.onboardUser(accessToken, projectId, tierId);
-      
+
       if (result.done === true) {
         // Extract final project ID from response
         let finalProjectId = projectId;
@@ -301,7 +298,7 @@ export class AntigravityService {
 
       // Load Code Assist to get project ID and tier
       const { projectId, tierId } = await this.loadCodeAssist(tokens.access_token);
-      
+
       if (!projectId) {
         throw new Error("No Google Cloud Project found. Please ensure you have a GCP project with Gemini Code Assist enabled.");
       }

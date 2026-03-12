@@ -20,7 +20,7 @@ async function ensureNodeModules() {
   }
 }
 
-// Format timestamp for folder name: 20251228_143045
+// Format timestamp for folder name: 20251228_143045_123
 function formatTimestamp(date = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");
   const y = date.getFullYear();
@@ -29,7 +29,8 @@ function formatTimestamp(date = new Date()) {
   const h = pad(date.getHours());
   const min = pad(date.getMinutes());
   const s = pad(date.getSeconds());
-  return `${y}${m}${d}_${h}${min}${s}`;
+  const ms = String(date.getMilliseconds()).padStart(3, "0");
+  return `${y}${m}${d}_${h}${min}${s}_${ms}`;
 }
 
 // Create log session folder: {sourceFormat}_{targetFormat}_{model}_{timestamp}

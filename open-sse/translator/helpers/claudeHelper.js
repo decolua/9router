@@ -1,6 +1,7 @@
 // Claude helper functions for translator
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { adjustMaxTokens } from "./maxTokensHelper.js";
+import { applyCloaking } from "../../utils/claudeCloaking.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -79,7 +80,8 @@ export function fixToolUseOrdering(messages) {
 // - Filter empty messages
 // - Add thinking block for Anthropic endpoint (provider === "claude")
 // - Fix tool_use/tool_result ordering
-export function prepareClaudeRequest(body, provider = null) {
+// - Apply cloaking (billing header + fake user ID) for OAuth tokens
+export function prepareClaudeRequest(body, provider = null, apiKey = null) {
   // 1. System: remove all cache_control, add only to last block with ttl 1h
   if (body.system && Array.isArray(body.system)) {
     body.system = body.system.map((block, i) => {
@@ -184,6 +186,11 @@ export function prepareClaudeRequest(body, provider = null) {
       delete body.tools;
       delete body.tool_choice;
     }
+  }
+
+  // Apply cloaking for OAuth tokens (billing header + fake user ID)
+  if (provider === "claude" && apiKey) {
+    body = applyCloaking(body, apiKey);
   }
 
   return body;

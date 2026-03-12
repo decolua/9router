@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import { getProviderAlias } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
 
 /**
@@ -39,11 +40,12 @@ export async function GET() {
       console.log("Could not fetch combos");
     }
 
-    // Build set of active provider aliases
-    const activeAliases = new Set();
+    // Build first active connection per provider (connections already sorted by priority)
+    const activeConnectionByProvider = new Map();
     for (const conn of connections) {
-      const alias = PROVIDER_ID_TO_ALIAS[conn.provider] || conn.provider;
-      activeAliases.add(alias);
+      if (!activeConnectionByProvider.has(conn.provider)) {
+        activeConnectionByProvider.set(conn.provider, conn);
+      }
     }
 
     // Collect models from active providers (or all if none active)
@@ -64,22 +66,68 @@ export async function GET() {
     }
 
     // Add provider models
-    for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      // If we have active providers, only include those; otherwise include all
-      if (connections.length > 0 && !activeAliases.has(alias)) {
-        continue;
+    if (connections.length === 0) {
+      // DB unavailable or no active providers -> return all static models
+      for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
+        for (const model of providerModels) {
+          models.push({
+            id: `${alias}/${model.id}`,
+            object: "model",
+            created: timestamp,
+            owned_by: alias,
+            permission: [],
+            root: model.id,
+            parent: null,
+          });
+        }
       }
+    } else {
+      for (const [providerId, conn] of activeConnectionByProvider.entries()) {
+        const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+        const outputAlias = getProviderAlias(providerId) || staticAlias;
+        const providerModels = PROVIDER_MODELS[staticAlias] || [];
+        const enabledModels = conn?.providerSpecificData?.enabledModels;
+        const hasExplicitEnabledModels =
+          Array.isArray(enabledModels) && enabledModels.length > 0;
 
-      for (const model of providerModels) {
-        models.push({
-          id: `${alias}/${model.id}`,
-          object: "model",
-          created: timestamp,
-          owned_by: alias,
-          permission: [],
-          root: model.id,
-          parent: null,
-        });
+        // Default: if no explicit selection, all static models are active.
+        // If explicit selection exists, expose exactly those model IDs (including non-static IDs).
+        const rawModelIds = hasExplicitEnabledModels
+          ? Array.from(
+            new Set(
+              enabledModels.filter(
+                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+              ),
+            ),
+          )
+          : providerModels.map((model) => model.id);
+
+        const modelIds = rawModelIds
+          .map((modelId) => {
+            if (modelId.startsWith(`${outputAlias}/`)) {
+              return modelId.slice(outputAlias.length + 1);
+            }
+            if (modelId.startsWith(`${staticAlias}/`)) {
+              return modelId.slice(staticAlias.length + 1);
+            }
+            if (modelId.startsWith(`${providerId}/`)) {
+              return modelId.slice(providerId.length + 1);
+            }
+            return modelId;
+          })
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+
+        for (const modelId of modelIds) {
+          models.push({
+            id: `${outputAlias}/${modelId}`,
+            object: "model",
+            created: timestamp,
+            owned_by: outputAlias,
+            permission: [],
+            root: modelId,
+            parent: null,
+          });
+        }
       }
     }
 

@@ -4,9 +4,7 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  env: {
-    NEXT_PUBLIC_CLOUD_URL: "https://9router.com",
-  },
+  env: {},
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
@@ -16,6 +14,8 @@ const nextConfig = {
         path: false,
       };
     }
+    // Stop watching logs directory to prevent HMR during streaming
+    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
     return config;
   },
   async rewrites() {

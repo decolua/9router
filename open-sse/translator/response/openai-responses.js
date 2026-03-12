@@ -415,8 +415,8 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Function call started
-  if (eventType === "response.output_item.added" && data.item?.type === "function_call") {
+  // Function call started (standard function_call or custom_tool_call)
+  if (eventType === "response.output_item.added" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) {
     const item = data.item;
     state.currentToolCallId = item.call_id || `call_${Date.now()}`;
 
@@ -443,8 +443,8 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     };
   }
 
-  // Function call arguments delta
-  if (eventType === "response.function_call_arguments.delta") {
+  // Function call arguments delta (standard or custom_tool_call variant)
+  if (eventType === "response.function_call_arguments.delta" || eventType === "response.custom_tool_call_input.delta") {
     const argsDelta = data.delta || "";
     if (!argsDelta) return null;
 
@@ -466,8 +466,8 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     };
   }
 
-  // Function call done
-  if (eventType === "response.output_item.done" && data.item?.type === "function_call") {
+  // Function call done (standard or custom_tool_call variant)
+  if (eventType === "response.output_item.done" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) {
     state.toolCallIndex++;
     return null;
   }

@@ -62,10 +62,10 @@ export default function ModelSelectModal({
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
-    
+
     // Get all active provider IDs from connections
     const activeConnectionIds = activeProviders.map(p => p.provider);
-    
+
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
       ...activeConnectionIds,  // Only connected providers
@@ -82,7 +82,7 @@ export default function ModelSelectModal({
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
-      
+
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
@@ -91,12 +91,12 @@ export default function ModelSelectModal({
             name: aliasName,
             value: fullModel,
           }));
-        
+
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
-          
+
           groups[providerId] = {
             name: displayName,
             alias: alias,
@@ -105,43 +105,66 @@ export default function ModelSelectModal({
           };
         }
       } else if (isCustomProvider) {
-        // Match provider node to get custom name
+        // Find connection object to get prefix synchronously without waiting for providerNodes fetch
+        const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
-        const displayName = matchedNode?.name || providerInfo.name;
-        
-        // Get models from modelAliases using providerId (not prefix)
-        // modelAliases format: { alias: "providerId/modelId" }
+        const displayName = connection?.name || matchedNode?.name || providerInfo.name;
+        const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
+
+        // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
+        // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
-            value: fullModel,
+            value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
-        
-        // Only add to groups if there are models (consistent with other provider types)
-        if (nodeModels.length > 0) {
-          groups[providerId] = {
-            name: displayName,
-            alias: matchedNode?.prefix || providerId,
-            color: providerInfo.color,
-            models: nodeModels,
-            isCustom: true,
-            hasModels: true,
-          };
-        }
+
+        // Always show compatible providers that are connected, even with no aliases.
+        // When no aliases exist, show a placeholder so users know it's available.
+        const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
+          id: `__placeholder__${providerId}`,
+          name: `${nodePrefix}/model-id`,
+          value: `${nodePrefix}/model-id`,
+          isPlaceholder: true,
+        }];
+
+        groups[providerId] = {
+          name: displayName,
+          alias: nodePrefix,
+          color: providerInfo.color,
+          models: modelsToShow,
+          isCustom: true,
+          hasModels: nodeModels.length > 0,
+        };
       } else {
-        const models = getModelsByProviderId(providerId);
-        if (models.length > 0) {
+        const hardcodedModels = getModelsByProviderId(providerId);
+        const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
+
+        // Custom models user added via "Add Model" button (alias === modelId pattern)
+        const customModels = Object.entries(modelAliases)
+          .filter(([aliasName, fullModel]) =>
+            fullModel.startsWith(`${alias}/`) &&
+            aliasName === fullModel.replace(`${alias}/`, "") &&
+            !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))
+          )
+          .map(([, fullModel]) => {
+            const modelId = fullModel.replace(`${alias}/`, "");
+            return { id: modelId, name: modelId, value: fullModel, isCustom: true };
+          });
+
+        const allModels = [
+          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
+          ...customModels,
+        ];
+
+        if (allModels.length > 0) {
           groups[providerId] = {
             name: providerInfo.name,
             alias: alias,
             color: providerInfo.color,
-            models: models.map((m) => ({
-              id: m.id,
-              name: m.name,
-              value: `${alias}/${m.id}`,
-            })),
+            models: allModels,
           };
         }
       }
@@ -172,7 +195,7 @@ export default function ModelSelectModal({
       );
 
       const providerNameMatches = group.name.toLowerCase().includes(query);
-      
+
       if (matchedModels.length > 0 || providerNameMatches) {
         filtered[providerId] = {
           ...group,
@@ -236,8 +259,8 @@ export default function ModelSelectModal({
                     onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected 
-                        ? "bg-primary text-white border-primary" 
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
                         : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
@@ -270,19 +293,33 @@ export default function ModelSelectModal({
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
                 const isSelected = selectedModel === model.value;
+                const isPlaceholder = model.isPlaceholder;
                 return (
                   <button
                     key={model.id}
                     onClick={() => handleSelect(model)}
+                    title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
-                      ${isSelected 
-                        ? "bg-primary text-white border-primary" 
-                        : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      ${isPlaceholder
+                        ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
+                        : isSelected
+                          ? "bg-primary text-white border-primary"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
-                    {model.name}
+                    {isPlaceholder ? (
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[11px]">edit</span>
+                        {model.name}
+                      </span>
+                    ) : model.isCustom ? (
+                      <span className="flex items-center gap-1">
+                        {model.name}
+                        <span className="text-[9px] opacity-60 font-normal">custom</span>
+                      </span>
+                    ) : model.name}
                   </button>
                 );
               })}

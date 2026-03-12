@@ -19,6 +19,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
   const popupRef = useRef(null);
+  const pollingAbortRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -66,11 +67,26 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+    pollingAbortRef.current = false;
     setPolling(true);
     const maxAttempts = 60;
 
     for (let i = 0; i < maxAttempts; i++) {
+      // Check if polling should be aborted
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted");
+        setPolling(false);
+        return;
+      }
+
       await new Promise((r) => setTimeout(r, interval * 1000));
+
+      // Check again after sleep
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted after sleep");
+        setPolling(false);
+        return;
+      }
 
       try {
         const res = await fetch(`/api/oauth/${provider}/poll`, {
@@ -82,6 +98,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const data = await res.json();
 
         if (data.success) {
+          pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -114,8 +131,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Device code flow (GitHub, Qwen, Kiro)
-      if (provider === "github" || provider === "qwen" || provider === "kiro") {
+      // Device code flow providers
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode"];
+      if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
 
@@ -129,7 +147,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
-        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
+        // Pass extraData for Kiro (contains _clientId, _clientSecret)
         const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
@@ -181,8 +199,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
-      // Auto start OAuth
+      pollingAbortRef.current = false;
       startOAuthFlow();
+    } else if (!isOpen) {
+      // Abort polling when modal closes
+      pollingAbortRef.current = true;
     }
   }, [isOpen, provider, startOAuthFlow]);
 
@@ -212,7 +233,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
     // Method 1: postMessage from popup
     const handleMessage = (event) => {
-      if (event.origin !== window.location.origin) return;
+      // Allow messages from same origin or localhost (any port)
+      const isLocalhost = event.origin.includes("localhost") || event.origin.includes("127.0.0.1");
+      const isSameOrigin = event.origin === window.location.origin;
+      if (!isLocalhost && !isSameOrigin) return;
+      
       if (event.data?.type === "oauth_callback") {
         handleCallback(event.data.data);
       }
@@ -247,11 +272,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       const stored = localStorage.getItem("oauth_callback");
       if (stored) {
         const data = JSON.parse(stored);
-        // Only use if recent (within 30 seconds)
         if (data.timestamp && Date.now() - data.timestamp < 30000) {
           handleCallback(data);
-          localStorage.removeItem("oauth_callback");
         }
+        localStorage.removeItem("oauth_callback");
       }
     } catch {
       // localStorage may be unavailable or data may be malformed - ignore silently
@@ -288,10 +312,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
+  // Clear session on modal close
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
   if (!provider || !providerInfo) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Waiting Step (Localhost - popup mode) */}
         {step === "waiting" && !isDeviceCode && (
@@ -384,7 +413,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
                 Connect
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>
@@ -401,7 +430,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <p className="text-sm text-text-muted mb-4">
               Your {providerInfo.name} account has been connected.
             </p>
-            <Button onClick={onClose} fullWidth>
+            <Button onClick={handleClose} fullWidth>
               Done
             </Button>
           </div>
@@ -419,7 +448,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <Button onClick={startOAuthFlow} variant="secondary" fullWidth>
                 Try Again
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>

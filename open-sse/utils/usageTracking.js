@@ -196,13 +196,15 @@ export function extractUsage(chunk) {
   }
 
   // Gemini format (Antigravity)
-  if (chunk.usageMetadata && typeof chunk.usageMetadata === "object") {
+  // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
+  const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
+  if (usageMeta && typeof usageMeta === "object") {
     return normalizeUsage({
-      prompt_tokens: chunk.usageMetadata?.promptTokenCount || 0,
-      completion_tokens: chunk.usageMetadata?.candidatesTokenCount || 0,
-      total_tokens: chunk.usageMetadata?.totalTokenCount,
-      cached_tokens: chunk.usageMetadata?.cachedContentTokenCount,
-      reasoning_tokens: chunk.usageMetadata?.thoughtsTokenCount
+      prompt_tokens: usageMeta.promptTokenCount || 0,
+      completion_tokens: usageMeta.candidatesTokenCount || 0,
+      total_tokens: usageMeta.totalTokenCount,
+      cached_tokens: usageMeta.cachedContentTokenCount,
+      reasoning_tokens: usageMeta.thoughtsTokenCount
     });
   }
 

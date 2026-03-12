@@ -3,16 +3,22 @@ const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
-const os = require("os");
 
-// Configuration
-const TARGET_HOST = "daily-cloudcode-pa.googleapis.com";
+const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
+
+// All intercepted domains across all tools
+const TARGET_HOSTS = [
+  "daily-cloudcode-pa.googleapis.com",
+  "cloudcode-pa.googleapis.com",
+  "api.individual.githubcopilot.com",
+];
+
 const LOCAL_PORT = 443;
 const ROUTER_URL = "http://localhost:20128/v1/chat/completions";
 const API_KEY = process.env.ROUTER_API_KEY;
-const DB_FILE = path.join(os.homedir(), ".9router", "db.json");
+const { DATA_DIR, MITM_DIR } = require("./paths");
+const DB_FILE = path.join(DATA_DIR, "db.json");
 
-// Toggle logging (set true to enable file logging for debugging)
 const ENABLE_FILE_LOG = false;
 
 if (!API_KEY) {
@@ -20,17 +26,65 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-// Load SSL certificates
-const certDir = path.join(os.homedir(), ".9router", "mitm");
-const sslOptions = {
-  key: fs.readFileSync(path.join(certDir, "server.key")),
-  cert: fs.readFileSync(path.join(certDir, "server.crt"))
-};
+const { getCertForDomain } = require("./cert/generate");
 
-// Chat endpoints that should be intercepted
-const CHAT_URL_PATTERNS = [":generateContent", ":streamGenerateContent"];
+// Certificate cache for performance
+const certCache = new Map();
 
-// Log directory for request/response dumps
+// SNI callback for dynamic certificate generation
+function sniCallback(servername, cb) {
+  try {
+    // Check cache first
+    if (certCache.has(servername)) {
+      const cached = certCache.get(servername);
+      return cb(null, cached);
+    }
+
+    // Generate new cert for this domain
+    const certData = getCertForDomain(servername);
+    if (!certData) {
+      return cb(new Error(`Failed to generate cert for ${servername}`));
+    }
+
+    // Create secure context
+    const ctx = require("tls").createSecureContext({
+      key: certData.key,
+      cert: certData.cert
+    });
+
+    // Cache it
+    certCache.set(servername, ctx);
+    console.log(`✅ Generated cert for: ${servername}`);
+
+    cb(null, ctx);
+  } catch (error) {
+    console.error(`❌ SNI error for ${servername}:`, error.message);
+    cb(error);
+  }
+}
+
+// Load Root CA for default context
+const certDir = MITM_DIR;
+const rootCAKeyPath = path.join(certDir, "rootCA.key");
+const rootCACertPath = path.join(certDir, "rootCA.crt");
+
+let sslOptions;
+try {
+  sslOptions = {
+    key: fs.readFileSync(rootCAKeyPath),
+    cert: fs.readFileSync(rootCACertPath),
+    SNICallback: sniCallback
+  };
+} catch (e) {
+  console.error(`❌ Root CA not found in ${certDir}: ${e.message}`);
+  process.exit(1);
+}
+
+// Antigravity: Gemini generateContent endpoints
+const ANTIGRAVITY_URL_PATTERNS = [":generateContent", ":streamGenerateContent"];
+// Copilot: OpenAI-compatible + Anthropic endpoints
+const COPILOT_URL_PATTERNS = ["/chat/completions", "/v1/messages", "/responses"];
+
 const LOG_DIR = path.join(__dirname, "../../logs/mitm");
 if (ENABLE_FILE_LOG && !fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -42,35 +96,18 @@ function saveRequestLog(url, bodyBuffer) {
     const filePath = path.join(LOG_DIR, `${ts}_${urlSlug}.json`);
     const body = JSON.parse(bodyBuffer.toString());
     fs.writeFileSync(filePath, JSON.stringify(body, null, 2));
-    console.log(`💾 Saved request: ${filePath}`);
-  } catch {
-    // Ignore
-  }
+  } catch { /* ignore */ }
 }
 
-function saveResponseLog(url, data) {
-  if (!ENABLE_FILE_LOG) return;
-  try {
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const urlSlug = url.replace(/[^a-zA-Z0-9]/g, "_").substring(0, 60);
-    const filePath = path.join(LOG_DIR, `${ts}_${urlSlug}_response.txt`);
-    fs.writeFileSync(filePath, data);
-    console.log(`💾 Saved response: ${filePath}`);
-  } catch {
-    // Ignore
-  }
-}
-
-// Resolve real IP of target host (bypass /etc/hosts)
-let cachedTargetIP = null;
-async function resolveTargetIP() {
-  if (cachedTargetIP) return cachedTargetIP;
+const cachedTargetIPs = {};
+async function resolveTargetIP(hostname) {
+  if (cachedTargetIPs[hostname]) return cachedTargetIPs[hostname];
   const resolver = new dns.Resolver();
   resolver.setServers(["8.8.8.8"]);
   const resolve4 = promisify(resolver.resolve4.bind(resolver));
-  const addresses = await resolve4(TARGET_HOST);
-  cachedTargetIP = addresses[0];
-  return cachedTargetIP;
+  const addresses = await resolve4(hostname);
+  cachedTargetIPs[hostname] = addresses[0];
+  return cachedTargetIPs[hostname];
 }
 
 function collectBodyRaw(req) {
@@ -82,34 +119,45 @@ function collectBodyRaw(req) {
   });
 }
 
-function extractModel(body) {
+// Extract model from URL path (Gemini) or body (OpenAI/Anthropic)
+function extractModel(url, body) {
+  const urlMatch = url.match(/\/models\/([^/:]+)/);
+  if (urlMatch) return urlMatch[1];
+  try { return JSON.parse(body.toString()).model || null; } catch { return null; }
+}
+
+function getMappedModel(tool, model) {
+  if (!model) return null;
   try {
-    return JSON.parse(body.toString()).model || null;
+    if (!fs.existsSync(DB_FILE)) return null;
+    const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
+    return db.mitmAlias?.[tool]?.[model] || null;
   } catch {
     return null;
   }
 }
 
-function getMappedModel(model) {
-  if (!model) return null;
-  try {
-    const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-    return db.mitmAlias?.antigravity?.[model] || null;
-  } catch {
-    return null;
-  }
+/**
+ * Determine which tool this request belongs to based on hostname
+ */
+function getToolForHost(host) {
+  const h = (host || "").split(":")[0];
+  if (h === "api.individual.githubcopilot.com") return "copilot";
+  if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
+  return null;
 }
 
 async function passthrough(req, res, bodyBuffer) {
-  const targetIP = await resolveTargetIP();
+  const targetHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
+  const targetIP = await resolveTargetIP(targetHost);
 
   const forwardReq = https.request({
     hostname: targetIP,
     port: 443,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: TARGET_HOST },
-    servername: TARGET_HOST,
+    headers: { ...req.headers, host: targetHost },
+    servername: targetHost,
     rejectUnauthorized: false
   }, (forwardRes) => {
     res.writeHead(forwardRes.statusCode, forwardRes.headers);
@@ -145,16 +193,13 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       throw new Error(`9Router ${response.status}: ${errText}`);
     }
 
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "X-Accel-Buffering": "no"
-    });
+    const ct = response.headers.get("content-type") || "application/json";
+    const resHeaders = { "Content-Type": ct, "Cache-Control": "no-cache", "Connection": "keep-alive" };
+    if (ct.includes("text/event-stream")) resHeaders["X-Accel-Buffering"] = "no";
+    res.writeHead(200, resHeaders);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) { res.end(); break; }
@@ -168,35 +213,41 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
 }
 
 const server = https.createServer(sslOptions, async (req, res) => {
-  const bodyBuffer = await collectBodyRaw(req);
+  if (req.url === "/_mitm_health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true, pid: process.pid }));
+    return;
+  }
 
-  // Save request log if enabled
+  const bodyBuffer = await collectBodyRaw(req);
   if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
 
-  // Anti-loop: requests from 9Router bypass interception
-  if (req.headers["x-9router-source"] === "9router") {
+  // Anti-loop: requests originating from 9Router bypass interception
+  if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
     return passthrough(req, res, bodyBuffer);
   }
 
-  const isChatRequest = CHAT_URL_PATTERNS.some(p => req.url.includes(p));
+  const tool = getToolForHost(req.headers.host);
+  if (!tool) return passthrough(req, res, bodyBuffer);
 
-  if (!isChatRequest) {
-    return passthrough(req, res, bodyBuffer);
-  }
+  // Check if this URL should be intercepted based on tool
+  const isChat = tool === "antigravity"
+    ? ANTIGRAVITY_URL_PATTERNS.some(p => req.url.includes(p))
+    : COPILOT_URL_PATTERNS.some(p => req.url.includes(p));
 
-  const model = extractModel(bodyBuffer);
-  const mappedModel = getMappedModel(model);
+  if (!isChat) return passthrough(req, res, bodyBuffer);
 
-  if (!mappedModel) {
-    return passthrough(req, res, bodyBuffer);
-  }
+  const model = extractModel(req.url, bodyBuffer);
+  console.log("Extracted model:",  model)
+  const mappedModel = getMappedModel(tool, model);
 
-  console.log(`🔀 ${model} → ${mappedModel}`);
+  if (!mappedModel) return passthrough(req, res, bodyBuffer);
+
   return intercept(req, res, bodyBuffer, mappedModel);
 });
 
 server.listen(LOCAL_PORT, () => {
-  console.log(`🚀 MITM ready on :${LOCAL_PORT} → ${ROUTER_URL}`);
+  console.log(`🚀 MITM ready on :${LOCAL_PORT}`);
 });
 
 server.on("error", (error) => {
@@ -210,7 +261,6 @@ server.on("error", (error) => {
   process.exit(1);
 });
 
-// Graceful shutdown (SIGBREAK for Windows, SIGTERM/SIGINT for Unix)
 const shutdown = () => { server.close(() => process.exit(0)); };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

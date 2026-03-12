@@ -24,7 +24,7 @@ function CallbackContent() {
       fullUrl: window.location.href,
     };
 
-    let sent = false;
+    let relayed = false;
 
     // Check if this callback is from expected origin/port
     const expectedOrigins = [
@@ -35,8 +35,8 @@ function CallbackContent() {
     // Method 1: postMessage to opener (popup mode)
     if (window.opener) {
       try {
-        window.opener.postMessage({ type: "oauth_callback", data: callbackData }, "*"); // Allow any origin for local dev
-        sent = true;
+        window.opener.postMessage({ type: "oauth_callback", data: callbackData }, "*");
+        relayed = true;
       } catch (e) {
         console.log("postMessage failed:", e);
       }
@@ -47,7 +47,7 @@ function CallbackContent() {
       const channel = new BroadcastChannel("oauth_callback");
       channel.postMessage(callbackData);
       channel.close();
-      sent = true;
+      relayed = true;
     } catch (e) {
       console.log("BroadcastChannel failed:", e);
     }
@@ -55,25 +55,21 @@ function CallbackContent() {
     // Method 3: localStorage event (fallback)
     try {
       localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
-      sent = true;
+      relayed = true;
     } catch (e) {
       console.log("localStorage failed:", e);
     }
 
-    if (sent && (code || error)) {
-      // Use setTimeout to avoid synchronous setState in effect
-      setTimeout(() => {
-        setStatus("success");
-        // Auto close after 1.5 seconds
-        setTimeout(() => {
-          window.close();
-          // If can't close (not a popup), show success message
-          setTimeout(() => setStatus("done"), 500);
-        }, 1500);
-      }, 0);
-    } else {
+    if (!(code || error)) {
       setTimeout(() => setStatus("manual"), 0);
+      return;
     }
+
+    setStatus("success");
+    setTimeout(() => {
+      window.close();
+      setTimeout(() => setStatus("done"), 500);
+    }, 1500);
   }, [searchParams]);
 
   return (

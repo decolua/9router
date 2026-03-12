@@ -6,8 +6,11 @@
 import { v4 as uuidv4 } from "uuid";
 import zlib from "zlib";
 
-const DEBUG = true;
+const DEBUG = process.env.CURSOR_PROTOBUF_DEBUG === "1";
 const log = (tag, ...args) => DEBUG && console.log(`[PROTOBUF:${tag}]`, ...args);
+const textDecoder = new TextDecoder();
+
+const PROTOBUF_SCHEMA_VERSION = "1.1.3";
 
 // ==================== SCHEMAS ====================
 
@@ -18,6 +21,8 @@ const ROLE = { USER: 1, ASSISTANT: 2 };
 const UNIFIED_MODE = { CHAT: 1, AGENT: 2 };
 
 const THINKING_LEVEL = { UNSPECIFIED: 0, MEDIUM: 1, HIGH: 2 };
+const CLIENT_SIDE_TOOL_V2 = { MCP: 19 };
+const CLIENT_SIDE_TOOL_V2_MCP = 19;
 
 const FIELD = {
   // StreamUnifiedChatRequestWithTools (top level)
@@ -64,6 +69,28 @@ const FIELD = {
   TOOL_RESULT_INDEX: 3,
   TOOL_RESULT_RAW_ARGS: 5,
   TOOL_RESULT_RESULT: 8,
+  TOOL_RESULT_TOOL_CALL: 11,
+  TOOL_RESULT_MODEL_CALL_ID: 12,
+
+  // ClientSideToolV2Result (nested inside ToolResult.result)
+  CLIENT_RESULT_TOOL: 1,
+  CLIENT_RESULT_MCP_RESULT: 28,
+  CLIENT_RESULT_TOOL_CALL_ID: 35,
+  CLIENT_RESULT_MODEL_CALL_ID: 48,
+  CLIENT_RESULT_TOOL_INDEX: 49,
+
+  // MCPResult (nested inside ClientSideToolV2Result.mcp_result)
+  MCP_RESULT_SELECTED_TOOL: 1,
+  MCP_RESULT_RESULT: 2,
+
+  // ClientSideToolV2Call (nested inside ToolResult.tool_call)
+  CLIENT_CALL_TOOL: 1,
+  CLIENT_CALL_MCP_PARAMS: 27,
+  CLIENT_CALL_TOOL_CALL_ID: 3,
+  CLIENT_CALL_NAME: 9,
+  CLIENT_CALL_RAW_ARGS: 10,
+  CLIENT_CALL_TOOL_INDEX: 48,
+  CLIENT_CALL_MODEL_CALL_ID: 49,
 
   // Model
   MODEL_NAME: 1,
@@ -110,6 +137,7 @@ const FIELD = {
   TOOL_NAME: 9,
   TOOL_RAW_ARGS: 10,
   TOOL_IS_LAST: 11,
+  TOOL_IS_LAST_ALT: 15,
   TOOL_MCP_PARAMS: 27,
 
   // MCPParams
@@ -126,6 +154,19 @@ const FIELD = {
   // Thinking
   THINKING_TEXT: 1
 };
+
+// Known response field numbers — used to detect unknown fields from protocol updates
+const KNOWN_RESPONSE_FIELDS = new Set([
+  FIELD.TOOL_CALL,
+  FIELD.RESPONSE,
+  FIELD.TOOL_ID,
+  FIELD.TOOL_NAME,
+  FIELD.TOOL_RAW_ARGS,
+  FIELD.TOOL_IS_LAST,
+  FIELD.TOOL_MCP_PARAMS,
+  FIELD.RESPONSE_TEXT,
+  FIELD.THINKING
+]);
 
 // ==================== PRIMITIVE ENCODING ====================
 
@@ -175,26 +216,152 @@ function concatArrays(...arrays) {
 
 // ==================== MESSAGE ENCODING ====================
 
-export function encodeToolResult(toolResult) {
-  const toolCallId = toolResult.tool_call_id || "";
-  const toolName = toolResult.name || "";
-  const toolIndex = toolResult.index || 0;
-  const rawArgs = toolResult.raw_args || "{}";
-  
+/**
+ * Format tool name: "toolName" → "mcp_custom_toolName"
+ * Also handles: "mcp__server__tool" → "mcp_server_tool"
+ */
+function formatToolName(name) {
+  const base = typeof name === "string" && name.length > 0 ? name : "tool";
+
+  if (base.startsWith("mcp__")) {
+    const rest = base.slice("mcp__".length);
+    const splitIdx = rest.indexOf("__");
+    if (splitIdx >= 0) {
+      const server = rest.slice(0, splitIdx) || "custom";
+      const toolName = rest.slice(splitIdx + 2) || "tool";
+      return `mcp_${server}_${toolName}`;
+    }
+    return `mcp_custom_${rest || "tool"}`;
+  }
+
+  if (base.startsWith("mcp_")) return base;
+  return `mcp_custom_${base}`;
+}
+
+/**
+ * Parse formatted tool name: "mcp_server_tool" → { serverName, selectedTool }
+ */
+function parseToolName(formattedName) {
+  if (typeof formattedName !== "string" || !formattedName.startsWith("mcp_")) {
+    return { serverName: "custom", selectedTool: formattedName || "tool" };
+  }
+
+  const tail = formattedName.slice("mcp_".length);
+  const splitIdx = tail.indexOf("_");
+  if (splitIdx < 0) {
+    return { serverName: "custom", selectedTool: tail || "tool" };
+  }
+
+  return {
+    serverName: tail.slice(0, splitIdx) || "custom",
+    selectedTool: tail.slice(splitIdx + 1) || "tool"
+  };
+}
+
+/**
+ * Parse tool_call_id into { toolCallId, modelCallId }
+ * Cursor uses "\nmc_" delimiter for model_call_id
+ */
+function parseToolId(id) {
+  const delimiter = "\nmc_";
+  const idx = id.indexOf(delimiter);
+  if (idx >= 0) {
+    return { toolCallId: id.slice(0, idx), modelCallId: id.slice(idx + delimiter.length) };
+  }
+  return { toolCallId: id, modelCallId: null };
+}
+
+/**
+ * Encode MCPResult proto: { selected_tool, result }
+ */
+function encodeMcpResult(selectedTool, resultContent) {
   return concatArrays(
-    encodeField(FIELD.TOOL_RESULT_CALL_ID, WIRE_TYPE.LEN, toolCallId),
-    encodeField(FIELD.TOOL_RESULT_NAME, WIRE_TYPE.LEN, toolName),
-    encodeField(FIELD.TOOL_RESULT_INDEX, WIRE_TYPE.VARINT, toolIndex),
-    encodeField(FIELD.TOOL_RESULT_RAW_ARGS, WIRE_TYPE.LEN, rawArgs)
+    encodeField(FIELD.MCPR_SELECTED_TOOL, WIRE_TYPE.LEN, selectedTool),
+    encodeField(FIELD.MCPR_RESULT, WIRE_TYPE.LEN, resultContent)
   );
 }
 
-export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = []) {
+/**
+ * Encode ClientSideToolV2Result proto: { tool, mcp_result, call_id, model_call_id, tool_index }
+ * Represents the result of executing a tool
+ */
+function encodeClientSideToolV2Result(toolCallId, modelCallId, selectedTool, resultContent, toolIndex = 1) {
+  return concatArrays(
+    encodeField(FIELD.CV2R_TOOL, WIRE_TYPE.VARINT, CLIENT_SIDE_TOOL_V2_MCP),
+    encodeField(FIELD.CV2R_MCP_RESULT, WIRE_TYPE.LEN, encodeMcpResult(selectedTool, resultContent)),
+    encodeField(FIELD.CV2R_CALL_ID, WIRE_TYPE.LEN, toolCallId),
+    ...(modelCallId ? [encodeField(FIELD.CV2R_MODEL_CALL_ID, WIRE_TYPE.LEN, modelCallId)] : []),
+    encodeField(FIELD.CV2R_TOOL_INDEX, WIRE_TYPE.VARINT, toolIndex > 0 ? toolIndex : 1)
+  );
+}
+
+/**
+ * Encode MCPParams.Tool nested inside ClientSideToolV2Call
+ */
+function encodeMcpParamsForCall(toolName, rawArgs, serverName) {
+  const tool = concatArrays(
+    encodeField(FIELD.MCP_TOOL_NAME, WIRE_TYPE.LEN, toolName),
+    encodeField(FIELD.MCP_TOOL_PARAMS, WIRE_TYPE.LEN, rawArgs),
+    encodeField(FIELD.MCP_TOOL_SERVER, WIRE_TYPE.LEN, serverName)
+  );
+  return encodeField(FIELD.MCP_TOOLS_LIST, WIRE_TYPE.LEN, tool);
+}
+
+/**
+ * Encode ClientSideToolV2Call proto: { tool, mcp_params, call_id, name, raw_args, tool_index, model_call_id }
+ * Represents a tool call definition
+ */
+function encodeClientSideToolV2Call(toolCallId, toolName, selectedTool, serverName, rawArgs, modelCallId, toolIndex = 1) {
+  return concatArrays(
+    encodeField(FIELD.CV2C_TOOL, WIRE_TYPE.VARINT, CLIENT_SIDE_TOOL_V2_MCP),
+    encodeField(FIELD.CV2C_MCP_PARAMS, WIRE_TYPE.LEN, encodeMcpParamsForCall(selectedTool, rawArgs, serverName)),
+    encodeField(FIELD.CV2C_CALL_ID, WIRE_TYPE.LEN, toolCallId),
+    encodeField(FIELD.CV2C_NAME, WIRE_TYPE.LEN, toolName),
+    encodeField(FIELD.CV2C_RAW_ARGS, WIRE_TYPE.LEN, rawArgs),
+    encodeField(FIELD.CV2C_TOOL_INDEX, WIRE_TYPE.VARINT, toolIndex > 0 ? toolIndex : 1),
+    ...(modelCallId ? [encodeField(FIELD.CV2C_MODEL_CALL_ID, WIRE_TYPE.LEN, modelCallId)] : [])
+  );
+}
+
+/**
+ * Encode ConversationMessage.ToolResult with full structure
+ * Matches Cursor proto: tool_call_id, tool_name, tool_index, raw_args, result, tool_call
+ */
+export function encodeToolResult(toolResult) {
+  const originalName = toolResult.tool_name || toolResult.name || "";
+  const toolName = formatToolName(originalName);
+  const rawArgs = toolResult.raw_args || "{}";
+  const resultContent = toolResult.result_content || toolResult.result || "";
+  const { toolCallId, modelCallId } = parseToolId(toolResult.tool_call_id || "");
+  const toolIndex = toolResult.tool_index || toolResult.index || 1;
+
+  // Parse tool name to extract server and selected tool
+  const { serverName, selectedTool } = parseToolName(toolName);
+
+  return concatArrays(
+    encodeField(FIELD.TOOL_RESULT_CALL_ID, WIRE_TYPE.LEN, toolCallId),
+    encodeField(FIELD.TOOL_RESULT_NAME, WIRE_TYPE.LEN, toolName),
+    encodeField(FIELD.TOOL_RESULT_INDEX, WIRE_TYPE.VARINT, toolIndex > 0 ? toolIndex : 1),
+    ...(modelCallId ? [encodeField(FIELD.TOOL_RESULT_MODEL_CALL_ID, WIRE_TYPE.LEN, modelCallId)] : []),
+    encodeField(FIELD.TOOL_RESULT_RAW_ARGS, WIRE_TYPE.LEN, rawArgs),
+    encodeField(FIELD.TOOL_RESULT_RESULT, WIRE_TYPE.LEN,
+      encodeClientSideToolV2Result(toolCallId, modelCallId, selectedTool, resultContent, toolIndex)
+    ),
+    encodeField(FIELD.TOOL_RESULT_TOOL_CALL, WIRE_TYPE.LEN,
+      encodeClientSideToolV2Call(toolCallId, toolName, selectedTool, serverName, rawArgs, modelCallId, toolIndex)
+    )
+  );
+}
+
+export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = [], serverBubbleId = null) {
+  const hasToolResults = toolResults.length > 0;
   return concatArrays(
     encodeField(FIELD.MSG_CONTENT, WIRE_TYPE.LEN, content),
     encodeField(FIELD.MSG_ROLE, WIRE_TYPE.VARINT, role),
     encodeField(FIELD.MSG_ID, WIRE_TYPE.LEN, messageId),
-    ...(toolResults.length > 0 ? toolResults.map(tr => 
+    // Only include server_bubble_id if explicitly provided (last assistant message only)
+    ...(serverBubbleId ? [encodeField(FIELD.MSG_SERVER_BUBBLE_ID, WIRE_TYPE.LEN, serverBubbleId)] : []),
+    ...(hasToolResults ? toolResults.map(tr =>
       encodeField(FIELD.MSG_TOOL_RESULTS, WIRE_TYPE.LEN, encodeToolResult(tr))
     ) : []),
     encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
@@ -267,13 +434,71 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   const isAgentic = hasTools;
   const formattedMessages = [];
   const messageIds = [];
+  const normalizedMessages = [];
 
-  // Prepare messages
+  // Guardrail: split mixed assistant payload into separate assistant messages
+  // This prevents protobuf encoding errors when tool calls and results are in same message
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    const hasToolResults = Array.isArray(msg?.tool_results) && msg.tool_results.length > 0;
+
+    if (msg?.role === "assistant" && hasToolCalls && hasToolResults) {
+      log(
+        "ENCODE",
+        `normalizing mixed assistant tool payload at msg[${i}] (calls=${msg.tool_calls.length}, results=${msg.tool_results.length})`
+      );
+
+      // Keep assistant tool call message without embedded results
+      normalizedMessages.push({
+        ...msg,
+        tool_results: []
+      });
+
+      // Avoid inserting duplicate assistant tool-result message if next one already matches
+      const nextMsg = messages[i + 1];
+      const nextHasToolResults =
+        nextMsg?.role === "assistant" &&
+        Array.isArray(nextMsg?.tool_results) &&
+        nextMsg.tool_results.length > 0;
+      const currentIds = new Set(
+        msg.tool_results.map(tr => tr?.tool_call_id).filter(id => typeof id === "string")
+      );
+      const nextIds = new Set(
+        (nextMsg?.tool_results || [])
+          .map(tr => tr?.tool_call_id)
+          .filter(id => typeof id === "string")
+      );
+      let sameIds = currentIds.size > 0 && currentIds.size === nextIds.size;
+      if (sameIds) {
+        for (const id of currentIds) {
+          if (!nextIds.has(id)) {
+            sameIds = false;
+            break;
+          }
+        }
+      }
+
+      if (!(nextHasToolResults && sameIds)) {
+        normalizedMessages.push({
+          role: "assistant",
+          content: "",
+          tool_results: msg.tool_results
+        });
+      }
+
+      continue;
+    }
+
+    normalizedMessages.push(msg);
+  }
+
+  // Prepare messages
+  for (let i = 0; i < normalizedMessages.length; i++) {
+    const msg = normalizedMessages[i];
     const role = msg.role === "user" ? ROLE.USER : ROLE.ASSISTANT;
     const msgId = uuidv4();
-    const isLast = i === messages.length - 1;
+    const isLast = i === normalizedMessages.length - 1;
 
     formattedMessages.push({
       content: msg.content,
@@ -344,6 +569,45 @@ export function buildChatRequest(messages, modelName, tools = [], reasoningEffor
   return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort));
 }
 
+/**
+ * Encode a tool result as ClientSideToolV2Result (field 2 of StreamUnifiedChatRequestWithTools)
+ * This is sent as a SEPARATE request frame, not inside conversation messages.
+ * Proto: StreamUnifiedChatRequestWithTools.client_side_tool_v2_result = 2
+ */
+export function buildToolResultRequest(toolResult) {
+  const { toolCallId, modelCallId } = parseToolId(toolResult.tool_call_id || "");
+  const rawName = toolResult.tool_name || "";
+  const resultContent = toolResult.result_content || "";
+
+  // selected_tool = raw tool name (e.g. "Write", "Read") per cursor-api Rust source:
+  // McpResult { selected_tool: tool_name, result } where tool_name is the mcpParams.tools[0].name
+  // which is the name AFTER server prefix stripping (e.g. "custom_Write" -> name = "Write")
+  // Actually cursor-api uses: name = tool_name.slice_unchecked(d+1..) → raw name without "custom_"
+  // So selected_tool = raw tool name without any prefix
+  const selectedTool = rawName.startsWith("mcp_custom_")
+    ? rawName.slice("mcp_custom_".length)
+    : rawName.startsWith("mcp_")
+    ? rawName.slice(4)
+    : rawName;
+
+  // ClientSideToolV2Result per proto:
+  //   field 1 (tool): varint = 19 (MCP)
+  //   field 28 (mcp_result): LEN { field 1: selected_tool, field 2: result }
+  //   field 35 (tool_call_id): string
+  //   field 48 (model_call_id): string (optional)
+  //   NO tool_index (None in Rust source: encode_tool_result sets tool_index: None)
+  const cv2Result = concatArrays(
+    encodeField(FIELD.CV2R_TOOL, WIRE_TYPE.VARINT, CLIENT_SIDE_TOOL_V2_MCP),
+    encodeField(FIELD.CV2R_MCP_RESULT, WIRE_TYPE.LEN, encodeMcpResult(selectedTool, resultContent)),
+    encodeField(FIELD.CV2R_CALL_ID, WIRE_TYPE.LEN, toolCallId),
+    ...(modelCallId ? [encodeField(FIELD.CV2R_MODEL_CALL_ID, WIRE_TYPE.LEN, modelCallId)] : [])
+    // tool_index intentionally omitted (None per Rust source)
+  );
+
+  // StreamUnifiedChatRequestWithTools: field 2 = client_side_tool_v2_result
+  return encodeField(2, WIRE_TYPE.LEN, cv2Result);
+}
+
 export function wrapConnectRPCFrame(payload, compress = false) {
   let finalPayload = payload;
   let flags = 0x00;
@@ -372,6 +636,15 @@ export function generateCursorBody(messages, modelName, tools = [], reasoningEff
   
   log("BODY", `Protobuf=${protobuf.length}B, Framed=${framed.length}B`);
   return framed;
+}
+
+/**
+ * Generate a framed tool result body to send as a separate request frame.
+ * Uses field 2 (client_side_tool_v2_result) of StreamUnifiedChatRequestWithTools.
+ */
+export function generateToolResultBody(toolResult) {
+  const protobuf = buildToolResultRequest(toolResult);
+  return wrapConnectRPCFrame(protobuf, false);
 }
 
 // ==================== PRIMITIVE DECODING ====================
@@ -554,6 +827,16 @@ export function extractTextFromResponse(payload) {
   try {
     const fields = decodeMessage(payload);
 
+    // Warn about unknown field numbers — may indicate a Cursor protocol update
+    for (const fieldNum of fields.keys()) {
+      if (!KNOWN_RESPONSE_FIELDS.has(fieldNum)) {
+        log(
+          "SCHEMA",
+          `Unknown response field #${fieldNum} detected. Schema v${PROTOBUF_SCHEMA_VERSION} may be outdated.`
+        );
+      }
+    }
+
     // Field 1: ClientSideToolV2Call
     if (fields.has(FIELD.TOOL_CALL)) {
       const toolCall = extractToolCall(fields.get(FIELD.TOOL_CALL)[0].value);
@@ -566,7 +849,7 @@ export function extractTextFromResponse(payload) {
     // Field 2: StreamUnifiedChatResponse
     if (fields.has(FIELD.RESPONSE)) {
       const { text, thinking } = extractTextAndThinking(fields.get(FIELD.RESPONSE)[0].value);
-      
+
       if (text || thinking) {
         return { text, error: null, toolCall: null, thinking };
       }
@@ -574,8 +857,15 @@ export function extractTextFromResponse(payload) {
 
     return { text: null, error: null, toolCall: null, thinking: null };
   } catch (err) {
-    log("EXTRACT", `Error: ${err.message}`);
-    return { text: null, error: null, toolCall: null, thinking: null };
+    log("EXTRACT", `Decode failed (schema v${PROTOBUF_SCHEMA_VERSION}): ${err.message}`);
+    return {
+      text: null,
+      error: null,
+      toolCall: null,
+      thinking: null,
+      raw: Buffer.from(payload).toString("base64"),
+      decodeError: err.message
+    };
   }
 }
 

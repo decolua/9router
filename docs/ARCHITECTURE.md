@@ -362,6 +362,7 @@ erDiagram
       string name
       string key
       string machineId
+      boolean isActive
     }
 
     USAGE_ENTRY {

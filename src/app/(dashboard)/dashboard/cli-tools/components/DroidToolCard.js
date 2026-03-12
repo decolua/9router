@@ -15,8 +15,9 @@ export default function DroidToolCard({
   apiKeys,
   activeProviders,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [droidStatus, setDroidStatus] = useState(null);
+  const [droidStatus, setDroidStatus] = useState(initialStatus || null);
   const [checkingDroid, setCheckingDroid] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -35,7 +36,8 @@ export default function DroidToolCard({
     if (!currentConfig) return "not_configured";
     const localMatch = currentConfig.baseUrl?.includes("localhost") || currentConfig.baseUrl?.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentConfig.baseUrl?.startsWith(CLOUD_URL);
-    if (localMatch || cloudMatch) return "configured";
+    const tunnelMatch = baseUrl && currentConfig.baseUrl?.startsWith(baseUrl);
+    if (localMatch || cloudMatch || tunnelMatch) return "configured";
     return "other";
   };
 
@@ -48,11 +50,16 @@ export default function DroidToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setDroidStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !droidStatus) {
       checkDroidStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, droidStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {
@@ -193,7 +200,7 @@ export default function DroidToolCard({
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">

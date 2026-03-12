@@ -17,8 +17,9 @@ export default function ClaudeToolCard({
   hasActiveProviders,
   apiKeys,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [claudeStatus, setClaudeStatus] = useState(null);
+  const [claudeStatus, setClaudeStatus] = useState(initialStatus || null);
   const [checkingClaude, setCheckingClaude] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -38,7 +39,8 @@ export default function ClaudeToolCard({
     if (!currentUrl) return "not_configured";
     const localMatch = currentUrl.includes("localhost") || currentUrl.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentUrl.startsWith(CLOUD_URL);
-    if (localMatch || cloudMatch) return "configured";
+    const tunnelMatch = baseUrl && currentUrl.startsWith(baseUrl);
+    if (localMatch || cloudMatch || tunnelMatch) return "configured";
     return "other";
   };
 
@@ -51,11 +53,16 @@ export default function ClaudeToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setClaudeStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !claudeStatus) {
       checkClaudeStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, claudeStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {
@@ -199,7 +206,7 @@ export default function ClaudeToolCard({
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">

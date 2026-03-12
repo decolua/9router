@@ -1,4 +1,5 @@
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -34,10 +35,21 @@ function buildAnthropicCompatibleUrl(baseUrl) {
   return `${normalized}/messages`;
 }
 
+function buildQwenBaseUrl(resourceUrl, fallbackBaseUrl) {
+  const fallback = (fallbackBaseUrl || "").replace(/\/chat\/completions$/, "");
+  const raw = typeof resourceUrl === "string" ? resourceUrl.trim() : "";
+  if (!raw) return fallback;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw.replace(/\/$/, "");
+  }
+  return `https://${raw.replace(/\/$/, "")}/v1`;
+}
+
 // Detect request format from body structure
 export function detectFormat(body) {
-  // OpenAI Responses API: has input[] array instead of messages[]
-  if (body.input && Array.isArray(body.input)) {
+  // OpenAI Responses API: has input (array or string) instead of messages[]
+  // The Responses API accepts both input as array and input as a plain string
+  if (body.input && (Array.isArray(body.input) || typeof body.input === "string") && !body.messages) {
     return "openai-responses";
   }
 
@@ -177,6 +189,11 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
     case "codex":
       return config.baseUrl;
 
+    case "qwen": {
+      const baseUrl = buildQwenBaseUrl(options?.qwenResourceUrl, config.baseUrl);
+      return `${baseUrl}/chat/completions`;
+    }
+
     case "github":
       return config.baseUrl;
 
@@ -268,6 +285,10 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       case "openai":
       case "openrouter":
         headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        break;
+
+      case "cline":
+        Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
         break;
   
       case "glm":
