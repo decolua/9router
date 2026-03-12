@@ -1,6 +1,6 @@
 {
   "name": "9router-fdk",
-  "version": "0.3.41",
+  "version": "0.3.42",
   "description": "9Router web dashboard (modded by FDKGenie, add support for Amp CLI, fixed MITM server for Antigravity and Github Copilot. Track quota right from the system tray icon)",
   "bin": {
     "9router-fdk": "bin/cli.cjs"
