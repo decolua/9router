@@ -159,7 +159,7 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed);
+        const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
         if (parsed && parsed.done) {

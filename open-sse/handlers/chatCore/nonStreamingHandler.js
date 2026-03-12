@@ -1,5 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/constants.js";
@@ -109,6 +110,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       };
     }
     return result;
+  }
+
+  // Ollama
+  if (targetFormat === FORMATS.OLLAMA) {
+    return ollamaBodyToOpenAI(responseBody);
   }
 
   return responseBody;

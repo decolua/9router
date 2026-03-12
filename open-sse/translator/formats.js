@@ -9,7 +9,8 @@ export const FORMATS = {
   CODEX: "codex",
   ANTIGRAVITY: "antigravity",
   KIRO: "kiro",
-  CURSOR: "cursor"
+  CURSOR: "cursor",
+  OLLAMA: "ollama"
 };
 
 /**
