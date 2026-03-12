@@ -487,6 +487,14 @@ export const CACHE_TTL = {
   modelAlias: 3600  // 1 hour
 };
 
+// Memory management config
+export const MEMORY_CONFIG = {
+  sessionTtlMs: 2 * 60 * 60 * 1000,      // 2 hours per session entry
+  sessionCleanupIntervalMs: 30 * 60 * 1000, // cleanup every 30 minutes
+  dnsCacheTtlMs: 5 * 60 * 1000,           // 5 minutes DNS TTL
+  proxyDispatchersMaxSize: 20,             // max proxy agent instances
+};
+
 // Default max tokens
 export const DEFAULT_MAX_TOKENS = 64000;
 

@@ -1,9 +1,11 @@
+import { MEMORY_CONFIG } from "../config/constants.js";
+
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
 
-// Constants
+// DNS cache: { [hostname]: { ip, expiry } }
 const DNS_CACHE = {};
 const MITM_BYPASS_HOSTS = ["cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com", "googleapis.com"];
 const MITM_BYPASS_HEADER = "x-request-source";
@@ -22,7 +24,8 @@ function normalizeString(value) {
  * Resolve real IP using Google DNS (bypass system DNS)
  */
 async function resolveRealIP(hostname) {
-  if (DNS_CACHE[hostname]) return DNS_CACHE[hostname];
+  const cached = DNS_CACHE[hostname];
+  if (cached && Date.now() < cached.expiry) return cached.ip;
 
   try {
     const dns = await import("dns");
@@ -31,7 +34,7 @@ async function resolveRealIP(hostname) {
     resolver.setServers(GOOGLE_DNS_SERVERS);
     const resolve4 = promisify(resolver.resolve4.bind(resolver));
     const addresses = await resolve4(hostname);
-    DNS_CACHE[hostname] = addresses[0];
+    DNS_CACHE[hostname] = { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs };
     return addresses[0];
   } catch (error) {
     console.warn(`[ProxyFetch] DNS resolve failed for ${hostname}:`, error.message);
@@ -132,6 +135,10 @@ async function getDispatcher(proxyUrl) {
   if (!normalized) return null;
 
   if (!proxyDispatchers.has(normalized)) {
+    // Evict oldest entry if max size reached
+    if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
+      proxyDispatchers.delete(proxyDispatchers.keys().next().value);
+    }
     const { ProxyAgent } = await import("undici");
     proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
   }
