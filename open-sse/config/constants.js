@@ -424,6 +424,10 @@ export const PROVIDERS = {
     baseUrl: "https://api.hyperbolic.xyz/v1/chat/completions",
     format: "openai"
   },
+  ollama: {
+    baseUrl: "https://ollama.com/api/chat",
+    format: "openai"
+  },
   deepgram: {
     baseUrl: "https://api.deepgram.com/v1/listen",
     format: "openai"

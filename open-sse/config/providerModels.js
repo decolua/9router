@@ -301,6 +301,9 @@ export const PROVIDER_MODELS = {
     { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
+  ollama: [
+    { id: "gpt-oss:120b", name: "GPT OSS 120B" },
+  ],
 };
 
 // Helper functions
@@ -372,6 +375,7 @@ export const PROVIDER_ID_TO_ALIAS = {
   nebius: "nebius",
   siliconflow: "siliconflow",
   hyperbolic: "hyperbolic",
+  ollama: "ollama",
 };
 
 export function getModelsByProviderId(providerId) {

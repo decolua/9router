@@ -47,6 +47,7 @@ export const PROVIDER_ENDPOINTS = {
   openai: "https://api.openai.com/v1/chat/completions",
   anthropic: "https://api.anthropic.com/v1/messages",
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
+  ollama: "https://ollama.com/api/chat",
 };
 
 // Re-export from providers.js for backward compatibility
