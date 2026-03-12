@@ -564,3 +564,18 @@ export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
 ];
 
+// Generate Kimi OAuth custom headers
+export function buildKimiHeaders() {
+  const deviceId = `kimi-${Date.now()}`;
+  const platform = "9router";
+  const version = "2.1.2";
+  const deviceModel = typeof process !== "undefined" ? `${process.platform} ${process.arch}` : "unknown";
+  
+  return {
+    "X-Msh-Platform": platform,
+    "X-Msh-Version": version,
+    "X-Msh-Device-Model": deviceModel,
+    "X-Msh-Device-Id": deviceId
+  };
+}
+

@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS, OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/constants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 export class DefaultExecutor extends BaseExecutor {
@@ -23,9 +23,10 @@ export class DefaultExecutor extends BaseExecutor {
       case "claude":
       case "glm":
       case "kimi":
-      case "kimi-coding":
       case "minimax":
       case "minimax-cn":
+        return `${this.config.baseUrl}?beta=true`;
+      case "kimi-coding":
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
@@ -46,10 +47,13 @@ export class DefaultExecutor extends BaseExecutor {
         break;
       case "glm":
       case "kimi":
-      case "kimi-coding":
       case "minimax":
       case "minimax-cn":
         headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+        break;
+      case "kimi-coding":
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+        Object.assign(headers, buildKimiHeaders());
         break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -184,9 +188,14 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   async refreshKimiCoding(refreshToken) {
+    const kimiHeaders = buildKimiHeaders();
     const response = await fetch("https://auth.kimi.com/api/oauth/token", {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+      headers: { 
+        "Content-Type": "application/x-www-form-urlencoded", 
+        "Accept": "application/json",
+        ...kimiHeaders
+      },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
     });
     if (!response.ok) return null;
