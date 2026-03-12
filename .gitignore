@@ -48,6 +48,7 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/investigations/
 test/*
 bin/*
 open-sse/test/*
