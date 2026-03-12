@@ -2,7 +2,7 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { CLIENT_METADATA, getPlatformUserAgent } from "../config/constants.js";
+import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {

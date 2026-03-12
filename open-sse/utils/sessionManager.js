@@ -9,7 +9,7 @@
  */
 
 import crypto from "crypto";
-import { MEMORY_CONFIG } from "../config/constants.js";
+import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 // Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
 const runtimeSessionStore = new Map();

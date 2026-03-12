@@ -1,4 +1,4 @@
-import { MEMORY_CONFIG } from "../config/constants.js";
+import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 

@@ -1,3 +1,5 @@
+import { PROVIDERS } from "./providers.js";
+
 // Provider models - Single source of truth
 // Key = alias (cc, cx, gc, qw, if, ag, gh for OAuth; id for API Key)
 // Field "provider" for special cases (e.g. AntiGravity models that call different backends)
@@ -342,8 +344,8 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   return found?.targetFormat || null;
 }
 
-// Provider ID to alias mapping
-export const PROVIDER_ID_TO_ALIAS = {
+// OAuth providers that use short aliases (everything else: alias = id)
+const OAUTH_ALIASES = {
   claude: "cc",
   codex: "cx",
   "gemini-cli": "gc",
@@ -356,32 +358,12 @@ export const PROVIDER_ID_TO_ALIAS = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
-  openai: "openai",
-  anthropic: "anthropic",
-  gemini: "gemini",
-  openrouter: "openrouter",
-  glm: "glm",
-  "glm-cn": "glm-cn",
-  kimi: "kimi",
-  minimax: "minimax",
-  "minimax-cn": "minimax-cn",
-  alicode: "alicode",
-  "alicode-intl": "alicode-intl",
-  deepseek: "deepseek",
-  groq: "groq",
-  xai: "xai",
-  mistral: "mistral",
-  perplexity: "perplexity",
-  together: "together",
-  fireworks: "fireworks",
-  cerebras: "cerebras",
-  cohere: "cohere",
-  nvidia: "nvidia",
-  nebius: "nebius",
-  siliconflow: "siliconflow",
-  hyperbolic: "hyperbolic",
-  ollama: "ollama",
 };
+
+// Derived from PROVIDERS — no need to maintain manually
+export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
+  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+);
 
 export function getModelsByProviderId(providerId) {
   const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
