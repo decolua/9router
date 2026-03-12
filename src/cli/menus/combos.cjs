@@ -1,9 +1,9 @@
-const api = require("../api/client");
-const { prompt, confirm, pause } = require("../utils/input");
-const { clearScreen, showStatus, showHeader } = require("../utils/display");
-const { formatDate } = require("../utils/format");
-const { selectModelFromList } = require("../utils/modelSelector");
-const { showMenuWithBack } = require("../utils/menuHelper");
+const api = require("../api/client.cjs");
+const { prompt, confirm, pause } = require("../utils/input.cjs");
+const { clearScreen, showStatus, showHeader } = require("../utils/display.cjs");
+const { formatDate } = require("../utils/format.cjs");
+const { selectModelFromList } = require("../utils/modelSelector.cjs");
+const { showMenuWithBack } = require("../utils/menuHelper.cjs");
 
 /**
  * Format model to string (handle both string and object)
@@ -117,7 +117,7 @@ async function handleDeleteSingleCombo(combo) {
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showCombosMenu(breadcrumb = []) {
-  const { showListMenu } = require("../utils/menuHelper");
+  const { showListMenu } = require("../utils/menuHelper.cjs");
   
   await showListMenu({
     title: "🔀 Combos Management",

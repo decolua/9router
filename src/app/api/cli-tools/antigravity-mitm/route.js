@@ -11,7 +11,7 @@ import {
   setCachedPassword,
   loadEncryptedPassword,
   initDbHooks,
-} from "@/mitm/manager";
+} from "@/mitm/manager.cjs";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 initDbHooks(getSettings, updateSettings);

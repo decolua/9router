@@ -5,6 +5,7 @@ data/
 
 # Development
 src/
+!.next/standalone/src/
 docs/
 test/
 agents/

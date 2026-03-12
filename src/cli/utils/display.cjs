@@ -1,4 +1,4 @@
-const { formatNumber } = require("./format");
+const { formatNumber } = require("./format.cjs");
 
 // ANSI color codes
 const COLORS = {

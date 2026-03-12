@@ -1,9 +1,9 @@
-const api = require("../api/client");
-const { prompt, confirm, pause } = require("../utils/input");
-const { clearScreen, showStatus, showHeader } = require("../utils/display");
-const { formatDate, getRelativeTime } = require("../utils/format");
-const { showMenuWithBack } = require("../utils/menuHelper");
-const { copyToClipboard } = require("../utils/clipboard");
+const api = require("../api/client.cjs");
+const { prompt, confirm, pause } = require("../utils/input.cjs");
+const { clearScreen, showStatus, showHeader } = require("../utils/display.cjs");
+const { formatDate, getRelativeTime } = require("../utils/format.cjs");
+const { showMenuWithBack } = require("../utils/menuHelper.cjs");
+const { copyToClipboard } = require("../utils/clipboard.cjs");
 
 // ANSI colors for styling
 const COLORS = {
@@ -254,7 +254,7 @@ function buildProviderHeader(providerId) {
  */
 async function showProviderDetail(providerId, authType, allConnections, breadcrumb = []) {
   const provider = ALL_PROVIDERS[providerId];
-  const { showListMenu } = require("../utils/menuHelper");
+  const { showListMenu } = require("../utils/menuHelper.cjs");
   
   await showListMenu({
     title: `🔌 ${provider.name} (${authType.toUpperCase()})`,

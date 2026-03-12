@@ -1,9 +1,9 @@
-const api = require("../api/client");
-const { pause } = require("../utils/input");
-const { showStatus } = require("../utils/display");
-const { selectModelFromList } = require("../utils/modelSelector");
-const { showMenuWithBack } = require("../utils/menuHelper");
-const { getEndpoint } = require("../utils/endpoint");
+const api = require("../api/client.cjs");
+const { pause } = require("../utils/input.cjs");
+const { showStatus } = require("../utils/display.cjs");
+const { selectModelFromList } = require("../utils/modelSelector.cjs");
+const { showMenuWithBack } = require("../utils/menuHelper.cjs");
+const { getEndpoint } = require("../utils/endpoint.cjs");
 
 const COLORS = {
   reset: "\x1b[0m",

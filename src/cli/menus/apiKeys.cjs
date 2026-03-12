@@ -1,10 +1,10 @@
-const api = require("../api/client");
-const { prompt, confirm, pause } = require("../utils/input");
-const { clearScreen, showStatus, showHeader } = require("../utils/display");
-const { maskKey, formatDate, getRelativeTime } = require("../utils/format");
-const { showMenuWithBack } = require("../utils/menuHelper");
-const { copyToClipboard } = require("../utils/clipboard");
-const { getEndpoint } = require("../utils/endpoint");
+const api = require("../api/client.cjs");
+const { prompt, confirm, pause } = require("../utils/input.cjs");
+const { clearScreen, showStatus, showHeader } = require("../utils/display.cjs");
+const { maskKey, formatDate, getRelativeTime } = require("../utils/format.cjs");
+const { showMenuWithBack } = require("../utils/menuHelper.cjs");
+const { copyToClipboard } = require("../utils/clipboard.cjs");
+const { getEndpoint } = require("../utils/endpoint.cjs");
 
 /**
  * Display API keys list with formatted output
@@ -198,7 +198,7 @@ async function showKeyActions(key, port, breadcrumb = []) {
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showApiKeysMenu(port, breadcrumb = []) {
-  const { showListMenu } = require("../utils/menuHelper");
+  const { showListMenu } = require("../utils/menuHelper.cjs");
   
   const { endpoint } = await getEndpoint(port);
   await showListMenu({

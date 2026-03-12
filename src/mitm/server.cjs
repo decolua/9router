@@ -22,7 +22,7 @@ const ROUTER_BASE = _rawRouterUrl.replace(/\/v1\/.*$/, "");
 const ROUTER_CHAT_URL = `${ROUTER_BASE}/v1/chat/completions`;
 const ROUTER_RESPONSES_URL = `${ROUTER_BASE}/v1/responses`;
 const API_KEY = process.env.ROUTER_API_KEY;
-const { DATA_DIR, MITM_DIR } = require("./paths");
+const { DATA_DIR, MITM_DIR } = require("./paths.cjs");
 const DB_FILE = path.join(DATA_DIR, "db.json");
 
 const ENABLE_FILE_LOG = false;
@@ -32,8 +32,8 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-const { getCertForDomain } = require("./cert/generate");
-const { generateRootCA } = require("./cert/rootCA");
+const { getCertForDomain } = require("./cert/generate.cjs");
+const { generateRootCA } = require("./cert/rootCA.cjs");
 
 // Certificate cache for performance
 const certCache = new Map();

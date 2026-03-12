@@ -5,12 +5,12 @@ const os = require("os");
 const net = require("net");
 const https = require("https");
 const crypto = require("crypto");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, executeElevatedPowerShell, TOOL_HOSTS } = require("./dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, executeElevatedPowerShell, TOOL_HOSTS } = require("./dns/dnsConfig.cjs");
 
 const IS_WIN = process.platform === "win32";
-const { generateCert } = require("./cert/generate");
-const { installCert } = require("./cert/install");
-const { MITM_DIR } = require("./paths");
+const { generateCert } = require("./cert/generate.cjs");
+const { installCert } = require("./cert/install.cjs");
+const { MITM_DIR } = require("./paths.cjs");
 
 const MITM_PORT = 443;
 const MITM_WIN_NODE_PORT = 8443;
@@ -77,7 +77,7 @@ function killProcess(pid, force = false, sudoPassword = null) {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
     if (sudoPassword) {
-      const { execWithPassword } = require("./dns/dnsConfig");
+      const { execWithPassword } = require("./dns/dnsConfig.cjs");
       execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, () => { }));
     } else {
       exec(cmd, () => { });
@@ -208,7 +208,7 @@ async function killLeftoverMitm(sudoPassword) {
     try {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
       if (sudoPassword) {
-        const { execWithPassword } = require("./dns/dnsConfig");
+        const { execWithPassword } = require("./dns/dnsConfig.cjs");
         await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
       } else {
         exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, () => { });
@@ -307,7 +307,7 @@ async function startServer(apiKey, sudoPassword) {
       if (owner && owner.name === "node") {
         console.log(`[MITM] Killing orphan node process on port 443 (PID ${owner.pid})...`);
         try {
-          const { execWithPassword } = require("./dns/dnsConfig");
+          const { execWithPassword } = require("./dns/dnsConfig.cjs");
           await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
           await new Promise(r => setTimeout(r, 800));
         } catch { /* best effort */ }
@@ -354,7 +354,7 @@ async function startServer(apiKey, sudoPassword) {
   }
 
   // Step 1.5: Auto-install Root CA if not trusted yet
-  const { checkCertInstalled } = require("./cert/install");
+  const { checkCertInstalled } = require("./cert/install.cjs");
   const rootCATrusted = await checkCertInstalled(rootCACertPath);
   if (!rootCATrusted) {
     console.log("[MITM] Installing Root CA to system trust store...");
@@ -373,7 +373,7 @@ async function startServer(apiKey, sudoPassword) {
       const stats = fs.statSync(MITM_DIR);
       if (stats.uid === 0) {
         const currentUser = os.userInfo().username;
-        const { execWithPassword } = require("./dns/dnsConfig");
+        const { execWithPassword } = require("./dns/dnsConfig.cjs");
         await execWithPassword(`chown -R ${currentUser} "${MITM_DIR}"`, sudoPassword);
       }
     } catch (err) {

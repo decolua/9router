@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { getMitmAlias, setMitmAliasAll } from "@/models";
-import { getMitmStatus } from "@/mitm/manager";
+import { getMitmStatus } from "@/mitm/manager.cjs";
 
 // Reserved key for MITM per-tool metadata
 const MITM_META_KEY = "__meta__";

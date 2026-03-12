@@ -1,7 +1,7 @@
 const fs = require("fs");
 const crypto = require("crypto");
 const { exec } = require("child_process");
-const { execWithPassword } = require("../dns/dnsConfig.js");
+const { execWithPassword } = require("../dns/dnsConfig.cjs");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";

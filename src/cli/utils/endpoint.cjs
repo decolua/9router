@@ -1,4 +1,4 @@
-const api = require("../api/client");
+const api = require("../api/client.cjs");
 
 const COLORS = {
   reset: "\x1b[0m",

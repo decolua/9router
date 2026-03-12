@@ -1,7 +1,7 @@
-const api = require("../api/client");
-const { pause } = require("../utils/input");
-const { showStatus } = require("../utils/display");
-const { showMenuWithBack } = require("../utils/menuHelper");
+const api = require("../api/client.cjs");
+const { pause } = require("../utils/input.cjs");
+const { showStatus } = require("../utils/display.cjs");
+const { showMenuWithBack } = require("../utils/menuHelper.cjs");
 
 // ANSI colors
 const COLORS = {

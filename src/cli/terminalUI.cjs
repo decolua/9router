@@ -1,10 +1,10 @@
-const api = require("./api/client");
-const { showMenuWithBack } = require("./utils/menuHelper");
-const { showProvidersMenu } = require("./menus/providers");
-const { showApiKeysMenu } = require("./menus/apiKeys");
-const { showCombosMenu } = require("./menus/combos");
-const { showSettingsMenu } = require("./menus/settings");
-const { showCliToolsMenu } = require("./menus/cliTools");
+const api = require("./api/client.cjs");
+const { showMenuWithBack } = require("./utils/menuHelper.cjs");
+const { showProvidersMenu } = require("./menus/providers.cjs");
+const { showApiKeysMenu } = require("./menus/apiKeys.cjs");
+const { showCombosMenu } = require("./menus/combos.cjs");
+const { showSettingsMenu } = require("./menus/settings.cjs");
+const { showCliToolsMenu } = require("./menus/cliTools.cjs");
 
 const COLORS = {
   reset: "\x1b[0m",

@@ -1,6 +1,6 @@
-const api = require("../api/client");
-const { prompt } = require("./input");
-const { clearScreen } = require("./display");
+const api = require("../api/client.cjs");
+const { prompt } = require("./input.cjs");
+const { clearScreen } = require("./display.cjs");
 
 // Provider alias order: OAuth first, then API Key (matches ModelSelectModal)
 const PROVIDER_ALIAS_ORDER = [

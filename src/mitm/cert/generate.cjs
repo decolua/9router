@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs");
-const { MITM_DIR } = require("../paths");
-const { generateRootCA, loadRootCA, generateLeafCert } = require("./rootCA");
+const { MITM_DIR } = require("../paths.cjs");
+const { generateRootCA, loadRootCA, generateLeafCert } = require("./rootCA.cjs");
 
 /**
  * Generate Root CA certificate (one-time setup)

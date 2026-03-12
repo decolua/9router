@@ -2,7 +2,7 @@ const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
-const api = require("../api/client");
+const api = require("../api/client.cjs");
 
 let trayInstance = null;
 let updateInterval = null;
@@ -351,7 +351,7 @@ async function initTray(options) {
     // Check if autostart is enabled
     let autostartEnabled = false;
     try {
-      const { isAutoStartEnabled } = require("./autostart");
+      const { isAutoStartEnabled } = require("./autostart.cjs");
       autostartEnabled = isAutoStartEnabled();
     } catch (e) {}
 
@@ -480,7 +480,7 @@ async function initTray(options) {
       // Auto-start toggle
       else if (title === "✓ Auto-start Enabled") {
         try {
-          const { disableAutoStart } = require("./autostart");
+          const { disableAutoStart } = require("./autostart.cjs");
           disableAutoStart();
           trayInstance.sendAction({
             type: "update-item",
@@ -494,7 +494,7 @@ async function initTray(options) {
         } catch (e) {}
       } else if (title === "Enable Auto-start") {
         try {
-          const { enableAutoStart } = require("./autostart");
+          const { enableAutoStart } = require("./autostart.cjs");
           enableAutoStart();
           trayInstance.sendAction({
             type: "update-item",

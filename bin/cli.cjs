@@ -364,19 +364,24 @@ function openBrowser(url) {
   });
 }
 
-// Check if Next.js build exists
+// Check if Next.js build exists (support both dev and standalone builds)
 const nextDir = path.join(__dirname, "..", ".next");
-if (!fs.existsSync(nextDir)) {
+const standaloneNextDir = path.join(__dirname, "..", ".next", "standalone", ".next");
+if (!fs.existsSync(nextDir) && !fs.existsSync(standaloneNextDir)) {
   console.error("Error: Next.js build not found.");
   console.error("Please run 'npm run build' first.");
   process.exit(1);
 }
 
+// Determine the correct working directory for Next.js
+const isStandalone = fs.existsSync(standaloneNextDir);
+const workingDir = isStandalone ? path.join(__dirname, "..", ".next", "standalone") : path.join(__dirname, "..");
+
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
-  const { selectMenu } = require("../src/cli/utils/input");
-  const { clearScreen } = require("../src/cli/utils/display");
-  const { getEndpoint } = require("../src/cli/utils/endpoint");
+  const { selectMenu } = require("../src/cli/utils/input.cjs");
+  const { clearScreen } = require("../src/cli/utils/display.cjs");
+  const { getEndpoint } = require("../src/cli/utils/endpoint.cjs");
   
   clearScreen();
   
@@ -423,7 +428,7 @@ function startServer(latestVersion) {
 
   const nextBin = path.join(__dirname, "..", "node_modules", ".bin", "next");
   const server = spawn(RUNTIME, [nextBin, "start", "-p", port, "-H", host], {
-    cwd: path.join(__dirname, ".."),
+    cwd: workingDir,
     stdio: showLog ? "inherit" : "ignore",
     detached: true,
     env: {
@@ -440,7 +445,7 @@ function startServer(latestVersion) {
     isCleaningUp = true;
     try {
       try {
-        const { killTray } = require("../src/cli/tray/tray");
+        const { killTray } = require("../src/cli/tray/tray.cjs");
         killTray();
       } catch (e) {}
       if (server.pid) {
@@ -489,7 +494,7 @@ function startServer(latestVersion) {
     if (trayMode) {
       console.log("Starting in tray mode...\n");
       try {
-        const { initTray } = require("../src/cli/tray/tray");
+        const { initTray } = require("../src/cli/tray/tray.cjs");
         const tray = await initTray({
           port,
           onQuit: () => {
@@ -528,12 +533,12 @@ function startServer(latestVersion) {
         console.log(`Server running at: ${url}`);
         console.log("Press Ctrl+C to stop\n");
       } else if (choice === "terminal") {
-        const { startTerminalUI } = require("../src/cli/terminalUI");
+        const { startTerminalUI } = require("../src/cli/terminalUI.cjs");
         await startTerminalUI(port);
       } else if (choice === "hide") {
         console.log("\n🔔 Hiding to system tray...\n");
         try {
-          const { initTray } = require("../src/cli/tray/tray");
+          const { initTray } = require("../src/cli/tray/tray.cjs");
           const tray = await initTray({
             port,
             onQuit: () => {

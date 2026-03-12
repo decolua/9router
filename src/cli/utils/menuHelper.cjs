@@ -1,4 +1,4 @@
-const { selectMenu } = require("./input");
+const { selectMenu } = require("./input.cjs");
 
 /**
  * Show a menu with back button at top and handle selection
