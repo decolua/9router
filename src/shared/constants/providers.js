@@ -105,4 +105,4 @@ export const ID_TO_ALIAS = Object.values(AI_PROVIDERS).reduce((acc, p) => {
 }, {});
 
 // Providers that support usage/quota API
-export const USAGE_SUPPORTED_PROVIDERS = ["antigravity", "kiro", "github", "codex"];
+export const USAGE_SUPPORTED_PROVIDERS = [ "claude", "antigravity", "kiro", "github", "codex"];

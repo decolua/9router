@@ -120,8 +120,7 @@ export async function GET(request, { params }) {
     const usage = await getUsageForProvider(connection);
     return Response.json(usage);
   } catch (error) {
-    console.error("[Usage API] Error fetching usage:", error);
-    console.error("[Usage API] Error stack:", error.stack);
+    console.warn(`[Usage] ${connection?.provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
