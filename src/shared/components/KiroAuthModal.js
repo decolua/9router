@@ -13,6 +13,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [idcStartUrl, setIdcStartUrl] = useState("");
   const [idcRegion, setIdcRegion] = useState("us-east-1");
   const [refreshToken, setRefreshToken] = useState("");
+  const [awsCredentials, setAwsCredentials] = useState(null); // { clientId, clientSecret, region }
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
@@ -34,6 +35,15 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         if (data.found) {
           setRefreshToken(data.refreshToken);
           setAutoDetected(true);
+          // Store AWS credentials if present (needed for Builder ID / IDC refresh)
+          if (data.clientId && data.clientSecret) {
+            setAwsCredentials({
+              clientId: data.clientId,
+              clientSecret: data.clientSecret,
+              region: data.region || "us-east-1",
+              authMethod: data.authMethod || "builder-id",
+            });
+          }
         } else {
           setError(data.error || "Could not auto-detect token");
         }
@@ -70,7 +80,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       const res = await fetch("/api/oauth/kiro/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+        body: JSON.stringify({
+          refreshToken: refreshToken.trim(),
+          ...(awsCredentials && awsCredentials),
+        }),
       });
 
       const data = await res.json();

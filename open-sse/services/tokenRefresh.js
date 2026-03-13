@@ -304,8 +304,8 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Accept: "application/json",
-      "User-Agent": "kiro-cli/1.0.0",
+      "Accept": "application/json",
+      "User-Agent": "KiroIDE-0.10.32-kiro-proxy",
     },
     body: JSON.stringify({
       refreshToken: refreshToken,

@@ -8,7 +8,7 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { refreshToken } = await request.json();
+    const { refreshToken, clientId, clientSecret, region, authMethod } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
@@ -19,11 +19,27 @@ export async function POST(request) {
 
     const kiroService = new KiroService();
 
+    // Normalize authMethod — file may store "IdC", "idc", "builder-id", etc.
+    const normalizedAuthMethod = typeof authMethod === "string"
+      ? authMethod.toLowerCase()
+      : "builder-id";
+
+    // providerSpecificData needed for AWS SSO OIDC refresh (Builder ID / IDC)
+    const providerSpecificData = clientId && clientSecret
+      ? { clientId, clientSecret, region: region || "us-east-1", authMethod: normalizedAuthMethod }
+      : null;
+
     // Validate and refresh token
-    const tokenData = await kiroService.validateImportToken(refreshToken.trim());
+    const tokenData = await kiroService.validateImportToken(refreshToken.trim(), providerSpecificData);
 
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+
+    // Determine final authMethod and provider label for storage
+    const finalAuthMethod = providerSpecificData?.authMethod || tokenData.authMethod || "imported";
+    const isIDC = finalAuthMethod === "idc";
+    const isBuilderID = finalAuthMethod === "builder-id";
+    const providerLabel = isIDC ? "AWS IAM Identity Center" : isBuilderID ? "AWS Builder ID" : "Imported";
 
     // Save to database
     const connection = await createProviderConnection({
@@ -35,8 +51,12 @@ export async function POST(request) {
       email: email || null,
       providerSpecificData: {
         profileArn: tokenData.profileArn,
-        authMethod: "imported",
-        provider: "Imported",
+        authMethod: finalAuthMethod,
+        provider: providerLabel,
+        // Persist clientId/clientSecret for future token refreshes
+        clientId: providerSpecificData?.clientId || tokenData.clientId || null,
+        clientSecret: providerSpecificData?.clientSecret || tokenData.clientSecret || null,
+        region: providerSpecificData?.region || tokenData.region || "us-east-1",
       },
       testStatus: "active",
     });

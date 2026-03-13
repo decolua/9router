@@ -209,6 +209,9 @@ export class KiroService {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        // Must mimic Kiro IDE User-Agent — Cognito endpoint rejects unknown agents
+        "User-Agent": "KiroIDE-0.10.32-kiro-proxy",
+        "Accept": "application/json, text/plain, */*",
       },
       body: JSON.stringify({
         refreshToken,
@@ -231,16 +234,59 @@ export class KiroService {
 
   /**
    * Validate and import refresh token
+   * Tries AWS SSO OIDC first (if providerSpecificData provided), then social auth fallback
    */
-  async validateImportToken(refreshToken) {
+  async validateImportToken(refreshToken, providerSpecificData = null) {
     // Validate token format
     if (!refreshToken.startsWith("aorAAAAAG")) {
       throw new Error("Invalid token format. Token should start with aorAAAAAG...");
     }
 
-    // Try to refresh to validate
+    // If we have clientId/clientSecret, use AWS SSO OIDC directly
+    if (providerSpecificData?.clientId && providerSpecificData?.clientSecret) {
+      try {
+        const result = await this.refreshToken(refreshToken, providerSpecificData);
+        return {
+          accessToken: result.accessToken,
+          refreshToken: result.refreshToken || refreshToken,
+          profileArn: result.profileArn,
+          expiresIn: result.expiresIn,
+          authMethod: providerSpecificData.authMethod || "builder-id",
+          clientId: providerSpecificData.clientId,
+          clientSecret: providerSpecificData.clientSecret,
+          region: providerSpecificData.region || "us-east-1",
+        };
+      } catch (error) {
+        throw new Error(`Token validation failed: ${error.message}`);
+      }
+    }
+
+    // No clientId/clientSecret — register a new client then try to refresh
+    // AWS SSO OIDC requires clientId+clientSecret to use a refresh token
+    const targetRegion = providerSpecificData?.region || "us-east-1";
     try {
-      const result = await this.refreshToken(refreshToken);
+      const { clientId, clientSecret } = await this.registerClient(targetRegion);
+      const result = await this.refreshToken(refreshToken, {
+        clientId,
+        clientSecret,
+        region: targetRegion,
+        authMethod: providerSpecificData?.authMethod || "builder-id",
+      });
+      return {
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken || refreshToken,
+        profileArn: result.profileArn,
+        expiresIn: result.expiresIn,
+        authMethod: "builder-id",
+        clientId,
+        clientSecret,
+      };
+    } catch {
+      // Last resort: try social auth endpoint
+    }
+
+    try {
+      const result = await this.refreshToken(refreshToken, {});
       return {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken || refreshToken,
