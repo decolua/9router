@@ -1,14 +1,14 @@
 import { detectFormat } from "../services/provider.js";
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { SKIP_PATTERNS } from "../config/constants.js";
+import { SKIP_PATTERNS } from "../config/runtimeConfig.js";
 import { formatSSE } from "./stream.js";
 
 /**
  * Check for bypass patterns - return fake response without calling provider
  * Only works for Claude CLI requests
  */
-export function handleBypassRequest(body, model, userAgent = "") {
+export function handleBypassRequest(body, model, userAgent = "", ccFilterNaming = false) {
   if (!userAgent.includes("claude-cli")) return null;
   if (!body.messages?.length) return null;
 
@@ -22,6 +22,7 @@ export function handleBypassRequest(body, model, userAgent = "") {
   };
 
   let shouldBypass = false;
+  let namingBypass = false;
 
   // Pattern 1: Title extraction (assistant message = "{")
   const lastMsg = messages[messages.length - 1];
@@ -54,23 +55,50 @@ export function handleBypassRequest(body, model, userAgent = "") {
     }
   }
 
+  // Pattern 5: CC naming request (topic title extraction by Claude Code CLI)
+  // Claude format: system is top-level body.system field, not inside messages
+  if (!shouldBypass && ccFilterNaming) {
+    const systemMsg = messages.find(m => m.role === "system");
+    const systemFromMessages = getText(systemMsg?.content);
+    const systemFromBody = Array.isArray(body.system)
+      ? body.system.filter(s => s.type === "text").map(s => s.text).join(" ")
+      : (typeof body.system === "string" ? body.system : "");
+    const systemText = systemFromMessages || systemFromBody;
+    if (systemText.includes("isNewTopic")) {
+      shouldBypass = true;
+      namingBypass = true;
+    }
+  }
+
   if (!shouldBypass) return null;
 
   const sourceFormat = detectFormat(body);
   const stream = body.stream !== false;
+
+  // For naming bypass, generate title from user message
+  if (namingBypass) {
+    const userMsg = messages.find(m => m.role === "user");
+    const userText = getText(userMsg?.content);
+    const title = userText.trim().split(/\s+/).slice(0, 3).join(" ");
+    const namingText = JSON.stringify({ isNewTopic: true, title });
+    return stream
+      ? createStreamingResponse(sourceFormat, model, namingText)
+      : createNonStreamingResponse(sourceFormat, model, namingText);
+  }
 
   return stream 
     ? createStreamingResponse(sourceFormat, model)
     : createNonStreamingResponse(sourceFormat, model);
 }
 
+const DEFAULT_BYPASS_TEXT = "CLI Command Execution: Clear Terminal";
+
 /**
  * Create OpenAI standard format response
  */
-function createOpenAIResponse(model) {
+function createOpenAIResponse(model, text = DEFAULT_BYPASS_TEXT) {
   const id = `chatcmpl-${Date.now()}`;
   const created = Math.floor(Date.now() / 1000);
-  const text = "CLI Command Execution: Clear Terminal";
 
   return {
     id,
@@ -97,8 +125,8 @@ function createOpenAIResponse(model) {
  * Create non-streaming response with translation
  * Use translator to convert OpenAI → sourceFormat
  */
-function createNonStreamingResponse(sourceFormat, model) {
-  const openaiResponse = createOpenAIResponse(model);
+function createNonStreamingResponse(sourceFormat, model, text) {
+  const openaiResponse = createOpenAIResponse(model, text);
 
   // If sourceFormat is OpenAI, return directly
   if (sourceFormat === FORMATS.OPENAI) {
@@ -151,8 +179,8 @@ function createNonStreamingResponse(sourceFormat, model) {
  * Create streaming response with translation
  * Use translator to convert OpenAI chunks → sourceFormat
  */
-function createStreamingResponse(sourceFormat, model) {
-  const openaiResponse = createOpenAIResponse(model);
+function createStreamingResponse(sourceFormat, model, text) {
+  const openaiResponse = createOpenAIResponse(model, text);
   const state = initState(sourceFormat);
   state.model = model;
 

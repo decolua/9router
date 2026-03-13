@@ -329,7 +329,7 @@ export default function ProfilePage() {
     }
   };
 
-  const observabilityEnabled = settings.observabilityEnabled !== false;
+  const observabilityEnabled = settings.observabilityEnabled === true;
 
   return (
     <div className="max-w-2xl mx-auto">

@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 
 /**

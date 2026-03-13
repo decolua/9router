@@ -228,12 +228,17 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
     }
 
-    // Convert tool results
+    // Convert tool results - output must be a string for Responses API
     if (msg.role === "tool") {
+      const output = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map(c => c.text || JSON.stringify(c)).join("")
+          : JSON.stringify(msg.content);
       result.input.push({
         type: "function_call_output",
         call_id: msg.tool_call_id,
-        output: msg.content
+        output
       });
     }
   }

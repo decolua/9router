@@ -163,6 +163,8 @@ export async function POST(request) {
         case "nebius":
         case "siliconflow":
         case "hyperbolic":
+        case "ollama":
+        case "ollama-local":
         case "assemblyai":
         case "nanobanana":
         case "chutes":
@@ -180,6 +182,8 @@ export async function POST(request) {
             nebius: "https://api.studio.nebius.ai/v1/models",
             siliconflow: "https://api.siliconflow.cn/v1/models",
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
+            ollama: "https://ollama.com/api/tags",
+            "ollama-local": "http://localhost:11434/api/tags",
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",

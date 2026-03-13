@@ -1,4 +1,4 @@
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";

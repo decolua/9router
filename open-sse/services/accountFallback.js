@@ -1,4 +1,4 @@
-import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/constants.js";
+import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)

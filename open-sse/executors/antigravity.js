@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, HTTP_STATUS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/appConstants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 

@@ -7,7 +7,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS } from "../config/constants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -23,14 +23,14 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, sourceFormatOverride }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, sourceFormatOverride }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
-  // Check for bypass patterns (warmup, skip)
-  const bypassResponse = handleBypassRequest(body, model, userAgent);
+  // Check for bypass patterns (warmup, skip, cc naming)
+  const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
@@ -39,7 +39,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex";
-  const stream = providerRequiresStreaming ? true : (body.stream !== false);
+  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+
+  // Check client Accept header preference for non-streaming requests
+  // This fixes AI SDK compatibility where clients send Accept: application/json
+  const acceptHeader = clientRawRequest?.headers?.accept || "";
+  const clientPrefersJson = acceptHeader.includes("application/json");
+  const clientPrefersSSE = acceptHeader.includes("text/event-stream");
+  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
+    stream = false;
+  }
 
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);

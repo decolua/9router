@@ -1,6 +1,6 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { createErrorResult } from "../../utils/error.js";
-import { HTTP_STATUS } from "../../config/constants.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";

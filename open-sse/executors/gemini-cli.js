@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../config/appConstants.js";
 
 export class GeminiCLIExecutor extends BaseExecutor {
   constructor() {
