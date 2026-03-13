@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+import { getRequestSettings } from "./requestContext.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -14,7 +15,7 @@ let selectionMutex = Promise.resolve();
  * @param {string|null} excludeConnectionId - Connection ID to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
-export async function getProviderCredentials(provider, excludeConnectionId = null, model = null) {
+export async function getProviderCredentials(provider, excludeConnectionId = null, model = null, requestContext = null) {
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -71,7 +72,9 @@ export async function getProviderCredentials(provider, excludeConnectionId = nul
       return null;
     }
 
-    const settings = await getSettings();
+    const settings = requestContext
+      ? await getRequestSettings(requestContext)
+      : await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
