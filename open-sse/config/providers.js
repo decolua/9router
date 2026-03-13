@@ -294,4 +294,8 @@ export const PROVIDERS = {
     baseUrl: "https://ollama.com/api/chat",
     format: "ollama"
   },
+  "ollama-local": {
+    baseUrl: "http://localhost:11434/api/chat",
+    format: "ollama"
+  },
 };

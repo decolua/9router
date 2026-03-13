@@ -464,6 +464,11 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetch("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "ollama-local": {
+        // No auth required for local Ollama
+        const res = await fetch("http://localhost:11434/api/tags");
+        return { valid: res.ok, error: res.ok ? null : "Ollama not running on localhost:11434" };
+      }
       case "deepgram": {
         const res = await fetchWithConnectionProxy("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
