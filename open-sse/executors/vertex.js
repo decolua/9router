@@ -79,11 +79,12 @@ export class VertexExecutor extends BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const saJson = parseSaJson(credentials?.apiKey);
-    const region = credentials?.providerSpecificData?.region || "us-central1";
+    let region = credentials?.providerSpecificData?.region || "us-central1";
     const projectId = saJson?.project_id || "unknown";
 
     if (this.provider === "vertex-partner") {
       const modelFamily = credentials?.providerSpecificData?.modelFamily || "openai";
+
 
       if (modelFamily === "anthropic") {
         // Anthropic Claude on Vertex: rawPredict endpoint
@@ -95,7 +96,8 @@ export class VertexExecutor extends BaseExecutor {
       return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
     }
 
-    // Default: Gemini models on Vertex
+    // Default: Gemini models on Vertex (cannot use "global" region)
+    if (region === "global") region = "us-central1";
     const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models`;
     return `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
   }
