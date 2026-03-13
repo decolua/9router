@@ -80,26 +80,44 @@ export class VertexExecutor extends BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const saJson = parseSaJson(credentials?.apiKey);
     let region = credentials?.providerSpecificData?.region || "us-central1";
-    const projectId = saJson?.project_id || "unknown";
+    const projectId = saJson?.project_id || credentials?.providerSpecificData?.projectId;
 
     if (this.provider === "vertex-partner") {
       const modelFamily = credentials?.providerSpecificData?.modelFamily || "openai";
 
-
       if (modelFamily === "anthropic") {
-        // Anthropic Claude on Vertex: rawPredict endpoint
+        if (!projectId) throw new Error("Anthropic on Vertex requires a project_id (via Service Account JSON).");
         const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/anthropic/models`;
-        return `${base}/${model}:${stream ? "streamRawPredict" : "rawPredict"}`;
+        let url = `${base}/${model}:${stream ? "streamRawPredict" : "rawPredict"}`;
+        if (!saJson && credentials?.apiKey) url += `?key=${credentials.apiKey}`;
+        return url;
       }
 
       // All other partner models (Llama, Mistral, GLM-5, etc.) use the global OpenAI-compatible endpoint
-      return `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
+      if (!projectId) throw new Error("Partner models on Vertex require a project_id (via Service Account JSON).");
+      let url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
+      if (!saJson && credentials?.apiKey) url += `?key=${credentials.apiKey}`;
+      return url;
     }
 
-    // Default: Gemini models on Vertex (cannot use "global" region)
-    if (region === "global") region = "us-central1";
-    const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models`;
-    return `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    // Default: Gemini models on Vertex
+    let url;
+    if (region === "global" || !projectId) {
+      // Global endpoint (no project_id or location path)
+      const base = `https://aiplatform.googleapis.com/v1/publishers/google/models`;
+      url = `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    } else {
+      // Regional endpoint
+      const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models`;
+      url = `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+    }
+
+    // If using a raw API key (not SA JSON), we can pass it via ?key= (some Vertex proxy endpoints require this)
+    if (!saJson && credentials?.apiKey) {
+      url += (url.includes("?") ? "&" : "?") + `key=${credentials.apiKey}`;
+    }
+
+    return url;
   }
 
   async _buildHeadersAsync(credentials, stream = true) {
@@ -109,6 +127,10 @@ export class VertexExecutor extends BaseExecutor {
     if (saJson) {
       const token = await mintVertexToken(saJson);
       headers["Authorization"] = `Bearer ${token}`;
+    } else if (credentials?.apiKey) {
+      // Raw tokens are already appended as ?key= in buildUrl, but we can also provide Bearer 
+      // just in case the endpoint prefers it (Google APIs accept both safely).
+      headers["Authorization"] = `Bearer ${credentials.apiKey}`;
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
