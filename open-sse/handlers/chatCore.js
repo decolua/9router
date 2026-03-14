@@ -56,6 +56,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
   let translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger);
+  if (!translatedBody) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+  }
   const toolNameMap = translatedBody._toolNameMap;
   delete translatedBody._toolNameMap;
   translatedBody.model = model;
@@ -137,17 +141,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Handle 401/403 - try token refresh
   if (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN) {
-    const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
-    if (newCredentials?.accessToken || newCredentials?.copilotToken) {
-      log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
-      Object.assign(credentials, newCredentials);
-      if (onCredentialsRefreshed) await onCredentialsRefreshed(newCredentials);
-      try {
-        const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
-        if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
-      } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
-    } else {
-      log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
+    try {
+      const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
+      if (newCredentials?.accessToken || newCredentials?.copilotToken) {
+        log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
+        Object.assign(credentials, newCredentials);
+        if (onCredentialsRefreshed) {
+          try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
+        }
+        try {
+          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
+        } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
+      } else {
+        log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
+      }
+    } catch (e) {
+      log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh threw: ${e.message}`);
     }
   }
 
@@ -182,12 +192,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
-    if (result) return result;
+    if (result) { streamController.handleComplete(); return result; }
   }
 
   // True non-streaming response
   if (!stream) {
-    return handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, trackDone, appendLog });
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, trackDone, appendLog });
+    streamController.handleComplete();
+    return result;
   }
 
   // Streaming response

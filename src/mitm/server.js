@@ -85,7 +85,7 @@ const ANTIGRAVITY_URL_PATTERNS = [":generateContent", ":streamGenerateContent"];
 // Copilot: OpenAI-compatible + Anthropic endpoints
 const COPILOT_URL_PATTERNS = ["/chat/completions", "/v1/messages", "/responses"];
 
-const LOG_DIR = path.join(__dirname, "../../logs/mitm");
+const LOG_DIR = path.join(DATA_DIR, "logs", "mitm");
 if (ENABLE_FILE_LOG && !fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function saveRequestLog(url, bodyBuffer) {

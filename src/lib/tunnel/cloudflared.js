@@ -141,8 +141,10 @@ export async function spawnCloudflared(tunnelToken) {
 
     const handleLog = (data) => {
       const msg = data.toString();
-      if (msg.includes("Registered tunnel connection")) {
-        connectionCount++;
+      // Count exact occurrences in this chunk (each chunk may contain multiple lines)
+      const matches = msg.match(/Registered tunnel connection/g);
+      if (matches) {
+        connectionCount += matches.length;
         if (connectionCount >= 4 && !resolved) {
           resolved = true;
           clearTimeout(timeout);
@@ -165,6 +167,7 @@ export async function spawnCloudflared(tunnelToken) {
     child.on("exit", (code) => {
       cloudflaredProcess = null;
       clearPid();
+      const wasConnected = resolved; // true = already connected successfully
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
@@ -173,8 +176,8 @@ export async function spawnCloudflared(tunnelToken) {
           return;
         }
       }
-      // Notify reconnect handler if tunnel died after successful connection
-      if (unexpectedExitHandler) {
+      // Only notify on unexpected exit AFTER successful connection
+      if (wasConnected && unexpectedExitHandler) {
         unexpectedExitHandler();
       }
     });

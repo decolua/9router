@@ -52,6 +52,13 @@ export function deriveSessionId(connectionId) {
         return existing.sessionId;
     }
 
+    // Evict oldest entry if store exceeds max size (safety cap between cleanup cycles)
+    const MAX_SESSIONS = 1000;
+    if (runtimeSessionStore.size >= MAX_SESSIONS) {
+      const oldest = runtimeSessionStore.keys().next().value;
+      runtimeSessionStore.delete(oldest);
+    }
+
     const sessionId = generateBinaryStyleId();
     runtimeSessionStore.set(connectionId, { sessionId, lastUsed: Date.now() });
     return sessionId;

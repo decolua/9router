@@ -23,7 +23,20 @@ export async function GET() {
       };
 
       state.send = push;
-      state.sendPending = push;
+      // Lightweight push: only refresh activeRequests + recentRequests on pending changes
+      state.sendPending = async () => {
+        if (state.closed || !state.cachedStats) return;
+        try {
+          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
+          const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+        } catch {
+          state.closed = true;
+          statsEmitter.off("update", state.send);
+          statsEmitter.off("pending", state.sendPending);
+          clearInterval(state.keepalive);
+        }
+      };
 
       await push();
       console.log(`[SSE] Client connected | listeners=${statsEmitter.listenerCount("update") + 1}`);

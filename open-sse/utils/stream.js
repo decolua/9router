@@ -6,7 +6,7 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
 
 export { COLORS, formatSSE };
 
-const sharedDecoder = new TextDecoder();
+// sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
 
 /**
@@ -49,6 +49,9 @@ export function createSSEStream(options = {}) {
   let buffer = "";
   let usage = null;
 
+  // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   let totalContentLength = 0;
@@ -61,7 +64,7 @@ export function createSSEStream(options = {}) {
       if (!ttftAt) {
         ttftAt = Date.now();
       }
-      const text = sharedDecoder.decode(chunk, { stream: true });
+      const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
@@ -253,7 +256,7 @@ export function createSSEStream(options = {}) {
     flush(controller) {
       trackPendingRequest(model, provider, connectionId, false);
       try {
-        const remaining = sharedDecoder.decode();
+        const remaining = decoder.decode();
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {

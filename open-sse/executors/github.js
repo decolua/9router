@@ -198,6 +198,9 @@ export class GithubExecutor extends BaseExecutor {
       }
     });
 
+    if (!response.body) {
+      return { response: new Response("", { status: response.status, headers: response.headers }), url, headers, transformedBody };
+    }
     const convertedStream = response.body.pipeThrough(transformStream);
 
     return {

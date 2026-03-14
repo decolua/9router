@@ -44,7 +44,7 @@ async function createLogSession(sourceFormat, targetFormat, model) {
     }
     
     const timestamp = formatTimestamp();
-    const safeModel = model.replace(/[/:]/g, "-");
+    const safeModel = (model || "unknown").replace(/[/:]/g, "-");
     const folderName = `${sourceFormat}_${targetFormat}_${safeModel}_${timestamp}`;
     const sessionPath = path.join(LOGS_DIR, folderName);
     

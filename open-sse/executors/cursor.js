@@ -155,13 +155,30 @@ export class CursorExecutor extends BaseExecutor {
       throw new Error("http2 module not available");
     }
 
+    const HTTP2_TIMEOUT_MS = 60000; // 60s max — prevent hung sessions
+
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
       const client = http2.connect(`https://${urlObj.host}`);
       const chunks = [];
       let responseHeaders = {};
+      let settled = false;
 
-      client.on("error", reject);
+      // Ensure client is always closed on settle
+      const finish = (fn) => (...args) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hangTimeout);
+        client.close();
+        fn(...args);
+      };
+
+      // Hard timeout: close session if server never responds
+      const hangTimeout = setTimeout(finish(() => {
+        reject(new Error("HTTP/2 request timed out"));
+      }), HTTP2_TIMEOUT_MS);
+
+      client.on("error", finish(reject));
 
       const req = client.request({
         ":method": "POST",
@@ -173,25 +190,18 @@ export class CursorExecutor extends BaseExecutor {
 
       req.on("response", (hdrs) => { responseHeaders = hdrs; });
       req.on("data", (chunk) => { chunks.push(chunk); });
-      req.on("end", () => {
-        client.close();
+      req.on("end", finish(() => {
         resolve({
           status: responseHeaders[":status"],
           headers: responseHeaders,
           body: Buffer.concat(chunks)
         });
-      });
-      req.on("error", (err) => {
-        client.close();
-        reject(err);
-      });
+      }));
+      req.on("error", finish(reject));
 
       if (signal) {
-        signal.addEventListener("abort", () => {
-          req.close();
-          client.close();
-          reject(new Error("Request aborted"));
-        });
+        const onAbort = finish(() => reject(new Error("Request aborted")));
+        signal.addEventListener("abort", onAbort, { once: true });
       }
 
       req.write(body);

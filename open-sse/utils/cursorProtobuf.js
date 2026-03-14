@@ -60,6 +60,7 @@ const FIELD = {
   MSG_ID: 13,
   MSG_TOOL_RESULTS: 18,
   MSG_IS_AGENTIC: 29,
+  MSG_SERVER_BUBBLE_ID: 32,
   MSG_UNIFIED_MODE: 47,
   MSG_SUPPORTED_TOOLS: 51,
 
@@ -78,10 +79,19 @@ const FIELD = {
   CLIENT_RESULT_TOOL_CALL_ID: 35,
   CLIENT_RESULT_MODEL_CALL_ID: 48,
   CLIENT_RESULT_TOOL_INDEX: 49,
+  // Aliases used by encodeClientSideToolV2Result
+  CV2R_TOOL: 1,
+  CV2R_MCP_RESULT: 28,
+  CV2R_CALL_ID: 35,
+  CV2R_MODEL_CALL_ID: 48,
+  CV2R_TOOL_INDEX: 49,
 
   // MCPResult (nested inside ClientSideToolV2Result.mcp_result)
   MCP_RESULT_SELECTED_TOOL: 1,
   MCP_RESULT_RESULT: 2,
+  // Aliases used by encodeMcpResult
+  MCPR_SELECTED_TOOL: 1,
+  MCPR_RESULT: 2,
 
   // ClientSideToolV2Call (nested inside ToolResult.tool_call)
   CLIENT_CALL_TOOL: 1,
@@ -91,6 +101,14 @@ const FIELD = {
   CLIENT_CALL_RAW_ARGS: 10,
   CLIENT_CALL_TOOL_INDEX: 48,
   CLIENT_CALL_MODEL_CALL_ID: 49,
+  // Aliases used by encodeClientSideToolV2Call
+  CV2C_TOOL: 1,
+  CV2C_MCP_PARAMS: 27,
+  CV2C_CALL_ID: 3,
+  CV2C_NAME: 9,
+  CV2C_RAW_ARGS: 10,
+  CV2C_TOOL_INDEX: 48,
+  CV2C_MODEL_CALL_ID: 49,
 
   // Model
   MODEL_NAME: 1,
