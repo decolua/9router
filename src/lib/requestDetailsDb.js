@@ -11,6 +11,7 @@ const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via settings
 const CONFIG_CACHE_TTL_MS = 5000;
+const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
 
 function getAppName() {
   return "9router";
@@ -179,6 +180,13 @@ async function flushToDatabase() {
     db.data.records.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     if (db.data.records.length > config.maxRecords) {
       db.data.records = db.data.records.slice(0, config.maxRecords);
+    }
+
+    // Shrink records until total serialized size is within safe limit
+    while (db.data.records.length > 1) {
+      const totalSize = Buffer.byteLength(JSON.stringify(db.data), "utf8");
+      if (totalSize <= MAX_TOTAL_DB_SIZE) break;
+      db.data.records = db.data.records.slice(0, Math.floor(db.data.records.length / 2));
     }
 
     await db.write();
