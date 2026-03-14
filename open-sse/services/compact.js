@@ -38,8 +38,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     const modelStr = models[i];
     log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
 
-    const result = await handleSingleModel(body, modelStr);
-    
+    let result;
+    try {
+      result = await handleSingleModel(body, modelStr);
+    } catch (e) {
+      lastError = `${modelStr}: ${e.message}`;
+      log.warn("COMBO", `Model threw exception, trying next`, { model: modelStr, error: e.message });
+      continue;
+    }
+
     // Success or client error - return response
     if (result.ok || result.status < 500) {
       return result;

@@ -1,4 +1,4 @@
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
@@ -255,7 +255,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         }
         break;
   
-      case "github":
+      case "github": {
         // GitHub Copilot requires special headers to mimic VSCode
         // Prioritize copilotToken from providerSpecificData, fallback to accessToken
         const githubToken = credentials.copilotToken || credentials.accessToken;
@@ -279,6 +279,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         headers["X-Initiator"] = "user";
         headers["Accept"] = "application/json";
         break;
+      }
   
       case "codex":
       case "qwen":
@@ -296,6 +297,12 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       case "minimax":
         // Claude-compatible API providers use x-api-key
         headers["x-api-key"] = credentials.apiKey;
+        break;
+
+      case "vertex":
+      case "vertex-partner":
+        // Vertex uses async token minting — headers are set by VertexExecutor._buildHeadersAsync()
+        // Do NOT set Authorization here; it would leak the raw SA JSON as Bearer token
         break;
   
       default:

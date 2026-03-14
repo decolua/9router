@@ -1,4 +1,4 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/constants.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body

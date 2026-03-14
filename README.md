@@ -5,11 +5,7 @@
   
   **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
   
-  **Free AI Provider for OpenClaw.**
-  
-  <p align="center">
-    <img src="./public/providers/openclaw.png" alt="OpenClaw" width="80"/>
-  </p>
+  **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
@@ -1122,21 +1118,6 @@ Notes:
 **Dashboard opens on wrong port**
 - Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
-**Cloud sync errors**
-- Verify `BASE_URL` points to your running instance (example: `http://localhost:20128`)
-- Verify `CLOUD_URL` points to your expected cloud endpoint (example: `https://9router.com`)
-- Keep `NEXT_PUBLIC_*` values aligned with server-side values when possible.
-
-**Cloud endpoint `stream=false` returns 500 (`Unexpected token 'd'...`)**
-- Symptom usually appears on public cloud endpoint (`https://9router.com/v1`) for non-streaming calls.
-- Root cause: upstream returns SSE payload (`data: ...`) while client expects JSON.
-- Workaround: use `stream=true` for cloud direct calls.
-- Local 9Router runtime includes SSE→JSON fallback for non-streaming calls when upstream returns `text/event-stream`.
-
-**Cloud says connected, but request still fails with `Invalid API key`**
-- Create a fresh key from local dashboard (`/api/keys`) and run cloud sync (`Enable Cloud` then `Sync Now`).
-- Old/non-synced keys can still return `401` on cloud even if local endpoint works.
-
 **First login not working**
 - Check `INITIAL_PASSWORD` in `.env`
 - If unset, fallback password is `123456`
@@ -1184,80 +1165,6 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
-### Compatibility Endpoints
-
-- `POST /v1/chat/completions`
-- `POST /v1/messages`
-- `POST /v1/responses`
-- `GET /v1/models`
-- `POST /v1/messages/count_tokens`
-- `GET /v1beta/models`
-- `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
-- `POST /v1/api/chat` (Ollama-style transform path)
-
-### Cloud Validation Scripts
-
-Added test scripts under `tester/security/`:
-
-- `tester/security/test-docker-hardening.sh`
-  - Builds Docker image and validates hardening checks (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, secure auth cookie behavior).
-- `tester/security/test-cloud-openai-compatible.sh`
-  - Sends a direct OpenAI-compatible request to cloud endpoint (`https://9router.com/v1/chat/completions`) with provided model/key.
-- `tester/security/test-cloud-sync-and-call.sh`
-  - End-to-end flow: create local key -> enable/sync cloud -> call cloud endpoint with retry.
-  - Includes fallback check with `stream=true` to distinguish auth errors from non-streaming parse issues.
-
-Security note for cloud test scripts:
-
-- Never hardcode real API keys in scripts/commits.
-- Provide keys only via environment variables:
-  - `API_KEY`, `CLOUD_API_KEY`, or `OPENAI_API_KEY` (supported by `test-cloud-openai-compatible.sh`)
-- Example:
-
-```bash
-OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatible.sh
-```
-
-Expected behavior from recent validation:
-
-- Local runtime (`http://127.0.0.1:20128/v1/chat/completions`): works with `stream=false` and `stream=true`.
-- Docker runtime (same API path exposed by container): hardening checks pass, cloud auth guard works, strict API key mode works when enabled.
-- Public cloud endpoint (`https://9router.com/v1/chat/completions`):
-  - `stream=true`: expected to succeed (SSE chunks returned).
-  - `stream=false`: may fail with `500` + parse error (`Unexpected token 'd'`) when upstream returns SSE content to a non-streaming client path.
-
-### Dashboard and Management API
-
-- Auth/settings: `/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
-- Provider management: `/api/providers`, `/api/providers/[id]`, `/api/providers/[id]/test`, `/api/providers/[id]/models`, `/api/providers/validate`, `/api/provider-nodes*`
-- OAuth flows: `/api/oauth/[provider]/[action]` (+ provider-specific imports like Cursor/Kiro)
-- Routing config: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
-- Usage/logs: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
-- Cloud sync: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
-- CLI helpers: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
-
-### Authentication Behavior
-
-- Dashboard routes (`/dashboard/*`) use `auth_token` cookie protection.
-- Login uses saved password hash when present; otherwise it falls back to `INITIAL_PASSWORD`.
-- `requireLogin` can be toggled via `/api/settings/require-login`.
-
-### Request Processing (High Level)
-
-1. Client sends request to `/v1/*`.
-2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`).
-3. Model is resolved (direct provider/model or alias/combo resolution).
-4. Credentials are selected from local DB with account availability filtering.
-5. `handleChatCore` (`open-sse/handlers/chatCore.js`) detects format and translates request.
-6. Provider executor sends upstream request.
-7. Stream is translated back to client format when needed.
-8. Usage/logging is recorded (`src/lib/usageDb.js`).
-9. Fallback applies on provider/account/model errors according to combo rules.
-
-Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-
----
-
 ## 📧 Support
 
 - **Website**: [9router.com](https://9router.com)
@@ -1278,17 +1185,7 @@ Thanks to all contributors who helped make 9Router better!
 
 [![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
 
-### How to Contribute
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
----
 
 ## 🔀 Forks
 

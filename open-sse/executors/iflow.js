@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 
 /**
  * IFlowExecutor - Executor for iFlow API with HMAC-SHA256 signature

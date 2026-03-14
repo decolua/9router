@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -345,6 +345,9 @@ export class KiroExecutor extends BaseExecutor {
     });
 
     // Pipe response body through transform stream
+    if (!response.body) {
+      return new Response("data: [DONE]\n\n", { status: response.status, headers: { "Content-Type": "text/event-stream" } });
+    }
     const transformedStream = response.body.pipeThrough(transformStream);
 
     return new Response(transformedStream, {

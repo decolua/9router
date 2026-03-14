@@ -247,22 +247,11 @@ export default function ProviderLimits() {
     USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth"
   );
 
-  // Sort providers: antigravity first, then kiro, then others alphabetically
+  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically
   const sortedConnections = [...filteredConnections].sort((a, b) => {
-    const getProviderPriority = (provider) => {
-      if (provider === "antigravity") return 1;
-      if (provider === "kiro") return 2;
-      return 3;
-    };
-
-    const priorityA = getProviderPriority(a.provider);
-    const priorityB = getProviderPriority(b.provider);
-
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
-
-    // Same priority: sort alphabetically
+    const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
+    const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
+    if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
 

@@ -246,23 +246,25 @@ export async function getRequestDetailById(id) {
   return db.data.records.find(r => r.id === id) || null;
 }
 
-// Graceful shutdown
-let shutdownHandlerRegistered = false;
+// Graceful shutdown — use named handler so we can remove it on re-registration
+const _shutdownHandler = async () => {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (writeBuffer.length > 0) await flushToDatabase();
+};
 
 function ensureShutdownHandler() {
-  if (shutdownHandlerRegistered || isCloud) return;
+  if (isCloud) return;
 
-  const handler = async () => {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    if (writeBuffer.length > 0) await flushToDatabase();
-  };
+  // Remove any previously registered listeners from this module (hot-reload safety)
+  process.off("beforeExit", _shutdownHandler);
+  process.off("SIGINT", _shutdownHandler);
+  process.off("SIGTERM", _shutdownHandler);
+  process.off("exit", _shutdownHandler);
 
-  process.on("beforeExit", handler);
-  process.on("SIGINT", handler);
-  process.on("SIGTERM", handler);
-  process.on("exit", handler);
-
-  shutdownHandlerRegistered = true;
+  process.on("beforeExit", _shutdownHandler);
+  process.on("SIGINT", _shutdownHandler);
+  process.on("SIGTERM", _shutdownHandler);
+  process.on("exit", _shutdownHandler);
 }
 
 ensureShutdownHandler();

@@ -9,10 +9,23 @@
  */
 
 import crypto from "crypto";
+import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
-// Runtime storage for session IDs (per connection/account)
-// Key: connectionId (email or identifier), Value: sessionId
+// Runtime storage: Key = connectionId, Value = { sessionId, lastUsed }
 const runtimeSessionStore = new Map();
+
+// Periodically evict entries that haven't been used within TTL
+const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of runtimeSessionStore) {
+        if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+            runtimeSessionStore.delete(key);
+        }
+    }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+
+// Allow Node.js to exit even if interval is still active
+if (cleanupInterval.unref) cleanupInterval.unref();
 
 /**
  * Get or create a session ID for the given connection.
@@ -30,22 +43,25 @@ const runtimeSessionStore = new Map();
  */
 export function deriveSessionId(connectionId) {
     if (!connectionId) {
-        // Fallback for requests without a connection identifier
         return generateBinaryStyleId();
     }
 
-    // Check if we already have a session ID for this connection in this process run
-    if (runtimeSessionStore.has(connectionId)) {
-        return runtimeSessionStore.get(connectionId);
+    const existing = runtimeSessionStore.get(connectionId);
+    if (existing) {
+        existing.lastUsed = Date.now();
+        return existing.sessionId;
     }
 
-    // Generate a new ID using the binary's exact logic
-    const newSessionId = generateBinaryStyleId();
+    // Evict oldest entry if store exceeds max size (safety cap between cleanup cycles)
+    const MAX_SESSIONS = 1000;
+    if (runtimeSessionStore.size >= MAX_SESSIONS) {
+      const oldest = runtimeSessionStore.keys().next().value;
+      runtimeSessionStore.delete(oldest);
+    }
 
-    // Store it for future requests from this connection
-    runtimeSessionStore.set(connectionId, newSessionId);
-
-    return newSessionId;
+    const sessionId = generateBinaryStyleId();
+    runtimeSessionStore.set(connectionId, { sessionId, lastUsed: Date.now() });
+    return sessionId;
 }
 
 /**

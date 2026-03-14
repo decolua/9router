@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG } from "../config/constants.js";
+import { HTTP_STATUS, RETRY_CONFIG } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**

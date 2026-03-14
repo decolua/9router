@@ -16,6 +16,14 @@ const MITM_PORT = 443;
 const MITM_WIN_NODE_PORT = 8443;
 const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
 
+const MITM_MAX_RESTARTS = 5;
+const MITM_RESTART_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
+const MITM_RESTART_RESET_MS = 60000;
+
+let mitmRestartCount = 0;
+let mitmLastStartTime = 0;
+let mitmIsRestarting = false;
+
 function resolveServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
   const sibling = path.join(__dirname, "server.js");
@@ -273,6 +281,50 @@ async function getMitmStatus() {
   return { running, pid, certExists, dnsStatus };
 }
 
+async function scheduleMitmRestart(apiKey) {
+  if (mitmIsRestarting) return;
+
+  const aliveMs = Date.now() - mitmLastStartTime;
+  if (aliveMs >= MITM_RESTART_RESET_MS) mitmRestartCount = 0;
+
+  if (mitmRestartCount >= MITM_MAX_RESTARTS) {
+    console.error("[MITM] Max restart attempts reached. Giving up.");
+    return;
+  }
+
+  const attempt = mitmRestartCount;
+  const delay = MITM_RESTART_DELAYS_MS[Math.min(attempt, MITM_RESTART_DELAYS_MS.length - 1)];
+  mitmRestartCount++;
+  mitmIsRestarting = true;
+
+  console.log(`[MITM] Restarting in ${delay / 1000}s... (${mitmRestartCount}/${MITM_MAX_RESTARTS})`);
+  await new Promise((r) => setTimeout(r, delay));
+
+  try {
+    const settings = _getSettings ? await _getSettings() : null;
+    if (settings && !settings.mitmEnabled) {
+      console.log("[MITM] MITM disabled, skipping restart");
+      mitmIsRestarting = false;
+      return;
+    }
+    const password = getCachedPassword() || await loadEncryptedPassword();
+    if (!password && !IS_WIN) {
+      console.error("[MITM] No cached password, cannot auto-restart");
+      mitmIsRestarting = false;
+      return;
+    }
+    await startServer(apiKey, password);
+    console.log("[MITM] Restarted successfully");
+    mitmRestartCount = 0;
+    mitmIsRestarting = false;
+  } catch (err) {
+    console.error(`[MITM] Restart attempt ${mitmRestartCount}/${MITM_MAX_RESTARTS} failed:`, err.message);
+    mitmIsRestarting = false;
+    // Schedule next retry
+    scheduleMitmRestart(apiKey);
+  }
+}
+
 /**
  * Start MITM server only (cert + server, no DNS)
  */
@@ -378,6 +430,7 @@ async function startServer(apiKey, sudoPassword) {
   if (!IS_WIN && serverProcess) {
     serverPid = serverProcess.pid;
     fs.writeFileSync(PID_FILE, String(serverPid));
+    mitmLastStartTime = Date.now();
   }
 
   let startError = null;
@@ -397,6 +450,8 @@ async function startServer(apiKey, sudoPassword) {
       serverProcess = null;
       serverPid = null;
       try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+      // Auto-restart on unexpected exit
+      if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(apiKey);
     });
   }
 
@@ -425,6 +480,9 @@ async function startServer(apiKey, sudoPassword) {
  * Stop MITM server — removes ALL tool DNS entries first, then kills server
  */
 async function stopServer(sudoPassword) {
+  // Prevent auto-restart from triggering on intentional stop
+  mitmIsRestarting = true;
+  mitmRestartCount = 0;
   console.log("[MITM] Stopping server...");
 
   // Kill server process
@@ -476,6 +534,7 @@ async function stopServer(sudoPassword) {
 
   try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
   await saveMitmSettings(false, null);
+  mitmIsRestarting = false;
 
   return { running: false, pid: null };
 }

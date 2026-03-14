@@ -6,7 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 /**
  * Refresh credentials using executor and update database
- * @returns {{ connection, refreshed: boolean }}
+ * @returns Promise<{ connection, refreshed: boolean }>
  */
 async function refreshAndUpdateCredentials(connection) {
   const executor = getExecutor(connection.provider);
@@ -91,11 +91,12 @@ async function refreshAndUpdateCredentials(connection) {
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
 export async function GET(request, { params }) {
+  let connection;
   try {
     const { connectionId } = await params;
 
     // Get connection from database
-    let connection = await getProviderConnectionById(connectionId);
+    connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -120,8 +121,7 @@ export async function GET(request, { params }) {
     const usage = await getUsageForProvider(connection);
     return Response.json(usage);
   } catch (error) {
-    console.error("[Usage API] Error fetching usage:", error);
-    console.error("[Usage API] Error stack:", error.stack);
+    console.warn(`[Usage] ${connection?.provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

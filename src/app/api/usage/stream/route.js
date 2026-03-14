@@ -39,7 +39,9 @@ export async function GET() {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
           state.closed = true;
+          statsEmitter.off("update", state.send);
           statsEmitter.off("pending", state.sendPending);
+          clearInterval(state.keepalive);
         }
       };
 

@@ -1,3 +1,5 @@
+import { PROVIDERS } from "./providers.js";
+
 // Provider models - Single source of truth
 // Key = alias (cc, cx, gc, qw, if, ag, gh for OAuth; id for API Key)
 // Field "provider" for special cases (e.g. AntiGravity models that call different backends)
@@ -105,6 +107,9 @@ export const PROVIDER_MODELS = {
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+    { id: "deepseek-3.2", name: "DeepSeek 3.2" },
+    { id: "deepseek-3.1", name: "DeepSeek 3.1" },
+    { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
   ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
@@ -161,7 +166,10 @@ export const PROVIDER_MODELS = {
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
   gemini: [
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
     { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
     { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
@@ -298,6 +306,26 @@ export const PROVIDER_MODELS = {
     { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
+  ollama: [
+    { id: "gpt-oss:120b", name: "GPT OSS 120B" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5" },
+    { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
+    { id: "qwen3.5", name: "Qwen3.5" },
+  ],
+  vertex: [
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  ],
+  "vertex-partner": [
+    { id: "deepseek-ai/deepseek-v3.2-maas", name: "DeepSeek V3.2 (Vertex)" },
+    { id: "qwen/qwen3-next-80b-a3b-thinking-maas", name: "Qwen3 Next 80B Thinking (Vertex)" },
+    { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B Instruct (Vertex)" },
+    { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
+  ],
 };
 
 // Helper functions
@@ -331,8 +359,8 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   return found?.targetFormat || null;
 }
 
-// Provider ID to alias mapping
-export const PROVIDER_ID_TO_ALIAS = {
+// OAuth providers that use short aliases (everything else: alias = id)
+const OAUTH_ALIASES = {
   claude: "cc",
   codex: "cx",
   "gemini-cli": "gc",
@@ -345,31 +373,14 @@ export const PROVIDER_ID_TO_ALIAS = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
-  openai: "openai",
-  anthropic: "anthropic",
-  gemini: "gemini",
-  openrouter: "openrouter",
-  glm: "glm",
-  "glm-cn": "glm-cn",
-  kimi: "kimi",
-  minimax: "minimax",
-  "minimax-cn": "minimax-cn",
-  alicode: "alicode",
-  "alicode-intl": "alicode-intl",
-  deepseek: "deepseek",
-  groq: "groq",
-  xai: "xai",
-  mistral: "mistral",
-  perplexity: "perplexity",
-  together: "together",
-  fireworks: "fireworks",
-  cerebras: "cerebras",
-  cohere: "cohere",
-  nvidia: "nvidia",
-  nebius: "nebius",
-  siliconflow: "siliconflow",
-  hyperbolic: "hyperbolic",
+  vertex: "vertex",
+  "vertex-partner": "vertex-partner",
 };
+
+// Derived from PROVIDERS — no need to maintain manually
+export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
+  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+);
 
 export function getModelsByProviderId(providerId) {
   const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;

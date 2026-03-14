@@ -3,7 +3,7 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -162,6 +162,8 @@ const PROVIDER_MODELS_CONFIG = {
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
+  ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
+  "ollama-local": createOpenAIModelsConfig("http://localhost:11434/api/tags"),
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
@@ -256,22 +258,56 @@ export async function GET(request, { params }) {
 
     // Kiro: Try dynamic model fetching first
     if (connection.provider === "kiro") {
+      let warning;
       try {
         const kiroService = new KiroService();
         const profileArn = connection.providerSpecificData?.profileArn;
         const accessToken = connection.accessToken;
+        const refreshToken = connection.refreshToken;
 
         if (accessToken && profileArn) {
-          const models = await kiroService.listAvailableModels(accessToken, profileArn);
-          return NextResponse.json({
-            provider: connection.provider,
-            connectionId: connection.id,
-            models
-          });
+          try {
+            const models = await kiroService.listAvailableModels(accessToken, profileArn);
+            return NextResponse.json({
+              provider: connection.provider,
+              connectionId: connection.id,
+              models
+            });
+          } catch (error) {
+            if (error.message.includes("AccessDeniedException") && refreshToken) {
+              console.log("Kiro token invalid/expired. Attempting refresh...");
+              const refreshed = await refreshKiroToken(refreshToken, connection.providerSpecificData);
+
+              if (refreshed?.accessToken) {
+                await updateProviderCredentials(connection.id, {
+                  accessToken: refreshed.accessToken,
+                  refreshToken: refreshed.refreshToken || refreshToken,
+                  expiresIn: refreshed.expiresIn,
+                });
+
+                const models = await kiroService.listAvailableModels(refreshed.accessToken, profileArn);
+                return NextResponse.json({
+                  provider: connection.provider,
+                  connectionId: connection.id,
+                  models
+                });
+              }
+            }
+            throw error; // Let outer catch handle it
+          }
         }
       } catch (error) {
+        warning = `Failed to fetch Kiro models: ${error.message}`;
         console.log("Failed to fetch Kiro models dynamically, falling back to static:", error.message);
       }
+
+      // Return empty dynamic list so UI falls back to static provider models.
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: [],
+        warning,
+      });
     }
 
     if (connection.provider === "gemini-cli") {
