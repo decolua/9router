@@ -1685,6 +1685,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
+        providerSpecificData: undefined
       });
     } finally {
       setSaving(false);

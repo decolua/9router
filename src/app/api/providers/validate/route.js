@@ -204,6 +204,38 @@ export async function POST(request) {
           break;
         }
 
+        case "vertex": {
+          // Raw key: probe global endpoint (always 404 for unknown model, never 401)
+          // SA JSON: attempt token mint via JWT assertion
+          const saJson = (() => { try { const p = JSON.parse(apiKey); return p.type === "service_account" ? p : null; } catch { return null; } })();
+          if (saJson) {
+            // Validate SA JSON has required fields
+            isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
+          } else {
+            // Raw key: probe Vertex — 404 means key is valid (model just doesn't exist), 401 means invalid key
+            const probeRes = await fetch(
+              `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
+              { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+            );
+            isValid = probeRes.status !== 401 && probeRes.status !== 403;
+          }
+          break;
+        }
+
+        case "vertex-partner": {
+          const saJson = (() => { try { const p = JSON.parse(apiKey); return p.type === "service_account" ? p : null; } catch { return null; } })();
+          if (saJson) {
+            isValid = !!(saJson.client_email && saJson.private_key && saJson.project_id);
+          } else {
+            const probeRes = await fetch(
+              `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
+              { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+            );
+            isValid = probeRes.status !== 401 && probeRes.status !== 403;
+          }
+          break;
+        }
+
         default:
           return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
       }

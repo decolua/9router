@@ -298,6 +298,12 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         // Claude-compatible API providers use x-api-key
         headers["x-api-key"] = credentials.apiKey;
         break;
+
+      case "vertex":
+      case "vertex-partner":
+        // Vertex uses async token minting — headers are set by VertexExecutor._buildHeadersAsync()
+        // Do NOT set Authorization here; it would leak the raw SA JSON as Bearer token
+        break;
   
       default:
         headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
