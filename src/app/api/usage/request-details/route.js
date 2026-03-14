@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 
 /**
  * GET /api/usage/request-details
  * Query parameters: page, pageSize (1-100), provider, model, connectionId, status, startDate, endDate
  */
 export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const { searchParams } = new URL(request.url);
     

@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
 import { getRecentLogs } from "@/lib/usageDb";
 
-export async function GET() {
+export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   try {
     const logs = await getRecentLogs(200);
     return NextResponse.json(logs);

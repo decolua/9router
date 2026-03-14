@@ -1,8 +1,14 @@
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
-
+import { requireAuth, unauthorizedResponse } from "@/lib/apiAuth.js";
+import { sanitizeUsageStats } from "@/lib/sanitize.js";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request) {
+  // Require authentication
+  const auth = await requireAuth(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse();
+  }
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
@@ -20,8 +26,9 @@ export async function GET() {
           }
           // Then do full recalc and update cache
           const stats = await getUsageStats();
-          state.cachedStats = stats;
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+          const sanitized = sanitizeUsageStats(stats);
+          state.cachedStats = sanitized;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(sanitized)}\n\n`));
         } catch {
           state.closed = true;
           statsEmitter.off("update", state.send);
