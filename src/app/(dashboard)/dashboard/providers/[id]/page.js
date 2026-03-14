@@ -1987,6 +1987,7 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
+  const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
@@ -2030,10 +2031,11 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          baseUrl: formData.baseUrl, 
-          apiKey: checkKey, 
-          type: isAnthropic ? "anthropic-compatible" : "openai-compatible" 
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
+          modelId: checkModelId.trim() || undefined
         }),
       });
       const data = await res.json();
@@ -2093,6 +2095,13 @@ function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic })
             </Button>
           </div>
         </div>
+        <Input
+          label="Model ID (optional)"
+          value={checkModelId}
+          onChange={(e) => setCheckModelId(e.target.value)}
+          placeholder="e.g. my-model-id"
+          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+        />
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
             {validationResult === "success" ? "Valid" : "Invalid"}
