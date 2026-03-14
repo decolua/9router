@@ -2,6 +2,7 @@ const { exec, spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
+const { log, err } = require("../logger");
 
 // Per-tool DNS hosts mapping
 const TOOL_HOSTS = {
@@ -131,7 +132,7 @@ async function addDNSEntry(tool, sudoPassword) {
 
   const entriesToAdd = hosts.filter(h => !checkDNSEntry(h));
   if (entriesToAdd.length === 0) {
-    console.log(`DNS entries for ${tool} already exist`);
+    log(`🌐 DNS ${tool}: already active`);
     return;
   }
 
@@ -175,7 +176,7 @@ async function addDNSEntry(tool, sudoPassword) {
       await execWithPassword(`echo "${entries}" >> ${HOSTS_FILE}`, sudoPassword);
       await flushDNS(sudoPassword);
     }
-    console.log(`✅ Added DNS entries for ${tool}: ${entriesToAdd.join(", ")}`);
+    log(`🌐 DNS ${tool}: ✅ added ${entriesToAdd.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to add DNS entry";
     throw new Error(msg);
@@ -191,7 +192,7 @@ async function removeDNSEntry(tool, sudoPassword) {
 
   const entriesToRemove = hosts.filter(h => checkDNSEntry(h));
   if (entriesToRemove.length === 0) {
-    console.log(`DNS entries for ${tool} do not exist`);
+    log(`🌐 DNS ${tool}: already inactive`);
     return;
   }
 
@@ -237,7 +238,7 @@ async function removeDNSEntry(tool, sudoPassword) {
       }
       await flushDNS(sudoPassword);
     }
-    console.log(`✅ Removed DNS entries for ${tool}: ${entriesToRemove.join(", ")}`);
+    log(`🌐 DNS ${tool}: ✅ removed ${entriesToRemove.join(", ")}`);
   } catch (error) {
     const msg = error.message?.includes("incorrect password") ? "Wrong sudo password" : "Failed to remove DNS entry";
     throw new Error(msg);
@@ -252,7 +253,7 @@ async function removeAllDNSEntries(sudoPassword) {
     try {
       await removeDNSEntry(tool, sudoPassword);
     } catch (e) {
-      console.log(`[MITM] Warning: failed to remove DNS for ${tool}: ${e.message}`);
+      err(`DNS ${tool}: failed to remove — ${e.message}`);
     }
   }
 }
