@@ -1,161 +1,117 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { GoogleAuth } from "google-auth-library";
+import { parseVertexSaJson, refreshVertexToken } from "../services/tokenRefresh.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+
+// Cache project IDs resolved from raw API keys { apiKey → projectId }
+const projectIdCache = new Map();
 
 /**
- * VertexExecutor - Google Cloud Vertex AI via Service Account JSON credentials.
- *
- * Supports two provider IDs:
- *
- *   "vertex"         → Gemini models hosted on Vertex AI
- *                      Endpoint: {region}-aiplatform.googleapis.com/v1/projects/{project}/
- *                                locations/{region}/publishers/google/models/{model}:streamGenerateContent
- *                      Format translator: "gemini"
- *
- *   "vertex-partner" → Partner models (Anthropic Claude, Meta Llama, Mistral, GLM-5, etc.)
- *                      Endpoint: aiplatform.googleapis.com/v1/projects/{project}/
- *                                locations/global/endpoints/openapi/chat/completions
- *                      Format translator: "openai" (OpenAI-compatible endpoint)
- *                      For Anthropic Claude on Vertex:
- *                      Endpoint: {region}-aiplatform.googleapis.com/v1/projects/{project}/
- *                                locations/{region}/publishers/anthropic/models/{model}:streamRawPredict
- *
- * Auth flow (both):
- *   SA JSON (stored as apiKey) → GoogleAuth → short-lived Bearer token → Authorization header
- *   google-auth-library handles token caching and expiry automatically.
- *
- * Connection providerSpecificData:
- *   { region: "us-central1" }                           (vertex)
- *   { region: "us-east5", modelFamily: "openai" }       (vertex-partner, default)
- *   { region: "us-east1", modelFamily: "anthropic" }    (vertex-partner, Anthropic Claude)
+ * Resolve GCP project ID from a raw Vertex API key.
+ * Sends a dummy 404 request and parses "projects/{id}" from the error message.
  */
+async function resolveProjectId(apiKey) {
+  if (projectIdCache.has(apiKey)) return projectIdCache.get(apiKey);
 
-// Cache GoogleAuth instances keyed by service account email to avoid re-creating per request
-const authCache = new Map();
+  const res = await fetch(
+    `https://aiplatform.googleapis.com/v1/publishers/google/models/__probe__:generateContent?key=${apiKey}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+  );
+  const json = await res.json().catch(() => null);
+  const msg = json?.[0]?.error?.message || json?.error?.message || "";
+  const match = msg.match(/projects\/([^/]+)\//);
+  const projectId = match?.[1] || null;
 
-function getGoogleAuth(saJson) {
-  const key = saJson.client_email;
-  if (authCache.has(key)) return authCache.get(key);
-
-  const auth = new GoogleAuth({
-    credentials: {
-      client_email: saJson.client_email,
-      private_key: saJson.private_key.replace(/\\n/g, '\n'),
-      project_id: saJson.project_id,
-    },
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
-
-  authCache.set(key, auth);
-  return auth;
+  if (projectId) projectIdCache.set(apiKey, projectId);
+  return projectId;
 }
 
-export function parseSaJson(apiKey) {
-  if (typeof apiKey !== "string") return null;
-  try {
-    const parsed = JSON.parse(apiKey);
-    if (parsed.type === "service_account" && parsed.client_email && parsed.private_key && parsed.project_id) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export async function mintVertexToken(saJson) {
-  const auth = getGoogleAuth(saJson);
-  const client = await auth.getClient();
-  const tokenResponse = await client.getAccessToken();
-  const token = tokenResponse?.token ?? tokenResponse?.access_token ?? (typeof tokenResponse === "string" ? tokenResponse : null);
-  if (!token) throw new Error("Failed to mint Vertex AI access token");
-  return token;
-}
-
+/**
+ * VertexExecutor - Google Cloud Vertex AI
+ *
+ * "vertex"         → Gemini models via regional/global Vertex endpoint
+ * "vertex-partner" → Partner models (Llama, Mistral, GLM, DeepSeek, Qwen)
+ *                    via global OpenAI-compatible endpoint
+ *
+ * Auth: SA JSON (stored as apiKey) → JWT assertion → Bearer token (via jose)
+ * Token is minted/cached in tokenRefresh.js, not here.
+ */
 export class VertexExecutor extends BaseExecutor {
   constructor(providerId = "vertex") {
     super(providerId, PROVIDERS[providerId] || {});
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
-    const saJson = parseSaJson(credentials?.apiKey);
-    let region = credentials?.providerSpecificData?.region || "us-central1";
+    const saJson = parseVertexSaJson(credentials?.apiKey);
+    const rawKey = !saJson ? credentials?.apiKey : null;
     const projectId = saJson?.project_id || credentials?.providerSpecificData?.projectId;
 
     if (this.provider === "vertex-partner") {
-      const modelFamily = credentials?.providerSpecificData?.modelFamily || "openai";
-
-      if (modelFamily === "anthropic") {
-        if (!projectId) throw new Error("Anthropic on Vertex requires a project_id (via Service Account JSON).");
-        const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/anthropic/models`;
-        let url = `${base}/${model}:${stream ? "streamRawPredict" : "rawPredict"}`;
-        if (!saJson && credentials?.apiKey) url += `?key=${credentials.apiKey}`;
-        return url;
-      }
-
-      // All other partner models (Llama, Mistral, GLM-5, etc.) use the global OpenAI-compatible endpoint
-      if (!projectId) throw new Error("Partner models on Vertex require a project_id (via Service Account JSON).");
-      let url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
-      if (!saJson && credentials?.apiKey) url += `?key=${credentials.apiKey}`;
-      return url;
+      // Partner models require project_id in path regardless of auth method
+      if (!projectId) throw new Error("Vertex partner models require a project_id. Add it in providerSpecificData or use Service Account JSON.");
+      const url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/endpoints/openapi/chat/completions`;
+      return rawKey ? `${url}?key=${rawKey}` : url;
     }
 
-    // Default: Gemini models on Vertex
-    let url;
-    if (region === "global" || !projectId) {
-      // Global endpoint (no project_id or location path)
-      const base = `https://aiplatform.googleapis.com/v1/publishers/google/models`;
-      url = `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
-    } else {
-      // Regional endpoint
-      const base = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models`;
-      url = `${base}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
-    }
+    // Gemini on Vertex: always use global publishers endpoint
+    const action = stream ? "streamGenerateContent" : "generateContent";
+    let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
 
-    // If using a raw API key (not SA JSON), we can pass it via ?key= (some Vertex proxy endpoints require this)
-    if (!saJson && credentials?.apiKey) {
-      url += (url.includes("?") ? "&" : "?") + `key=${credentials.apiKey}`;
-    }
-
+    if (rawKey) url += `?key=${rawKey}`;
     return url;
   }
 
-  async _buildHeadersAsync(credentials, stream = true) {
+  buildHeaders(credentials, stream = true) {
     const headers = { "Content-Type": "application/json" };
 
-    const saJson = parseSaJson(credentials?.apiKey);
-    if (saJson) {
-      // Service Account JSON → mint a short-lived OAuth Bearer token
-      const token = await mintVertexToken(saJson);
-      headers["Authorization"] = `Bearer ${token}`;
+    // Only set Bearer token if using SA JSON flow (raw key goes in URL ?key=)
+    if (credentials.accessToken) {
+      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
-    // Raw API key: already appended as ?key= in buildUrl.
-    // Do NOT set Authorization header — Google's global endpoint rejects
-    // raw keys as Bearer tokens and returns 401.
 
     if (stream) headers["Accept"] = "text/event-stream";
 
     return headers;
   }
 
-  // No-op: Vertex uses short-lived tokens minted per-request (SA JSON) or static ?key=.
-  // Returning null prevents chatCore.js from entering the 3-retry refreshWithRetry loop on 401.
-  async refreshCredentials(_credentials, _log) {
-    return null;
+  async refreshCredentials(credentials, log) {
+    const saJson = parseVertexSaJson(credentials?.apiKey);
+    if (!saJson) return null;
+
+    const result = await refreshVertexToken(saJson, log);
+    if (!result) return null;
+
+    return { accessToken: result.accessToken, expiresAt: result.expiresAt };
   }
 
-  // Override execute to handle async auth token minting
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    const saJson = parseVertexSaJson(credentials?.apiKey);
+
+    // SA JSON flow: mint Bearer token (cached)
+    if (saJson) {
+      const result = await refreshVertexToken(saJson, log);
+      if (!result?.accessToken) throw new Error("Vertex: failed to mint access token from Service Account JSON");
+      credentials.accessToken = result.accessToken;
+    }
+
+    // vertex-partner with raw key: auto-resolve project_id if not provided
+    if (this.provider === "vertex-partner" && !saJson && !credentials?.providerSpecificData?.projectId) {
+      const projectId = await resolveProjectId(credentials.apiKey);
+      if (!projectId) throw new Error("Vertex: could not resolve project_id from API key. Please add it manually in provider settings.");
+      log?.debug?.("VERTEX", `Resolved project_id: ${projectId}`);
+      credentials.providerSpecificData = { ...credentials.providerSpecificData, projectId };
+    }
+
     const url = this.buildUrl(model, stream, 0, credentials);
-    const headers = await this._buildHeadersAsync(credentials, stream);
+    const headers = this.buildHeaders(credentials, stream);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
-    const response = await fetch(url, {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(transformedBody),
       signal,
-    });
+    }, proxyOptions);
 
     return { response, url, headers, transformedBody };
   }
