@@ -156,9 +156,11 @@ async function getDispatcher(proxyUrl) {
  * Create HTTPS request with manual socket connection (bypass DNS)
  */
 async function createBypassRequest(parsedUrl, realIP, options) {
-  const https = await import("https");
-  const net = await import("net");
-  const { Readable } = await import("stream");
+  const httpsModule = await import("https");
+  const netModule = await import("net");
+  // CJS modules expose exports via .default in ESM dynamic import context
+  const https = httpsModule.default ?? httpsModule;
+  const net = netModule.default ?? netModule;
 
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
