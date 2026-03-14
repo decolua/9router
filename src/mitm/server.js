@@ -4,6 +4,9 @@ const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
 
+// Allow self-signed certs from MITM root CA when fetching external hosts
+
+
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
 // All intercepted domains across all tools
@@ -198,6 +201,13 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     if (ct.includes("text/event-stream")) resHeaders["X-Accel-Buffering"] = "no";
     res.writeHead(200, resHeaders);
 
+    // Guard: some responses have no body (e.g. errors, empty replies)
+    if (!response.body) {
+      const text = await response.text().catch(() => "");
+      res.end(text);
+      return;
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     while (true) {
@@ -213,37 +223,44 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
 }
 
 const server = https.createServer(sslOptions, async (req, res) => {
-  if (req.url === "/_mitm_health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, pid: process.pid }));
-    return;
+  // Top-level catch to prevent uncaughtException from crashing the server
+  try {
+    if (req.url === "/_mitm_health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, pid: process.pid }));
+      return;
+    }
+
+    const bodyBuffer = await collectBodyRaw(req);
+    if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
+
+    // Anti-loop: requests originating from 9Router bypass interception
+    if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
+      return passthrough(req, res, bodyBuffer);
+    }
+
+    const tool = getToolForHost(req.headers.host);
+    if (!tool) return passthrough(req, res, bodyBuffer);
+
+    // Check if this URL should be intercepted based on tool
+    const isChat = tool === "antigravity"
+      ? ANTIGRAVITY_URL_PATTERNS.some(p => req.url.includes(p))
+      : COPILOT_URL_PATTERNS.some(p => req.url.includes(p));
+
+    if (!isChat) return passthrough(req, res, bodyBuffer);
+
+    const model = extractModel(req.url, bodyBuffer);
+    console.log("Extracted model:", model);
+    const mappedModel = getMappedModel(tool, model);
+
+    if (!mappedModel) return passthrough(req, res, bodyBuffer);
+
+    return intercept(req, res, bodyBuffer, mappedModel);
+  } catch (err) {
+    console.error(`❌ Unhandled request error: ${err.message}`);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: { message: err.message, type: "mitm_error" } }));
   }
-
-  const bodyBuffer = await collectBodyRaw(req);
-  if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
-
-  // Anti-loop: requests originating from 9Router bypass interception
-  if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
-    return passthrough(req, res, bodyBuffer);
-  }
-
-  const tool = getToolForHost(req.headers.host);
-  if (!tool) return passthrough(req, res, bodyBuffer);
-
-  // Check if this URL should be intercepted based on tool
-  const isChat = tool === "antigravity"
-    ? ANTIGRAVITY_URL_PATTERNS.some(p => req.url.includes(p))
-    : COPILOT_URL_PATTERNS.some(p => req.url.includes(p));
-
-  if (!isChat) return passthrough(req, res, bodyBuffer);
-
-  const model = extractModel(req.url, bodyBuffer);
-  console.log("Extracted model:",  model)
-  const mappedModel = getMappedModel(tool, model);
-
-  if (!mappedModel) return passthrough(req, res, bodyBuffer);
-
-  return intercept(req, res, bodyBuffer, mappedModel);
 });
 
 server.listen(LOCAL_PORT, () => {

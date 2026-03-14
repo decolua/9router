@@ -74,9 +74,11 @@ async function installCert(sudoPassword, certPath) {
 }
 
 async function installCertMac(sudoPassword, certPath) {
-  const command = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
+  // Remove all old certs with same name first to avoid duplicate/stale cert conflict
+  const deleteOld = `security delete-certificate -c "9Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
+  const install = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
-    await execWithPassword(command, sudoPassword);
+    await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
     console.log(`✅ Installed certificate to system keychain: ${certPath}`);
   } catch (error) {
     const msg = error.message?.includes("canceled") ? "User canceled authorization" : "Certificate install failed";
