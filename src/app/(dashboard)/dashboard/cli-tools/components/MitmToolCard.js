@@ -109,7 +109,8 @@ export default function MitmToolCard({
       if (action === "enable") {
         setMessage({
           type: "success",
-          text: `DNS enabled successfully. Please restart ${tool.name} to apply changes.`,
+          text: "DNS enabled successfully.",
+          warning: `Please restart ${tool.name} to apply changes.`,
         });
       } else {
         setMessage({
@@ -185,9 +186,17 @@ export default function MitmToolCard({
             </div>
 
             {message && (
-              <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
-                <span>{message.text}</span>
+              <div className="flex flex-col gap-1">
+                <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
+                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
+                  <span>{message.text}</span>
+                </div>
+                {message.warning && (
+                  <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                    <span className="material-symbols-outlined text-[14px]">warning</span>
+                    <span className="font-medium">{message.warning}</span>
+                  </div>
+                )}
               </div>
             )}
 
