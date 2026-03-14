@@ -91,11 +91,12 @@ async function refreshAndUpdateCredentials(connection) {
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
 export async function GET(request, { params }) {
+  let connection;
   try {
     const { connectionId } = await params;
 
     // Get connection from database
-    let connection = await getProviderConnectionById(connectionId);
+    connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
