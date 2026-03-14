@@ -255,7 +255,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         }
         break;
   
-      case "github":
+      case "github": {
         // GitHub Copilot requires special headers to mimic VSCode
         // Prioritize copilotToken from providerSpecificData, fallback to accessToken
         const githubToken = credentials.copilotToken || credentials.accessToken;
@@ -279,6 +279,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         headers["X-Initiator"] = "user";
         headers["Accept"] = "application/json";
         break;
+      }
   
       case "codex":
       case "qwen":

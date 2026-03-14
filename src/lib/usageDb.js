@@ -245,8 +245,11 @@ export async function saveRequestUsage(entry) {
     entry.cost = entryCost;
     db.data.history.push(entry);
 
-    // Optional: Limit history size if needed in future
-    // if (db.data.history.length > 10000) db.data.history.shift();
+    // Cap history to prevent unbounded memory/disk growth
+    const MAX_HISTORY = 10000;
+    if (db.data.history.length > MAX_HISTORY) {
+      db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
+    }
 
     await db.write();
     statsEmitter.emit("update");

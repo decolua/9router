@@ -107,6 +107,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         controller.enqueue(value);
       } catch (error) {
         streamController.handleError(error);
+        // Cleanup reader/writer to avoid orphaned streams
+        reader.cancel().catch(() => {});
+        writer.abort().catch(() => {});
         controller.error(error);
       }
     },

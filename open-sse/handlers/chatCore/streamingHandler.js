@@ -76,6 +76,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
+    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -83,8 +85,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
-      providerResponse: contentObj.content || "[Empty streaming response]",
-      response: { content: contentObj.content || "[Empty streaming response]", thinking: contentObj.thinking || null, type: "streaming" },
+      providerResponse: safeContent,
+      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);

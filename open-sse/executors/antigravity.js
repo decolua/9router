@@ -169,7 +169,9 @@ export class AntigravityExecutor extends BaseExecutor {
     let lastError = null;
     let lastStatus = 0;
     const MAX_AUTO_RETRIES = 3;
+    const MAX_RETRY_AFTER_RETRIES = 3;
     const retryAttemptsByUrl = {}; // Track retry attempts per URL
+    const retryAfterAttemptsByUrl = {}; // Track Retry-After retries per URL
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex);
@@ -177,9 +179,12 @@ export class AntigravityExecutor extends BaseExecutor {
       const sessionId = transformedBody.request?.sessionId;
       const headers = this.buildHeaders(credentials, stream, sessionId);
 
-      // Initialize retry counter for this URL
+      // Initialize retry counters for this URL
       if (!retryAttemptsByUrl[urlIndex]) {
         retryAttemptsByUrl[urlIndex] = 0;
+      }
+      if (!retryAfterAttemptsByUrl[urlIndex]) {
+        retryAfterAttemptsByUrl[urlIndex] = 0;
       }
 
       try {
@@ -206,8 +211,9 @@ export class AntigravityExecutor extends BaseExecutor {
             }
           }
 
-          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS) {
-            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting...`);
+          if (retryMs && retryMs <= MAX_RETRY_AFTER_MS && retryAfterAttemptsByUrl[urlIndex] < MAX_RETRY_AFTER_RETRIES) {
+            retryAfterAttemptsByUrl[urlIndex]++;
+            log?.debug?.("RETRY", `${response.status} with Retry-After: ${Math.ceil(retryMs / 1000)}s, waiting... (${retryAfterAttemptsByUrl[urlIndex]}/${MAX_RETRY_AFTER_RETRIES})`);
             await new Promise(resolve => setTimeout(resolve, retryMs));
             urlIndex--;
             continue;

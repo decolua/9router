@@ -79,7 +79,8 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     for (const block of responseBody.content) {
       if (block.type === "text") {
         // Strip markdown code block markers (e.g. kimi wraps JSON in ```json...```)
-        const text = block.text.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
+        const raw = block.text ?? "";
+        const text = raw.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
         textContent += text;
       } else if (block.type === "thinking") thinkingContent += block.thinking || "";
       else if (block.type === "tool_use") {
