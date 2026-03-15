@@ -533,19 +533,26 @@ async function getCodexUsage(accessToken) {
  * Kiro (AWS CodeWhisperer) Usage
  */
 async function getKiroUsage(accessToken, providerSpecificData) {
-  // Default profileArn fallback
-  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
+  // profileArn is optional and only needed for specific AWS account filtering
+  const profileArn = providerSpecificData?.profileArn;
+  const region = providerSpecificData?.region || "us-east-1";
 
   try {
     // Try old API first (POST method)
     const payload = {
       origin: "AI_EDITOR",
-      profileArn: profileArn,
       resourceType: "AGENTIC_REQUEST",
     };
 
-    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com", {
+    // Only add profileArn if available
+    if (profileArn) {
+      payload.profileArn = profileArn;
+    }
+
+    // Use region-specific endpoint
+    const endpoint = `https://codewhisperer.${region}.amazonaws.com`;
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -559,8 +566,23 @@ async function getKiroUsage(accessToken, providerSpecificData) {
     if (!response.ok) {
       const errorText = await response.text();
 
-      // Handle authentication errors gracefully
-      if (response.status === 403 || response.status === 401) {
+      // Handle specific error cases with user-friendly messages
+      if (response.status === 403) {
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.reason === "FEATURE_NOT_SUPPORTED") {
+            return {
+              message: "Kiro connected. Usage tracking unavailable for this AWS organization."
+            };
+          }
+        } catch (e) {
+          // Continue with generic error
+        }
+        return {
+          message: "Kiro connected. Unable to fetch usage data."
+        };
+      }
+      if (response.status === 401) {
         return {
           message: "Kiro quota API authentication expired. Chat may still work.",
           quotas: {}

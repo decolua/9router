@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken
 } from "@/lib/oauth/providers";
-import { createProviderConnection } from "@/models";
+import { createProviderConnection, getSettings } from "@/models";
 
 /**
  * Dynamic OAuth API Route
@@ -33,11 +33,18 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
-      
-      // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode"];
+
+      // For Kiro, pass configured auth URL from settings or query params
       let deviceData;
-      if (noPkceDeviceProviders.includes(provider)) {
+      if (provider === "kiro") {
+        const settings = await getSettings();
+        // Priority: query param > settings > default
+        const queryStartUrl = searchParams.get("startUrl");
+        const kiroAuthUrl = queryStartUrl || settings.kiroAuthUrl || "https://view.awsapps.com/start";
+        const kiroRegion = searchParams.get("region") || "us-east-1";
+        deviceData = await requestDeviceCode(provider, null, kiroAuthUrl, kiroRegion);
+      } else if (provider === "github" || provider === "kimi-coding" || provider === "kilocode") {
+        // These providers don't use PKCE for device code
         deviceData = await requestDeviceCode(provider);
       } else {
         // Qwen and other PKCE providers
@@ -132,8 +139,8 @@ export async function POST(request, { params }) {
           provider,
           authType: "oauth",
           ...result.tokens,
-          expiresAt: result.tokens.expiresIn 
-            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
+          tokenExpiresAt: result.tokens.expiresIn
+            ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString()
             : null,
           testStatus: "active",
         });

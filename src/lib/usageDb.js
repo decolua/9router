@@ -182,6 +182,10 @@ export async function getActiveRequests() {
   return { activeRequests, recentRequests, errorProvider };
 }
 
+export function getPendingRequests() {
+  return pendingRequests;
+}
+
 /**
  * Get usage database instance (singleton)
  */
@@ -435,17 +439,72 @@ async function calculateCost(provider, model, tokens) {
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 /**
- * Get aggregated usage stats
- * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
+ * Get time range filter date based on predefined range
+ * @param {string} range - Time range: "5m", "15m", "30m", "1h", "24h", "48h", "7d", "30d"
+ * @returns {Date|null} - Start date for the range, or null for "all"
  */
-export async function getUsageStats(period = "all") {
+export function getTimeRangeFilter(range) {
+  if (!range || range === "all") return null;
+
+  const now = new Date();
+  const ms = {
+    "5m": 5 * 60 * 1000,
+    "15m": 15 * 60 * 1000,
+    "30m": 30 * 60 * 1000,
+    "1h": 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "48h": 48 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+    "30d": 30 * 24 * 60 * 60 * 1000,
+    "60d": 60 * 24 * 60 * 60 * 1000
+  };
+
+  const offset = ms[range];
+  if (!offset) return null;
+
+  return new Date(now.getTime() - offset);
+}
+
+/**
+ * Get aggregated usage stats
+ * @param {object} options - Filter options
+ * @param {string} options.range - Predefined time range: "5m", "15m", "30m", "1h", "24h", "48h", "7d", "30d", "all"
+ * @param {string} options.startDate - Custom start date (ISO string)
+ * @param {string} options.endDate - Custom end date (ISO string)
+ */
+export async function getUsageStats(options = {}) {
   const db = await getUsageDb();
   let history = db.data.history || [];
 
-  // Filter history by period
-  if (period && PERIOD_MS[period]) {
-    const cutoff = Date.now() - PERIOD_MS[period];
-    history = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+  // Apply time range filter
+  const { range, startDate, endDate } = options;
+
+  // OPTIMIZATION 1: Pre-parse all timestamps once
+  // Parse timestamps and add _parsedTime property to avoid repeated Date creation
+  for (const entry of history) {
+    if (!entry._parsedTime && entry.timestamp) {
+      entry._parsedTime = new Date(entry.timestamp).getTime();
+    }
+  }
+
+  // Use predefined range if provided
+  if (range && range !== "all") {
+    const rangeStartDate = getTimeRangeFilter(range);
+    if (rangeStartDate) {
+      const startTime = rangeStartDate.getTime();
+      history = history.filter(h => h._parsedTime >= startTime);
+    }
+  }
+  // Otherwise use custom date range
+  else if (startDate || endDate) {
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      history = history.filter(h => h._parsedTime >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate).getTime();
+      history = history.filter(h => h._parsedTime <= end);
+    }
   }
 
   // Import localDb to get provider connection names and API keys
@@ -521,6 +580,76 @@ export async function getUsageStats(period = "all") {
     })
     .slice(0, 20);
 
+  // OPTIMIZATION 2: Batch cost calculations
+  // Collect all unique provider+model combinations
+  const uniqueCombos = new Set();
+  for (const entry of history) {
+    if (entry.provider && entry.model) {
+      uniqueCombos.add(`${entry.provider}:${entry.model}`);
+    }
+  }
+
+  // OPTIMIZATION 2b: Better cost caching - cache actual pricing data
+  const pricingCache = {};
+  const { getPricingForModel } = await import("@/lib/localDb.js");
+
+  const pricingPromises = Array.from(uniqueCombos).map(async (combo) => {
+    const [provider, model] = combo.split(':');
+    try {
+      const pricing = await getPricingForModel(provider, model);
+      pricingCache[combo] = pricing;
+    } catch (error) {
+      pricingCache[combo] = null;
+    }
+  });
+
+  await Promise.all(pricingPromises);
+
+  // Fast cost calculation using cached pricing
+  const calculateCostFast = (provider, model, tokens) => {
+    if (!tokens || !provider || !model) return 0;
+
+    const combo = `${provider}:${model}`;
+    const pricing = pricingCache[combo];
+
+    if (!pricing) return 0;
+
+    let cost = 0;
+
+    // Input tokens (non-cached)
+    const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
+    const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+    const nonCachedInput = Math.max(0, inputTokens - cachedTokens);
+
+    cost += (nonCachedInput * (pricing.input / 1000000));
+
+    // Cached tokens
+    if (cachedTokens > 0) {
+      const cachedRate = pricing.cached || pricing.input;
+      cost += (cachedTokens * (cachedRate / 1000000));
+    }
+
+    // Output tokens
+    const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    cost += (outputTokens * (pricing.output / 1000000));
+
+    // Reasoning tokens
+    const reasoningTokens = tokens.reasoning_tokens || 0;
+    if (reasoningTokens > 0) {
+      const reasoningRate = pricing.reasoning || pricing.output;
+      cost += (reasoningTokens * (reasoningRate / 1000000));
+    }
+
+    // Cache creation tokens
+    const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
+    if (cacheCreationTokens > 0) {
+      const cacheCreationRate = pricing.cache_creation || pricing.input;
+      cost += (cacheCreationTokens * (cacheCreationRate / 1000000));
+    }
+
+    return cost;
+  };
+
   const stats = {
     totalRequests: history.length,
     totalPromptTokens: 0,
@@ -559,16 +688,15 @@ export async function getUsageStats(period = "all") {
   }
 
   // Initialize 10-minute buckets using stable minute boundaries
-  const now = new Date();
+  const now = Date.now();
   // Floor to the start of the current minute
-  const currentMinuteStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
-  const tenMinutesAgo = new Date(currentMinuteStart.getTime() - 9 * 60 * 1000);
+  const currentMinuteStart = Math.floor(now / 60000) * 60000;
+  const tenMinutesAgo = currentMinuteStart - 9 * 60 * 1000;
 
   // Create buckets keyed by minute timestamp for stable lookups
   const bucketMap = {};
   for (let i = 0; i < 10; i++) {
-    const bucketTime = new Date(currentMinuteStart.getTime() - (9 - i) * 60 * 1000);
-    const bucketKey = bucketTime.getTime();
+    const bucketKey = currentMinuteStart - (9 - i) * 60 * 1000;
     bucketMap[bucketKey] = {
       requests: 0,
       promptTokens: 0,
@@ -578,13 +706,14 @@ export async function getUsageStats(period = "all") {
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
 
+  // OPTIMIZATION 3: Single pass aggregation
   for (const entry of history) {
     const promptTokens = entry.tokens?.prompt_tokens || 0;
     const completionTokens = entry.tokens?.completion_tokens || 0;
-    const entryTime = new Date(entry.timestamp);
+    const entryTime = entry._parsedTime;
 
-    // Use pre-stored cost (saved at request time), avoid recalculating
-    const entryCost = entry.cost || 0;
+    // Calculate cost using cached pricing
+    const entryCost = calculateCostFast(entry.provider, entry.model, entry.tokens);
 
     stats.totalPromptTokens += promptTokens;
     stats.totalCompletionTokens += completionTokens;
@@ -592,7 +721,7 @@ export async function getUsageStats(period = "all") {
 
     // Last 10 minutes aggregation - floor entry time to its minute
     if (entryTime >= tenMinutesAgo && entryTime <= now) {
-      const entryMinuteStart = Math.floor(entryTime.getTime() / 60000) * 60000;
+      const entryMinuteStart = Math.floor(entryTime / 60000) * 60000;
       if (bucketMap[entryMinuteStart]) {
         bucketMap[entryMinuteStart].requests++;
         bucketMap[entryMinuteStart].promptTokens += promptTokens;
@@ -636,8 +765,10 @@ export async function getUsageStats(period = "all") {
     stats.byModel[modelKey].promptTokens += promptTokens;
     stats.byModel[modelKey].completionTokens += completionTokens;
     stats.byModel[modelKey].cost += entryCost;
-    if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) {
+    // OPTIMIZATION 4: Direct timestamp comparison
+    if (entryTime > (stats.byModel[modelKey]._lastUsedTime || 0)) {
       stats.byModel[modelKey].lastUsed = entry.timestamp;
+      stats.byModel[modelKey]._lastUsedTime = entryTime;
     }
 
     // By Account (model + oauth account)
@@ -663,8 +794,9 @@ export async function getUsageStats(period = "all") {
       stats.byAccount[accountKey].promptTokens += promptTokens;
       stats.byAccount[accountKey].completionTokens += completionTokens;
       stats.byAccount[accountKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) {
+      if (entryTime > (stats.byAccount[accountKey]._lastUsedTime || 0)) {
         stats.byAccount[accountKey].lastUsed = entry.timestamp;
+        stats.byAccount[accountKey]._lastUsedTime = entryTime;
       }
     }
 
@@ -696,8 +828,9 @@ export async function getUsageStats(period = "all") {
       apiKeyEntry.promptTokens += promptTokens;
       apiKeyEntry.completionTokens += completionTokens;
       apiKeyEntry.cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+      if (entryTime > (apiKeyEntry._lastUsedTime || 0)) {
         apiKeyEntry.lastUsed = entry.timestamp;
+        apiKeyEntry._lastUsedTime = entryTime;
       }
     } else {
       const apiKeyKey = "local-no-key";
@@ -722,8 +855,9 @@ export async function getUsageStats(period = "all") {
       apiKeyEntry.promptTokens += promptTokens;
       apiKeyEntry.completionTokens += completionTokens;
       apiKeyEntry.cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
+      if (entryTime > (apiKeyEntry._lastUsedTime || 0)) {
         apiKeyEntry.lastUsed = entry.timestamp;
+        apiKeyEntry._lastUsedTime = entryTime;
       }
     }
 
@@ -751,6 +885,17 @@ export async function getUsageStats(period = "all") {
     if (new Date(entry.timestamp) > new Date(endpointEntry.lastUsed)) {
       endpointEntry.lastUsed = entry.timestamp;
     }
+  }
+
+  // Clean up internal _lastUsedTime properties before returning
+  for (const modelKey in stats.byModel) {
+    delete stats.byModel[modelKey]._lastUsedTime;
+  }
+  for (const accountKey in stats.byAccount) {
+    delete stats.byAccount[accountKey]._lastUsedTime;
+  }
+  for (const apiKeyKey in stats.byApiKey) {
+    delete stats.byApiKey[apiKeyKey]._lastUsedTime;
   }
 
   return stats;

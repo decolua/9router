@@ -79,9 +79,9 @@ export default function QuotaTable({ quotas = [] }) {
     <div className="overflow-x-auto">
       <table className="w-full table-fixed">
         <colgroup>
-          <col className="w-[30%]" /> {/* Model Name */}
-          <col className="w-[45%]" /> {/* Limit Progress */}
-          <col className="w-[25%]" /> {/* Reset Time */}
+          <col className="w-[30%]" />
+          <col className="w-[45%]" />
+          <col className="w-[25%]" />
         </colgroup>
         <tbody>
           {quotas.map((quota, index) => {

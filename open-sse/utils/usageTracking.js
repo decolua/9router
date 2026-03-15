@@ -310,6 +310,11 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
   const reasoning = usage.reasoning_tokens;
   if (reasoning) msg += ` | reasoning=${reasoning}`;
 
+  // Note for Kiro: credit-based pricing
+  if (provider === "kiro") {
+    msg += ` ${COLORS.yellow}(credit-based - see dashboard for actual usage)${COLORS.reset}`;
+  }
+
   console.log(msg);
 
   // Save to usage DB

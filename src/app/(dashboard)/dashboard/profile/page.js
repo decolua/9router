@@ -314,6 +314,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateKiroAuthUrl = async (url) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kiroAuthUrl: url.trim() || "https://view.awsapps.com/start" }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, kiroAuthUrl: url.trim() || "https://view.awsapps.com/start" }));
+      }
+    } catch (err) {
+      console.error("Failed to update Kiro auth URL:", err);
+    }
+  };
+
   const observabilityEnabled = settings.observabilityEnabled === true;
 
   return (
@@ -594,6 +609,34 @@ export default function ProfilePage() {
                 {proxyStatus.message}
               </p>
             )}
+          </div>
+        </Card>
+
+        {/* Provider Configuration */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500">
+              <span className="material-symbols-outlined text-[20px]">settings</span>
+            </div>
+            <h3 className="text-lg font-semibold">Provider Configuration</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Kiro AWS Builder ID Start URL <span className="text-xs text-text-muted">(Optional)</span>
+              </label>
+              <Input
+                type="text"
+                value={settings.kiroAuthUrl || ""}
+                onChange={(e) => updateKiroAuthUrl(e.target.value)}
+                placeholder="https://view.awsapps.com/start"
+                disabled={loading}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted mt-2">
+                Custom AWS SSO start URL for Kiro authentication. Leave empty to use default.
+              </p>
+            </div>
           </div>
         </Card>
 

@@ -32,4 +32,6 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
+  getSettings,
+  updateSettings,
 } from "@/lib/localDb";

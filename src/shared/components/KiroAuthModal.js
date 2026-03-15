@@ -10,6 +10,8 @@ import { Modal, Button, Input } from "@/shared/components";
  */
 export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
+  const [builderIdStartUrl, setBuilderIdStartUrl] = useState("");
+  const [builderIdRegion, setBuilderIdRegion] = useState("us-east-1");
   const [idcStartUrl, setIdcStartUrl] = useState("");
   const [idcRegion, setIdcRegion] = useState("us-east-1");
   const [refreshToken, setRefreshToken] = useState("");
@@ -17,6 +19,28 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
+  const [defaultAuthUrl, setDefaultAuthUrl] = useState("https://view.awsapps.com/start");
+
+  // Load configured Kiro auth URL on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const res = await fetch("/api/settings");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.kiroAuthUrl) {
+            setDefaultAuthUrl(data.kiroAuthUrl);
+            // Pre-fill both Builder ID and IDC with configured default
+            setBuilderIdStartUrl(data.kiroAuthUrl);
+            setIdcStartUrl(data.kiroAuthUrl);
+          }
+        }
+      } catch (err) {
+        console.log("Failed to load settings:", err);
+      }
+    };
+    loadSettings();
+  }, []);
 
   // Auto-detect token when import method is selected
   useEffect(() => {
@@ -67,7 +91,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/oauth/kiro/import", {
+      // Use auto-import POST endpoint if token was auto-detected, otherwise use regular import
+      const endpoint = autoDetected ? "/api/oauth/kiro/auto-import" : "/api/oauth/kiro/import";
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: refreshToken.trim() }),
@@ -96,6 +123,14 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
     onMethodSelect("idc", { startUrl: idcStartUrl.trim(), region: idcRegion });
   };
 
+  const handleBuilderIdContinue = () => {
+    if (!builderIdStartUrl.trim()) {
+      setError("Please enter your Builder ID start URL");
+      return;
+    }
+    onMethodSelect("builder-id", { startUrl: builderIdStartUrl.trim(), region: builderIdRegion });
+  };
+
   const handleSocialLogin = (provider) => {
     onMethodSelect("social", { provider });
   };
@@ -112,7 +147,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
             {/* AWS Builder ID */}
             <button
-              onClick={() => onMethodSelect("builder-id")}
+              onClick={() => handleMethodSelect("builder-id")}
               className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
@@ -202,7 +237,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               <Input
                 value={idcStartUrl}
                 onChange={(e) => setIdcStartUrl(e.target.value)}
-                placeholder="https://your-org.awsapps.com/start"
+                placeholder={defaultAuthUrl}
                 className="font-mono text-sm"
               />
               <p className="text-xs text-text-muted mt-1">
@@ -231,6 +266,54 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
             <div className="flex gap-2">
               <Button onClick={handleIdcContinue} fullWidth>
+                Continue
+              </Button>
+              <Button onClick={handleBack} variant="ghost" fullWidth>
+                Back
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Builder ID Configuration */}
+        {selectedMethod === "builder-id" && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Start URL <span className="text-red-500">*</span>
+              </label>
+              <Input
+                value={builderIdStartUrl}
+                onChange={(e) => setBuilderIdStartUrl(e.target.value)}
+                placeholder={defaultAuthUrl}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted mt-1">
+                AWS Builder ID start URL (leave blank to use default)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                AWS Region
+              </label>
+              <Input
+                value={builderIdRegion}
+                onChange={(e) => setBuilderIdRegion(e.target.value)}
+                placeholder="us-east-1"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted mt-1">
+                AWS region for your Builder ID (default: us-east-1)
+              </p>
+            </div>
+
+            {error && (
+              <p className="text-sm text-red-600">{error}</p>
+            )}
+
+            <div className="flex gap-2">
+              <Button onClick={handleBuilderIdContinue} fullWidth>
                 Continue
               </Button>
               <Button onClick={handleBack} variant="ghost" fullWidth>

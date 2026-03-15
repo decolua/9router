@@ -567,6 +567,27 @@ export const DEFAULT_PRICING = {
 
   // Kiro AI (kr) - AWS CodeWhisperer
   kr: {
+    "claude-opus-4.6": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
+    },
+    "claude-sonnet-4.6": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "claude-opus-4.5": {
+      input: 5.00,
+      output: 25.00,
+      cached: 0.50,
+      reasoning: 37.50,
+      cache_creation: 5.00
+    },
     "claude-sonnet-4.5": {
       input: 3.00,
       output: 15.00,
@@ -580,6 +601,41 @@ export const DEFAULT_PRICING = {
       cached: 0.05,
       reasoning: 3.75,
       cache_creation: 0.50
+    },
+    "claude-sonnet-4": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
+      reasoning: 22.50,
+      cache_creation: 3.00
+    },
+    "deepseek-3.2": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
+    },
+    "deepseek-3.1": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
+    },
+    "minimax-m2.1": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
+    },
+    "qwen3-coder-next": {
+      input: 1.00,
+      output: 4.00,
+      cached: 0.50,
+      reasoning: 6.00,
+      cache_creation: 1.00
     }
   },
 

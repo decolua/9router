@@ -73,12 +73,16 @@ async function refreshAndUpdateCredentials(connection, force = false) {
     updateData.expiresAt = refreshResult.expiresAt;
   }
 
-  // Handle provider-specific data (copilotToken for GitHub, etc.)
-  if (refreshResult.copilotToken || refreshResult.copilotTokenExpiresAt) {
+  // Handle provider-specific data
+  // Always preserve existing providerSpecificData and merge with new data
+  if (refreshResult.copilotToken || refreshResult.copilotTokenExpiresAt || refreshResult.profileArn) {
     updateData.providerSpecificData = {
       ...connection.providerSpecificData,
-      copilotToken: refreshResult.copilotToken,
-      copilotTokenExpiresAt: refreshResult.copilotTokenExpiresAt,
+      // GitHub: copilotToken
+      ...(refreshResult.copilotToken && { copilotToken: refreshResult.copilotToken }),
+      ...(refreshResult.copilotTokenExpiresAt && { copilotTokenExpiresAt: refreshResult.copilotTokenExpiresAt }),
+      // Kiro: profileArn
+      ...(refreshResult.profileArn && { profileArn: refreshResult.profileArn }),
     };
   }
 

@@ -624,9 +624,10 @@ const PROVIDERS = {
         verification_uri_complete: deviceData.verificationUriComplete,
         expires_in: deviceData.expiresIn,
         interval: deviceData.interval || 5,
-        // Store client credentials for token exchange
+        // Store client credentials and config for token exchange
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
+        _startUrl: config.startUrl,
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
@@ -664,6 +665,8 @@ const PROVIDERS = {
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
+            _region: extraData?._region,
+            _startUrl: extraData?._startUrl,
           },
         };
       }
@@ -677,17 +680,50 @@ const PROVIDERS = {
       };
     },
     mapTokens: (tokens) => {
-      const mapped = {
+      // AWS SSO OIDC returns profileArn directly in response
+      // If not in response, try to extract from idToken if available
+      let profileArn = tokens.profileArn || null;
+
+      if (!profileArn && tokens.id_token) {
+        try {
+          const parts = tokens.id_token.split(".");
+          if (parts.length === 3) {
+            let payload = parts[1];
+            while (payload.length % 4) {
+              payload += "=";
+            }
+            const decoded = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+            profileArn = decoded.arn || decoded.profileArn || null;
+          }
+        } catch (e) {
+          // Silently fail - profileArn extraction is optional
+        }
+      }
+
+      // Extract AWS org from startUrl (e.g., "view" from "https://view.awsapps.com/start")
+      let awsOrg = null;
+      if (tokens._startUrl) {
+        try {
+          const url = new URL(tokens._startUrl);
+          const subdomain = url.hostname.split('.')[0];
+          awsOrg = subdomain;
+        } catch (e) {
+          // Silently fail
+        }
+      }
+
+      return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
         providerSpecificData: {
-          profileArn: tokens?.profile_arn || null,
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
+          profileArn: profileArn,
+          region: tokens._region || "us-east-1",
+          awsOrg: awsOrg,
         },
       };
-      return mapped;
     },
   },
 
@@ -940,12 +976,32 @@ export async function exchangeTokens(providerName, code, redirectUri, codeVerifi
 
 /**
  * Request device code (for device_code flow)
+ * @param {string} providerName - Provider name
+ * @param {string} codeChallenge - PKCE code challenge (optional)
+ * @param {string} kiroAuthUrl - Custom Kiro auth URL (optional, only for Kiro provider)
+ * @param {string} kiroRegion - Custom Kiro AWS region (optional, only for Kiro provider)
  */
-export async function requestDeviceCode(providerName, codeChallenge) {
+export async function requestDeviceCode(providerName, codeChallenge, kiroAuthUrl, kiroRegion) {
   const provider = getProvider(providerName);
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
+
+  // For Kiro, pass the configured auth URL and region
+  if (providerName === "kiro" && (kiroAuthUrl || kiroRegion)) {
+    const configWithUrl = {
+      ...provider.config,
+      startUrl: kiroAuthUrl || provider.config.startUrl,
+      // Update region in URLs if provided
+      ...(kiroRegion && {
+        registerClientUrl: `https://oidc.${kiroRegion}.amazonaws.com/client/register`,
+        deviceAuthUrl: `https://oidc.${kiroRegion}.amazonaws.com/device_authorization`,
+        tokenUrl: `https://oidc.${kiroRegion}.amazonaws.com/token`,
+      })
+    };
+    return await provider.requestDeviceCode(configWithUrl, codeChallenge);
+  }
+
   return await provider.requestDeviceCode(provider.config, codeChallenge);
 }
 
