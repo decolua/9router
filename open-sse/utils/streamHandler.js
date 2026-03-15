@@ -107,6 +107,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         controller.enqueue(value);
       } catch (error) {
         streamController.handleError(error);
+        // Cleanup reader/writer to avoid orphaned streams
+        reader.cancel().catch(() => {});
+        writer.abort().catch(() => {});
         controller.error(error);
       }
     },
@@ -128,7 +131,7 @@ export function createDisconnectAwareStream(transformStream, streamController) {
 export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
   const transformedBody = providerResponse.body.pipeThrough(transformStream);
   return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => {} }) } },
+    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     streamController
   );
 }

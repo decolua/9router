@@ -4,11 +4,21 @@ import "open-sse/index.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+
+// Detect auth-expired messages returned by usage providers instead of throwing
+const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
+function isAuthExpiredMessage(usage) {
+  if (!usage?.message) return false;
+  const msg = usage.message.toLowerCase();
+  return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
 /**
  * Refresh credentials using executor and update database
+ * @param {boolean} force - Skip needsRefresh check and always attempt refresh
  * @returns Promise<{ connection, refreshed: boolean }>
  */
-async function refreshAndUpdateCredentials(connection) {
+async function refreshAndUpdateCredentials(connection, force = false) {
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection
@@ -22,8 +32,8 @@ async function refreshAndUpdateCredentials(connection) {
     copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
   };
 
-  // Check if refresh is needed
-  const needsRefresh = executor.needsRefresh(credentials);
+  // Check if refresh is needed (skip when force=true)
+  const needsRefresh = force || executor.needsRefresh(credentials);
 
   if (!needsRefresh) {
     return { connection, refreshed: false };
@@ -91,11 +101,13 @@ async function refreshAndUpdateCredentials(connection) {
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
 export async function GET(request, { params }) {
+  let connection;
   try {
     const { connectionId } = await params;
 
+
     // Get connection from database
-    let connection = await getProviderConnectionById(connectionId);
+    connection = await getProviderConnectionById(connectionId);
     if (!connection) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
@@ -117,10 +129,24 @@ export async function GET(request, { params }) {
     }
 
     // Fetch usage from provider API
-    const usage = await getUsageForProvider(connection);
+    let usage = await getUsageForProvider(connection);
+
+    // If provider returned an auth-expired message instead of throwing,
+    // force-refresh token and retry once
+    if (isAuthExpiredMessage(usage) && connection.refreshToken) {
+      try {
+        const retryResult = await refreshAndUpdateCredentials(connection, true);
+        connection = retryResult.connection;
+        usage = await getUsageForProvider(connection);
+      } catch (retryError) {
+        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+      }
+    }
+
     return Response.json(usage);
   } catch (error) {
-    console.warn(`[Usage] ${connection?.provider}: ${error.message}`);
+    const provider = connection?.provider ?? "unknown";
+    console.warn(`[Usage] ${provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

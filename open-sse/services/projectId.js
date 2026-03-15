@@ -254,7 +254,9 @@ async function onboardUser(accessToken, tierID, externalSignal) {
                 console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${error.message}`);
                 return null;
             }
-            throw error;
+            // Continue to next attempt instead of throwing (which would skip remaining retries)
+            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
         } finally {
             clearTimeout(timeoutId);
             externalSignal?.removeEventListener("abort", forwardAbort);

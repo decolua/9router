@@ -11,6 +11,7 @@ const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via settings
 const CONFIG_CACHE_TTL_MS = 5000;
+const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
 
 function getAppName() {
   return "9router";
@@ -181,6 +182,13 @@ async function flushToDatabase() {
       db.data.records = db.data.records.slice(0, config.maxRecords);
     }
 
+    // Shrink records until total serialized size is within safe limit
+    while (db.data.records.length > 1) {
+      const totalSize = Buffer.byteLength(JSON.stringify(db.data), "utf8");
+      if (totalSize <= MAX_TOTAL_DB_SIZE) break;
+      db.data.records = db.data.records.slice(0, Math.floor(db.data.records.length / 2));
+    }
+
     await db.write();
   } catch (error) {
     console.error("[requestDetailsDb] Batch write failed:", error);
@@ -246,23 +254,25 @@ export async function getRequestDetailById(id) {
   return db.data.records.find(r => r.id === id) || null;
 }
 
-// Graceful shutdown
-let shutdownHandlerRegistered = false;
+// Graceful shutdown — use named handler so we can remove it on re-registration
+const _shutdownHandler = async () => {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (writeBuffer.length > 0) await flushToDatabase();
+};
 
 function ensureShutdownHandler() {
-  if (shutdownHandlerRegistered || isCloud) return;
+  if (isCloud) return;
 
-  const handler = async () => {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    if (writeBuffer.length > 0) await flushToDatabase();
-  };
+  // Remove any previously registered listeners from this module (hot-reload safety)
+  process.off("beforeExit", _shutdownHandler);
+  process.off("SIGINT", _shutdownHandler);
+  process.off("SIGTERM", _shutdownHandler);
+  process.off("exit", _shutdownHandler);
 
-  process.on("beforeExit", handler);
-  process.on("SIGINT", handler);
-  process.on("SIGTERM", handler);
-  process.on("exit", handler);
-
-  shutdownHandlerRegistered = true;
+  process.on("beforeExit", _shutdownHandler);
+  process.on("SIGINT", _shutdownHandler);
+  process.on("SIGTERM", _shutdownHandler);
+  process.on("exit", _shutdownHandler);
 }
 
 ensureShutdownHandler();

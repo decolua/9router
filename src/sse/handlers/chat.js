@@ -133,7 +133,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const userAgent = request?.headers?.get("user-agent") || "";
 
   // Try with available accounts (fallback on errors)
-  let excludeConnectionId = null;
+  const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
@@ -148,7 +148,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
-      if (!excludeConnectionId) {
+      if (excludeConnectionIds.size === 0) {
         log.error("AUTH", `No credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
       }
@@ -205,7 +205,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
-      excludeConnectionId = credentials.connectionId;
+      excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
       continue;

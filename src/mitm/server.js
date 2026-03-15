@@ -3,6 +3,10 @@ const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
+const { log, err } = require("./logger");
+
+// Allow self-signed certs from MITM root CA when fetching external hosts
+
 
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
@@ -22,7 +26,7 @@ const DB_FILE = path.join(DATA_DIR, "db.json");
 const ENABLE_FILE_LOG = false;
 
 if (!API_KEY) {
-  console.error("❌ ROUTER_API_KEY required");
+  err("ROUTER_API_KEY required");
   process.exit(1);
 }
 
@@ -54,11 +58,11 @@ function sniCallback(servername, cb) {
 
     // Cache it
     certCache.set(servername, ctx);
-    console.log(`✅ Generated cert for: ${servername}`);
+    log(`🔐 Cert generated: ${servername}`);
 
     cb(null, ctx);
   } catch (error) {
-    console.error(`❌ SNI error for ${servername}:`, error.message);
+    err(`SNI error for ${servername}: ${error.message}`);
     cb(error);
   }
 }
@@ -76,7 +80,7 @@ try {
     SNICallback: sniCallback
   };
 } catch (e) {
-  console.error(`❌ Root CA not found in ${certDir}: ${e.message}`);
+  err(`Root CA not found in ${certDir}: ${e.message}`);
   process.exit(1);
 }
 
@@ -85,7 +89,7 @@ const ANTIGRAVITY_URL_PATTERNS = [":generateContent", ":streamGenerateContent"];
 // Copilot: OpenAI-compatible + Anthropic endpoints
 const COPILOT_URL_PATTERNS = ["/chat/completions", "/v1/messages", "/responses"];
 
-const LOG_DIR = path.join(__dirname, "../../logs/mitm");
+const LOG_DIR = path.join(DATA_DIR, "logs", "mitm");
 if (ENABLE_FILE_LOG && !fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
 
 function saveRequestLog(url, bodyBuffer) {
@@ -131,7 +135,13 @@ function getMappedModel(tool, model) {
   try {
     if (!fs.existsSync(DB_FILE)) return null;
     const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-    return db.mitmAlias?.[tool]?.[model] || null;
+    const aliases = db.mitmAlias?.[tool];
+    if (!aliases) return null;
+    // Exact match first
+    if (aliases[model]) return aliases[model];
+    // Prefix match fallback: find alias key that starts with model or model starts with key
+    const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (model.startsWith(k) || k.startsWith(model)));
+    return prefixKey ? aliases[prefixKey] : null;
   } catch {
     return null;
   }
@@ -164,8 +174,8 @@ async function passthrough(req, res, bodyBuffer) {
     forwardRes.pipe(res);
   });
 
-  forwardReq.on("error", (err) => {
-    console.error(`❌ Passthrough error: ${err.message}`);
+  forwardReq.on("error", (e) => {
+    err(`Passthrough error: ${e.message}`);
     if (!res.headersSent) res.writeHead(502);
     res.end("Bad Gateway");
   });
@@ -198,6 +208,13 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     if (ct.includes("text/event-stream")) resHeaders["X-Accel-Buffering"] = "no";
     res.writeHead(200, resHeaders);
 
+    // Guard: some responses have no body (e.g. errors, empty replies)
+    if (!response.body) {
+      const text = await response.text().catch(() => "");
+      res.end(text);
+      return;
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     while (true) {
@@ -206,57 +223,68 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       res.write(decoder.decode(value, { stream: true }));
     }
   } catch (error) {
-    console.error(`❌ ${error.message}`);
+    err(`Intercept error: ${error.message}`);
     if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: { message: error.message, type: "mitm_error" } }));
   }
 }
 
 const server = https.createServer(sslOptions, async (req, res) => {
-  if (req.url === "/_mitm_health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: true, pid: process.pid }));
-    return;
+  // Top-level catch to prevent uncaughtException from crashing the server
+  try {
+    if (req.url === "/_mitm_health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, pid: process.pid }));
+      return;
+    }
+
+    const bodyBuffer = await collectBodyRaw(req);
+    if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
+
+    // Anti-loop: requests originating from 9Router bypass interception
+    if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
+      return passthrough(req, res, bodyBuffer);
+    }
+
+    const tool = getToolForHost(req.headers.host);
+    if (!tool) return passthrough(req, res, bodyBuffer);
+
+    // Check if this URL should be intercepted based on tool
+    const isChat = tool === "antigravity"
+      ? ANTIGRAVITY_URL_PATTERNS.some(p => req.url.includes(p))
+      : COPILOT_URL_PATTERNS.some(p => req.url.includes(p));
+
+    if (!isChat) return passthrough(req, res, bodyBuffer);
+
+    const model = extractModel(req.url, bodyBuffer);
+    log(`🔍 model="${model}" url=${req.url}`);
+    const mappedModel = getMappedModel(tool, model);
+
+    if (!mappedModel) {
+      log(`⏩ passthrough | no mapping | ${tool} | ${model || "unknown"}`);
+      return passthrough(req, res, bodyBuffer);
+    }
+
+    log(`⚡ intercept | ${tool} | ${model} → ${mappedModel}`);
+    return intercept(req, res, bodyBuffer, mappedModel);
+  } catch (e) {
+    err(`Unhandled request error: ${e.message}`);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: { message: e.message, type: "mitm_error" } }));
   }
-
-  const bodyBuffer = await collectBodyRaw(req);
-  if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
-
-  // Anti-loop: requests originating from 9Router bypass interception
-  if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
-    return passthrough(req, res, bodyBuffer);
-  }
-
-  const tool = getToolForHost(req.headers.host);
-  if (!tool) return passthrough(req, res, bodyBuffer);
-
-  // Check if this URL should be intercepted based on tool
-  const isChat = tool === "antigravity"
-    ? ANTIGRAVITY_URL_PATTERNS.some(p => req.url.includes(p))
-    : COPILOT_URL_PATTERNS.some(p => req.url.includes(p));
-
-  if (!isChat) return passthrough(req, res, bodyBuffer);
-
-  const model = extractModel(req.url, bodyBuffer);
-  console.log("Extracted model:",  model)
-  const mappedModel = getMappedModel(tool, model);
-
-  if (!mappedModel) return passthrough(req, res, bodyBuffer);
-
-  return intercept(req, res, bodyBuffer, mappedModel);
 });
 
 server.listen(LOCAL_PORT, () => {
-  console.log(`🚀 MITM ready on :${LOCAL_PORT}`);
+  log(`🚀 Server ready on :${LOCAL_PORT}`);
 });
 
 server.on("error", (error) => {
   if (error.code === "EADDRINUSE") {
-    console.error(`❌ Port ${LOCAL_PORT} already in use`);
+    err(`Port ${LOCAL_PORT} already in use`);
   } else if (error.code === "EACCES") {
-    console.error(`❌ Permission denied for port ${LOCAL_PORT}`);
+    err(`Permission denied for port ${LOCAL_PORT}`);
   } else {
-    console.error(`❌ ${error.message}`);
+    err(error.message);
   }
   process.exit(1);
 });

@@ -166,7 +166,10 @@ export const PROVIDER_MODELS = {
     { id: "claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet" },
   ],
   gemini: [
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
     { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
     { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite" },
@@ -311,6 +314,18 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
   ],
+  vertex: [
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  ],
+  "vertex-partner": [
+    { id: "deepseek-ai/deepseek-v3.2-maas", name: "DeepSeek V3.2 (Vertex)" },
+    { id: "qwen/qwen3-next-80b-a3b-thinking-maas", name: "Qwen3 Next 80B Thinking (Vertex)" },
+    { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B Instruct (Vertex)" },
+    { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
+  ],
 };
 
 // Helper functions
@@ -358,6 +373,8 @@ const OAUTH_ALIASES = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
+  vertex: "vertex",
+  "vertex-partner": "vertex-partner",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

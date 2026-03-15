@@ -46,6 +46,10 @@ const ALIAS_TO_PROVIDER_ID = {
   ch: "chutes",
   chutes: "chutes",
   cursor: "cursor",
+  vx: "vertex",
+  vertex: "vertex",
+  vxp: "vertex-partner",
+  "vertex-partner": "vertex-partner",
 };
 
 /**
