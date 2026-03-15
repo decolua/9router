@@ -7,7 +7,6 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -17,6 +16,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { createRequestContext, getRequestSettings } from "../services/requestContext.js";
 
 /**
  * Handle chat completion request
@@ -24,6 +24,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const requestContext = createRequestContext();
   let body;
   try {
     body = await request.json();
@@ -63,7 +64,7 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Enforce API key if enabled in settings
-  const settings = await getSettings();
+  const settings = await getRequestSettings(requestContext);
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -82,36 +83,36 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const comboModels = await getComboModels(modelStr, requestContext);
   if (comboModels) {
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, requestContext),
       log
     });
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, requestContext);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
-  const modelInfo = await getModelInfo(modelStr);
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestContext = null) {
+  const modelInfo = await getModelInfo(modelStr, requestContext);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const comboModels = await getComboModels(modelStr, requestContext);
     if (comboModels) {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, requestContext),
         log
       });
     }
@@ -137,7 +138,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionId, model, requestContext);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -171,7 +172,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
+    const chatSettings = await getRequestSettings(requestContext);
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },

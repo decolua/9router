@@ -39,6 +39,14 @@ function getCandidatePaths(platform) {
   ];
 }
 
+function getPlatformError(platform, candidates) {
+  if (platform === "darwin") {
+    return `Cursor database not found in known macOS locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`;
+  }
+
+  return "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.";
+}
+
 /** Extract tokens using better-sqlite3 (stream-based, no RAM limit) */
 function extractTokens(db) {
   const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
@@ -134,23 +142,31 @@ async function extractTokensViaCLI(dbPath) {
 export async function GET() {
   try {
     const platform = process.platform;
+    if (!["darwin", "linux", "win32"].includes(platform)) {
+      return NextResponse.json({ found: false, error: "Unsupported platform" }, { status: 400 });
+    }
+
     const candidates = getCandidatePaths(platform);
 
     let dbPath = null;
-    for (const candidate of candidates) {
-      try {
-        await access(candidate, constants.R_OK);
-        dbPath = candidate;
-        break;
-      } catch {
-        // Try next candidate
+    if (platform === "darwin" || platform === "win32") {
+      for (const candidate of candidates) {
+        try {
+          await access(candidate, constants.R_OK);
+          dbPath = candidate;
+          break;
+        } catch {
+          // Try next candidate
+        }
       }
+    } else {
+      [dbPath] = candidates;
     }
 
     if (!dbPath) {
       return NextResponse.json({
         found: false,
-        error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+        error: getPlatformError(platform, candidates),
       });
     }
 
@@ -178,8 +194,15 @@ export async function GET() {
         if (tokens.accessToken && tokens.machineId) {
           return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
         }
-      } catch {
+      } catch (error) {
         db?.close();
+
+        if (platform === "darwin") {
+          return NextResponse.json({
+            found: false,
+            error: `Cursor database found at ${dbPath}, but could not open it: ${error.message}`,
+          });
+        }
       }
     }
 
@@ -192,7 +215,21 @@ export async function GET() {
     } catch { /* sqlite3 CLI not available */ }
 
     // Strategy 3: ask user to paste manually
-    return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    if (platform === "win32") {
+      return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    }
+
+    if (platform === "linux") {
+      return NextResponse.json({
+        found: false,
+        error: getPlatformError(platform, candidates),
+      });
+    }
+
+    return NextResponse.json({
+      found: false,
+      error: "Please login to Cursor IDE first and then reopen Cursor before retrying auto-import.",
+    });
   } catch (error) {
     console.log("Cursor auto-import error:", error);
     return NextResponse.json({ found: false, error: error.message }, { status: 500 });
