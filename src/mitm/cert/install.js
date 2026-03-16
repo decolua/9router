@@ -45,7 +45,7 @@ function checkCertInstalledMac(certPath) {
 function checkCertInstalledWindows(certPath) {
   return new Promise((resolve) => {
     // Check Root store for our Root CA by common name
-    exec("certutil -store Root \"9Router MITM Root CA\"", (error) => {
+    exec("certutil -store Root \"9Router MITM Root CA\"", { windowsHide: true }, (error) => {
       resolve(!error);
     });
   });
@@ -88,11 +88,10 @@ async function installCertMac(sudoPassword, certPath) {
 }
 
 async function installCertWindows(certPath) {
-  const escaped = certPath.replace(/'/g, "''");
-  const psCommand = `Start-Process certutil -ArgumentList '-addstore','Root','${escaped}' -Verb RunAs -Wait -WindowStyle Hidden`;
+  // Process already has admin rights — run certutil directly, no UAC needed
   return new Promise((resolve, reject) => {
     exec(
-      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      `certutil -addstore Root "${certPath}"`,
       { windowsHide: true },
       (error) => {
         if (error) reject(new Error(`Failed to install certificate: ${error.message}`));
@@ -133,10 +132,10 @@ async function uninstallCertMac(sudoPassword, certPath) {
 }
 
 async function uninstallCertWindows() {
-  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','9Router MITM Root CA' -Verb RunAs -Wait -WindowStyle Hidden`;
+  // Process already has admin rights — run certutil directly, no UAC needed
   return new Promise((resolve, reject) => {
     exec(
-      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      `certutil -delstore Root "9Router MITM Root CA"`,
       { windowsHide: true },
       (error) => {
         if (error) reject(new Error(`Failed to uninstall certificate: ${error.message}`));

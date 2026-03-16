@@ -140,38 +140,10 @@ async function addDNSEntry(tool, sudoPassword) {
 
   try {
     if (IS_WIN) {
-      const hostsPath = HOSTS_FILE.replace(/'/g, "''");
-      
-      // Build PowerShell script with proper error handling
-      const scriptLines = [];
-      scriptLines.push(`$ErrorActionPreference = 'Stop'`);
-      scriptLines.push(`$hostsPath = '${hostsPath}'`);
-      scriptLines.push(`try {`);
-      scriptLines.push(`  $hostsContent = Get-Content -Path $hostsPath -Raw -ErrorAction SilentlyContinue`);
-      scriptLines.push(`  if (-not $hostsContent) { $hostsContent = '' }`);
-      
-      for (const host of entriesToAdd) {
-        // Escape special regex chars in hostname
-        const escapedHost = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        scriptLines.push(`  if ($hostsContent -notmatch '${escapedHost}') {`);
-        scriptLines.push(`    Add-Content -Path $hostsPath -Value '127.0.0.1 ${host}' -Encoding UTF8 -ErrorAction Stop`);
-        scriptLines.push(`    Write-Host "Added DNS entry: ${host}"`);
-        scriptLines.push(`  } else {`);
-        scriptLines.push(`    Write-Host "DNS entry already exists: ${host}"`);
-        scriptLines.push(`  }`);
-      }
-      
-      scriptLines.push(`  ipconfig /flushdns | Out-Null`);
-      scriptLines.push(`} catch {`);
-      scriptLines.push(`  Write-Error "Failed to add DNS: $_"`);
-      scriptLines.push(`  exit 1`);
-      scriptLines.push(`}`);
-      
-      const psScript = scriptLines.join("\n");
-      const tmpPs1 = path.join(os.tmpdir(), `mitm_dns_add_${Date.now()}.ps1`);
-      fs.writeFileSync(tmpPs1, psScript, "utf8");
-      
-      await executeElevatedPowerShell(tmpPs1, 30000);
+      // Process already has admin rights — edit hosts file directly
+      const toAppend = entriesToAdd.map(h => `127.0.0.1 ${h}`).join("\r\n") + "\r\n";
+      fs.appendFileSync(HOSTS_FILE, toAppend, "utf8");
+      require("child_process").execSync("ipconfig /flushdns", { windowsHide: true });
     } else {
       await execWithPassword(`echo "${entries}" >> ${HOSTS_FILE}`, sudoPassword);
       await flushDNS(sudoPassword);
@@ -198,37 +170,11 @@ async function removeDNSEntry(tool, sudoPassword) {
 
   try {
     if (IS_WIN) {
+      // Process already has admin rights — edit hosts file directly
       const content = fs.readFileSync(HOSTS_FILE, "utf8");
       const filtered = content.split(/\r?\n/).filter(l => !entriesToRemove.some(h => l.includes(h))).join("\r\n");
-      const tmpFile = path.join(os.tmpdir(), `hosts_filtered_${Date.now()}.tmp`);
-      fs.writeFileSync(tmpFile, filtered, "utf8");
-      
-      const tmpEsc = tmpFile.replace(/'/g, "''");
-      const hostsEsc = HOSTS_FILE.replace(/'/g, "''");
-      
-      // Build PowerShell script with proper error handling
-      const scriptLines = [];
-      scriptLines.push(`$ErrorActionPreference = 'Stop'`);
-      scriptLines.push(`try {`);
-      scriptLines.push(`  Copy-Item -Path '${tmpEsc}' -Destination '${hostsEsc}' -Force -ErrorAction Stop`);
-      scriptLines.push(`  Write-Host "Hosts file updated successfully"`);
-      scriptLines.push(`  ipconfig /flushdns | Out-Null`);
-      scriptLines.push(`  Write-Host "DNS cache flushed"`);
-      scriptLines.push(`  Remove-Item '${tmpEsc}' -ErrorAction SilentlyContinue`);
-      scriptLines.push(`} catch {`);
-      scriptLines.push(`  Write-Error "Failed to remove DNS: $_"`);
-      scriptLines.push(`  Remove-Item '${tmpEsc}' -ErrorAction SilentlyContinue`);
-      scriptLines.push(`  exit 1`);
-      scriptLines.push(`}`);
-      
-      const psScript = scriptLines.join("\n");
-      const tmpPs1 = path.join(os.tmpdir(), `mitm_dns_remove_${Date.now()}.ps1`);
-      fs.writeFileSync(tmpPs1, psScript, "utf8");
-      
-      await executeElevatedPowerShell(tmpPs1, 30000);
-      
-      // Cleanup temp file if still exists
-      try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+      fs.writeFileSync(HOSTS_FILE, filtered, "utf8");
+      require("child_process").execSync("ipconfig /flushdns", { windowsHide: true });
     } else {
       for (const host of entriesToRemove) {
         const sedCmd = IS_MAC

@@ -162,7 +162,7 @@ export async function GET() {
     } catch {
       // Try loading from global node_modules (user ran: npm i better-sqlite3 -g)
       try {
-        const globalRoot = execSync("npm root -g", { timeout: 5000 }).toString().trim();
+        const globalRoot = execSync("npm root -g", { timeout: 5000, windowsHide: true }).toString().trim();
         const requireGlobal = createRequire(join(globalRoot, "better-sqlite3", "package.json"));
         Database = requireGlobal("better-sqlite3");
       } catch { /* fall through to sqlite3 CLI strategy */ }

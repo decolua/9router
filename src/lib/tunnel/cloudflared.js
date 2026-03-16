@@ -125,6 +125,7 @@ export async function spawnCloudflared(tunnelToken) {
 
   const child = spawn(binaryPath, ["tunnel", "run", "--dns-resolver-addrs", "1.1.1.1:53", "--token", tunnelToken], {
     detached: false,
+    windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"]
   });
 
