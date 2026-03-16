@@ -17,6 +17,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [pendingAction, setPendingAction] = useState(null); // "start" | "stop"
 
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
+  const isAdmin = status?.isAdmin !== false; // default true until status loaded
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -188,7 +189,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Action button */}
           <div className="flex items-center gap-2 flex-wrap" data-i18n-skip="true">
             {/* Trust Cert button — only when cert exists but not trusted */}
-            {status?.certExists && !status?.certTrusted && !isRunning && (
+            {status?.certExists && !status?.certTrusted && (
               <button
                 onClick={() => handleAction("trust-cert")}
                 disabled={loading}
@@ -210,7 +211,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             ) : (
               <button
                 onClick={() => handleAction("start")}
-                disabled={loading}
+                disabled={loading || (isWindows && !isAdmin)}
                 className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-xs flex items-center gap-1.5 hover:bg-primary/20 transition-colors disabled:opacity-50"
               >
                 <span className="material-symbols-outlined text-[16px]">play_circle</span>
@@ -223,10 +224,10 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           </div>
 
           {/* Windows admin warning */}
-          {!isRunning && isWindows && (
-            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-yellow-500/10 text-yellow-600 border border-yellow-500/20">
-              <span className="material-symbols-outlined text-[14px]">warning</span>
-              <span>Windows: Run 9Router terminal as Administrator</span>
+          {isWindows && !isAdmin && (
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 border border-red-500/20">
+              <span className="material-symbols-outlined text-[14px]">shield_lock</span>
+              <span>Administrator required — restart 9Router as Administrator to use MITM</span>
             </div>
           )}
         </div>
