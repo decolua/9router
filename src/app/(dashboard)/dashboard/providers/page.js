@@ -657,6 +657,7 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [checkKey, setCheckKey] = useState("");
+  const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
@@ -705,15 +706,41 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey, type: "openai-compatible" }),
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: "openai-compatible",
+          modelId: checkModelId.trim() || undefined
+        }),
       });
       const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
+      setValidationResult(data);
     } catch {
-      setValidationResult("failed");
+      setValidationResult({ valid: false, error: "Network error" });
     } finally {
       setValidating(false);
     }
+  };
+
+  // Helper to render validation result
+  const renderValidationResult = () => {
+    if (!validationResult) return null;
+    const { valid, error, method } = validationResult;
+
+    if (valid) {
+      return (
+        <>
+          <Badge variant="success">Valid</Badge>
+          {method === "chat" && <span className="text-sm text-text-muted">(via inference test)</span>}
+        </>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-1">
+        <Badge variant="error">Invalid</Badge>
+        {error && <span className="text-sm text-red-500">{error}</span>}
+      </div>
+    );
   };
 
   return (
@@ -746,25 +773,25 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
           placeholder="https://api.openai.com/v1"
           hint="Use the base URL (ending in /v1) for your OpenAI-compatible API."
         />
-        <div className="flex gap-2">
-          <Input
-            label="API Key (for Check)"
-            type="password"
-            value={checkKey}
-            onChange={(e) => setCheckKey(e.target.value)}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
-              {validating ? "Checking..." : "Check"}
-            </Button>
-          </div>
+        <Input
+          label="API Key (for Check)"
+          type="password"
+          value={checkKey}
+          onChange={(e) => setCheckKey(e.target.value)}
+        />
+        <Input
+          label="Model ID (optional)"
+          value={checkModelId}
+          onChange={(e) => setCheckModelId(e.target.value)}
+          placeholder="e.g. gpt-4, claude-3-opus"
+          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+        />
+        <div className="flex items-center gap-3">
+          <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            {validating ? "Checking..." : "Check"}
+          </Button>
+          {renderValidationResult()}
         </div>
-        {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
-        )}
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || submitting}>
             {submitting ? "Creating..." : "Create"}
@@ -790,13 +817,15 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [checkKey, setCheckKey] = useState("");
+  const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
+  const [validationResult, setValidationResult] = useState(null); // { valid, error, method }
 
   useEffect(() => {
     if (isOpen) {
       setValidationResult(null);
       setCheckKey("");
+      setCheckModelId("");
     }
   }, [isOpen]);
 
@@ -834,15 +863,41 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: formData.baseUrl, apiKey: checkKey, type: "anthropic-compatible" }),
+        body: JSON.stringify({
+          baseUrl: formData.baseUrl,
+          apiKey: checkKey,
+          type: "anthropic-compatible",
+          modelId: checkModelId.trim() || undefined
+        }),
       });
       const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
+      setValidationResult(data);
     } catch {
-      setValidationResult("failed");
+      setValidationResult({ valid: false, error: "Network error" });
     } finally {
       setValidating(false);
     }
+  };
+
+  // Helper to render validation result
+  const renderValidationResult = () => {
+    if (!validationResult) return null;
+    const { valid, error, method } = validationResult;
+
+    if (valid) {
+      return (
+        <>
+          <Badge variant="success">Valid</Badge>
+          {method === "chat" && <span className="text-sm text-text-muted">(via inference test)</span>}
+        </>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-1">
+        <Badge variant="error">Invalid</Badge>
+        {error && <span className="text-sm text-red-500">{error}</span>}
+      </div>
+    );
   };
 
   return (
@@ -869,25 +924,25 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
           placeholder="https://api.anthropic.com/v1"
           hint="Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
         />
-        <div className="flex gap-2">
-          <Input
-            label="API Key (for Check)"
-            type="password"
-            value={checkKey}
-            onChange={(e) => setCheckKey(e.target.value)}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
-              {validating ? "Checking..." : "Check"}
-            </Button>
-          </div>
+        <Input
+          label="API Key (for Check)"
+          type="password"
+          value={checkKey}
+          onChange={(e) => setCheckKey(e.target.value)}
+        />
+        <Input
+          label="Model ID (optional)"
+          value={checkModelId}
+          onChange={(e) => setCheckModelId(e.target.value)}
+          placeholder="e.g. claude-3-opus"
+          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+        />
+        <div className="flex items-center gap-3">
+          <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            {validating ? "Checking..." : "Check"}
+          </Button>
+          {renderValidationResult()}
         </div>
-        {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
-        )}
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || submitting}>
             {submitting ? "Creating..." : "Create"}
