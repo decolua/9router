@@ -91,7 +91,7 @@ export default function ModelSelectModal({
           ? enabledModels.map((modelId) => {
             // Remove lab prefix for cleaner display (e.g. moonshotai/Kimi-K2.5-TEE -> Kimi-K2.5-TEE)
             const displayName = modelId.includes('/') ? modelId.split('/').pop() : modelId;
-            return { id: modelId, name: displayName, value: `${alias}/${modelId}` };
+            return { id: modelId, name: displayName, value: `${alias}/${modelId}`, isCustom: true };
           })
           : null;
 
