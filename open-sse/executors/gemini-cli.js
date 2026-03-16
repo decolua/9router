@@ -18,6 +18,7 @@ export class GeminiCLIExecutor extends BaseExecutor {
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": geminiCLIUserAgent(this._currentModel),
       "X-Goog-Api-Client": GEMINI_CLI_API_CLIENT,
+      "x-request-source": "local", // MITM bypass
       "Accept": stream ? "text/event-stream" : "application/json"
     };
   }

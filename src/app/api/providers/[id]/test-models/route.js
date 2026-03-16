@@ -29,7 +29,7 @@ async function pingModel(modelId, baseUrl, apiKey) {
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
     const latencyMs = Date.now() - start;
     // 200 = working; 400 = bad request but auth passed (model reachable)

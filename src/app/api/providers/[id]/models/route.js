@@ -326,7 +326,8 @@ export async function GET(request, { params }) {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`,
             "User-Agent": "google-api-nodejs-client/9.15.1",
-            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1"
+            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+            "x-request-source": "local", // MITM bypass
           },
           body: JSON.stringify(body)
         });

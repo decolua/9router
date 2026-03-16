@@ -30,7 +30,7 @@ export async function POST(request) {
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(30000),
     });
     const latencyMs = Date.now() - start;
 
