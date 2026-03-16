@@ -306,6 +306,15 @@ export const PROVIDER_MODELS = {
     { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
     { id: "NousResearch/Hermes-3-Llama-3.1-70B", name: "Hermes 3 70B" },
   ],
+  ch: [  // Chutes AI
+    { id: "moonshotai/Kimi-K2.5-TEE", name: "Kimi K2.5 TEE" },
+    { id: "MiniMaxAI/MiniMax-M2.5-TEE", name: "MiniMax M2.5 TEE" },
+    { id: "zai-org/GLM-5-TEE", name: "GLM 5 TEE" },
+    { id: "zai-org/GLM-4.7-FP8", name: "GLM 4.7 FP8" },
+    { id: "Qwen/Qwen3-Coder-Next-TEE", name: "Qwen3 Coder Next TEE" },
+    { id: "Qwen/Qwen3.5-397B-A17B-TEE", name: "Qwen3.5 397B A17B TEE" },
+    { id: "zai-org/GLM-5-Turbo", name: "GLM 5 Turbo" },
+  ],
   ollama: [
     { id: "gpt-oss:120b", name: "GPT OSS 120B" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
@@ -373,8 +382,14 @@ const OAUTH_ALIASES = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
-  vertex: "vertex",
-  "vertex-partner": "vertex-partner",
+  vertex: "vx",
+  "vertex-partner": "vxp",
+  chutes: "ch",
+  hyperbolic: "hyp",
+  perplexity: "pplx",
+  deepgram: "dg",
+  assemblyai: "aai",
+  nanobanana: "nb",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

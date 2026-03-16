@@ -84,15 +84,47 @@ export default function ModelSelectModal({
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       if (providerInfo.passthroughModels) {
+        // Primary: user-selected models from the provider connection (highest priority)
+        const connection = activeProviders.find(p => p.provider === providerId);
+        const enabledModels = connection?.providerSpecificData?.enabledModels;
+        const enabledModelsList = Array.isArray(enabledModels) && enabledModels.length > 0
+          ? enabledModels.map((modelId) => {
+            // Remove lab prefix for cleaner display (e.g. moonshotai/Kimi-K2.5-TEE -> Kimi-K2.5-TEE)
+            const displayName = modelId.includes('/') ? modelId.split('/').pop() : modelId;
+            return { id: modelId, name: displayName, value: `${alias}/${modelId}` };
+          })
+          : null;
+
+        // Secondary: user-created named aliases (e.g. "my-model" → "ch/some-model")
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
             value: fullModel,
+            isCustom: true,
           }));
 
-        if (aliasModels.length > 0) {
+        // Fallback: static hardcoded models
+        const staticModels = getModelsByProviderId(providerId).map((m) => ({
+          id: m.id,
+          name: m.name,
+          value: `${alias}/${m.id}`
+        }));
+
+        // Use enabledModels if set, otherwise merge aliases + static (aliases take precedence on overlap)
+        let modelsToShow;
+        if (enabledModelsList) {
+          modelsToShow = enabledModelsList;
+        } else {
+          const seenValues = new Set(aliasModels.map(m => m.value));
+          modelsToShow = [
+            ...aliasModels,
+            ...staticModels.filter(m => !seenValues.has(m.value))
+          ];
+        }
+
+        if (modelsToShow.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
@@ -101,7 +133,7 @@ export default function ModelSelectModal({
             name: displayName,
             alias: alias,
             color: providerInfo.color,
-            models: aliasModels,
+            models: modelsToShow,
           };
         }
       } else if (isCustomProvider) {
