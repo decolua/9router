@@ -311,6 +311,18 @@ export const PROVIDER_MODELS = {
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
   ],
+  vertex: [
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+  ],
+  "vertex-partner": [
+    { id: "deepseek-ai/deepseek-v3.2-maas", name: "DeepSeek V3.2" },
+    { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B instruct" },
+    { id: "qwen/qwen3-next-80b-a3b-thinking-maas", name: "Qwen3 Next 80B thinking" },
+    // Zhipu GLM (modelFamily: "openai")
+    { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
+  ],
 };
 
 // Helper functions
@@ -358,6 +370,8 @@ const OAUTH_ALIASES = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
+  vertex: "vertex",
+  "vertex-partner": "vertex-partner",
 };
 
 // Derived from PROVIDERS — no need to maintain manually

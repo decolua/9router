@@ -1634,6 +1634,8 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
     apiKey: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
+    region: "us-central1",
+    modelFamily: "openai",
   });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -1685,6 +1687,10 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
+        providerSpecificData: (provider === "vertex" || provider === "vertex-partner") ? {
+          region: formData.region || "us-central1",
+          ...(provider === "vertex-partner" ? { modelFamily: formData.modelFamily || "openai" } : {})
+        } : undefined
       });
     } finally {
       setSaving(false);
@@ -1735,6 +1741,26 @@ function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthro
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
+
+        {(provider === "vertex" || provider === "vertex-partner") && (
+          <Input
+            label="Region"
+            value={formData.region}
+            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+            placeholder="us-central1"
+          />
+        )}
+        {provider === "vertex-partner" && (
+          <Select
+            label="Model Family"
+            value={formData.modelFamily}
+            onChange={(e) => setFormData({ ...formData, modelFamily: e.target.value })}
+            options={[
+              { value: "openai", label: "OpenAI Compatible (Default)" },
+              { value: "anthropic", label: "Anthropic Compatible (Claude)" },
+            ]}
+          />
+        )}
 
         <Select
           label="Proxy Pool"
@@ -1789,6 +1815,8 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
     name: "",
     priority: 1,
     apiKey: "",
+    region: "us-central1",
+    modelFamily: "openai"
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -1802,6 +1830,8 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        region: connection.providerSpecificData?.region || "us-central1",
+        modelFamily: connection.providerSpecificData?.modelFamily || "openai",
       });
       setTestResult(null);
       setValidationResult(null);
@@ -1849,6 +1879,13 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
         name: formData.name,
         priority: formData.priority,
       };
+      if (connection?.provider === "vertex" || connection?.provider === "vertex-partner") {
+        updates.providerSpecificData = {
+          ...(connection.providerSpecificData || {}),
+          region: formData.region || "us-central1",
+          ...(connection.provider === "vertex-partner" ? { modelFamily: formData.modelFamily || "openai" } : {})
+        };
+      }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -1908,6 +1945,27 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
         />
+
+        {(connection?.provider === "vertex" || connection?.provider === "vertex-partner") && (
+          <Input
+            label="Region"
+            value={formData.region}
+            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+            placeholder="us-central1"
+          />
+        )}
+
+        {connection?.provider === "vertex-partner" && (
+          <Select
+            label="Model Family"
+            value={formData.modelFamily}
+            onChange={(e) => setFormData({ ...formData, modelFamily: e.target.value })}
+            options={[
+              { value: "openai", label: "OpenAI Compatible (Default)" },
+              { value: "anthropic", label: "Anthropic Compatible (Claude)" },
+            ]}
+          />
+        )}
 
         {!isOAuth && (
           <>
