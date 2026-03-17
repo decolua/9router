@@ -25,10 +25,6 @@ const DB_FILE = path.join(DATA_DIR, "db.json");
 
 const ENABLE_FILE_LOG = false;
 
-if (!API_KEY) {
-  err("ROUTER_API_KEY required");
-  process.exit(1);
-}
 
 const { getCertForDomain } = require("./cert/generate");
 
@@ -193,7 +189,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${API_KEY}`
+        ...(API_KEY && { "Authorization": `Bearer ${API_KEY}` })
       },
       body: JSON.stringify(body)
     });

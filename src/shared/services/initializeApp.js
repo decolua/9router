@@ -116,13 +116,9 @@ async function autoStartMitm() {
     // Need an active API key
     const keys = await getApiKeys();
     const activeKey = keys.find(k => k.isActive !== false);
-    if (!activeKey) {
-      console.log("[InitApp] MITM auto-start skipped: no active API key");
-      return;
-    }
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
-    await startMitm(activeKey.key, password || "");
+    await startMitm(activeKey?.key || "sk_9router", password || "");
     console.log("[InitApp] MITM auto-started");
   } catch (err) {
     console.log("[InitApp] MITM auto-start failed:", err.message);
