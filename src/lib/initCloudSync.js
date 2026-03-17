@@ -14,7 +14,9 @@ export async function ensureAppInitialized() {
   return initialized;
 }
 
-// Auto-initialize when module loads
-ensureAppInitialized().catch(console.log);
+// Auto-initialize at runtime only, not during next build
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  ensureAppInitialized().catch(console.log);
+}
 
 export default ensureAppInitialized;

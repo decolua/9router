@@ -76,8 +76,24 @@ export const CLI_TOOLS = {
     defaultModels: [
       { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
       { id: "gpt-4.1", name: "GPT-4.1", alias: "gpt-4.1" },
-      { id: "gpt-5-mini", name: "GPT-5 Mini", alias: "gpt-5-mini" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
+    ],
+  },
+  kiro: {
+    id: "kiro",
+    name: "Kiro",
+    image: "/providers/kiro.png",
+    color: "#FF6B00",
+    description: "Kiro IDE with MITM",
+    configType: "mitm",
+    mitmDomain: "q.us-east-1.amazonaws.com",
+    defaultModels: [
+      { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
+      { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
+      { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
+      { id: "deepseek-3.2", name: "DeepSeek 3.2", alias: "deepseek-3.2" },
+      { id: "minimax-m2.1", name: "MiniMax M2.1", alias: "minimax-m2.1" },
+      { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
   },
   droid: {

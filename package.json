@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.3.54",
+  "version": "0.3.57",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -40,8 +40,10 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "esbuild": "^0.27.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "javascript-obfuscator": "^5.3.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4"
   }

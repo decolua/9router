@@ -6,7 +6,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
 
-const MITM_TOOL_IDS = ["antigravity", "copilot"];
+const MITM_TOOL_IDS = ["antigravity", "copilot", "kiro"];
 
 export default function MitmPageClient() {
   const [connections, setConnections] = useState([]);
