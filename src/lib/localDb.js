@@ -1037,7 +1037,11 @@ export async function getPricingForModel(provider, model) {
     return pricing[alias][model] || null;
   }
 
-  return null;
+  // Fallback: strip vendor prefix (e.g. "deepseek/deepseek-chat" → "deepseek-chat")
+  // then lookup in MODEL_PRICING (provider-agnostic explicit map)
+  const { MODEL_PRICING } = await import("@/shared/constants/pricing.js");
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  return MODEL_PRICING[baseModel] || MODEL_PRICING[model] || null;
 }
 
 /**
