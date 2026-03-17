@@ -64,10 +64,7 @@ export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local
 
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "X-Client-Name": "antigravity",
-  "X-Client-Version": "1.107.0",
-  "x-goog-api-client": "gl-node/18.18.2 fire/0.8.6 grpc/1.10.x",
-  "User-Agent": "antigravity/1.107.0 darwin/arm64"
+  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
 };
 
 // Cloud Code Assist API
@@ -80,13 +77,13 @@ export const LOAD_CODE_ASSIST_HEADERS = {
   "Content-Type": "application/json",
   "User-Agent": "google-api-nodejs-client/9.15.1",
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "Client-Metadata": JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
+  "Client-Metadata": JSON.stringify({ ideType: IDE_TYPE.ANTIGRAVITY, platform: getPlatformEnum(), pluginType: PLUGIN_TYPE.GEMINI }),
 };
 
 export const LOAD_CODE_ASSIST_METADATA = {
-  ideType: "IDE_UNSPECIFIED",
-  platform: "PLATFORM_UNSPECIFIED",
-  pluginType: "GEMINI",
+  ideType: IDE_TYPE.ANTIGRAVITY,
+  platform: getPlatformEnum(),
+  pluginType: PLUGIN_TYPE.GEMINI,
 };
 
 // System prompts

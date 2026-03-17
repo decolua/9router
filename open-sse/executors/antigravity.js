@@ -24,9 +24,8 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS['User-Agent'],
+      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
       [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
-      ...ANTIGRAVITY_HEADERS,
       ...(sessionId && { "X-Machine-Session-Id": sessionId }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
