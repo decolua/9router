@@ -97,7 +97,7 @@ export class IFlowExecutor extends BaseExecutor {
    * @returns {object} Transformed body
    */
   transformRequest(model, body, stream, credentials) {
-    return body;
+    return super.transformRequest(model, body, stream, credentials);
   }
 }
 

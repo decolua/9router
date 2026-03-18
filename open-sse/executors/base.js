@@ -54,6 +54,10 @@ export class BaseExecutor {
 
   // Override in subclass for provider-specific transformations
   transformRequest(model, body, stream, credentials) {
+    // Inject stream_options for OpenAI-format streaming requests to get usage data
+    if (stream && body.messages && !body.stream_options) {
+      body.stream_options = { include_usage: true };
+    }
     return body;
   }
 
