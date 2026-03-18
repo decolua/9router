@@ -7,12 +7,18 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
+import {
+  normalizeToolDescription,
+  sanitizeJsonSchemaForOpenAI,
+  sanitizeOpenAIChatTool,
+  sanitizeRequestTools
+} from "../helpers/toolSchemaCompat.js";
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
 export function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
-  if (!body.input) return body;
+  if (!body.input) return sanitizeRequestTools(body);
 
   const result = { ...body };
   result.messages = [];
@@ -125,20 +131,20 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     result.tools = body.tools
       .map(tool => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
+        if (tool.function) return sanitizeOpenAIChatTool(tool);
         // Responses API function tool: { type: "function", name, description, parameters }
         // Only convert when a non-empty name is present; skip hosted tools without one.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
-        return {
+        return sanitizeOpenAIChatTool({
           type: "function",
           function: {
             name,
-            description: tool.description,
-            parameters: tool.parameters,
+            description: normalizeToolDescription(tool.description),
+            parameters: sanitizeJsonSchemaForOpenAI(tool.parameters),
             strict: tool.strict
           }
-        };
+        });
       })
       .filter(Boolean);
   }
@@ -151,7 +157,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.store;
   delete result.reasoning;
 
-  return result;
+  return sanitizeRequestTools(result);
 }
 
 /**
@@ -159,7 +165,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
-  if (body.input) return { ...body, model, stream: true };
+  if (body.input) return sanitizeRequestTools({ ...body, model, stream: true });
 
   const result = {
     model,
@@ -251,13 +257,14 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = body.tools.map(tool => {
-      if (tool.type === "function") {
+      if (tool.type === "function" && tool.function) {
+        const normalized = sanitizeOpenAIChatTool(tool);
         return {
           type: "function",
-          name: tool.function.name,
-          description: tool.function.description,
-          parameters: tool.function.parameters,
-          strict: tool.function.strict
+          name: normalized.function.name,
+          description: normalizeToolDescription(normalized.function.description),
+          parameters: sanitizeJsonSchemaForOpenAI(normalized.function.parameters),
+          strict: normalized.function.strict
         };
       }
       return tool;
@@ -269,7 +276,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
   if (body.top_p !== undefined) result.top_p = body.top_p;
 
-  return result;
+  return sanitizeRequestTools(result);
 }
 
 // Register both directions

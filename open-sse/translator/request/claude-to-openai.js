@@ -1,6 +1,11 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+import {
+  normalizeToolDescription,
+  sanitizeJsonSchemaForOpenAI,
+  sanitizeRequestTools
+} from "../helpers/toolSchemaCompat.js";
 
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream) {
@@ -59,8 +64,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
       type: "function",
       function: {
         name: tool.name,
-        description: tool.description,
-        parameters: tool.input_schema || { type: "object", properties: {} }
+        description: normalizeToolDescription(tool.description),
+        parameters: sanitizeJsonSchemaForOpenAI(tool.input_schema)
       }
     }));
   }
@@ -70,7 +75,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.tool_choice = convertToolChoice(body.tool_choice);
   }
 
-  return result;
+  return sanitizeRequestTools(result);
 }
 
 // Fix missing tool responses - add empty responses for tool_calls without responses
@@ -229,4 +234,3 @@ function convertToolChoice(choice) {
 
 // Register
 register(FORMATS.CLAUDE, FORMATS.OPENAI, claudeToOpenAIRequest, null);
-
