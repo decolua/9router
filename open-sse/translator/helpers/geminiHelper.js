@@ -54,6 +54,10 @@ export function convertOpenAIContentToParts(content) {
             inlineData: { mime_type: mimeType, data: data }
           });
         }
+      } else if (item.type === "image_url" && item.image_url?.url && (item.image_url.url.startsWith("http://") || item.image_url.url.startsWith("https://"))) {
+        parts.push({
+          fileData: { fileUri: item.image_url.url, mimeType: "image/*" }
+        });
       }
     }
   }

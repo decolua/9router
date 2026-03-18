@@ -216,6 +216,11 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
               type: "image",
               source: { type: "base64", media_type: match[1], data: match[2] }
             });
+          } else if (url.startsWith("http://") || url.startsWith("https://")) {
+            blocks.push({
+              type: "image",
+              source: { type: "url", url }
+            });
           }
         } else if (part.type === "image" && part.source) {
           blocks.push({ type: "image", source: part.source });
