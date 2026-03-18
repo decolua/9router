@@ -25,6 +25,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
+  const toolCallsMap = {}; // index -> { id, type, function: { name, arguments } }
   let finishReason = "stop";
   let usage = null;
 
@@ -33,12 +34,26 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!toolCallsMap[idx]) {
+          toolCallsMap[idx] = { id: tc.id || "", type: tc.type || "function", function: { name: "", arguments: "" } };
+        }
+        if (tc.id) toolCallsMap[idx].id = tc.id;
+        if (tc.type) toolCallsMap[idx].type = tc.type;
+        if (tc.function?.name) toolCallsMap[idx].function.name += tc.function.name;
+        if (tc.function?.arguments) toolCallsMap[idx].function.arguments += tc.function.arguments;
+      }
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
   }
 
   const message = { role: "assistant", content: contentParts.join("") };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
+  const toolCallsArray = Object.keys(toolCallsMap).sort((a, b) => a - b).map(idx => toolCallsMap[idx]);
+  if (toolCallsArray.length > 0) message.tool_calls = toolCallsArray;
 
   const result = {
     id: first.id || `chatcmpl-${Date.now()}`,
