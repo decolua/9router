@@ -5,6 +5,9 @@ import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/sh
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
+/** Extract display name from a model string (strip provider prefix) */
+const displayModelName = (model) => model.includes("/") ? model.split("/").pop() : model;
+
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
 
@@ -192,7 +195,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
               ) : (
                 combo.models.slice(0, 3).map((model, index) => (
                   <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
-                    {model}
+                    {displayModelName(model)}
                   </code>
                 ))
               )}
@@ -263,7 +266,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
-          {model}
+          {displayModelName(model)}
         </div>
       )}
 
