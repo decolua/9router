@@ -1197,6 +1197,9 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
   };
 
   const resolveAlias = (modelId) => {
+    const fullModel = `${providerStorageAlias}/${modelId}`;
+    // Skip if this exact model already has an alias
+    if (Object.values(modelAliases).includes(fullModel)) return null;
     const baseAlias = generateDefaultAlias(modelId);
     if (!modelAliases[baseAlias]) return baseAlias;
     const prefixedAlias = `${providerDisplayAlias}-${baseAlias}`;
