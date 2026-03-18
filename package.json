@@ -15,7 +15,6 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
     "confbox": "^0.2.4",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
@@ -37,6 +36,9 @@
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
