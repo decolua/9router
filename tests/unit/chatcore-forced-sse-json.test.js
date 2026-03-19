@@ -137,4 +137,18 @@ describe("handleChatCore forced SSE->JSON decision", () => {
 
     expect(vi.mocked(handleForcedSSEToJson)).toHaveBeenCalled();
   });
+
+  it("treats OpenAI-compatible Gemini provider requests as non-streaming by default when stream is omitted", async () => {
+    const result = await handleChatCore({
+      body: { model: "ag/gemini-test-model", messages: [{ role: "user", content: "hello" }] },
+      modelInfo: { provider: "antigravity", model: "ag/gemini-test-model" },
+      credentials: { accessToken: "test" },
+      clientRawRequest: { endpoint: "/v1/chat/completions", headers: {} },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("Content-Type")).toContain("application/json");
+
+    expect(vi.mocked(handleForcedSSEToJson)).toHaveBeenCalled();
+  });
 });

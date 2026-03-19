@@ -39,8 +39,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerNeedsStreamOptIn = provider === "openai" || provider === "codex";
-  let stream = providerNeedsStreamOptIn ? (body.stream === true) : (body.stream !== false);
+  const isOpenAIFormatRequest = sourceFormat === FORMATS.OPENAI;
+  let stream = isOpenAIFormatRequest ? (body.stream === true) : (body.stream !== false);
   const forceToolNonStreaming = shouldForceNonStreamingForResponsesTool(sourceFormat, clientRawRequest?.endpoint);
   if (forceToolNonStreaming) {
     stream = false;
@@ -193,10 +193,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+  const providersWithSSEUpstream = new Set(["openai", "codex", "antigravity", "gemini", "gemini-cli"]);
 
   // Effective non-streaming mode for providers that may still return SSE upstream:
   // convert upstream SSE to a single JSON response for client compatibility.
-  if (!stream && providerNeedsStreamOptIn) {
+  if (!stream && providersWithSSEUpstream.has(provider)) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
