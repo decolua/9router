@@ -6,7 +6,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
@@ -329,7 +329,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
       return false;
     }
     if (!VALID_NAME_REGEX.test(value)) {
-      setNameError("Only letters, numbers, - and _ allowed");
+      setNameError("Only letters, numbers, -, _ and . allowed");
       return false;
     }
     setNameError("");
@@ -394,7 +394,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               error={nameError}
             />
             <p className="text-[10px] text-text-muted mt-0.5">
-              Only letters, numbers, - and _ allowed
+              Only letters, numbers, -, _ and . allowed
             </p>
           </div>
 

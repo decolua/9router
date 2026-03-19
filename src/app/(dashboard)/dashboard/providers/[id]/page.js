@@ -290,40 +290,28 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleSwapPriority = async (conn1, conn2) => {
-    if (!conn1 || !conn2) return;
+  const handleSwapPriority = async (index1, index2) => {
+    // Optimistic update state
+    const newConnections = [...connections];
+    [newConnections[index1], newConnections[index2]] = [newConnections[index2], newConnections[index1]];
+    setConnections(newConnections);
+
     try {
-      // If they have the same priority, we need to ensure the one moving up
-      // gets a lower value than the one moving down.
-      // We use a small offset which the backend re-indexing will fix.
-      let p1 = conn2.priority;
-      let p2 = conn1.priority;
-
-      if (p1 === p2) {
-        // If moving conn1 "up" (index decreases)
-        const isConn1MovingUp = connections.indexOf(conn1) > connections.indexOf(conn2);
-        if (isConn1MovingUp) {
-          p1 = conn2.priority - 0.5;
-        } else {
-          p1 = conn2.priority + 0.5;
-        }
-      }
-
       await Promise.all([
-        fetch(`/api/providers/${conn1.id}`, {
+        fetch(`/api/providers/${newConnections[index1].id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p1 }),
+          body: JSON.stringify({ priority: index1 }),
         }),
-        fetch(`/api/providers/${conn2.id}`, {
+        fetch(`/api/providers/${newConnections[index2].id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: p2 }),
+          body: JSON.stringify({ priority: index2 }),
         }),
       ]);
-      await fetchConnections();
     } catch (error) {
       console.log("Error swapping priority:", error);
+      await fetchConnections();
     }
   };
 
@@ -421,7 +409,6 @@ export default function ProviderDetailPage() {
   const connectionsList = (
     <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {connections
-        .sort((a, b) => (a.priority || 0) - (b.priority || 0))
         .map((conn, index) => (
           <div key={conn.id} className="flex items-stretch">
             <div className="flex-1 min-w-0">
@@ -431,8 +418,8 @@ export default function ProviderDetailPage() {
                 isOAuth={isOAuth}
                 isFirst={index === 0}
                 isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(conn, connections[index - 1])}
-                onMoveDown={() => handleSwapPriority(conn, connections[index + 1])}
+                onMoveUp={() => handleSwapPriority(index, index - 1)}
+                onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {

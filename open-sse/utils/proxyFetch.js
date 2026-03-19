@@ -8,9 +8,14 @@ const proxyDispatchers = new Map();
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
-const MITM_BYPASS_HOSTS = ["cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com", "googleapis.com"];
-const MITM_BYPASS_HEADER = "x-request-source";
-const MITM_BYPASS_VALUE = "local";
+const MITM_BYPASS_HOSTS = [
+  "cloudcode-pa.googleapis.com",
+  "daily-cloudcode-pa.googleapis.com",
+  "api.individual.githubcopilot.com",
+  "q.us-east-1.amazonaws.com",
+  "codewhisperer.us-east-1.amazonaws.com",
+  "api2.cursor.sh",
+];
 const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
@@ -46,23 +51,7 @@ async function resolveRealIP(hostname) {
 /**
  * Check if request should bypass MITM DNS redirect
  */
-function shouldBypassMitmDns(url, options) {
-  if (!options?.headers) return false;
-
-  const headers = options.headers;
-  const hasLocalMarker = headers[MITM_BYPASS_HEADER] === MITM_BYPASS_VALUE ||
-                         headers[MITM_BYPASS_HEADER.charAt(0).toUpperCase() + MITM_BYPASS_HEADER.slice(1)] === MITM_BYPASS_VALUE;
-
-  if (!hasLocalMarker) {
-    try {
-      const hostname = new URL(url).hostname;
-      if (MITM_BYPASS_HOSTS.some(host => hostname.includes(host))) {
-        console.warn(`[ProxyFetch] MITM bypass NOT triggered for ${hostname} - missing header`);
-      }
-    } catch { /* invalid URL — skip debug log */ }
-    return false;
-  }
-
+function shouldBypassMitmDns(url) {
   try {
     const hostname = new URL(url).hostname;
     return MITM_BYPASS_HOSTS.some(host => hostname.includes(host));
@@ -209,8 +198,25 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
-  // MITM DNS bypass: resolve real IP for googleapis.com when x-request-source: local
-  if (shouldBypassMitmDns(targetUrl, options)) {
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  const proxyUrl = connectionProxyUrl || envProxyUrl;
+
+  // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
+  if (shouldBypassMitmDns(targetUrl)) {
+    if (proxyUrl) {
+      // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
+      try {
+        const dispatcher = await getDispatcher(proxyUrl);
+        return await originalFetch(url, { ...options, dispatcher });
+      } catch (proxyError) {
+        if (proxyOptions?.strictProxy === true) {
+          throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
+        }
+        console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
+      }
+    }
+    // No proxy — manually resolve real IP to bypass DNS spoof
     try {
       const parsedUrl = new URL(targetUrl);
       const realIP = await resolveRealIP(parsedUrl.hostname);
@@ -219,10 +225,6 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }
-
-  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
-  const proxyUrl = connectionProxyUrl || envProxyUrl;
 
   if (proxyUrl) {
     try {

@@ -63,14 +63,17 @@ try {
 // ── Helpers ───────────────────────────────────────────────────
 
 const cachedTargetIPs = {};
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 async function resolveTargetIP(hostname) {
-  if (cachedTargetIPs[hostname]) return cachedTargetIPs[hostname];
+  const cached = cachedTargetIPs[hostname];
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.ip;
   const resolver = new dns.Resolver();
   resolver.setServers(["8.8.8.8"]);
   const resolve4 = promisify(resolver.resolve4.bind(resolver));
   const addresses = await resolve4(hostname);
-  cachedTargetIPs[hostname] = addresses[0];
-  return cachedTargetIPs[hostname];
+  cachedTargetIPs[hostname] = { ip: addresses[0], ts: Date.now() };
+  return cachedTargetIPs[hostname].ip;
 }
 
 function collectBodyRaw(req) {
