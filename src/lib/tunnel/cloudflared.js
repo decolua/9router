@@ -185,6 +185,87 @@ export async function spawnCloudflared(tunnelToken) {
   });
 }
 
+/**
+ * Spawn cloudflared quick tunnel (no account needed)
+ * Returns the generated trycloudflare.com URL
+ */
+export async function spawnQuickTunnel(localPort, onUrlUpdate) {
+  const binaryPath = await ensureCloudflared();
+
+  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "cloudflared-quick-"));
+  const configPath = path.join(configDir, "config.yml");
+  // Avoid using default ~/.cloudflared/config.yml, which can conflict with quick tunnel behavior.
+  fs.writeFileSync(configPath, "# quick-tunnel config placeholder\n", "utf8");
+
+  let isCleaned = false;
+  const cleanup = () => {
+    if (isCleaned) return;
+    isCleaned = true;
+    try {
+      fs.rmSync(configDir, { recursive: true, force: true });
+    } catch (e) { /* ignore */ }
+  };
+
+  const child = spawn(binaryPath, ["tunnel", "--url", `http://localhost:${localPort}`, "--config", configPath, "--no-autoupdate"], {
+    detached: false,
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  cloudflaredProcess = child;
+  savePid(child.pid);
+
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      reject(new Error("Quick tunnel timed out"));
+    }, 90000);
+
+    const handleLog = (data) => {
+      const msg = data.toString();
+      // Parse trycloudflare.com URL from cloudflared output
+      const match = msg.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+      if (match && !resolved) {
+        const tunnelUrl = match[0];
+        resolved = true;
+        clearTimeout(timeout);
+        cleanup();
+        resolve({ child, tunnelUrl });
+        // Notify caller of URL (for re-registration on URL change)
+        if (onUrlUpdate) onUrlUpdate(tunnelUrl);
+      }
+    };
+
+    child.stdout.on("data", handleLog);
+    child.stderr.on("data", handleLog);
+
+    child.on("error", (err) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      cleanup();
+      reject(err);
+    });
+
+    child.on("exit", (code) => {
+      cloudflaredProcess = null;
+      clearPid();
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        cleanup();
+        reject(new Error(`cloudflared exited with code ${code}`));
+        return;
+      }
+      if (unexpectedExitHandler) unexpectedExitHandler();
+      cleanup();
+    });
+  });
+}
+
 export function killCloudflared() {
   if (cloudflaredProcess) {
     try {

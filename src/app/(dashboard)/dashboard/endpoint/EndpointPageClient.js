@@ -44,6 +44,7 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tunnelShortId, setTunnelShortId] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
   const [tunnelProgress, setTunnelProgress] = useState("");
@@ -226,6 +227,7 @@ export default function APIPageClient({ machineId }) {
         const data = await tunnelRes.json();
         setTunnelEnabled(data.enabled || false);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
       }
     } catch (error) {
@@ -289,6 +291,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(true);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
         setTunnelStatus({ type: "success", message: "Tunnel connected!" });
       } else {
@@ -313,6 +316,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(false);
         setTunnelUrl("");
+        setTunnelPublicUrl("");
         setTunnelStatus({ type: "success", message: "Tunnel disabled" });
         setShowDisableModal(false);
       } else {
@@ -413,7 +417,7 @@ export default function APIPageClient({ machineId }) {
     );
   }
 
-  const currentEndpoint = tunnelEnabled && tunnelUrl ? `${tunnelUrl}/v1` : baseUrl;
+  const currentEndpoint = tunnelEnabled && tunnelPublicUrl ? `${tunnelPublicUrl}/v1` : baseUrl;
 
   return (
     <div className="flex flex-col gap-8">

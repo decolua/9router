@@ -1,11 +1,10 @@
 import crypto from "crypto";
-import { loadState, saveState, clearState } from "./state.js";
-import { spawnCloudflared, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
+import { loadState, saveState } from "./state.js";
+import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
-const TUNNEL_WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://tunnel.9router.com";
+const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://9router.com";
 const MACHINE_ID_SALT = "9router-tunnel-salt";
-const API_KEY_SECRET = "9router-tunnel-api-key-secret";
 const SHORT_ID_LENGTH = 6;
 const SHORT_ID_CHARS = "abcdefghijklmnpqrstuvwxyz23456789";
 const RECONNECT_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
@@ -31,65 +30,49 @@ function getMachineId() {
   }
 }
 
-function generateApiKey(machineId) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let keyId = "";
-  for (let i = 0; i < 6; i++) {
-    keyId += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  const crc = crypto.createHmac("sha256", API_KEY_SECRET).update(machineId + keyId).digest("hex").slice(0, 8);
-  return `sk-${machineId}-${keyId}-${crc}`;
-}
-
-async function workerFetch(reqPath, options = {}) {
-  const url = `${TUNNEL_WORKER_URL}${reqPath}`;
-  const res = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...options.headers }
+/**
+ * Register quick tunnel URL to worker (called on start and URL change)
+ */
+async function registerTunnelUrl(shortId, tunnelUrl) {
+  await fetch(`${WORKER_URL}/api/tunnel/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ shortId, tunnelUrl })
   });
-  return res.json();
 }
 
-export async function enableTunnel() {
-  const existing = loadState();
-  if (existing && existing.tunnelUrl && isCloudflaredRunning()) {
-    return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, alreadyRunning: true };
+export async function enableTunnel(localPort = 20128) {
+  if (isCloudflaredRunning()) {
+    const existing = loadState();
+    if (existing?.tunnelUrl) {
+      return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, alreadyRunning: true };
+    }
   }
 
   killCloudflared();
 
   const machineId = getMachineId();
+  const existing = loadState();
   const shortId = existing?.shortId || generateShortId();
-  const apiKey = existing?.apiKey || generateApiKey(machineId);
 
-  await workerFetch("/api/session/create", {
-    method: "POST",
-    body: JSON.stringify({ apiKey, shortId })
+  // Spawn quick tunnel, parse URL from cloudflared output
+  const { tunnelUrl } = await spawnQuickTunnel(localPort, async (url) => {
+    // Called on URL change (restart) - re-register new URL
+    await registerTunnelUrl(shortId, url);
+    saveState({ shortId, machineId, tunnelUrl: url });
+    await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
   });
 
-  const tunnelResult = await workerFetch("/api/tunnel/create", {
-    method: "POST",
-    body: JSON.stringify({ apiKey })
-  });
+  // Register initial URL
+  await registerTunnelUrl(shortId, tunnelUrl);
+  saveState({ shortId, machineId, tunnelUrl });
+  await updateSettings({ tunnelEnabled: true, tunnelUrl });
 
-  if (tunnelResult.error) {
-    throw new Error(tunnelResult.error);
-  }
-
-  const { token, hostname } = tunnelResult;
-
-  await spawnCloudflared(token);
-
-  saveState({ shortId, apiKey, tunnelUrl: hostname, machineId });
-
-  await updateSettings({ tunnelEnabled: true, tunnelUrl: hostname });
-
-  // Re-register exit handler each time tunnel starts (handles reconnect scenario too)
   setUnexpectedExitHandler(() => {
     if (!isReconnecting) scheduleReconnect(0);
   });
 
-  return { success: true, tunnelUrl: hostname, shortId };
+  return { success: true, tunnelUrl, shortId };
 }
 
 async function scheduleReconnect(attempt) {
@@ -97,14 +80,13 @@ async function scheduleReconnect(attempt) {
   isReconnecting = true;
 
   const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
-  console.log(`[Tunnel] Unexpected exit detected, reconnecting in ${delay / 1000}s (attempt ${attempt + 1})...`);
+  console.log(`[Tunnel] Reconnecting in ${delay / 1000}s (attempt ${attempt + 1})...`);
 
   await new Promise((r) => setTimeout(r, delay));
 
   try {
     const settings = await getSettings();
     if (!settings.tunnelEnabled) {
-      console.log("[Tunnel] Tunnel disabled, skipping reconnect");
       isReconnecting = false;
       return;
     }
@@ -115,30 +97,17 @@ async function scheduleReconnect(attempt) {
     console.log(`[Tunnel] Reconnect attempt ${attempt + 1} failed:`, err.message);
     isReconnecting = false;
     const nextAttempt = attempt + 1;
-    if (nextAttempt < MAX_RECONNECT_ATTEMPTS) {
-      scheduleReconnect(nextAttempt);
-    } else {
-      console.log("[Tunnel] All reconnect attempts exhausted");
-    }
+    if (nextAttempt < MAX_RECONNECT_ATTEMPTS) scheduleReconnect(nextAttempt);
+    else console.log("[Tunnel] All reconnect attempts exhausted");
   }
 }
 
 export async function disableTunnel() {
-  const state = loadState();
-
   killCloudflared();
 
-  if (state?.apiKey) {
-    try {
-      await workerFetch("/api/tunnel/delete", {
-        method: "DELETE",
-        body: JSON.stringify({ apiKey: state.apiKey })
-      });
-    } catch (e) { /* ignore worker errors on disable */ }
-  }
-
+  const state = loadState();
   if (state) {
-    saveState({ shortId: state.shortId, apiKey: state.apiKey, machineId: state.machineId, tunnelUrl: null });
+    saveState({ shortId: state.shortId, machineId: state.machineId, tunnelUrl: null });
   }
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
@@ -150,11 +119,14 @@ export async function getTunnelStatus() {
   const state = loadState();
   const running = isCloudflaredRunning();
   const settings = await getSettings();
+  const shortId = state?.shortId || "";
+  const publicUrl = shortId ? `https://r${shortId}.9router.com` : "";
 
   return {
     enabled: settings.tunnelEnabled === true && running,
     tunnelUrl: state?.tunnelUrl || "",
-    shortId: state?.shortId || "",
+    shortId,
+    publicUrl,
     running
   };
 }
