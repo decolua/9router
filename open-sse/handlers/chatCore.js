@@ -15,6 +15,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { shouldForceNonStreamingForResponsesTool } from "./chatCore/streamPolicy.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -40,6 +41,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex";
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  const forceToolNonStreaming = shouldForceNonStreamingForResponsesTool(sourceFormat, clientRawRequest?.endpoint);
+  if (forceToolNonStreaming) {
+    stream = false;
+  }
 
   // Check client Accept header preference for non-streaming requests
   // This fixes AI SDK compatibility where clients send Accept: application/json
