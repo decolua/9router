@@ -8,8 +8,6 @@ import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, Default
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
-// MITM tools are now on /dashboard/mitm — exclude from CLI Tools page
-const MITM_TOOL_IDS = ["antigravity", "copilot"];
 
 const STATUS_ENDPOINTS = {
   claude: "/api/cli-tools/claude-settings",
@@ -185,7 +183,7 @@ export default function CLIToolsPageClient({ machineId }) {
     }
   };
 
-  const regularTools = Object.entries(CLI_TOOLS).filter(([id]) => !MITM_TOOL_IDS.includes(id));
+  const regularTools = Object.entries(CLI_TOOLS);
 
   return (
     <div className="flex flex-col gap-6">

@@ -1,51 +1,5 @@
-// CLI Tools configuration
-export const CLI_TOOLS = {
-  claude: {
-    id: "claude",
-    name: "Claude Code",
-    icon: "terminal",
-    color: "#D97757",
-    description: "Anthropic Claude Code CLI",
-    configType: "env",
-    envVars: {
-      baseUrl: "ANTHROPIC_BASE_URL",
-      model: "ANTHROPIC_MODEL",
-      opusModel: "ANTHROPIC_DEFAULT_OPUS_MODEL",
-      sonnetModel: "ANTHROPIC_DEFAULT_SONNET_MODEL",
-      haikuModel: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    },
-    modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
-    settingsFile: "~/.claude/settings.json",
-    defaultModels: [
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-6" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-6" },
-      { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
-    ],
-  },
-  openclaw: {
-    id: "openclaw",
-    name: "Open Claw",
-    image: "/providers/openclaw.png",
-    color: "#FF6B35",
-    description: "Open Claw AI Assistant",
-    configType: "custom",
-  },
-  codex: {
-    id: "codex",
-    name: "OpenAI Codex CLI",
-    image: "/providers/codex.png",
-    color: "#10A37F",
-    description: "OpenAI Codex CLI",
-    configType: "custom",
-  },
-  opencode: {
-    id: "opencode",
-    name: "OpenCode",
-    image: "/providers/opencode.png",
-    color: "#E87040",
-    description: "OpenCode AI Terminal Assistant",
-    configType: "custom",
-  },
+// MITM Tools — IDE tools intercepted via MITM proxy
+export const MITM_TOOLS = {
   antigravity: {
     id: "antigravity",
     name: "Antigravity",
@@ -95,6 +49,70 @@ export const CLI_TOOLS = {
       { id: "minimax-m2.1", name: "MiniMax M2.1", alias: "minimax-m2.1" },
       { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
+  },
+  // cursor: {
+  //   id: "cursor",
+  //   name: "Cursor",
+  //   image: "/providers/cursor.png",
+  //   color: "#000000",
+  //   description: "Cursor IDE with MITM",
+  //   configType: "mitm",
+  //   mitmDomain: "api2.cursor.sh",
+  //   defaultModels: [
+  //     { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4-5" },
+  //     { id: "claude-opus-4", name: "Claude Opus 4", alias: "claude-opus-4" },
+  //     { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
+  //   ],
+  // },
+};
+
+// CLI Tools configuration
+export const CLI_TOOLS = {
+  claude: {
+    id: "claude",
+    name: "Claude Code",
+    icon: "terminal",
+    color: "#D97757",
+    description: "Anthropic Claude Code CLI",
+    configType: "env",
+    envVars: {
+      baseUrl: "ANTHROPIC_BASE_URL",
+      model: "ANTHROPIC_MODEL",
+      opusModel: "ANTHROPIC_DEFAULT_OPUS_MODEL",
+      sonnetModel: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      haikuModel: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    },
+    modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
+    settingsFile: "~/.claude/settings.json",
+    defaultModels: [
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-6" },
+      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
+    ],
+  },
+  openclaw: {
+    id: "openclaw",
+    name: "Open Claw",
+    image: "/providers/openclaw.png",
+    color: "#FF6B35",
+    description: "Open Claw AI Assistant",
+    configType: "custom",
+  },
+  codex: {
+    id: "codex",
+    name: "OpenAI Codex CLI",
+    image: "/providers/codex.png",
+    color: "#10A37F",
+    description: "OpenAI Codex CLI",
+    configType: "custom",
+  },
+  opencode: {
+    id: "opencode",
+    name: "OpenCode",
+    image: "/providers/opencode.png",
+    color: "#E87040",
+    description: "OpenCode AI Terminal Assistant",
+    configType: "custom",
   },
   droid: {
     id: "droid",

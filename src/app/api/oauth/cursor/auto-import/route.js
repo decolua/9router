@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { access, constants } from "fs/promises";
+import { access, constants, readFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import { execFile, execSync } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
-import { createRequire } from "module";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,22 +38,34 @@ function getCandidatePaths(platform) {
   ];
 }
 
-/** Extract tokens using better-sqlite3 (stream-based, no RAM limit) */
-function extractTokens(db) {
-  const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
-  const rows = db.prepare(
-    `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
-  ).all(...desiredKeys);
+const normalize = (value) => {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "string" ? parsed : value;
+  } catch {
+    return value;
+  }
+};
 
-  const normalize = (value) => {
-    if (typeof value !== "string") return value;
-    try {
-      const parsed = JSON.parse(value);
-      return typeof parsed === "string" ? parsed : value;
-    } catch {
-      return value;
-    }
+/** Extract tokens using sql.js (pure JS, cross-platform) */
+async function extractTokens(dbPath) {
+  const initSqlJs = (await import("sql.js")).default;
+  const SQL = await initSqlJs();
+  const db = new SQL.Database(await readFile(dbPath));
+
+  const queryAll = (sql, params = []) => {
+    const stmt = db.prepare(sql);
+    stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    stmt.free();
+    return rows;
   };
+
+  const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
+  const placeholders = desiredKeys.map(() => "?").join(",");
+  const rows = queryAll(`SELECT key, value FROM itemTable WHERE key IN (${placeholders})`, desiredKeys);
 
   const tokens = {};
   for (const row of rows) {
@@ -67,22 +78,18 @@ function extractTokens(db) {
 
   // Fuzzy fallback
   if (!tokens.accessToken || !tokens.machineId) {
-    const fallbackRows = db.prepare(
+    const fallbackRows = queryAll(
       "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
-    ).all();
-
+    );
     for (const row of fallbackRows) {
       const key = row.key || "";
       const value = normalize(row.value);
-      if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) {
-        tokens.accessToken = value;
-      }
-      if (!tokens.machineId && key.toLowerCase().includes("machineid")) {
-        tokens.machineId = value;
-      }
+      if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) tokens.accessToken = value;
+      if (!tokens.machineId && key.toLowerCase().includes("machineid")) tokens.machineId = value;
     }
   }
 
+  db.close();
   return tokens;
 }
 
@@ -154,34 +161,13 @@ export async function GET() {
       });
     }
 
-    // Strategy 1: better-sqlite3 bundled → then global install fallback
-    let Database = null;
+    // Strategy 1: sql.js (pure JS WASM, cross-platform)
     try {
-      const mod = await import("better-sqlite3");
-      Database = mod.default;
-    } catch {
-      // Try loading from global node_modules (user ran: npm i better-sqlite3 -g)
-      try {
-        const globalRoot = execSync("npm root -g", { timeout: 5000, windowsHide: true }).toString().trim();
-        const requireGlobal = createRequire(join(globalRoot, "better-sqlite3", "package.json"));
-        Database = requireGlobal("better-sqlite3");
-      } catch { /* fall through to sqlite3 CLI strategy */ }
-    }
-
-    if (Database) {
-      let db;
-      try {
-        db = new Database(dbPath, { readonly: true, fileMustExist: true });
-        const tokens = extractTokens(db);
-        db.close();
-
-        if (tokens.accessToken && tokens.machineId) {
-          return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
-        }
-      } catch {
-        db?.close();
+      const tokens = await extractTokens(dbPath);
+      if (tokens.accessToken && tokens.machineId) {
+        return NextResponse.json({ found: true, accessToken: tokens.accessToken, machineId: tokens.machineId });
       }
-    }
+    } catch { /* fall through to sqlite3 CLI strategy */ }
 
     // Strategy 2: sqlite3 CLI (works on Windows if sqlite3 is installed)
     try {

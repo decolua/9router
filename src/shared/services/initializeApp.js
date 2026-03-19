@@ -42,6 +42,7 @@ const g = global.__appSingleton ??= {
   lastWatchdogTick: Date.now(),
   lastTunnelRestartAt: 0,
   tunnelRestartInProgress: false,
+  mitmStartInProgress: false,
 };
 
 const WATCHDOG_INTERVAL_MS = 60000;
@@ -100,6 +101,8 @@ export async function initializeApp() {
 
 /** Auto-start MITM if it was enabled before restart */
 async function autoStartMitm() {
+  if (g.mitmStartInProgress) return;
+  g.mitmStartInProgress = true;
   try {
     const settings = await getSettings();
     if (!settings.mitmEnabled) return;
@@ -118,10 +121,12 @@ async function autoStartMitm() {
     const activeKey = keys.find(k => k.isActive !== false);
 
     console.log("[InitApp] MITM was enabled, auto-starting...");
-    await startMitm(activeKey?.key || "sk_9router", password || "");
+    await startMitm(activeKey?.key || "sk_9router", password);
     console.log("[InitApp] MITM auto-started");
   } catch (err) {
     console.log("[InitApp] MITM auto-start failed:", err.message);
+  } finally {
+    g.mitmStartInProgress = false;
   }
 }
 

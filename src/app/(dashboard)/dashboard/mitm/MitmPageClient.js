@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CLI_TOOLS } from "@/shared/constants/cliTools";
+import { MITM_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { MitmServerCard, MitmToolCard } from "@/app/(dashboard)/dashboard/cli-tools/components";
-
-const MITM_TOOL_IDS = ["antigravity", "copilot", "kiro"];
 
 export default function MitmPageClient() {
   const [connections, setConnections] = useState([]);
@@ -74,7 +72,7 @@ export default function MitmPageClient() {
     );
   };
 
-  const mitmTools = Object.entries(CLI_TOOLS).filter(([id]) => MITM_TOOL_IDS.includes(id));
+  const mitmTools = Object.entries(MITM_TOOLS);
 
   return (
     <div className="flex flex-col gap-6">

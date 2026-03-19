@@ -464,6 +464,11 @@ async function startServer(apiKey, sudoPassword) {
         err(msg);
         startError = msg;
       }
+      // Detect wrong/missing password — clear cache and stop retry loop
+      if (!IS_WIN && (msg.includes("incorrect password") || msg.includes("no password was provided"))) {
+        setCachedPassword(null);
+        mitmIsRestarting = true; // prevent scheduleMitmRestart from firing
+      }
     });
     serverProcess.on("exit", (code) => {
       log(`Server exited (code: ${code})`);

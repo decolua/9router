@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.3.57",
+  "version": "0.3.58",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -15,7 +15,6 @@
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.6.2",
     "confbox": "^0.2.4",
     "express": "^5.2.1",
     "fs": "^0.0.1-security",
@@ -34,16 +33,15 @@
     "recharts": "^3.7.0",
     "selfsigned": "^5.5.0",
     "socks-proxy-agent": "^8.0.5",
+    "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
-    "esbuild": "^0.27.4",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "javascript-obfuscator": "^5.3.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4"
   }
