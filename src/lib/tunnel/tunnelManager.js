@@ -11,6 +11,7 @@ const RECONNECT_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
 const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_MS.length;
 
 let isReconnecting = false;
+let exitHandlerRegistered = false;
 
 function generateShortId() {
   let result = "";
@@ -68,11 +69,16 @@ export async function enableTunnel(localPort = 20128) {
   saveState({ shortId, machineId, tunnelUrl });
   await updateSettings({ tunnelEnabled: true, tunnelUrl });
 
-  setUnexpectedExitHandler(() => {
-    if (!isReconnecting) scheduleReconnect(0);
-  });
+  // Set exit handler only once (not on every reconnect)
+  if (!exitHandlerRegistered) {
+    setUnexpectedExitHandler(() => {
+      if (!isReconnecting) scheduleReconnect(0);
+    });
+    exitHandlerRegistered = true;
+  }
 
-  return { success: true, tunnelUrl, shortId };
+  const publicUrl = `https://r${shortId}.9router.com`;
+  return { success: true, tunnelUrl, shortId, publicUrl };
 }
 
 async function scheduleReconnect(attempt) {
@@ -104,6 +110,7 @@ async function scheduleReconnect(attempt) {
 
 export async function disableTunnel() {
   killCloudflared();
+  exitHandlerRegistered = false; // Reset handler flag when tunnel disabled
 
   const state = loadState();
   if (state) {

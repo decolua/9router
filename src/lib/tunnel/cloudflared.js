@@ -217,6 +217,23 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
 
   return new Promise((resolve, reject) => {
     let resolved = false;
+
+    function getQuickTunnelUrlFromLog(message) {
+      // cloudflared logs may contain "api.trycloudflare.com" as well,
+      // but that is NOT the quick-tunnel endpoint we need.
+      const regex = /https:\/\/([a-z0-9-]+)\.trycloudflare\.com/gi;
+      const candidates = [];
+
+      for (const match of message.matchAll(regex)) {
+        const host = match[1];
+        if (host === "api") continue;
+        candidates.push(`https://${host}.trycloudflare.com`);
+      }
+
+      if (!candidates.length) return null;
+      return candidates[candidates.length - 1];
+    }
+
     const timeout = setTimeout(() => {
       if (resolved) return;
       resolved = true;
@@ -226,10 +243,8 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
 
     const handleLog = (data) => {
       const msg = data.toString();
-      // Parse trycloudflare.com URL from cloudflared output
-      const match = msg.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-      if (match && !resolved) {
-        const tunnelUrl = match[0];
+      const tunnelUrl = getQuickTunnelUrlFromLog(msg);
+      if (tunnelUrl && !resolved) {
         resolved = true;
         clearTimeout(timeout);
         cleanup();
