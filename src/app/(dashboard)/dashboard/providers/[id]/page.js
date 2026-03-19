@@ -1425,6 +1425,9 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState(null);
+  const [tokenExpiry, setTokenExpiry] = useState(null);
 
   // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
   const modelLockUntil = Object.entries(connection)
@@ -1450,6 +1453,48 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     };
   }, [modelLockUntil]);
 
+  // Calculate token expiry info
+  useEffect(() => {
+    if (!isOAuth || !connection.tokenExpiresAt) {
+      setTokenExpiry(null);
+      return;
+    }
+
+    const updateExpiry = () => {
+      const expiresAt = new Date(connection.tokenExpiresAt).getTime();
+      const now = Date.now();
+      const diff = expiresAt - now;
+
+      if (diff <= 0) {
+        setTokenExpiry({ expired: true, text: "Expired", warning: true });
+      } else {
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        let text;
+        if (days > 0) {
+          text = `${days}d`;
+        } else if (hours > 0) {
+          text = `${hours}h`;
+        } else {
+          text = `${minutes}m`;
+        }
+
+        setTokenExpiry({
+          expired: false,
+          text: `Expires in ${text}`,
+          warning: minutes < 5,
+          minutes,
+        });
+      }
+    };
+
+    updateExpiry();
+    const interval = setInterval(updateExpiry, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [connection.tokenExpiresAt, isOAuth]);
+
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
     ? "active"  // Cooldown expired → treat as active
@@ -1460,6 +1505,41 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
     if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
     return "default";
+  };
+
+  const handleRefreshToken = async () => {
+    setRefreshing(true);
+    setRefreshMessage(null);
+
+    try {
+      const res = await fetch("/api/oauth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId: connection.id }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setRefreshMessage({ type: "success", text: "Token refreshed successfully" });
+        // Update local token expiry
+        if (data.expiresAt) {
+          connection.tokenExpiresAt = data.expiresAt;
+        }
+        // Auto-hide success message after 3 seconds
+        setTimeout(() => setRefreshMessage(null), 3000);
+      } else {
+        const errorMsg = data.error || "Failed to refresh token";
+        setRefreshMessage({ type: "error", text: errorMsg });
+        // Auto-hide error message after 5 seconds
+        setTimeout(() => setRefreshMessage(null), 5000);
+      }
+    } catch (error) {
+      setRefreshMessage({ type: "error", text: "Network error. Please try again." });
+      setTimeout(() => setRefreshMessage(null), 5000);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
@@ -1487,7 +1567,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
@@ -1497,9 +1577,19 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               </Badge>
             )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {tokenExpiry && (
+              <span className={`text-xs font-mono ${tokenExpiry.warning ? "text-orange-500" : "text-text-muted"}`} title={connection.tokenExpiresAt}>
+                {tokenExpiry.text}
+              </span>
+            )}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
+              </span>
+            )}
+            {refreshMessage && (
+              <span className={`text-xs ${refreshMessage.type === "success" ? "text-green-500" : "text-red-500"}`}>
+                {refreshMessage.text}
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
@@ -1562,6 +1652,19 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               )}
             </div>
           )}
+          {isOAuth && (
+            <button
+              onClick={handleRefreshToken}
+              disabled={refreshing}
+              className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Manually refresh OAuth token"
+            >
+              <span className={`material-symbols-outlined text-[18px] ${refreshing ? "animate-spin" : ""}`}>
+                {refreshing ? "progress_activity" : "refresh"}
+              </span>
+              <span className="text-[10px] leading-tight">Refresh</span>
+            </button>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -1594,6 +1697,8 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    tokenExpiresAt: PropTypes.string,
+    authType: PropTypes.string,
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,

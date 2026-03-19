@@ -104,11 +104,19 @@ export const PROVIDER_MODELS = {
     { id: "oswe-vscode-prime", name: "Raptor Mini" },
   ],
   kr: [  // Kiro AI
-    // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+    // Claude 4.6 series
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
+    // Claude 4.5 series
+    { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    { id: "deepseek-3.2", name: "DeepSeek 3.2" },
+    // Claude 4 series
+    { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+    // Other models
+    { id: "deepseek-3.2", name: "DeepSeek V3.2" },
     { id: "deepseek-3.1", name: "DeepSeek 3.1" },
+    { id: "minimax-m2.1", name: "MiniMax M2.1" },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next" },
   ],
   cu: [  // Cursor IDE

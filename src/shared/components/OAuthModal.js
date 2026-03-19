@@ -9,8 +9,9 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * OAuth Modal Component
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
+ * - deviceConfig: Optional config for device code flow (startUrl, region)
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, deviceConfig }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -21,6 +22,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
+  const deviceCodeGeneratedRef = useRef(false);
 
   // State for client-only values to avoid hydration mismatch
   const [isLocalhost, setIsLocalhost] = useState(false);
@@ -128,18 +130,46 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Start OAuth flow
   const startOAuthFlow = useCallback(async () => {
     if (!provider) return;
+
+    // For device code flow, don't regenerate if we already have valid device data
+    // BUT: For Kiro with deviceConfig, always regenerate to use the new config
+    const shouldReuseDeviceCode = (provider === "github" || provider === "qwen" || provider === "kiro") && deviceData && !polling && !(provider === "kiro" && deviceConfig);
+
+    if (shouldReuseDeviceCode) {
+      // Device code already exists and we're not polling, just reopen the verification URL
+      console.log("Using cached device code:", deviceData.user_code);
+      setIsDeviceCode(true);
+      setStep("waiting");
+      const verifyUrl = deviceData.verification_uri_complete || deviceData.verification_uri;
+      if (verifyUrl) window.open(verifyUrl, "_blank");
+      return;
+    }
+
     try {
       setError(null);
 
       // Device code flow providers
       const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode"];
       if (deviceCodeProviders.includes(provider)) {
+        console.log("Generating new device code. deviceData:", deviceData, "polling:", polling);
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const res = await fetch(`/api/oauth/${provider}/device-code`);
+        // For Kiro, pass device config (startUrl, region) if provided
+        let url = `/api/oauth/${provider}/device-code`;
+        if (provider === "kiro" && deviceConfig) {
+          const params = new URLSearchParams();
+          if (deviceConfig.startUrl) params.append("startUrl", deviceConfig.startUrl);
+          if (deviceConfig.region) params.append("region", deviceConfig.region);
+          if (params.toString()) url += `?${params.toString()}`;
+          console.log("Kiro device-code URL:", url);
+        }
+
+        const res = await fetch(url);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
+
+        console.log("Device code response:", data.user_code, data.device_code);
 
         setDeviceData(data);
 
@@ -147,8 +177,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
-        // Pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret, _region, _startUrl)
+        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret, _region: data._region, _startUrl: data._startUrl } : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
@@ -188,24 +218,108 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling]);
+  }, [provider, isLocalhost, startPolling, deviceConfig]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
-    if (isOpen && provider) {
-      setAuthData(null);
-      setCallbackUrl("");
-      setError(null);
-      setIsDeviceCode(false);
-      setDeviceData(null);
-      setPolling(false);
-      pollingAbortRef.current = false;
-      startOAuthFlow();
-    } else if (!isOpen) {
+    if (!isOpen || !provider) {
       // Abort polling when modal closes
       pollingAbortRef.current = true;
+      return;
     }
-  }, [isOpen, provider, startOAuthFlow]);
+
+    // Prevent duplicate generation in React Strict Mode
+    if (deviceCodeGeneratedRef.current) {
+      console.log("Device code already generated in this cycle, skipping");
+      return;
+    }
+    deviceCodeGeneratedRef.current = true;
+
+    setAuthData(null);
+    setCallbackUrl("");
+    setError(null);
+    setIsDeviceCode(false);
+    setPolling(false);
+
+    // Start OAuth flow inline to avoid circular dependency
+    (async () => {
+      // For device code flow, don't regenerate if we already have valid device data
+      // BUT: For Kiro with deviceConfig, always regenerate to use the new config
+      const shouldReuseDeviceCode = (provider === "github" || provider === "qwen" || provider === "kiro") && deviceData && !polling && !(provider === "kiro" && deviceConfig);
+
+      if (shouldReuseDeviceCode) {
+        setIsDeviceCode(true);
+        setStep("waiting");
+        const verifyUrl = deviceData.verification_uri_complete || deviceData.verification_uri;
+        if (verifyUrl) window.open(verifyUrl, "_blank");
+        return;
+      }
+
+      try {
+        setError(null);
+
+        // Device code flow (GitHub, Qwen, Kiro)
+        if (provider === "github" || provider === "qwen" || provider === "kiro") {
+          setIsDeviceCode(true);
+          setStep("waiting");
+
+          // For Kiro, pass device config (startUrl, region) if provided
+          let url = `/api/oauth/${provider}/device-code`;
+          if (provider === "kiro" && deviceConfig) {
+            const params = new URLSearchParams();
+            if (deviceConfig.startUrl) params.append("startUrl", deviceConfig.startUrl);
+            if (deviceConfig.region) params.append("region", deviceConfig.region);
+            if (params.toString()) url += `?${params.toString()}`;
+          }
+
+          const res = await fetch(url);
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+
+          setDeviceData(data);
+
+          // Open verification URL
+          const verifyUrl = data.verification_uri_complete || data.verification_uri;
+          if (verifyUrl) window.open(verifyUrl, "_blank");
+
+          // Start polling - pass extraData for Kiro (contains _clientId, _clientSecret)
+          const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+          startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
+          return;
+        }
+
+        // Authorization code flow - always use localhost with current port (except Codex)
+        let redirectUri;
+        if (provider === "codex") {
+          redirectUri = "http://localhost:1455/auth/callback";
+        } else {
+          const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+          redirectUri = `http://localhost:${port}/callback`;
+        }
+
+        const res = await fetch(`/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        setAuthData({ ...data, redirectUri });
+
+        if (provider === "codex" || !isLocalhost) {
+          setStep("input");
+          window.open(data.authUrl, "_blank");
+        } else {
+          setStep("waiting");
+          popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+
+          if (!popupRef.current) {
+            setStep("input");
+          }
+        }
+      } catch (err) {
+        setError(err.message);
+        setStep("error");
+      }
+    })();
+  }, [isOpen, provider, deviceConfig]);
 
   // Listen for OAuth callback via multiple methods
   useEffect(() => {
@@ -350,12 +464,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <div className="bg-sidebar p-4 rounded-lg mb-4">
                 <p className="text-xs text-text-muted mb-1">Verification URL</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-sm break-all">{deviceData.verification_uri}</code>
+                  <code className="flex-1 text-sm break-all">{deviceData.verification_uri_complete || deviceData.verification_uri}</code>
                   <Button
                     size="sm"
                     variant="ghost"
                     icon={copied === "verify_url" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.verification_uri, "verify_url")}
+                    onClick={() => copy(deviceData.verification_uri_complete || deviceData.verification_uri, "verify_url")}
                   />
                 </div>
               </div>

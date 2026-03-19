@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Badge from "./Badge";
 import Card from "./Card";
+import TimeRangeModal from "./TimeRangeModal";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
@@ -20,12 +21,12 @@ function timeAgo(timestamp) {
 // Auto-update time display every second without re-rendering parent
 function TimeAgo({ timestamp }) {
   const [, setTick] = useState(0);
-  
+
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(timer);
   }, []);
-  
+
   return <>{timeAgo(timestamp)}</>;
 }
 
@@ -194,6 +195,11 @@ export default function UsageStats() {
   const [providers, setProviders] = useState([]);
   const [period, setPeriod] = useState("7d");
 
+  // New state for our additions
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [showTimeRangeModal, setShowTimeRangeModal] = useState(false);
+
   // Fetch connected providers once, deduplicate by provider type
   useEffect(() => {
     fetch("/api/providers")
@@ -265,6 +271,37 @@ export default function UsageStats() {
     }
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [searchParams, router]);
+
+  const handleClearMetrics = async () => {
+    setClearing(true);
+    try {
+      const res = await fetch("/api/usage/clear", { method: "POST" });
+      if (res.ok) {
+        setStats(null);
+        setLoading(true);
+        setShowClearConfirm(false);
+        // Re-fetch stats
+        fetch(`/api/usage/stats?period=${period}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((data) => { if (data) setStats(data); })
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      }
+    } catch (error) {
+      console.error("Error clearing metrics:", error);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const handleCustomRange = useCallback(({ startDate, endDate }) => {
+    setFetching(true);
+    fetch(`/api/usage/stats?startDate=${startDate}&endDate=${endDate}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setStats((prev) => ({ ...prev, ...data })); })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, []);
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {
@@ -393,7 +430,57 @@ export default function UsageStats() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Period selector */}
+      {/* Clear Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-bg border border-border rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-2">Clear All Usage Metrics?</h3>
+            <p className="text-text-muted mb-4">
+              This will permanently delete all usage history. This action cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                disabled={clearing}
+                className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-bg-subtle hover:bg-bg-hover border border-border disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearMetrics}
+                disabled={clearing}
+                className="px-4 py-2 rounded-md text-sm font-medium transition-colors bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {clearing ? (
+                  <>
+                    <span className="inline-block h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Clearing...
+                  </>
+                ) : "Clear All Data"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Time Range Modal */}
+      {showTimeRangeModal && (
+        <TimeRangeModal
+          isOpen={showTimeRangeModal}
+          onClose={() => setShowTimeRangeModal(false)}
+          currentRange={period}
+          onRangeChange={(range) => {
+            if (typeof range === "object" && range.type === "custom") {
+              handleCustomRange(range);
+            } else {
+              setPeriod(range);
+            }
+            setShowTimeRangeModal(false);
+          }}
+        />
+      )}
+
+      {/* Period selector + Clear button */}
       <div className="flex items-center gap-2 self-end">
         <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
           {PERIODS.map((p) => (
@@ -406,7 +493,22 @@ export default function UsageStats() {
               {p.label}
             </button>
           ))}
+          <button
+            onClick={() => setShowTimeRangeModal(true)}
+            disabled={fetching}
+            className="px-3 py-1 rounded-md text-sm font-medium transition-colors text-text-muted hover:text-text hover:bg-bg-hover"
+            title="Custom date range"
+          >
+            Custom
+          </button>
         </div>
+        <button
+          onClick={() => setShowClearConfirm(true)}
+          disabled={!stats || stats.totalRequests === 0}
+          className="px-3 py-1 rounded-md text-sm font-medium transition-colors bg-red-500/10 text-red-600 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed border border-red-500/20"
+        >
+          Clear
+        </button>
         {fetching && (
           <span className="material-symbols-outlined text-[16px] text-text-muted animate-spin">progress_activity</span>
         )}
