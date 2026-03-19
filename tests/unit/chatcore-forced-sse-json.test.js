@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { handleChatCore } from "../../open-sse/handlers/chatCore.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { handleForcedSSEToJson } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
 
 vi.mock("../../open-sse/utils/stream.js", () => ({
   COLORS: { red: "", reset: "" },
@@ -121,5 +122,19 @@ describe("handleChatCore forced SSE->JSON decision", () => {
     const data = await result.response.json();
     expect(data.object).toBe("response");
     expect(data.status).toBe("completed");
+  });
+
+  it("treats OpenAI provider requests as non-streaming by default when stream is omitted", async () => {
+    const result = await handleChatCore({
+      body: { model: "gpt-x", messages: [{ role: "user", content: "hi" }] },
+      modelInfo: { provider: "openai", model: "gpt-x" },
+      credentials: { apiKey: "test" },
+      clientRawRequest: { endpoint: "/v1/chat/completions", headers: {} },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("Content-Type")).toContain("application/json");
+
+    expect(vi.mocked(handleForcedSSEToJson)).toHaveBeenCalled();
   });
 });

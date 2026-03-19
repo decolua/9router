@@ -39,8 +39,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerRequiresStreaming = provider === "openai" || provider === "codex";
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  const providerNeedsStreamOptIn = provider === "openai" || provider === "codex";
+  let stream = providerNeedsStreamOptIn ? (body.stream === true) : (body.stream !== false);
   const forceToolNonStreaming = shouldForceNonStreamingForResponsesTool(sourceFormat, clientRawRequest?.endpoint);
   if (forceToolNonStreaming) {
     stream = false;
@@ -194,8 +194,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
-  // Provider forced streaming but client wants JSON
-  if (!stream && providerRequiresStreaming) {
+  // Effective non-streaming mode for providers that may still return SSE upstream:
+  // convert upstream SSE to a single JSON response for client compatibility.
+  if (!stream && providerNeedsStreamOptIn) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
