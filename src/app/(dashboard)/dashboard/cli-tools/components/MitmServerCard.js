@@ -13,11 +13,11 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
   const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [message, setMessage] = useState(null);
-  const [pendingAction, setPendingAction] = useState(null); // "start" | "stop"
+  const [pendingAction, setPendingAction] = useState(null);
+  const [modalError, setModalError] = useState(null);
 
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
-  const isAdmin = status?.isAdmin !== false; // default true until status loaded
+  const isAdmin = status?.isAdmin !== false;
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -48,61 +48,39 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
     } else {
       setPendingAction(action);
       setShowPasswordModal(true);
-      setMessage(null);
+      setModalError(null);
     }
   };
 
   const doAction = async (action, password) => {
     setLoading(true);
-    setMessage(null);
     try {
       if (action === "trust-cert") {
-        const res = await fetch("/api/cli-tools/antigravity-mitm", {
+        await fetch("/api/cli-tools/antigravity-mitm", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "trust-cert", sudoPassword: password }),
         });
-        const data = await res.json();
-        if (res.ok) {
-          setMessage({ type: "success", text: "Certificate trusted successfully" });
-        } else {
-          setMessage({ type: "error", text: data.error || "Failed to trust certificate" });
-        }
       } else if (action === "start") {
         const keyToUse = selectedApiKey?.trim()
           || (apiKeys?.length > 0 ? apiKeys[0].key : null)
           || (!cloudEnabled ? "sk_9router" : null);
-
-        const res = await fetch("/api/cli-tools/antigravity-mitm", {
+        await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ apiKey: keyToUse, sudoPassword: password }),
         });
-        const data = await res.json();
-        if (res.ok) {
-          setMessage({ type: "success", text: "Server started" });
-        } else {
-          setMessage({ type: "error", text: data.error || "Failed to start server" });
-        }
       } else {
-        const res = await fetch("/api/cli-tools/antigravity-mitm", {
+        await fetch("/api/cli-tools/antigravity-mitm", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sudoPassword: password }),
         });
-        const data = await res.json();
-        if (res.ok) {
-          setMessage({ type: "success", text: "Server stopped — all DNS cleared" });
-        } else {
-          setMessage({ type: "error", text: data.error || "Failed to stop server" });
-        }
       }
       setShowPasswordModal(false);
       setSudoPassword("");
       await fetchStatus();
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
-    } finally {
+    } catch { /* ignore */ } finally {
       setLoading(false);
       setPendingAction(null);
     }
@@ -110,7 +88,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
   const handleConfirmPassword = () => {
     if (!sudoPassword.trim()) {
-      setMessage({ type: "error", text: "Sudo password is required" });
+      setModalError("Sudo password is required");
       return;
     }
     doAction(pendingAction, sudoPassword);
@@ -159,7 +137,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             </p>
           </div>
 
-          {/* API Key selector (only when stopped, to pick key for start) */}
+          {/* API Key selector (only when stopped) */}
           {!isRunning && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-text-muted shrink-0">API Key</span>
@@ -179,16 +157,8 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             </div>
           )}
 
-          {message && (
-            <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-              <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
-              <span>{message.text}</span>
-            </div>
-          )}
-
-          {/* Action button */}
+          {/* Action buttons */}
           <div className="flex items-center gap-2 flex-wrap" data-i18n-skip="true">
-            {/* Trust Cert button — only when cert exists but not trusted */}
             {status?.certExists && !status?.certTrusted && (
               <button
                 onClick={() => handleAction("trust-cert")}
@@ -249,14 +219,14 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               onChange={(e) => setSudoPassword(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !loading) handleConfirmPassword(); }}
             />
-            {message && (
+            {modalError && (
               <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
                 <span className="material-symbols-outlined text-[14px]">error</span>
-                <span>{message.text}</span>
+                <span>{modalError}</span>
               </div>
             )}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setMessage(null); }} disabled={loading}>
+              <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setModalError(null); }} disabled={loading}>
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>

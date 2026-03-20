@@ -241,15 +241,26 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       reject(new Error("Quick tunnel timed out"));
     }, 90000);
 
+    let lastUrl = null;
+
     const handleLog = (data) => {
       const msg = data.toString();
       const tunnelUrl = getQuickTunnelUrlFromLog(msg);
-      if (tunnelUrl && !resolved) {
+      if (!tunnelUrl) return;
+
+      if (!resolved) {
+        // First URL — resolve the promise, do NOT call onUrlUpdate (caller handles initial register)
         resolved = true;
+        lastUrl = tunnelUrl;
         clearTimeout(timeout);
         cleanup();
         resolve({ child, tunnelUrl });
-        // Notify caller of URL (for re-registration on URL change)
+        return;
+      }
+
+      // URL changed after initial connect — notify caller to re-register
+      if (tunnelUrl !== lastUrl) {
+        lastUrl = tunnelUrl;
         if (onUrlUpdate) onUrlUpdate(tunnelUrl);
       }
     };

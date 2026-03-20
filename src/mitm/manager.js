@@ -146,6 +146,15 @@ async function saveMitmSettings(enabled, password) {
   }
 }
 
+async function clearEncryptedPassword() {
+  if (!_updateSettings) return;
+  try {
+    await _updateSettings({ mitmSudoEncrypted: null });
+  } catch (e) {
+    err(`Failed to clear encrypted password: ${e.message}`);
+  }
+}
+
 async function loadEncryptedPassword() {
   if (!_getSettings) return null;
   try {
@@ -467,6 +476,7 @@ async function startServer(apiKey, sudoPassword) {
       // Detect wrong/missing password — clear cache and stop retry loop
       if (!IS_WIN && (msg.includes("incorrect password") || msg.includes("no password was provided"))) {
         setCachedPassword(null);
+        clearEncryptedPassword();
         mitmIsRestarting = true; // prevent scheduleMitmRestart from firing
       }
     });
@@ -603,5 +613,6 @@ module.exports = {
   getCachedPassword,
   setCachedPassword,
   loadEncryptedPassword,
+  clearEncryptedPassword,
   initDbHooks,
 };

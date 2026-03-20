@@ -7,8 +7,6 @@ import Image from "next/image";
 /**
  * Per-tool MITM card — shows DNS status + model mappings.
  * - Auto-saves model mapping on blur or modal select
- * - Start/Stop DNS replaces Save Mappings button
- * - Toggle switch removed; status badge is display-only
  * - Skips sudo modal if password is already cached
  * - Model mappings can only be edited when DNS is active
  */
@@ -27,10 +25,11 @@ export default function MitmToolCard({
   onDnsChange,
 }) {
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [warning, setWarning] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
   const [pendingDnsAction, setPendingDnsAction] = useState(null);
+  const [modalError, setModalError] = useState(null);
   const [modelMappings, setModelMappings] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
@@ -81,7 +80,6 @@ export default function MitmToolCard({
     saveMappings(updated);
   };
 
-  // DNS toggle logic
   const handleDnsToggle = () => {
     if (!serverRunning) return;
     const action = dnsActive ? "disable" : "enable";
@@ -90,13 +88,13 @@ export default function MitmToolCard({
     } else {
       setPendingDnsAction(action);
       setShowPasswordModal(true);
-      setMessage(null);
+      setModalError(null);
     }
   };
 
   const doDnsAction = async (action, password) => {
     setLoading(true);
-    setMessage(null);
+    setWarning(null);
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm", {
         method: "PATCH",
@@ -107,24 +105,13 @@ export default function MitmToolCard({
       if (!res.ok) throw new Error(data.error || "Failed to toggle DNS");
 
       if (action === "enable") {
-        setMessage({
-          type: "success",
-          text: "DNS enabled successfully.",
-          warning: `Please restart ${tool.name} to apply changes.`,
-        });
-      } else {
-        setMessage({
-          type: "success",
-          text: "DNS disabled — traffic restored",
-        });
+        setWarning(`Restart ${tool.name} to apply changes`);
       }
 
       setShowPasswordModal(false);
       setSudoPassword("");
       onDnsChange?.(data);
-    } catch (error) {
-      setMessage({ type: "error", text: error.message });
-    } finally {
+    } catch { /* ignore */ } finally {
       setLoading(false);
       setPendingDnsAction(null);
     }
@@ -132,7 +119,7 @@ export default function MitmToolCard({
 
   const handleConfirmPassword = () => {
     if (!sudoPassword.trim()) {
-      setMessage({ type: "error", text: "Sudo password is required" });
+      setModalError("Sudo password is required");
       return;
     }
     doDnsAction(pendingDnsAction, sudoPassword);
@@ -185,21 +172,6 @@ export default function MitmToolCard({
               )}
             </div>
 
-            {message && (
-              <div className="flex flex-col gap-1">
-                <div className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${message.type === "success" ? "bg-green-500/10 text-green-600" : "bg-red-500/10 text-red-600"}`}>
-                  <span className="material-symbols-outlined text-[14px]">{message.type === "success" ? "check_circle" : "error"}</span>
-                  <span>{message.text}</span>
-                </div>
-                {message.warning && (
-                  <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
-                    <span className="material-symbols-outlined text-[14px]">warning</span>
-                    <span className="font-medium">{message.warning}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Model Mappings */}
             {tool.defaultModels?.length > 0 && (
               <div className="flex flex-col gap-2">
@@ -245,7 +217,7 @@ export default function MitmToolCard({
             )}
 
             {/* Start / Stop DNS button */}
-            <div>
+            <div className="flex flex-col gap-2 items-start">
               {dnsActive ? (
                 <button
                   onClick={handleDnsToggle}
@@ -256,16 +228,22 @@ export default function MitmToolCard({
                   Stop DNS
                 </button>
               ) : (
-                <Button
-                  variant="primary"
-                  size="sm"
+                <button
                   onClick={handleDnsToggle}
-                  loading={loading}
                   disabled={!serverRunning || loading}
+                  className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-xs flex items-center gap-1.5 hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span className="material-symbols-outlined text-[14px] mr-1">play_circle</span>
+                  <span className="material-symbols-outlined text-[16px]">play_circle</span>
                   Start DNS
-                </Button>
+                </button>
+              )}
+
+              {/* Warning below button */}
+              {warning && (
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                  <span className="material-symbols-outlined text-[14px]">warning</span>
+                  <span>{warning}</span>
+                </div>
               )}
             </div>
           </div>
@@ -288,14 +266,14 @@ export default function MitmToolCard({
               onChange={(e) => setSudoPassword(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !loading) handleConfirmPassword(); }}
             />
-            {message && (
+            {modalError && (
               <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600">
                 <span className="material-symbols-outlined text-[14px]">error</span>
-                <span>{message.text}</span>
+                <span>{modalError}</span>
               </div>
             )}
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setMessage(null); }} disabled={loading}>
+              <Button variant="ghost" size="sm" onClick={() => { setShowPasswordModal(false); setSudoPassword(""); setModalError(null); }} disabled={loading}>
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleConfirmPassword} loading={loading}>

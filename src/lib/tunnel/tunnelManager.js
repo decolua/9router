@@ -12,6 +12,16 @@ const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_MS.length;
 
 let isReconnecting = false;
 let exitHandlerRegistered = false;
+let reconnectTimeoutId = null;
+let manualDisabled = false;
+
+export function isTunnelManuallyDisabled() {
+  return manualDisabled;
+}
+
+export function isTunnelReconnecting() {
+  return isReconnecting;
+}
 
 function generateShortId() {
   let result = "";
@@ -43,6 +53,7 @@ async function registerTunnelUrl(shortId, tunnelUrl) {
 }
 
 export async function enableTunnel(localPort = 20128) {
+  manualDisabled = false;
   if (isCloudflaredRunning()) {
     const existing = loadState();
     if (existing?.tunnelUrl) {
@@ -56,15 +67,18 @@ export async function enableTunnel(localPort = 20128) {
   const existing = loadState();
   const shortId = existing?.shortId || generateShortId();
 
-  // Spawn quick tunnel, parse URL from cloudflared output
-  const { tunnelUrl } = await spawnQuickTunnel(localPort, async (url) => {
-    // Called on URL change (restart) - re-register new URL
+  // onUrlUpdate: only called when URL changes AFTER initial connect (not on first resolve)
+  const onUrlUpdate = async (url) => {
+    if (manualDisabled) return;
     await registerTunnelUrl(shortId, url);
     saveState({ shortId, machineId, tunnelUrl: url });
     await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
-  });
+  };
 
-  // Register initial URL
+  // Spawn quick tunnel — resolve returns initial URL, onUrlUpdate handles subsequent changes
+  const { tunnelUrl } = await spawnQuickTunnel(localPort, onUrlUpdate);
+
+  // Register initial URL (exactly once)
   await registerTunnelUrl(shortId, tunnelUrl);
   saveState({ shortId, machineId, tunnelUrl });
   await updateSettings({ tunnelEnabled: true, tunnelUrl });
@@ -82,15 +96,19 @@ export async function enableTunnel(localPort = 20128) {
 }
 
 async function scheduleReconnect(attempt) {
-  if (isReconnecting) return;
+  if (isReconnecting || manualDisabled) return;
   isReconnecting = true;
 
   const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
   console.log(`[Tunnel] Reconnecting in ${delay / 1000}s (attempt ${attempt + 1})...`);
 
-  await new Promise((r) => setTimeout(r, delay));
+  await new Promise((r) => { reconnectTimeoutId = setTimeout(r, delay); });
 
   try {
+    if (manualDisabled) {
+      isReconnecting = false;
+      return;
+    }
     const settings = await getSettings();
     if (!settings.tunnelEnabled) {
       isReconnecting = false;
@@ -109,8 +127,17 @@ async function scheduleReconnect(attempt) {
 }
 
 export async function disableTunnel() {
+  // Block any reconnect attempts before killing the process
+  manualDisabled = true;
+  isReconnecting = true;
+  if (reconnectTimeoutId) {
+    clearTimeout(reconnectTimeoutId);
+    reconnectTimeoutId = null;
+  }
+  setUnexpectedExitHandler(null);
+  exitHandlerRegistered = false;
+
   killCloudflared();
-  exitHandlerRegistered = false; // Reset handler flag when tunnel disabled
 
   const state = loadState();
   if (state) {
@@ -118,6 +145,9 @@ export async function disableTunnel() {
   }
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
+
+  // Unblock reconnect lock — manualDisabled stays true to block Watchdog/NetworkMonitor
+  isReconnecting = false;
 
   return { success: true };
 }

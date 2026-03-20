@@ -43,7 +43,7 @@ export async function GET() {
       certExists: status.certExists || false,
       certTrusted: status.certTrusted || false,
       dnsStatus: status.dnsStatus || {},
-      hasCachedPassword: !!getCachedPassword(),
+      hasCachedPassword: !!getCachedPassword() || !!(await loadEncryptedPassword()),
       isAdmin: checkIsAdmin(),
     });
   } catch (error) {
