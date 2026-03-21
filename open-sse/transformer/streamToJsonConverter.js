@@ -4,6 +4,10 @@
  * Used when client requests non-streaming but provider forces streaming (e.g., Codex)
  */
 
+export function isResponsesSseDebug() {
+  return typeof process !== "undefined" && process.env?.DEBUG_RESPONSES_SSE_TO_JSON === "true";
+}
+
 /**
  * Process a single SSE message and update state accordingly.
  */
@@ -36,6 +40,9 @@ function processSSEMessage(msg, state) {
     }
   } else if (eventType === "response.failed") {
     state.status = "failed";
+  } else if (state._debug) {
+    state._skippedEvents ??= {};
+    state._skippedEvents[eventType] = (state._skippedEvents[eventType] || 0) + 1;
   }
 }
 
@@ -55,12 +62,14 @@ export async function convertResponsesStreamToJson(stream) {
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const debug = isResponsesSseDebug();
   const state = {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
     usage: { ...EMPTY_RESPONSE },
-    items: new Map()
+    items: new Map(),
+    _debug: debug
   };
 
   try {
@@ -90,6 +99,27 @@ export async function convertResponsesStreamToJson(stream) {
   const maxIndex = state.items.size > 0 ? Math.max(...state.items.keys()) : -1;
   for (let i = 0; i <= maxIndex; i++) {
     output.push(state.items.get(i) || { type: "message", content: [], role: "assistant" });
+  }
+
+  if (debug) {
+    const outputSummary = output.map((item, i) => ({
+      index: i,
+      type: item?.type,
+      role: item?.role,
+      contentParts: Array.isArray(item?.content)
+        ? item.content.map((p) => ({
+            type: p?.type,
+            textLen: typeof p?.text === "string" ? p.text.length : undefined
+          }))
+        : null
+    }));
+    console.log("[ResponsesSSE→JSON] convertResponsesStreamToJson", {
+      responseId: state.responseId,
+      status: state.status || "completed",
+      usage: state.usage,
+      skippedEventCounts: state._skippedEvents || {},
+      outputSummary
+    });
   }
 
   return {
