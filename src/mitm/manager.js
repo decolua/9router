@@ -5,9 +5,10 @@ const os = require("os");
 const net = require("net");
 const https = require("https");
 const crypto = require("crypto");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, TOOL_HOSTS } = require("./dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable } = require("./dns/dnsConfig");
 
 const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
 const { generateCert } = require("./cert/generate");
 const { installCert, uninstallCert } = require("./cert/install");
 const { isCertExpired } = require("./cert/rootCA");
@@ -404,17 +405,22 @@ async function startServer(apiKey, sudoPassword) {
   // Step 1.5: Auto-install Root CA if not trusted yet
   const { checkCertInstalled } = require("./cert/install");
   const rootCATrusted = await checkCertInstalled(rootCACertPath);
+  const linuxNoSystemTrust = !IS_WIN && !IS_MAC && !isSudoAvailable();
   if (!rootCATrusted) {
     log("🔐 Cert: not trusted → installing...");
     const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
-    if (!password && !IS_WIN) {
-      throw new Error("Sudo password required to install Root CA certificate");
-    }
-    try {
-      await installCert(password, rootCACertPath);
-      log("🔐 Cert: ✅ trusted");
-    } catch (e) {
-      throw new Error(`Failed to trust certificate: ${e.message}`);
+    if (linuxNoSystemTrust) {
+      log(`🔐 Cert: skipping system trust (no sudo). Install ${rootCACertPath} as a trusted CA on machines that use this proxy.`);
+    } else {
+      if (!password && !IS_WIN) {
+        throw new Error("Sudo password required to install Root CA certificate");
+      }
+      try {
+        await installCert(password, rootCACertPath);
+        log("🔐 Cert: ✅ trusted");
+      } catch (e) {
+        throw new Error(`Failed to trust certificate: ${e.message}`);
+      }
     }
   } else {
     log("🔐 Cert: already trusted ✅");
@@ -443,8 +449,7 @@ async function startServer(apiKey, sudoPassword) {
     );
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
-  } else {
-    // Non-Windows: Root CA already installed in Step 1.5, just spawn server
+  } else if (isSudoAvailable()) {
     const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
@@ -452,6 +457,13 @@ async function startServer(apiKey, sudoPassword) {
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
     serverProcess.stdin.end();
+  } else {
+    // Docker/minimal images: no sudo — same as Windows-style direct spawn
+    serverProcess = spawn(process.execPath, [SERVER_PATH], {
+      detached: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, ROUTER_API_KEY: apiKey, NODE_ENV: "production" },
+    });
   }
 
   if (serverProcess) {
@@ -590,6 +602,10 @@ async function trustCert(sudoPassword) {
   const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
   if (!fs.existsSync(rootCACertPath)) throw new Error("Root CA not found. Start server first to generate it.");
   const { installCert } = require("./cert/install");
+  if (!IS_WIN && !IS_MAC && !isSudoAvailable()) {
+    log(`🔐 Cert: system trust unavailable (no sudo). Use file: ${rootCACertPath}`);
+    return;
+  }
   const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
   if (!password && !IS_WIN) throw new Error("Sudo password required to trust certificate");
   await installCert(password, rootCACertPath);
