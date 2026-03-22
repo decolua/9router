@@ -84,12 +84,15 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+    const comboStrategy = settings.comboStrategy || "fallback";
+    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
     return handleComboChat({
       body,
       models: comboModels,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-      log
+      log,
+      comboName: modelStr,
+      comboStrategy
     });
   }
 
@@ -107,12 +110,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models`);
+      const chatSettings = await getSettings();
+      const comboStrategy = chatSettings.comboStrategy || "fallback";
+      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
       return handleComboChat({
         body,
         models: comboModels,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-        log
+        log,
+        comboName: modelStr,
+        comboStrategy
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });

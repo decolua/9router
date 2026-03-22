@@ -6,6 +6,40 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 
 /**
+ * Track rotation state per combo (for round-robin strategy)
+ * @type {Map<string, number>}
+ */
+const comboRotationState = new Map();
+
+/**
+ * Get rotated model list based on strategy
+ * @param {string[]} models - Array of model strings
+ * @param {string} comboName - Name of the combo
+ * @param {string} strategy - "fallback" or "round-robin"
+ * @returns {string[]} Rotated models array
+ */
+export function getRotatedModels(models, comboName, strategy) {
+  if (!models || models.length <= 1 || strategy !== "round-robin") {
+    return models;
+  }
+
+  const currentIndex = comboRotationState.get(comboName) || 0;
+  const rotatedModels = [...models];
+  
+  // Rotate: move models from currentIndex to front, preserving order after
+  for (let i = 0; i < currentIndex; i++) {
+    const moved = rotatedModels.shift();
+    rotatedModels.push(moved);
+  }
+  
+  // Update state for next request (cycle through all models)
+  const nextIndex = (currentIndex + 1) % models.length;
+  comboRotationState.set(comboName, nextIndex);
+  
+  return rotatedModels;
+}
+
+/**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
@@ -32,16 +66,21 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {string[]} options.models - Array of model strings to try
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
+ * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy }) {
+  // Apply rotation strategy if enabled
+  const rotatedModels = getRotatedModels(models, comboName, comboStrategy);
+  
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
 
-  for (let i = 0; i < models.length; i++) {
-    const modelStr = models[i];
-    log.info("COMBO", `Trying model ${i + 1}/${models.length}: ${modelStr}`);
+  for (let i = 0; i < rotatedModels.length; i++) {
+    const modelStr = rotatedModels[i];
+    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
       const result = await handleSingleModel(body, modelStr);
