@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -14,6 +14,7 @@ export default function CombosPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
+  const [comboStrategies, setComboStrategies] = useState({});
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -22,17 +23,20 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
+        fetch("/api/settings"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
+      setComboStrategies(settingsData.comboStrategies || {});
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -90,6 +94,27 @@ export default function CombosPage() {
     }
   };
 
+  const handleToggleRoundRobin = async (comboName, enabled) => {
+    try {
+      const updated = { ...comboStrategies };
+      if (enabled) {
+        updated[comboName] = { fallbackStrategy: "round-robin" };
+      } else {
+        delete updated[comboName];
+      }
+      
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategies: updated }),
+      });
+      
+      setComboStrategies(updated);
+    } catch (error) {
+      console.log("Error updating combo strategy:", error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -138,6 +163,8 @@ export default function CombosPage() {
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              roundRobinEnabled={comboStrategies[combo.name]?.fallbackStrategy === "round-robin"}
+              onToggleRoundRobin={(enabled) => handleToggleRoundRobin(combo.name, enabled)}
             />
           ))}
         </div>
@@ -165,7 +192,7 @@ export default function CombosPage() {
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
+function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
   return (
     <Card padding="sm" className="group">
       <div className="flex items-center justify-between">
@@ -204,21 +231,33 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button
-            onClick={onEdit}
-            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-            title="Edit"
-          >
-            <span className="material-symbols-outlined text-[16px]">edit</span>
-          </button>
-          <button
-            onClick={onDelete}
-            className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
-            title="Delete"
-          >
-            <span className="material-symbols-outlined text-[16px]">delete</span>
-          </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Round Robin Toggle */}
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-xs text-text-muted font-medium">Round Robin</span>
+            <Toggle
+              size="sm"
+              checked={roundRobinEnabled}
+              onChange={onToggleRoundRobin}
+            />
+          </div>
+          
+          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={onEdit}
+              className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
+              title="Edit"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
+              title="Delete"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+            </button>
+          </div>
         </div>
       </div>
     </Card>
