@@ -489,6 +489,7 @@ export default function ProvidersPage() {
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const isDeprecated = !!provider.deprecated;
 
   const dotColors = {
     free: "bg-green-500",
@@ -571,6 +572,12 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             )}
           </div>
         </div>
+        {isDeprecated && (
+          <div className="mt-2 flex items-start gap-1.5 px-2 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400">
+            <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">warning</span>
+            <p className="text-[10px] leading-snug">{provider.deprecationNotice}</p>
+          </div>
+        )}
       </Card>
     </Link>
   );
