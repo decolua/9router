@@ -18,7 +18,18 @@ import { buildClineHeaders } from "@/shared/utils/clineAuth";
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
-  codex: { checkExpiry: true, refreshable: true },
+  codex: {
+    url: "https://chatgpt.com/backend-api/codex/responses",
+    method: "POST",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
+    // Minimal invalid body — triggers fast 400 without consuming quota
+    body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
+    // 400 (bad request) means auth succeeded; only 401/403 means token is bad
+    acceptStatuses: [400],
+    refreshable: true,
+  },
   "gemini-cli": {
     url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
     method: "GET",
@@ -263,9 +274,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const headers = config.noAuth
       ? { ...config.extraHeaders }
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
-    const res = await fetchWithConnectionProxy(testUrl, { method: config.method, headers }, effectiveProxy);
+    const fetchOpts = { method: config.method, headers };
+    if (config.body) fetchOpts.body = config.body;
+    const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
 
-    if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+    const accepted = res.ok || (config.acceptStatuses && config.acceptStatuses.includes(res.status));
+    if (accepted) return { valid: true, error: null, refreshed, newTokens };
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
@@ -274,11 +288,11 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
           : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
-        const retryRes = await fetchWithConnectionProxy(retryUrl, {
-          method: config.method,
-          headers: retryHeaders,
-        }, effectiveProxy);
-        if (retryRes.ok) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        const retryOpts = { method: config.method, headers: retryHeaders };
+        if (config.body) retryOpts.body = config.body;
+        const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
+        const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
+        if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
