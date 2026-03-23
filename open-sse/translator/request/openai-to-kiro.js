@@ -20,6 +20,9 @@ function convertMessages(messages, tools, model) {
   let pendingImages = [];
   let currentRole = null;
 
+  // Only Claude models support images in Kiro
+  const supportsImages = model && model.toLowerCase().includes("claude");
+
   const flushPending = () => {
     if (currentRole === "user") {
       const content = pendingUserContent.join("\n\n").trim() || "continue";
@@ -112,7 +115,7 @@ function convertMessages(messages, tools, model) {
         for (const c of msg.content) {
           if (c.type === "text" || c.text) {
             textParts.push(c.text || "");
-          } else if (c.type === "image_url") {
+          } else if (supportsImages && c.type === "image_url") {
             // OpenAI format: image_url.url with data URI
             const url = c.image_url?.url || "";
             const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
@@ -124,7 +127,7 @@ function convertMessages(messages, tools, model) {
               // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
             }
-          } else if (c.type === "image") {
+          } else if (supportsImages && c.type === "image") {
             // Claude format: source.type = "base64", source.media_type, source.data
             if (c.source?.type === "base64" && c.source?.data) {
               const mediaType = c.source.media_type || "image/png";
