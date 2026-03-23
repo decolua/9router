@@ -219,36 +219,39 @@ function convertMessages(messages, tools, model) {
     flushPending();
   }
   
-  // If last message in history is userInputMessage, use it as currentMessage
-  if (history.length > 0 && history[history.length - 1].userInputMessage) {
-    currentMessage = history.pop();
+  // Pop last userInputMessage as currentMessage (search from end, skip trailing assistant messages)
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].userInputMessage) {
+      currentMessage = history.splice(i, 1)[0];
+      break;
+    }
   }
 
-  const firstHistoryItem = history[0];
-  if (firstHistoryItem?.userInputMessage?.userInputMessageContext?.tools && 
-      !currentMessage?.userInputMessage?.userInputMessageContext?.tools) {
-    if (!currentMessage.userInputMessage.userInputMessageContext) {
-      currentMessage.userInputMessage.userInputMessageContext = {};
-    }
-    currentMessage.userInputMessage.userInputMessageContext.tools = 
-      firstHistoryItem.userInputMessage.userInputMessageContext.tools;
-  }
-    
+  // Grab tools from first history item BEFORE cleanup removes them
+  const firstHistoryTools = history[0]?.userInputMessage?.userInputMessageContext?.tools;
+
   // Clean up history for Kiro API compatibility
   history.forEach(item => {
     if (item.userInputMessage?.userInputMessageContext?.tools) {
       delete item.userInputMessage.userInputMessageContext.tools;
     }
-    
-    if (item.userInputMessage?.userInputMessageContext && 
+    if (item.userInputMessage?.userInputMessageContext &&
         Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
       delete item.userInputMessage.userInputMessageContext;
     }
-    
     if (item.userInputMessage && !item.userInputMessage.modelId) {
       item.userInputMessage.modelId = model;
     }
   });
+
+  // Inject tools into currentMessage AFTER cleanup
+  if (firstHistoryTools && currentMessage?.userInputMessage &&
+      !currentMessage.userInputMessage.userInputMessageContext?.tools) {
+    if (!currentMessage.userInputMessage.userInputMessageContext) {
+      currentMessage.userInputMessage.userInputMessageContext = {};
+    }
+    currentMessage.userInputMessage.userInputMessageContext.tools = firstHistoryTools;
+  }
 
   return { history, currentMessage };
 }
