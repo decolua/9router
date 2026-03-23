@@ -6,10 +6,9 @@ import { formatSSE } from "./stream.js";
 
 /**
  * Check for bypass patterns - return fake response without calling provider
- * Only works for Claude CLI requests
+ * Works for: Claude CLI, GitHub Copilot agent tool-call loops
  */
-export function handleBypassRequest(body, model, userAgent = "", ccFilterNaming = false) {
-  if (!userAgent.includes("claude-cli")) return null;
+export function handleBypassRequest(body, model, userAgent = "", ccFilterNaming = false, bypassAgentToolCalls = false) {
   if (!body.messages?.length) return null;
 
   const messages = body.messages;
@@ -24,49 +23,65 @@ export function handleBypassRequest(body, model, userAgent = "", ccFilterNaming 
   let shouldBypass = false;
   let namingBypass = false;
 
-  // Pattern 1: Title extraction (assistant message = "{")
-  const lastMsg = messages[messages.length - 1];
-  if (lastMsg?.role === "assistant" && lastMsg.content?.[0]?.text === "{") {
-    shouldBypass = true;
-  }
-
-  // Pattern 2: Warmup
-  if (!shouldBypass) {
-    const firstText = getText(messages[0]?.content);
-    if (firstText === "Warmup") {
+  // Pattern 0: Agent tool-call loop (GitHub Copilot / OpenCode / Cursor)
+  // Detect: Request has NO new user message, only assistant/tool messages
+  // This means it's the agent continuing its work, not a new user request
+  if (bypassAgentToolCalls) {
+    const hasNewUserMessage = messages.some(m => m.role === "user" && m.content);
+    const hasToolCalls = messages.some(m => m.role === "assistant" && (m.tool_calls || m.toolCalls));
+    const hasToolResults = messages.some(m => m.role === "tool");
+    
+    // If no new user input but has tool activity → agent internal loop (bypass to save quota)
+    if (!hasNewUserMessage && (hasToolCalls || hasToolResults)) {
       shouldBypass = true;
     }
   }
 
-  // Pattern 3: Count
-  if (!shouldBypass && messages.length === 1 && messages[0]?.role === "user") {
-    const firstText = getText(messages[0]?.content);
-    if (firstText === "count") {
+  // Pattern 1-5: Claude CLI specific patterns
+  if (!shouldBypass && userAgent.includes("claude-cli")) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.role === "assistant" && lastMsg.content?.[0]?.text === "{") {
       shouldBypass = true;
     }
-  }
 
-  // Pattern 4: Skip patterns
-  if (!shouldBypass && SKIP_PATTERNS?.length) {
-    const userMessages = messages.filter(m => m.role === "user");
-    const userText = userMessages.map(m => getText(m.content)).join(" ");
-    if (SKIP_PATTERNS.some(p => userText.includes(p))) {
-      shouldBypass = true;
+    // Pattern 2: Warmup
+    if (!shouldBypass) {
+      const firstText = getText(messages[0]?.content);
+      if (firstText === "Warmup") {
+        shouldBypass = true;
+      }
     }
-  }
 
-  // Pattern 5: CC naming request (topic title extraction by Claude Code CLI)
-  // Claude format: system is top-level body.system field, not inside messages
-  if (!shouldBypass && ccFilterNaming) {
-    const systemMsg = messages.find(m => m.role === "system");
-    const systemFromMessages = getText(systemMsg?.content);
-    const systemFromBody = Array.isArray(body.system)
-      ? body.system.filter(s => s.type === "text").map(s => s.text).join(" ")
-      : (typeof body.system === "string" ? body.system : "");
-    const systemText = systemFromMessages || systemFromBody;
-    if (systemText.includes("isNewTopic")) {
-      shouldBypass = true;
-      namingBypass = true;
+    // Pattern 3: Count
+    if (!shouldBypass && messages.length === 1 && messages[0]?.role === "user") {
+      const firstText = getText(messages[0]?.content);
+      if (firstText === "count") {
+        shouldBypass = true;
+      }
+    }
+
+    // Pattern 4: Skip patterns
+    if (!shouldBypass && SKIP_PATTERNS?.length) {
+      const userMessages = messages.filter(m => m.role === "user");
+      const userText = userMessages.map(m => getText(m.content)).join(" ");
+      if (SKIP_PATTERNS.some(p => userText.includes(p))) {
+        shouldBypass = true;
+      }
+    }
+
+    // Pattern 5: CC naming request (topic title extraction by Claude Code CLI)
+    // Claude format: system is top-level body.system field, not inside messages
+    if (!shouldBypass && ccFilterNaming) {
+      const systemMsg = messages.find(m => m.role === "system");
+      const systemFromMessages = getText(systemMsg?.content);
+      const systemFromBody = Array.isArray(body.system)
+        ? body.system.filter(s => s.type === "text").map(s => s.text).join(" ")
+        : (typeof body.system === "string" ? body.system : "");
+      const systemText = systemFromMessages || systemFromBody;
+      if (systemText.includes("isNewTopic")) {
+        shouldBypass = true;
+        namingBypass = true;
+      }
     }
   }
 

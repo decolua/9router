@@ -205,6 +205,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateBypassAgentToolCalls = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bypassAgentToolCalls: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, bypassAgentToolCalls: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update bypass agent tool calls:", err);
+    }
+  };
+
   const updateStickyLimit = async (limit) => {
     const numLimit = parseInt(limit);
     if (isNaN(numLimit) || numLimit < 1) return;
@@ -544,6 +559,21 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.comboStrategy === "round-robin"}
                 onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
+                disabled={loading}
+              />
+            </div>
+
+            {/* Bypass Agent Tool Calls */}
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <p className="font-medium">Bypass Agent Tool Calls</p>
+                <p className="text-sm text-text-muted">
+                  Skip GitHub API calls for agent internal tool execution (saves premium quota)
+                </p>
+              </div>
+              <Toggle
+                checked={settings.bypassAgentToolCalls === true}
+                onChange={() => updateBypassAgentToolCalls(!settings.bypassAgentToolCalls)}
                 disabled={loading}
               />
             </div>

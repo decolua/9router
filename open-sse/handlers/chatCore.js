@@ -23,14 +23,14 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, sourceFormatOverride }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, bypassAgentToolCalls, sourceFormatOverride }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
-  // Check for bypass patterns (warmup, skip, cc naming)
-  const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
+  // Check for bypass patterns (warmup, skip, cc naming, agent tool loops)
+  const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming, bypassAgentToolCalls);
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
