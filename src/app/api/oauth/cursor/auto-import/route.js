@@ -156,6 +156,27 @@ export async function GET() {
       });
     }
 
+    // On Linux, verify Cursor is actually installed (not just leftover config)
+    if (platform === "linux") {
+      let cursorInstalled = false;
+      try {
+        await execFileAsync("which", ["cursor"], { timeout: 5000 });
+        cursorInstalled = true;
+      } catch {
+        try {
+          const desktopFile = join(homedir(), ".local/share/applications/cursor.desktop");
+          await access(desktopFile, constants.R_OK);
+          cursorInstalled = true;
+        } catch { /* not found */ }
+      }
+      if (!cursorInstalled) {
+        return NextResponse.json({
+          found: false,
+          error: "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
+        });
+      }
+    }
+
     // Strategy 1: sqlite3 CLI
     try {
       const tokens = await extractTokensViaCLI(dbPath);
