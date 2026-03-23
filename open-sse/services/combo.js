@@ -74,11 +74,20 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
       }
 
       // Check if should fallback to next model
-      const { shouldFallback } = checkFallbackError(result.status, errorText);
-      
+      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
+      }
+
+      // For transient errors (503/502/504), wait for cooldown before falling through
+      // so a briefly-overloaded provider gets a chance to recover rather than being
+      // skipped immediately (fixes: combo falls through on transient 503)
+      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+          (result.status === 503 || result.status === 502 || result.status === 504)) {
+        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+        await new Promise(r => setTimeout(r, cooldownMs));
       }
 
       // Fallback to next model
@@ -94,7 +103,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
   }
 
   // All models failed
-  const status =  406;
+  // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
+  // the request itself is invalid, but here the providers are simply unavailable
+  // or have no active credentials. 503 is more accurate and retryable by clients.
+  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
+  const status = allDisabled ? 503 : (lastStatus || 503);
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
