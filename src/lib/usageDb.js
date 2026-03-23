@@ -66,7 +66,8 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
 
 // Default data structure
 const defaultData = {
-  history: []
+  history: [],
+  totalRequestsLifetime: 0
 };
 
 // Singleton instance
@@ -240,10 +241,14 @@ export async function saveRequestUsage(entry) {
     if (!Array.isArray(db.data.history)) {
       db.data.history = [];
     }
+    if (typeof db.data.totalRequestsLifetime !== "number") {
+      db.data.totalRequestsLifetime = db.data.history.length;
+    }
 
     const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
     entry.cost = entryCost;
     db.data.history.push(entry);
+    db.data.totalRequestsLifetime += 1;
 
     // Cap history to prevent unbounded memory/disk growth
     const MAX_HISTORY = 10000;
@@ -521,8 +526,12 @@ export async function getUsageStats(period = "all") {
     })
     .slice(0, 20);
 
+  const lifetimeTotalRequests = typeof db.data.totalRequestsLifetime === "number"
+    ? db.data.totalRequestsLifetime
+    : history.length;
+
   const stats = {
-    totalRequests: history.length,
+    totalRequests: lifetimeTotalRequests,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
     totalCost: 0,
