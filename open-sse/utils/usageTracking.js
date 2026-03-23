@@ -306,8 +306,9 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
   const reasoning = usage.reasoning_tokens;
   
   // Calculate cache efficiency metrics
-  const totalInputTokens = inTokens + (cacheRead || 0) + (cacheCreation || 0);
-  const cacheEfficiency = totalInputTokens > 0 ? ((cacheRead || 0) / totalInputTokens * 100).toFixed(1) : 0;
+  // Efficiency = cached tokens / total prompt tokens (which already includes cached + creation tokens)
+  // inTokens already represents the full prompt_tokens value (input + cache_read + cache_creation combined)
+  const cacheEfficiency = inTokens > 0 ? ((cacheRead || 0) / inTokens * 100).toFixed(1) : 0;
   
   if (cacheRead) {
     msg += ` | cache_read=${cacheRead}`;
