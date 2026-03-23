@@ -161,6 +161,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
 
+  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+  if (translatedResponse?.choices?.[0]) {
+    const choice = translatedResponse.choices[0];
+    const msg = choice.message;
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+      choice.finish_reason = "tool_calls";
+    }
+  }
+
   // Ensure OpenAI-required fields
   if (!translatedResponse.object) translatedResponse.object = "chat.completion";
   if (!translatedResponse.created) translatedResponse.created = Math.floor(Date.now() / 1000);

@@ -50,6 +50,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
+  const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
   let finishReason = "stop";
   let usage = null;
 
@@ -60,10 +61,27 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
+
+    // Accumulate tool_calls from streaming deltas
+    if (Array.isArray(delta.tool_calls)) {
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index ?? 0;
+        if (!toolCallMap.has(idx)) {
+          toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: "", arguments: "" } });
+        }
+        const existing = toolCallMap.get(idx);
+        if (tc.id) existing.id = tc.id;
+        if (tc.function?.name) existing.function.name += tc.function.name;
+        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+      }
+    }
   }
 
-  const message = { role: "assistant", content: contentParts.join("") };
+  const message = { role: "assistant", content: contentParts.join("") || (toolCallMap.size > 0 ? null : "") };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
+  if (toolCallMap.size > 0) {
+    message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
+  }
 
   const result = {
     id: first.id || `chatcmpl-${Date.now()}`,
@@ -125,6 +143,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       const outTokens = usage.output_tokens || 0;
       let finalResp;
 
+      // Extract tool calls from Responses API output (function_call items)
+      const funcCallItems = (jsonResponse.output || []).filter(item => item.type === "function_call");
+      const toolCalls = funcCallItems.map((item, idx) => ({
+        id: item.call_id || `call_${item.name}_${Date.now()}_${idx}`,
+        type: "function",
+        function: {
+          name: item.name,
+          arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})
+        }
+      }));
+      const hasToolCalls = toolCalls.length > 0;
+
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
         finalResp = {
           response: {
@@ -135,12 +165,15 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
           }
         };
       } else {
+        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        if (hasToolCalls) message.tool_calls = toolCalls;
+        const finishReason = hasToolCalls ? "tool_calls" : (jsonResponse.status === "completed" ? "stop" : (jsonResponse.status || "stop"));
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
-          choices: [{ index: 0, message: { role: "assistant", content: textContent || "" }, finish_reason: jsonResponse.status === "completed" ? "stop" : (jsonResponse.status || "stop") }],
+          choices: [{ index: 0, message, finish_reason: finishReason }],
           usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
         };
       }
