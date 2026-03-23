@@ -21,6 +21,9 @@ export function detectFormatByEndpoint(pathname, body) {
   // /v1/responses is always openai-responses
   if (pathname.includes("/v1/responses")) return FORMATS.OPENAI_RESPONSES;
 
+  // /v1/messages is always Claude
+  if (pathname.includes("/v1/messages")) return FORMATS.CLAUDE;
+
   // /v1/chat/completions + input[] → treat as openai (Cursor CLI sends Responses body via chat endpoint)
   if (pathname.includes("/v1/chat/completions") && Array.isArray(body?.input)) {
     return FORMATS.OPENAI;
