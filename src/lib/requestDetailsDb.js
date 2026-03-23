@@ -1,8 +1,8 @@
 import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
+import { getUserDataDir } from "./dataDir.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
@@ -13,25 +13,7 @@ const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via setting
 const CONFIG_CACHE_TTL_MS = 5000;
 const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
 
-function getAppName() {
-  return "9router";
-}
-
-function getUserDataDir() {
-  if (isCloud) return "/tmp";
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  const platform = process.platform;
-  const homeDir = os.homedir();
-  const appName = getAppName();
-
-  if (platform === "win32") {
-    return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-  }
-  return path.join(homeDir, `.${appName}`);
-}
-
-const DATA_DIR = getUserDataDir();
+const DATA_DIR = isCloud ? "/tmp" : getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "request-details.json");
 
 if (!isCloud && !fs.existsSync(DATA_DIR)) {
