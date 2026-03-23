@@ -89,7 +89,7 @@ export class IFlowExecutor extends BaseExecutor {
   }
 
   /**
-   * Transform request body (passthrough for iFlow)
+   * Transform request body - inject stream_options for usage data
    * @param {string} model - Model name
    * @param {object} body - Request body
    * @param {boolean} stream - Whether streaming is enabled
@@ -97,6 +97,10 @@ export class IFlowExecutor extends BaseExecutor {
    * @returns {object} Transformed body
    */
   transformRequest(model, body, stream, credentials) {
+    // Inject stream_options for streaming requests to get usage data
+    if (stream && body.messages && !body.stream_options) {
+      body.stream_options = { include_usage: true };
+    }
     return body;
   }
 }
