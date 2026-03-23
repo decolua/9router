@@ -79,27 +79,30 @@ export function filterToOpenAIFormat(body) {
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
       // Already OpenAI format
-      if (tool.type === "function" && tool.function) return tool;
-      
+      if (tool.type === "function" && tool.function) {
+        tool.function.description = String(tool.function.description || "");
+        return tool;
+      }
+
       // Claude format: {name, description, input_schema}
       if (tool.name && (tool.input_schema || tool.description)) {
         return {
           type: "function",
           function: {
             name: tool.name,
-            description: tool.description || "",
+            description: String(tool.description || ""),
             parameters: tool.input_schema || { type: "object", properties: {} }
           }
         };
       }
-      
+
       // Gemini format: {functionDeclarations: [{name, description, parameters}]}
       if (tool.functionDeclarations && Array.isArray(tool.functionDeclarations)) {
         return tool.functionDeclarations.map(fn => ({
           type: "function",
           function: {
             name: fn.name,
-            description: fn.description || "",
+            description: String(fn.description || ""),
             parameters: fn.parameters || { type: "object", properties: {} }
           }
         }));
