@@ -54,6 +54,7 @@ const defaultData = {
     tunnelUrl: "",
     stickyRoundRobinLimit: 3,
     providerStrategies: {},
+    comboStrategy: "fallback",
     requireLogin: true,
     observabilityEnabled: true,
     observabilityMaxRecords: 1000,

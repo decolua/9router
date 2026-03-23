@@ -190,6 +190,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateComboStrategy = async (strategy) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategy: strategy }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, comboStrategy: strategy }));
+      }
+    } catch (err) {
+      console.error("Failed to update combo strategy:", err);
+    }
+  };
+
   const updateStickyLimit = async (limit) => {
     const numLimit = parseInt(limit);
     if (isNaN(numLimit) || numLimit < 1) return;
@@ -517,6 +532,21 @@ export default function ProfilePage() {
                 />
               </div>
             )}
+
+            {/* Combo Round Robin */}
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <p className="font-medium">Combo Round Robin</p>
+                <p className="text-sm text-text-muted">
+                  Cycle through providers in combos instead of always starting with first
+                </p>
+              </div>
+              <Toggle
+                checked={settings.comboStrategy === "round-robin"}
+                onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
+                disabled={loading}
+              />
+            </div>
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
