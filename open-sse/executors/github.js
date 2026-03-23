@@ -19,8 +19,15 @@ export class GithubExecutor extends BaseExecutor {
     return this.config.baseUrl;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, body = null) {
     const token = credentials.copilotToken || credentials.accessToken;
+    
+    // Detect if this is an agent call (has assistant/tool messages)
+    // Similar to copilot-api's X-Initiator logic
+    const isAgentCall = body?.messages?.some((msg) =>
+      ["assistant", "tool"].includes(msg?.role)
+    );
+    
     return {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -32,7 +39,7 @@ export class GithubExecutor extends BaseExecutor {
       "x-github-api-version": GITHUB_COPILOT.API_VERSION,
       "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
-      "X-Initiator": "user",
+      "X-Initiator": isAgentCall ? "agent" : "user",
       "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
@@ -136,7 +143,7 @@ export class GithubExecutor extends BaseExecutor {
 
   async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.config.responsesUrl;
-    const headers = this.buildHeaders(credentials, stream);
+    const headers = this.buildHeaders(credentials, stream, body);
 
     const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
 
