@@ -38,6 +38,9 @@
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
   },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.6.2"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
