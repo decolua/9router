@@ -5,6 +5,31 @@ import { FORMATS } from "../../translator/formats.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
 
+function textFromResponsesMessageItem(item) {
+  if (!item?.content || !Array.isArray(item.content)) return "";
+  const byType = item.content.find((c) => c.type === "output_text");
+  if (typeof byType?.text === "string") return byType.text;
+  const anyText = item.content.find((c) => typeof c.text === "string");
+  if (typeof anyText?.text === "string") return anyText.text;
+  return "";
+}
+
+/**
+ * Codex / Responses API may emit many alternating reasoning + message items.
+ * Early message blocks often have empty output_text; the user-visible answer is usually in the last non-empty message.
+ */
+function pickAssistantMessageForChatCompletion(output) {
+  if (!Array.isArray(output)) return { msgItem: null, textContent: null };
+  const messages = output.filter((item) => item?.type === "message");
+  if (messages.length === 0) return { msgItem: null, textContent: null };
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const text = textFromResponsesMessageItem(messages[i]);
+    if (text.length > 0) return { msgItem: messages[i], textContent: text };
+  }
+  const last = messages[messages.length - 1];
+  return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
 /**
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
@@ -79,8 +104,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       appendLog({ tokens: usage, status: "200 OK" });
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
-      const msgItem = jsonResponse.output?.find(item => item.type === "message");
-      const textContent = msgItem?.content?.find(c => c.type === "output_text")?.text || msgItem?.content?.[0]?.text || null;
+      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
