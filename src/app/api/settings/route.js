@@ -1,21 +1,26 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { getUserDataDir } from "@/lib/dataDir";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
   try {
     const settings = await getSettings();
     const { password, ...safeSettings } = settings;
-    
+
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
-    return NextResponse.json({ 
-      ...safeSettings, 
+
+    let dataDir;
+    try { dataDir = getUserDataDir(); } catch { dataDir = null; }
+
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
       enableTranslator,
-      hasPassword: !!password
+      hasPassword: !!password,
+      dataDir,
     });
   } catch (error) {
     console.log("Error getting settings:", error);

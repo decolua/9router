@@ -371,7 +371,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
               <div>
                 <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+                <p className="text-sm text-text-muted font-mono">{settings.dataDir ? `${settings.dataDir}/db.json` : "~/.9router/db.json"}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
