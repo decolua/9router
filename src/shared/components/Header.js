@@ -3,49 +3,104 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import PropTypes from "prop-types";
+import ProviderIcon from "@/shared/components/ProviderIcon";
 import { ThemeToggle, LanguageSwitcher } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { translate } from "@/i18n/runtime";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
-  
+
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
   if (providerMatch) {
     const providerId = providerMatch[1];
-    const providerInfo = OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId];
+    const providerInfo =
+      OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId];
     if (providerInfo) {
       return {
         title: providerInfo.name,
         description: "",
         breadcrumbs: [
           { label: "Providers", href: "/dashboard/providers" },
-          { label: providerInfo.name, image: `/providers/${providerInfo.id}.png` }
-        ]
+          {
+            label: providerInfo.name,
+            image: `/providers/${providerInfo.id}.png`,
+          },
+        ],
       };
     }
   }
-  
-  if (pathname.includes("/providers")) return { title: "Providers", description: "Manage your AI provider connections", breadcrumbs: [] };
-  if (pathname.includes("/combos")) return { title: "Combos", description: "Model combos with fallback", breadcrumbs: [] };
-  if (pathname.includes("/usage")) return { title: "Usage & Analytics", description: "Monitor your API usage, token consumption, and request logs", breadcrumbs: [] };
-  if (pathname.includes("/mitm")) return { title: "MITM Proxy", description: "Intercept CLI tool traffic and route through 9Router", breadcrumbs: [] };
-  if (pathname.includes("/cli-tools")) return { title: "CLI Tools", description: "Configure CLI tools", breadcrumbs: [] };
-  if (pathname.includes("/endpoint")) return { title: "Endpoint", description: "API endpoint configuration", breadcrumbs: [] };
-  if (pathname.includes("/profile")) return { title: "Settings", description: "Manage your preferences", breadcrumbs: [] };
-  if (pathname.includes("/translator")) return { title: "Translator", description: "Debug translation flow between formats", breadcrumbs: [] };
-  if (pathname.includes("/console-log")) return { title: "Console Log", description: "Live server console output", breadcrumbs: [] };
-  if (pathname === "/dashboard") return { title: "Endpoint", description: "API endpoint configuration", breadcrumbs: [] };
+
+  if (pathname.includes("/providers"))
+    return {
+      title: "Providers",
+      description: "Manage your AI provider connections",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/combos"))
+    return {
+      title: "Combos",
+      description: "Model combos with fallback",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/usage"))
+    return {
+      title: "Usage & Analytics",
+      description:
+        "Monitor your API usage, token consumption, and request logs",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/mitm"))
+    return {
+      title: "MITM Proxy",
+      description: "Intercept CLI tool traffic and route through 9Router",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/cli-tools"))
+    return {
+      title: "CLI Tools",
+      description: "Configure CLI tools",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/endpoint"))
+    return {
+      title: "Endpoint",
+      description: "API endpoint configuration",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/profile"))
+    return {
+      title: "Settings",
+      description: "Manage your preferences",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/translator"))
+    return {
+      title: "Translator",
+      description: "Debug translation flow between formats",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/console-log"))
+    return {
+      title: "Console Log",
+      description: "Live server console output",
+      breadcrumbs: [],
+    };
+  if (pathname === "/dashboard")
+    return {
+      title: "Endpoint",
+      description: "API endpoint configuration",
+      breadcrumbs: [],
+    };
   return { title: "", description: "", breadcrumbs: [] };
 };
 
 export default function Header({ onMenuClick, showMenuButton = true }) {
   const pathname = usePathname();
   const router = useRouter();
-  
+
   // Memoize page info to prevent unnecessary recalculations
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, breadcrumbs } = pageInfo;
@@ -81,7 +136,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
-              <div key={`${crumb.label}-${crumb.href || "current"}`} className="flex items-center gap-2">
+              <div
+                key={`${crumb.label}-${crumb.href || "current"}`}
+                className="flex items-center gap-2"
+              >
                 {index > 0 && (
                   <span className="material-symbols-outlined text-text-muted text-base">
                     chevron_right
@@ -97,14 +155,12 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                 ) : (
                   <div className="flex items-center gap-2">
                     {crumb.image && (
-                      <Image
+                      <ProviderIcon
                         src={crumb.image}
                         alt={crumb.label}
-                        width={28}
-                        height={28}
+                        size={28}
                         className="object-contain rounded max-w-[28px] max-h-[28px]"
-                        sizes="28px"
-                        onError={(e) => { e.currentTarget.style.display = "none"; }}
+                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
                       />
                     )}
                     <h1 className="text-2xl font-semibold text-text-main tracking-tight">
@@ -117,9 +173,13 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           </div>
         ) : title ? (
           <div>
-            <h1 className="text-2xl font-semibold text-text-main tracking-tight">{translate(title)}</h1>
+            <h1 className="text-2xl font-semibold text-text-main tracking-tight">
+              {translate(title)}
+            </h1>
             {description && (
-              <p className="text-sm text-text-muted">{translate(description)}</p>
+              <p className="text-sm text-text-muted">
+                {translate(description)}
+              </p>
             )}
           </div>
         ) : null}
@@ -150,4 +210,3 @@ Header.propTypes = {
   onMenuClick: PropTypes.func,
   showMenuButton: PropTypes.bool,
 };
-
