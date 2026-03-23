@@ -1,7 +1,7 @@
 const fs = require("fs");
 const crypto = require("crypto");
 const { exec } = require("child_process");
-const { execWithPassword } = require("../dns/dnsConfig.js");
+const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
 const { log, err } = require("../logger");
 
 const IS_WIN = process.platform === "win32";
@@ -151,6 +151,10 @@ function checkCertInstalledLinux() {
 }
 
 async function installCertLinux(sudoPassword, certPath) {
+  if (!isSudoAvailable()) {
+    log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
+    return;
+  }
   const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
   // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
   const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
@@ -163,6 +167,9 @@ async function installCertLinux(sudoPassword, certPath) {
 }
 
 async function uninstallCertLinux(sudoPassword) {
+  if (!isSudoAvailable()) {
+    return;
+  }
   const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
