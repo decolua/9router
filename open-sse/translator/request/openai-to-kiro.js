@@ -113,16 +113,23 @@ function convertMessages(messages, tools, model) {
           if (c.type === "text" || c.text) {
             textParts.push(c.text || "");
           } else if (c.type === "image_url") {
+            // OpenAI format: image_url.url with data URI
             const url = c.image_url?.url || "";
             const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
             if (base64Match) {
-              // Extract format from media type (e.g. "image/png" → "png")
               const mediaType = base64Match[1];
               const format = mediaType.split("/")[1] || mediaType;
               pendingImages.push({ format, source: { bytes: base64Match[2] } });
             } else if (url.startsWith("http://") || url.startsWith("https://")) {
-              // Kiro images field only supports base64 — fallback to URL text
+              // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
+            }
+          } else if (c.type === "image") {
+            // Claude format: source.type = "base64", source.media_type, source.data
+            if (c.source?.type === "base64" && c.source?.data) {
+              const mediaType = c.source.media_type || "image/png";
+              const format = mediaType.split("/")[1] || mediaType;
+              pendingImages.push({ format, source: { bytes: c.source.data } });
             }
           }
         }
