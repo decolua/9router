@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { formatResetTime, calculatePercentage } from "./utils";
 import { translate } from "@/i18n/runtime";
 
@@ -49,7 +50,7 @@ function getColorClasses(remainingPercentage) {
       emoji: "🟢"
     };
   }
-  
+
   if (remainingPercentage >= 30) {
     return {
       text: "text-yellow-600 dark:text-yellow-400",
@@ -58,8 +59,7 @@ function getColorClasses(remainingPercentage) {
       emoji: "🟡"
     };
   }
-  
-  // 0-29% including 0% (out of quota) - show red
+
   return {
     text: "text-red-600 dark:text-red-400",
     bg: "bg-red-500",
@@ -68,9 +68,6 @@ function getColorClasses(remainingPercentage) {
   };
 }
 
-/**
- * Quota Table Component - Table-based display for quota data
- */
 function getWarmupErrorMap(warmupState) {
   if (warmupState?.running) {
     return new Map();
@@ -114,9 +111,6 @@ function formatRelativeTime(dateString) {
   }
 }
 
-/**
- * Get warmup status display for a connection
- */
 function getWarmupStatusDisplay(warmupState) {
   if (!warmupState) return null;
 
@@ -144,8 +138,7 @@ function getWarmupStatusDisplay(warmupState) {
     };
   }
 
-  // Check if skipped due to quota exhausted
-  if (skipped && skipReason === "quota_exhausted") {
+  if (skipped && typeof skipReason === "string" && skipReason.startsWith("quota_exhausted")) {
     return {
       type: "skipped",
       icon: "pause_circle",
@@ -157,8 +150,7 @@ function getWarmupStatusDisplay(warmupState) {
     };
   }
 
-  // Check for errors
-  const errorModels = Object.values(models || {}).filter(m => m.status === "error");
+  const errorModels = Object.values(models || {}).filter((m) => m.status === "error");
   if (errorModels.length > 0) {
     return {
       type: "error",
@@ -171,9 +163,8 @@ function getWarmupStatusDisplay(warmupState) {
     };
   }
 
-  // Check for success (all models succeeded)
   const modelList = Object.values(models || {});
-  if (modelList.length > 0 && modelList.every(m => m.status === "success")) {
+  if (modelList.length > 0 && modelList.every((m) => m.status === "success")) {
     return {
       type: "success",
       icon: "check_circle",
@@ -190,13 +181,55 @@ function getWarmupStatusDisplay(warmupState) {
   return null;
 }
 
-export default function QuotaTable({ quotas = [], warmupState = null }) {
+export default function QuotaTable({ quotas = [], warmupState = null, showWarmupState = true }) {
+  const [dismissedErrorKeys, setDismissedErrorKeys] = useState([]);
+
+  const rawWarmupErrorMap = useMemo(
+    () => (showWarmupState ? getWarmupErrorMap(warmupState) : new Map()),
+    [showWarmupState, warmupState]
+  );
+  const warmupStatus = showWarmupState ? getWarmupStatusDisplay(warmupState) : null;
+
+  const dedupedWarmupErrors = useMemo(() => {
+    const uniqueStates = [];
+    const seen = new Set();
+
+    for (const state of rawWarmupErrorMap.values()) {
+      const key = `${state.modelName || "unknown"}-${state.lastRunAt || "never"}-${state.lastError || ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueStates.push({ ...state, __errorKey: key });
+    }
+
+    return uniqueStates;
+  }, [rawWarmupErrorMap]);
+
+  useEffect(() => {
+    if (!showWarmupState) {
+      setDismissedErrorKeys([]);
+      return;
+    }
+    setDismissedErrorKeys([]);
+  }, [showWarmupState, warmupState?.lastRunAt]);
+
+  useEffect(() => {
+    if (!showWarmupState || dedupedWarmupErrors.length === 0) return undefined;
+
+    const timer = setTimeout(() => {
+      setDismissedErrorKeys(dedupedWarmupErrors.map((state) => state.__errorKey));
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [showWarmupState, dedupedWarmupErrors]);
+
+  const visibleWarmupErrors = dedupedWarmupErrors.filter(
+    (state) => !dismissedErrorKeys.includes(state.__errorKey)
+  );
+
   if (!quotas || quotas.length === 0) {
     return null;
   }
 
-  const warmupErrorMap = getWarmupErrorMap(warmupState);
-  const warmupStatus = getWarmupStatusDisplay(warmupState);
   return (
     <div className="overflow-x-auto">
       <table className="w-full table-fixed">
@@ -206,46 +239,38 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
             const remaining = quota.remainingPercentage !== undefined
               ? Math.round(quota.remainingPercentage)
               : calculatePercentage(quota.used, quota.total);
-            
+
             const colors = getColorClasses(remaining);
             const countdown = formatResetTime(quota.resetAt);
             const resetDisplay = formatResetTimeDisplay(quota.resetAt);
-            const warmupError = warmupErrorMap.get(quota.modelKey) || warmupErrorMap.get(quota.name) || null;
-            if (warmupError) {
-              warmupErrorMap.delete(quota.modelKey);
-              warmupErrorMap.delete(quota.name);
-              if (warmupError.modelName) {
-                warmupErrorMap.delete(warmupError.modelName);
-              }
-            }
+            const warmupError = visibleWarmupErrors.find(
+              (state) => state.modelName === quota.modelKey
+                || state.modelName === quota.name
+            ) || null;
 
             return (
-              <tr 
+              <tr
                 key={index}
                 className="border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
               >
-                {/* Model Name with Status Emoji */}
-                <td className="py-2 px-3">
-                  <div className="flex items-center gap-2">
+                <td className="py-2 px-3 align-middle">
+                  <div className="flex items-center gap-2 min-h-[44px]">
                     <span className="text-xs">{colors.emoji}</span>
                     <span className="text-sm font-medium text-text-primary">{quota.name}</span>
                   </div>
                 </td>
 
-                {/* Limit (Progress + Numbers) */}
-                <td className="py-2 px-3">
+                <td className="py-2 px-3 align-middle">
                   <div className="space-y-1.5">
-                    {/* Progress bar - always show with border for visibility */}
                     <div className={`h-1.5 rounded-full overflow-hidden border ${colors.bgLight} ${
-                      remaining === 0 ? 'border-black/10 dark:border-white/10' : 'border-transparent'
+                      remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
                     }`}>
                       <div
                         className={`h-full transition-all duration-300 ${colors.bg}`}
                         style={{ width: `${Math.min(remaining, 100)}%` }}
                       />
                     </div>
-                    
-                    {/* Numbers */}
+
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-text-muted">
                         {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
@@ -257,10 +282,9 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
                   </div>
                 </td>
 
-                {/* Reset Time */}
-                <td className="py-2 px-3">
+                <td className="py-2 px-3 align-middle">
                   {(countdown !== "-" || resetDisplay || warmupError) ? (
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-h-[44px] flex flex-col justify-center">
                       {countdown !== "-" && (
                         <div className="text-sm text-text-primary font-medium">
                           {translate("in")} {countdown}
@@ -272,8 +296,8 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
                         </div>
                       )}
                       {warmupError && (
-                        <div className="flex items-start gap-1.5 text-xs">
-                          <span className="material-symbols-outlined text-[14px] text-red-500 shrink-0 mt-0.5">error</span>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="material-symbols-outlined text-[14px] text-red-500 shrink-0">error</span>
                           <span className="text-red-600 dark:text-red-400 leading-relaxed">
                             {warmupError.lastError}
                           </span>
@@ -281,7 +305,7 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
                       )}
                     </div>
                   ) : (
-                    <div className="text-sm text-text-muted italic">{translate("N/A")}</div>
+                    <div className="text-sm text-text-muted italic min-h-[44px] flex items-center">{translate("N/A")}</div>
                   )}
                 </td>
               </tr>
@@ -289,7 +313,7 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
           })}
         </tbody>
       </table>
-      {/* Warmup Status Display */}
+
       {warmupStatus && (
         <div className={`mt-3 rounded-lg border ${warmupStatus.borderColor} ${warmupStatus.bgColor} p-3`}>
           <div className="flex items-center justify-between">
@@ -311,13 +335,13 @@ export default function QuotaTable({ quotas = [], warmupState = null }) {
         </div>
       )}
 
-      {Array.from(new Set(warmupErrorMap.values())).length > 0 && (
+      {visibleWarmupErrors.length > 0 && (
         <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-          <div className="flex items-start gap-2">
-            <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0 mt-0.5">error_outline</span>
+          <div className="flex items-center gap-2 min-h-[44px]">
+            <span className="material-symbols-outlined text-[16px] text-red-500 shrink-0">error_outline</span>
             <div className="space-y-1">
-              {Array.from(new Set(warmupErrorMap.values())).map((state) => (
-                <div key={`${state.modelName || "unknown"}-${state.lastRunAt || "never"}`} className="text-xs text-red-600 dark:text-red-400">
+              {visibleWarmupErrors.map((state) => (
+                <div key={state.__errorKey} className="text-xs text-red-600 dark:text-red-400">
                   <span className="font-medium">{state.modelName || translate("Unknown model")}:</span>{" "}
                   <span className="opacity-90">{state.lastError}</span>
                 </div>

@@ -10,6 +10,7 @@ import {
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId,
 } from "open-sse/config/providerModels.js";
+import { getUsageForProvider } from "open-sse/services/usage.js";
 
 export const QUOTA_TARGET_CONNECTION_HEADER = "x-9router-target-connection-id";
 
@@ -19,11 +20,11 @@ const INTERNAL_BASE_URL =
   `http://127.0.0.1:${process.env.PORT || "20128"}`;
 
 const QUOTA_AUTO_TRIGGER_INTERVAL_MS = 60 * 60 * 1000;
-const ANTIGRAVITY_TARGET_MODELS = [
+const ANTIGRAVITY_WARMUP_MODEL_IDS = new Set([
   "gemini-3-flash",
   "gemini-3.1-pro-low",
   "claude-sonnet-4-6",
-];
+]);
 
 function getProviderPriority(provider) {
   if (provider === "antigravity") return 1;
@@ -84,17 +85,15 @@ export function getTargetModelsForConnection(connection) {
   if (!providerId) return [];
 
   const models = getModelsByProviderId(providerId);
-  const modelMap = new Map(models.map((model) => [model.id, model]));
 
   if (providerId === "antigravity") {
-    return ANTIGRAVITY_TARGET_MODELS.map((modelId) => {
-      const model = modelMap.get(modelId);
-      return {
-        id: modelId,
-        name: model?.name || modelId,
-        fullModel: `${PROVIDER_ID_TO_ALIAS[providerId] || providerId}/${modelId}`,
-      };
-    });
+    return models
+      .filter((model) => ANTIGRAVITY_WARMUP_MODEL_IDS.has(model.id))
+      .map((model) => ({
+        id: model.id,
+        name: model.name || model.id,
+        fullModel: `${PROVIDER_ID_TO_ALIAS[providerId] || providerId}/${model.id}`,
+      }));
   }
 
   const firstModel = models[0];
@@ -109,6 +108,67 @@ export function getTargetModelsForConnection(connection) {
 
 function getConnectionLabel(connection) {
   return connection.name || connection.email || connection.provider || connection.id;
+}
+
+function getQuotaRemaining(quota) {
+  if (!quota || quota.unlimited) return Infinity;
+  if (typeof quota.remaining === "number") return quota.remaining;
+  if (typeof quota.total === "number" && typeof quota.used === "number") {
+    return quota.total - quota.used;
+  }
+  return null;
+}
+
+function analyzeQuotaRefreshability(usage) {
+  const quotas = usage?.quotas;
+  if (!quotas || typeof quotas !== "object") {
+    return {
+      shouldWarmup: true,
+      skipReason: null,
+      exhaustedQuotas: [],
+    };
+  }
+
+  const entries = Object.entries(quotas);
+  const exhaustedQuotas = entries
+    .filter(([, quota]) => {
+      const remaining = getQuotaRemaining(quota);
+      return remaining !== null && remaining <= 0;
+    })
+    .map(([name]) => name);
+
+  const sessionEntry = entries.find(([name]) => /^session(\s|\(|$)/i.test(name));
+  const weeklyEntries = entries.filter(([name]) => /^weekly(\s|\(|$)/i.test(name));
+
+  const sessionRemaining = sessionEntry ? getQuotaRemaining(sessionEntry[1]) : null;
+  const hasSessionWindow = sessionRemaining !== null;
+  const weeklyRemainingValues = weeklyEntries
+    .map(([, quota]) => getQuotaRemaining(quota))
+    .filter((value) => value !== null);
+  const hasWeeklyWindow = weeklyRemainingValues.length > 0;
+  const weeklyRecoverable = weeklyRemainingValues.some((value) => value > 0);
+
+  if (hasWeeklyWindow && !weeklyRecoverable) {
+    return {
+      shouldWarmup: false,
+      skipReason: "quota_exhausted_weekly",
+      exhaustedQuotas,
+    };
+  }
+
+  if (hasSessionWindow && sessionRemaining <= 0) {
+    return {
+      shouldWarmup: false,
+      skipReason: hasWeeklyWindow ? "quota_exhausted_session" : "quota_exhausted_session_only",
+      exhaustedQuotas,
+    };
+  }
+
+  return {
+    shouldWarmup: true,
+    skipReason: null,
+    exhaustedQuotas,
+  };
 }
 
 export async function getQuotaAutoTriggerConnections() {
@@ -247,6 +307,33 @@ async function runConnectionWarmup({ connection, baseUrl, apiKey }) {
     return;
   }
 
+  const usage = await getUsageForProvider(connection).catch((error) => ({
+    message: trimErrorMessage(error),
+  }));
+  const quotaDecision = analyzeQuotaRefreshability(usage);
+  if (!quotaDecision.shouldWarmup) {
+    await updateProviderConnection(connection.id, {
+      quotaWarmupState: {
+        ...currentState,
+        running: false,
+        phase: "success",
+        currentModelId: null,
+        currentModelName: null,
+        lastRunAt: startedAt,
+        skipped: true,
+        skipReason: quotaDecision.skipReason || "quota_exhausted",
+        exhaustedQuotas: quotaDecision.exhaustedQuotas,
+      },
+    });
+    return;
+  }
+
+  currentState = await persistWarmupState(connection.id, currentState, {
+    skipped: false,
+    skipReason: null,
+    exhaustedQuotas: quotaDecision.exhaustedQuotas,
+  });
+
   const results = [];
   for (const model of models) {
     const previousModelState = currentState.models?.[model.id] || {};
@@ -310,6 +397,10 @@ export class QuotaAutoTriggerService {
     if (this.intervalId?.unref) {
       this.intervalId.unref();
     }
+
+    this.run({ reason: "startup" }).catch((error) => {
+      console.error("[QuotaAutoTrigger] Startup run failed:", error);
+    });
   }
 
   stop() {

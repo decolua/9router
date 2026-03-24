@@ -42,7 +42,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const availableConnections = connections.filter(c => {
       if (preferredConnectionId && c.id !== preferredConnectionId) return false;
       if (excludeSet.has(c.id)) return false;
-      if (preferredConnectionId) return true;
       if (isModelLockActive(c, model)) return false;
       return true;
     });

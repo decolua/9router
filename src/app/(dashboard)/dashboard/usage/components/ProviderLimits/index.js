@@ -547,6 +547,7 @@ export default function ProviderLimits() {
                   <QuotaTable
                     quotas={quota?.quotas}
                     warmupState={warmupState}
+                    showWarmupState={quotaAutoTriggerEnabled}
                   />
                 )}
               </div>
