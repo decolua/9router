@@ -1,4 +1,6 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import {
@@ -8,12 +10,26 @@ import {
   KIRO_CONFIG,
   QWEN_CONFIG,
   CLAUDE_CONFIG,
+  CLINE_CONFIG,
+  KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
+import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
-  codex: { checkExpiry: true, refreshable: true },
+  codex: {
+    url: "https://chatgpt.com/backend-api/codex/responses",
+    method: "POST",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
+    // Minimal invalid body — triggers fast 400 without consuming quota
+    body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
+    // 400 (bad request) means auth succeeded; only 401/403 means token is bad
+    acceptStatuses: [400],
+    refreshable: true,
+  },
   "gemini-cli": {
     url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
     method: "GET",
@@ -43,8 +59,27 @@ const OAUTH_TEST_CONFIG = {
   },
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
+  "kimi-coding": { checkExpiry: true, refreshable: false },
   cursor: { tokenExists: true },
+  kilocode: {
+    url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
+  cline: { refreshable: true },
 };
+
+async function probeClineAccessToken(accessToken) {
+  const res = await fetch("https://api.cline.bot/api/v1/users/me", {
+    method: "GET",
+    headers: buildClineHeaders(accessToken, {
+      Accept: "application/json",
+    }),
+  });
+
+  return res;
+}
 
 async function refreshOAuthToken(connection) {
   const provider = connection.provider;
@@ -140,6 +175,29 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
+    if (provider === "cline") {
+      const response = await fetch(CLINE_CONFIG.refreshUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          refreshToken,
+          grantType: "refresh_token",
+          clientType: "extension",
+        }),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json();
+      const data = payload?.data || payload;
+      const expiresIn = data?.expiresAt
+        ? Math.max(1, Math.floor((new Date(data.expiresAt).getTime() - Date.now()) / 1000))
+        : 3600;
+      return {
+        accessToken: data?.accessToken,
+        expiresIn,
+        refreshToken: data?.refreshToken || refreshToken,
+      };
+    }
+
     return null;
   } catch (err) {
     console.log(`Error refreshing ${provider} token:`, err.message);
@@ -154,7 +212,7 @@ function isTokenExpired(connection) {
   return expiresAt <= Date.now() + buffer;
 }
 
-async function testOAuthConnection(connection) {
+async function testOAuthConnection(connection, effectiveProxy = null) {
   const config = OAUTH_TEST_CONFIG[connection.provider];
   if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };
@@ -186,14 +244,42 @@ async function testOAuthConnection(connection) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
+  if (connection.provider === "cline") {
+    const tryProbe = async (token) => {
+      const res = await probeClineAccessToken(token);
+      if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+      if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
+      if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
+      return { valid: false, error: `API returned ${res.status}`, refreshed };
+    };
+
+    const initial = await tryProbe(accessToken);
+    if (initial.valid || initial.error !== "Token invalid or revoked" || !connection.refreshToken) {
+      return initial;
+    }
+
+    const tokens = await refreshOAuthToken(connection);
+    if (!tokens?.accessToken) {
+      return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    }
+
+    refreshed = true;
+    newTokens = tokens;
+    accessToken = tokens.accessToken;
+    return await tryProbe(accessToken);
+  }
+
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
     const headers = config.noAuth
       ? { ...config.extraHeaders }
       : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
-    const res = await fetch(testUrl, { method: config.method, headers });
+    const fetchOpts = { method: config.method, headers };
+    if (config.body) fetchOpts.body = config.body;
+    const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
 
-    if (res.ok) return { valid: true, error: null, refreshed, newTokens };
+    const accepted = res.ok || (config.acceptStatuses && config.acceptStatuses.includes(res.status));
+    if (accepted) return { valid: true, error: null, refreshed, newTokens };
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
@@ -202,11 +288,11 @@ async function testOAuthConnection(connection) {
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
           : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
-        const retryRes = await fetch(retryUrl, {
-          method: config.method,
-          headers: retryHeaders,
-        });
-        if (retryRes.ok) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        const retryOpts = { method: config.method, headers: retryHeaders };
+        if (config.body) retryOpts.body = config.body;
+        const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
+        const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
+        if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
@@ -219,14 +305,27 @@ async function testOAuthConnection(connection) {
   }
 }
 
-async function testApiKeyConnection(connection) {
+async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
+  if (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl) {
+    return fetch(url, options);
+  }
+
+  const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+  return proxyAwareFetch(url, options, {
+    connectionProxyEnabled: true,
+    connectionProxyUrl: effectiveProxy.connectionProxyUrl,
+    connectionNoProxy: effectiveProxy.connectionNoProxy || "",
+  });
+}
+
+async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
-      const res = await fetch(`${modelsBase.replace(/\/$/, "")}/models`, {
+      const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
         headers: { "Authorization": `Bearer ${connection.apiKey}` },
-      });
+      }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
@@ -239,9 +338,9 @@ async function testApiKeyConnection(connection) {
     try {
       modelsBase = modelsBase.replace(/\/$/, "");
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
-      const res = await fetch(`${modelsBase}/models`, {
+      const res = await fetchWithConnectionProxy(`${modelsBase}/models`, {
         headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "Authorization": `Bearer ${connection.apiKey}` },
-      });
+      }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
       return { valid: false, error: err.message };
@@ -251,140 +350,153 @@ async function testApiKeyConnection(connection) {
   try {
     switch (connection.provider) {
       case "openai": {
-        const res = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "anthropic": {
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
+        const res = await fetchWithConnectionProxy("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "claude-3-haiku-20240307", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+        }, effectiveProxy);
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "gemini": {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`);
+        const res = await fetchWithConnectionProxy(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`, {}, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "openrouter": {
-        const res = await fetch("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "glm": {
-        const res = await fetch("https://api.z.ai/api/anthropic/v1/messages", {
+        const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+        }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "glm-cn": {
-        const res = await fetch("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
+        const res = await fetchWithConnectionProxy("https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model: "glm-4.7", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+        }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "minimax":
       case "minimax-cn": {
         const endpoints = { minimax: "https://api.minimax.io/anthropic/v1/messages", "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages" };
-        const res = await fetch(endpoints[connection.provider], {
+        const res = await fetchWithConnectionProxy(endpoints[connection.provider], {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "minimax-m2", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+        }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "kimi": {
-        const res = await fetch("https://api.kimi.com/coding/v1/messages", {
+        const res = await fetchWithConnectionProxy("https://api.kimi.com/coding/v1/messages", {
           method: "POST",
           headers: { "x-api-key": connection.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
           body: JSON.stringify({ model: "kimi-latest", max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+        }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
-      case "alicode": {
+      case "alicode":
+      case "alicode-intl": {
         // Aliyun Coding Plan uses OpenAI-compatible API
-        const res = await fetch("https://coding.dashscope.aliyuncs.com/v1/chat/completions", {
+        const aliBaseUrl = connection.provider === "alicode-intl"
+          ? "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
+          : "https://coding.dashscope.aliyuncs.com/v1/chat/completions";
+        const res = await fetchWithConnectionProxy(aliBaseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
-          body: JSON.stringify({ model: getDefaultModel("alicode"), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-        });
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "deepseek": {
-        const res = await fetch("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "groq": {
-        const res = await fetch("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "mistral": {
-        const res = await fetch("https://api.mistral.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.mistral.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "xai": {
-        const res = await fetch("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.x.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nvidia": {
-        const res = await fetch("https://integrate.api.nvidia.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://integrate.api.nvidia.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "perplexity": {
-        const res = await fetch("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.perplexity.ai/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "together": {
-        const res = await fetch("https://api.together.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.together.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "fireworks": {
-        const res = await fetch("https://api.fireworks.ai/inference/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.fireworks.ai/inference/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cerebras": {
-        const res = await fetch("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.cerebras.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "cohere": {
-        const res = await fetch("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.cohere.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nebius": {
-        const res = await fetch("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.studio.nebius.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "siliconflow": {
-        const res = await fetch("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.siliconflow.cn/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "hyperbolic": {
-        const res = await fetch("https://api.hyperbolic.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.hyperbolic.xyz/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "ollama": {
+        const res = await fetch("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "ollama-local": {
+        // No auth required for local Ollama
+        const res = await fetch("http://localhost:11434/api/tags");
+        return { valid: res.ok, error: res.ok ? null : "Ollama not running on localhost:11434" };
+      }
       case "deepgram": {
-        const res = await fetch("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "assemblyai": {
-        const res = await fetch("https://api.assemblyai.com/v1/account", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.assemblyai.com/v1/account", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "nanobanana": {
-        const res = await fetch("https://api.nanobananaapi.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://api.nanobananaapi.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "chutes": {
-        const res = await fetch("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       default:
@@ -402,13 +514,28 @@ export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
+  const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+
+  if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl) {
+    const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
+    if (!proxyResult.ok) {
+      const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
+      await updateProviderConnection(id, {
+        testStatus: "error",
+        lastError: proxyError,
+        lastErrorAt: new Date().toISOString(),
+      });
+      return { valid: false, error: proxyError, latencyMs: 0, testedAt: new Date().toISOString() };
+    }
+  }
+
   const start = Date.now();
   let result;
 
   if (connection.authType === "apikey") {
-    result = await testApiKeyConnection(connection);
+    result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
-    result = await testOAuthConnection(connection);
+    result = await testOAuthConnection(connection, effectiveProxy);
   }
 
   const latencyMs = Date.now() - start;

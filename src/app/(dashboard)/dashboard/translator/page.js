@@ -1,499 +1,300 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Card, Button, Select } from "@/shared/components";
+import { useState } from "react";
+import { Card, Button } from "@/shared/components";
 import dynamic from "next/dynamic";
 
-// Dynamically import Monaco Editor (client-side only)
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-const PROVIDERS = [
-  { value: "antigravity", label: "Antigravity" },
-  { value: "gemini-cli", label: "Gemini CLI" },
-  { value: "claude", label: "Claude" },
-  { value: "codex", label: "Codex" },
-  { value: "github", label: "GitHub" },
-  { value: "qwen", label: "Qwen" },
-  { value: "iflow", label: "iFlow AI" },
-  { value: "kiro", label: "Kiro AI" },
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "glm", label: "GLM" },
-  { value: "kimi", label: "Kimi" },
-  { value: "minimax", label: "MiniMax" },
+// 7 steps matching requestLogger files exactly
+const STEPS = [
+  { id: 1, label: "Client Request",         file: "1_req_client.json",  lang: "json", desc: "Raw request from client" },
+  { id: 2, label: "Source Body",            file: "2_req_source.json",  lang: "json", desc: "After initial conversion" },
+  { id: 3, label: "OpenAI Intermediate",    file: "3_req_openai.json",  lang: "json", desc: "source → openai" },
+  { id: 4, label: "Target Request",         file: "4_req_target.json",  lang: "json", desc: "openai → target + URL + headers" },
+  { id: 5, label: "Provider Response",      file: "5_res_provider.txt", lang: "text", desc: "Raw SSE from provider" },
+  { id: 6, label: "OpenAI Response",        file: "6_res_openai.txt",   lang: "text", desc: "target → openai (response)" },
+  { id: 7, label: "Client Response",        file: "7_res_client.txt",   lang: "text", desc: "Final response to client" },
 ];
 
-const STEPS = [
-  { id: 1, name: "Client Request", file: "1_req_client.json" },
-  { id: 2, name: "Source Format", file: "2_req_source.json" },
-  { id: 3, name: "OpenAI Intermediate", file: "3_req_openai.json" },
-  { id: 4, name: "Target Format", file: "4_req_target.json" },
-  { id: 5, name: "Provider Response", file: "5_res_provider.txt" },
-];
+const EDITOR_OPTIONS = {
+  minimap: { enabled: false },
+  fontSize: 12,
+  lineNumbers: "on",
+  scrollBeyondLastLine: false,
+  wordWrap: "on",
+  automaticLayout: true,
+};
 
 export default function TranslatorPage() {
-  const [provider, setProvider] = useState("antigravity");
-  const [steps, setSteps] = useState({
-    1: "",
-    2: "",
-    3: "",
-    4: "",
-    5: "",
-  });
-  const [expanded, setExpanded] = useState({
-    1: true,
-    2: false,
-    3: false,
-    4: false,
-    5: false,
-  });
+  const [contents, setContents] = useState({});
+  const [expanded, setExpanded] = useState({ 1: true });
   const [loading, setLoading] = useState({});
+  // Detected from step 1: { provider, model, sourceFormat, targetFormat }
+  const [meta, setMeta] = useState(null);
 
-  const toggleExpand = (stepId) => {
-    setExpanded({ ...expanded, [stepId]: !expanded[stepId] });
+  const setLoad = (key, val) => setLoading(prev => ({ ...prev, [key]: val }));
+  const setContent = (id, val) => setContents(prev => ({ ...prev, [id]: val }));
+  const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const openNext = (nextId) => setExpanded(prev => {
+    const next = {};
+    STEPS.forEach(s => { next[s.id] = false; });
+    next[nextId] = true;
+    return next;
+  });
+
+  // Load file from logs/translator/
+  const handleLoad = async (stepId) => {
+    const step = STEPS.find(s => s.id === stepId);
+    setLoad(`load-${stepId}`, true);
+    try {
+      const res = await fetch(`/api/translator/load?file=${step.file}`);
+      const data = await res.json();
+      if (data.success) {
+        setContent(stepId, data.content);
+        if (stepId === 1) await detectMeta(data.content);
+      } else {
+        alert(data.error || "File not found");
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+    setLoad(`load-${stepId}`, false);
   };
 
-  const handleSendToProvider = async () => {
-    setLoading({ ...loading, "send-provider": true });
+  // Step 1: detect provider/format from model field
+  const detectMeta = async (rawContent) => {
     try {
-      const step4Content = steps[4];
-      if (!step4Content) {
-        alert("Please load or generate step 4 content first");
+      const body = typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
+      const res = await fetch("/api/translator/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: 1, body })
+      });
+      const data = await res.json();
+      if (data.success) setMeta(data.result);
+    } catch { /* ignore */ }
+  };
+
+  const save = (file, content) => fetch("/api/translator/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file, content })
+  }).catch(() => {});
+
+  // Step 1 → Step 3: source → OpenAI intermediate
+  const handleToOpenAI = async () => {
+    setLoad("toOpenAI", true);
+    try {
+      const raw = contents[1];
+      const body = JSON.parse(raw);
+      // Save input: 1_req_client.json + 2_req_source.json (body only)
+      save("1_req_client.json", raw);
+      save("2_req_source.json", JSON.stringify({ timestamp: new Date().toISOString(), headers: {}, body: body.body || body }, null, 2));
+
+      const res = await fetch("/api/translator/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: 2, body })
+      });
+      const data = await res.json();
+      if (!data.success) { alert(data.error); return; }
+      const str = JSON.stringify(data.result.body, null, 2);
+      setContent(3, str);
+      openNext(3);
+    } catch (e) { alert(e.message); }
+    setLoad("toOpenAI", false);
+  };
+
+  // Step 3 → Step 4: OpenAI → target + build URL/headers
+  const handleToTarget = async () => {
+    setLoad("toTarget", true);
+    try {
+      const raw = contents[3];
+      const openaiBody = JSON.parse(raw);
+      // Save input: 3_req_openai.json
+      save("3_req_openai.json", raw);
+
+      const res = await fetch("/api/translator/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step: 3, body: { ...openaiBody, provider: meta?.provider, model: meta?.model } })
+      });
+      const data = await res.json();
+      if (!data.success) { alert(data.error); return; }
+      // Embed provider + model so Send works even without meta
+      const step4Content = { ...data.result, provider: meta?.provider, model: meta?.model };
+      setContent(4, JSON.stringify(step4Content, null, 2));
+      openNext(4);
+    } catch (e) { alert(e.message); }
+    setLoad("toTarget", false);
+  };
+
+  // Step 4 → Step 5: send to provider via executor
+  const handleSend = async () => {
+    setLoad("send", true);
+    try {
+      const raw = contents[4];
+      const step4 = JSON.parse(raw);
+      // Save input: 4_req_target.json
+      save("4_req_target.json", raw);
+
+      // Read provider/model from step4 content (embedded during build), fallback to meta
+      const provider = step4.provider || meta?.provider;
+      const model = step4.model || meta?.model;
+
+      if (!provider || !model) {
+        alert("Missing provider or model. Please run step 1 first to detect them.");
         return;
       }
-
-      const body = JSON.parse(step4Content);
-      
-      // Get credentials (you may need to prompt user or use stored credentials)
-      const credentials = {
-        accessToken: prompt("Enter access token (or leave empty):") || undefined,
-        apiKey: prompt("Enter API key (or leave empty):") || undefined
-      };
 
       const res = await fetch("/api/translator/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          body,
-          credentials
-        })
+        body: JSON.stringify({ provider, model, body: step4.body || step4 })
       });
 
-      const data = await res.json();
-      
-      if (data.success) {
-        // Update step 5 with provider response
-        setSteps({ ...steps, 5: data.body });
-        
-        // Save step 5
-        await fetch("/api/translator/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file: "5_res_provider.txt",
-            content: data.body
-          })
-        });
-        
-        // Expand step 5
-        setExpanded({ ...expanded, 4: false, 5: true });
-        
-        alert(`Request sent! Status: ${data.status} ${data.statusText}`);
-      } else {
-        alert(data.error || "Failed to send request");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        alert(err.error || "Send failed");
+        return;
       }
-    } catch (err) {
-      alert("Error sending request: " + err.message);
-    }
-    setLoading({ ...loading, "send-provider": false });
-  };
 
-  const handleLoad = async (stepId) => {
-    setLoading({ ...loading, [`load-${stepId}`]: true });
-    try {
-      const step = STEPS.find(s => s.id === stepId);
-      const res = await fetch(`/api/translator/load?file=${step.file}`);
-      const data = await res.json();
-      if (data.success) {
-        setSteps({ ...steps, [stepId]: data.content });
-      } else {
-        alert(data.error || "Failed to load file");
+      // Accumulate streaming response
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let full = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        full += decoder.decode(value, { stream: true });
       }
-    } catch (err) {
-      alert("Error loading file: " + err.message);
-    }
-    setLoading({ ...loading, [`load-${stepId}`]: false });
-  };
 
-  const handleLean = (stepId) => {
-    try {
-      const content = steps[stepId];
-      if (!content) return;
-      
-      const obj = JSON.parse(content);
-      const leaned = leanJSON(obj);
-      setSteps({ ...steps, [stepId]: JSON.stringify(leaned, null, 2) });
-    } catch (err) {
-      alert("Error parsing JSON: " + err.message);
-    }
-  };
+      setContent(5, full);
+      openNext(5);
 
-  const handleFormat = (stepId) => {
-    try {
-      const content = steps[stepId];
-      if (!content) return;
-      
-      const obj = JSON.parse(content);
-      setSteps({ ...steps, [stepId]: JSON.stringify(obj, null, 2) });
-    } catch (err) {
-      alert("Error parsing JSON: " + err.message);
-    }
-  };
-
-  const handleCopy = async (stepId) => {
-    try {
-      const content = steps[stepId];
-      if (!content) return;
-      
-      await navigator.clipboard.writeText(content);
-      alert("Copied to clipboard!");
-    } catch (err) {
-      alert("Error copying: " + err.message);
-    }
-  };
-
-  const handleUpdate = async (stepId) => {
-    setLoading({ ...loading, [`update-${stepId}`]: true });
-    try {
-      const step = STEPS.find(s => s.id === stepId);
-      const res = await fetch("/api/translator/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file: step.file,
-          content: steps[stepId]
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert("File saved successfully");
-      } else {
-        alert(data.error || "Failed to save file");
-      }
-    } catch (err) {
-      alert("Error saving file: " + err.message);
-    }
-    setLoading({ ...loading, [`update-${stepId}`]: false });
-  };
-
-  const handleSubmit = async (stepId) => {
-    setLoading({ ...loading, [`submit-${stepId}`]: true });
-    try {
-      // 1. Save current step
-      const currentStep = STEPS.find(s => s.id === stepId);
+      // Save to logs/translator/5_res_provider.txt
       await fetch("/api/translator/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          file: currentStep.file,
-          content: steps[stepId]
-        })
+        body: JSON.stringify({ file: "5_res_provider.txt", content: full })
       });
-
-      // Step 4: Send to provider instead of translate
-      if (stepId === 4) {
-        const res = await fetch("/api/translator/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            provider,
-            body: JSON.parse(steps[4])
-          })
-        });
-        
-        if (!res.ok) {
-          const errorData = await res.json();
-          alert(errorData.error || "Failed to send request");
-          setLoading({ ...loading, [`submit-${stepId}`]: false });
-          return;
-        }
-
-        // Read streaming response
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let fullResponse = "";
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          fullResponse += chunk;
-        }
-        
-        // Save to step 5
-        setSteps({ ...steps, 5: fullResponse });
-        
-        await fetch("/api/translator/save", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file: "5_res_provider.txt",
-            content: fullResponse
-          })
-        });
-        
-        setExpanded({ ...expanded, [stepId]: false, 5: true });
-        alert("Request sent to provider successfully!");
-      } else {
-        // Steps 1-3: Translate to next step
-        const res = await fetch("/api/translator/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            step: stepId,
-            provider,
-            body: JSON.parse(steps[stepId])
-          })
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-          const nextStepId = stepId + 1;
-          const nextContent = JSON.stringify(data.result, null, 2);
-          
-          setSteps({ ...steps, [nextStepId]: nextContent });
-          
-          const nextStep = STEPS.find(s => s.id === nextStepId);
-          await fetch("/api/translator/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              file: nextStep.file,
-              content: nextContent
-            })
-          });
-          
-          setExpanded({ ...expanded, [stepId]: false, [nextStepId]: true });
-        } else {
-          alert(data.error || "Translation failed");
-        }
-      }
-    } catch (err) {
-      alert("Error: " + err.message);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setLoad("send", false);
     }
-    setLoading({ ...loading, [`submit-${stepId}`]: false });
+  };
+
+  const handleCopy = async (id) => {
+    if (!contents[id]) return;
+    await navigator.clipboard.writeText(contents[id]);
+  };
+
+  const handleFormat = (id) => {
+    try {
+      const obj = JSON.parse(contents[id]);
+      setContent(id, JSON.stringify(obj, null, 2));
+    } catch { /* not JSON, skip */ }
+  };
+
+  // Render action button per step
+  const getAction = (stepId) => {
+    if (stepId === 1) return <Button size="sm" icon="arrow_forward" loading={loading["toOpenAI"]} onClick={handleToOpenAI}>→ OpenAI</Button>;
+    if (stepId === 3) return <Button size="sm" icon="arrow_forward" loading={loading["toTarget"]} onClick={handleToTarget}>→ Target</Button>;
+    if (stepId === 4) return <Button size="sm" icon="send" loading={loading["send"]} onClick={handleSend}>Send</Button>;
+    return null;
   };
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-8 space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
         <div>
           <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
-          <p className="text-sm text-text-muted mt-1">
-            Debug translation flow between formats
-          </p>
+          <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
         </div>
+        {meta && (
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
+            <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+            <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
+            <MetaBadge label="provider" value={meta.provider} color="green" />
+            <MetaBadge label="model" value={meta.model} color="purple" />
+          </div>
+        )}
       </div>
 
-      {/* Provider Selector */}
-      <Card>
-        <div className="p-4 flex items-center gap-4">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-text-main mb-2">
-              Provider
-            </label>
-            <Select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              options={PROVIDERS}
-            />
-          </div>
-          
-          <div className="pt-6">
-            <Button
-              icon="send"
-              onClick={handleSendToProvider}
-              loading={loading["send-provider"]}
-            >
-              Send to Provider
-            </Button>
-          </div>
-        </div>
-      </Card>
+      {STEPS.map((step) => {
+        const action = getAction(step.id);
+        const isExpanded = !!expanded[step.id];
+        const content = contents[step.id] || "";
 
-      {/* Steps */}
-      {STEPS.map((step) => (
-        <Card key={step.id}>
-          <div className="p-4 space-y-3">
-            {/* Header with expand/collapse */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => toggleExpand(step.id)}
-                className="flex items-center gap-2 flex-1 text-left group"
-              >
-                <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
-                  {expanded[step.id] ? "expand_more" : "chevron_right"}
-                </span>
-                <h3 className="text-sm font-semibold text-text-main">
-                  {step.id}. {step.name}
-                </h3>
-                <span className="text-xs text-text-muted ml-2">{step.file}</span>
-                {steps[step.id] && (
-                  <span className="text-xs text-green-500 ml-2">
-                    ({steps[step.id].length} chars)
+        return (
+          <Card key={step.id}>
+            <div className="p-4 space-y-3">
+              {/* Step header */}
+              <div className="flex items-center justify-between">
+                <button onClick={() => toggle(step.id)} className="flex items-center gap-2 flex-1 text-left group">
+                  <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
+                    {isExpanded ? "expand_more" : "chevron_right"}
                   </span>
+                  <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
+                  <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
+                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
+                  {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
+                </button>
+                {!isExpanded && (
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)} />
+                    {action}
+                  </div>
                 )}
-              </button>
+              </div>
 
-              {/* Quick actions when collapsed */}
-              {!expanded[step.id] && (
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon="folder_open"
-                    onClick={() => handleLoad(step.id)}
-                    loading={loading[`load-${step.id}`]}
-                  />
-                  {step.id <= 4 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon="arrow_forward"
-                      onClick={() => handleSubmit(step.id)}
-                      loading={loading[`submit-${step.id}`]}
+              {/* Expanded content */}
+              {isExpanded && (
+                <>
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <Editor
+                      height="400px"
+                      defaultLanguage={step.lang === "text" ? "plaintext" : "json"}
+                      value={content}
+                      onChange={(v) => {
+                        setContent(step.id, v || "");
+                        if (step.id === 1) detectMeta(v || "");
+                      }}
+                      theme="vs-dark"
+                      options={EDITOR_OPTIONS}
                     />
-                  )}
-                </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button size="sm" variant="outline" icon="folder_open" loading={loading[`load-${step.id}`]} onClick={() => handleLoad(step.id)}>Load</Button>
+                    <Button size="sm" variant="outline" icon="data_object" onClick={() => handleFormat(step.id)}>Format</Button>
+                    <Button size="sm" variant="outline" icon="content_copy" onClick={() => handleCopy(step.id)}>Copy</Button>
+                    {action}
+                  </div>
+                </>
               )}
             </div>
-
-            {/* Expandable content */}
-            {expanded[step.id] && (
-              <>
-                <div className="relative border border-border rounded-lg overflow-hidden">
-                  <Editor
-                    height="400px"
-                    defaultLanguage="json"
-                    value={steps[step.id]}
-                    onChange={(value) => setSteps({ ...steps, [step.id]: value || "" })}
-                    theme="vs-dark"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 12,
-                      lineNumbers: "on",
-                      scrollBeyondLastLine: false,
-                      wordWrap: "on",
-                      automaticLayout: true,
-                      formatOnPaste: true,
-                      formatOnType: true,
-                    }}
-                  />
-                </div>
-
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon="folder_open"
-                    onClick={() => handleLoad(step.id)}
-                    loading={loading[`load-${step.id}`]}
-                  >
-                    Load
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon="compress"
-                    onClick={() => handleLean(step.id)}
-                  >
-                    Lean
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon="content_copy"
-                    onClick={() => handleCopy(step.id)}
-                  >
-                    Copy
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon="save"
-                    onClick={() => handleUpdate(step.id)}
-                    loading={loading[`update-${step.id}`]}
-                  >
-                    Update
-                  </Button>
-                  {step.id <= 4 && (
-                    <Button
-                      size="sm"
-                      icon="arrow_forward"
-                      onClick={() => handleSubmit(step.id)}
-                      loading={loading[`submit-${step.id}`]}
-                    >
-                      {step.id === 4 ? "Send to Provider" : "Submit"}
-                    </Button>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
-// Lean function: truncate long text
-function leanJSON(obj, maxTextLen = 2222) {
-  const result = JSON.parse(JSON.stringify(obj)); // Deep clone
-
-  // Recursive function to truncate all strings
-  function truncateDeep(item) {
-    if (typeof item === "string") {
-      return item.length > maxTextLen ? item.slice(0, maxTextLen) + "..." : item;
-    }
-    
-    if (Array.isArray(item)) {
-      return item.map(truncateDeep);
-    }
-    
-    if (item && typeof item === "object") {
-      const truncated = {};
-      for (const key in item) {
-        truncated[key] = truncateDeep(item[key]);
-      }
-      return truncated;
-    }
-    
-    return item;
-  }
-
-  return truncateDeep(result);
-}
-
-function truncateContent(content, maxLen) {
-  if (typeof content === "string") {
-    return truncateText(content, maxLen);
-  }
-  if (Array.isArray(content)) {
-    return content.map(part => {
-      if (part.type === "text" && part.text) {
-        return { ...part, text: truncateText(part.text, maxLen) };
-      }
-      return part;
-    });
-  }
-  return content;
-}
-
-function truncateText(text, maxLen) {
-  if (!text || text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + "...";
+function MetaBadge({ label, value, color }) {
+  const colors = {
+    blue: "bg-blue-500/10 text-blue-500",
+    orange: "bg-orange-500/10 text-orange-500",
+    green: "bg-green-500/10 text-green-500",
+    purple: "bg-purple-500/10 text-purple-500",
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono ${colors[color]}`}>
+      <span className="text-text-muted/70 font-sans text-[10px]">{label}:</span>{value}
+    </span>
+  );
 }

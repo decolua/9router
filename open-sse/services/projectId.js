@@ -8,7 +8,7 @@
  * This significantly reduces the risk of being flagged by Google's anti-abuse systems.
  */
 
-import {ANTIGRAVITY_HEADERS, CLIENT_METADATA, CLOUD_CODE_API, getPlatformUserAgent} from "../config/constants.js";
+import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -159,13 +159,8 @@ export function removeConnection(connectionId) {
 async function fetchProjectId(accessToken, signal) {
     const response = await fetch(CLOUD_CODE_API.loadCodeAssist, {
         method: "POST",
-        headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            "User-Agent": getPlatformUserAgent(),
-            ...ANTIGRAVITY_HEADERS
-        },
-        body: JSON.stringify({metadata: CLIENT_METADATA, mode: 1}),
+        headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
+        body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
         signal
     });
 
@@ -205,7 +200,7 @@ async function fetchProjectId(accessToken, signal) {
 async function onboardUser(accessToken, tierID, externalSignal) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
-    const reqBody = {tierId: tierID, metadata: CLIENT_METADATA, mode: 1};
+    const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
     const MAX_ATTEMPTS = 5;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -221,12 +216,7 @@ async function onboardUser(accessToken, tierID, externalSignal) {
         try {
             const response = await fetch(CLOUD_CODE_API.onboardUser, {
                 method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${accessToken}`,
-                    "Content-Type": "application/json",
-                    "User-Agent": getPlatformUserAgent(),
-                    ...ANTIGRAVITY_HEADERS
-                },
+                headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
                 body: JSON.stringify(reqBody),
                 signal: localCtrl.signal
             });
@@ -264,7 +254,9 @@ async function onboardUser(accessToken, tierID, externalSignal) {
                 console.warn(`[ProjectId] onboardUser failed after ${MAX_ATTEMPTS} attempts: ${error.message}`);
                 return null;
             }
-            throw error;
+            // Continue to next attempt instead of throwing (which would skip remaining retries)
+            console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
         } finally {
             clearTimeout(timeoutId);
             externalSignal?.removeEventListener("abort", forwardAbort);

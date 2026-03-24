@@ -1,8 +1,24 @@
 import { FORMATS } from "../translator/formats.js";
 
 // Parse SSE data line
-export function parseSSELine(line) {
-  if (!line || line.charCodeAt(0) !== 100) return null; // 'd' = 100
+export function parseSSELine(line, format = null) {
+  if (!line) return null;
+
+  // NDJSON format (Ollama): raw JSON lines without "data:" prefix
+  if (format === FORMATS.OLLAMA) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("{")) {
+      try {
+        return JSON.parse(trimmed);
+      } catch (error) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // Standard SSE format: "data: {...}"
+  if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
 
   const data = line.slice(5).trim();
   if (data === "[DONE]") return { done: true };
@@ -57,6 +73,33 @@ export function fixInvalidId(parsed) {
   return false;
 }
 
+function cleanUsagePayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return payload;
+  }
+
+  let cleaned = payload;
+
+  if ("usage" in cleaned) {
+    if (cleaned.usage === null) {
+      const { usage, ...payloadWithoutUsage } = cleaned;
+      cleaned = payloadWithoutUsage;
+    } else if (typeof cleaned.usage === "object" && cleaned.usage.perf_metrics === null) {
+      const { perf_metrics, ...usageWithoutPerf } = cleaned.usage;
+      cleaned = { ...cleaned, usage: usageWithoutPerf };
+    }
+  }
+
+  if (cleaned.response && typeof cleaned.response === "object" && !Array.isArray(cleaned.response)) {
+    const cleanedResponse = cleanUsagePayload(cleaned.response);
+    if (cleanedResponse !== cleaned.response) {
+      cleaned = { ...cleaned, response: cleanedResponse };
+    }
+  }
+
+  return cleaned;
+}
+
 // Format output as SSE
 export function formatSSE(data, sourceFormat) {
   if (data === null || data === undefined) return "data: null\n\n";
@@ -64,22 +107,15 @@ export function formatSSE(data, sourceFormat) {
 
   // OpenAI Responses API format
   if (data && data.event && data.data) {
-    return `event: ${data.event}\ndata: ${JSON.stringify(data.data)}\n\n`;
+    const cleanedEventData = cleanUsagePayload(data.data);
+    return `event: ${data.event}\ndata: ${JSON.stringify(cleanedEventData)}\n\n`;
   }
+
+  data = cleanUsagePayload(data);
 
   // Claude format
   if (sourceFormat === FORMATS.CLAUDE && data && data.type) {
-    if (data.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-      const { perf_metrics, ...usageWithoutPerf } = data.usage;
-      data = { ...data, usage: usageWithoutPerf };
-    }
     return `event: ${data.type}\ndata: ${JSON.stringify(data)}\n\n`;
-  }
-
-  // Remove null perf_metrics
-  if (data?.usage && typeof data.usage === 'object' && data.usage.perf_metrics === null) {
-    const { perf_metrics, ...usageWithoutPerf } = data.usage;
-    data = { ...data, usage: usageWithoutPerf };
   }
 
   return `data: ${JSON.stringify(data)}\n\n`;

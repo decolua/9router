@@ -1,4 +1,4 @@
-import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/constants.js";
+import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -30,6 +30,12 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 
     if (lowerError.includes("request not allowed")) {
       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.requestNotAllowed };
+    }
+
+    // Kiro: "improperly formed request" = model not available on this account tier
+    // Treat as paymentRequired (long cooldown) so the model is locked and fallback occurs
+    if (lowerError.includes("improperly formed request")) {
+      return { shouldFallback: true, cooldownMs: COOLDOWN_MS.paymentRequired };
     }
 
     // Rate limit keywords - exponential backoff

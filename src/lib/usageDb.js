@@ -66,7 +66,8 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
 
 // Default data structure
 const defaultData = {
-  history: []
+  history: [],
+  totalRequestsLifetime: 0
 };
 
 // Singleton instance
@@ -120,7 +121,8 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     lastErrorProvider.ts = Date.now();
   }
 
-  console.log(`[PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model} | emitter listeners=${statsEmitter.listenerCount("pending")}`);
+  const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
   statsEmitter.emit("pending");
 }
 
@@ -239,13 +241,20 @@ export async function saveRequestUsage(entry) {
     if (!Array.isArray(db.data.history)) {
       db.data.history = [];
     }
+    if (typeof db.data.totalRequestsLifetime !== "number") {
+      db.data.totalRequestsLifetime = db.data.history.length;
+    }
 
     const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
     entry.cost = entryCost;
     db.data.history.push(entry);
+    db.data.totalRequestsLifetime += 1;
 
-    // Optional: Limit history size if needed in future
-    // if (db.data.history.length > 10000) db.data.history.shift();
+    // Cap history to prevent unbounded memory/disk growth
+    const MAX_HISTORY = 10000;
+    if (db.data.history.length > MAX_HISTORY) {
+      db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
+    }
 
     await db.write();
     statsEmitter.emit("update");
@@ -428,12 +437,21 @@ async function calculateCost(provider, model, tokens) {
   }
 }
 
+const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+
 /**
  * Get aggregated usage stats
+ * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
  */
-export async function getUsageStats() {
+export async function getUsageStats(period = "all") {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
+
+  // Filter history by period
+  if (period && PERIOD_MS[period]) {
+    const cutoff = Date.now() - PERIOD_MS[period];
+    history = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
+  }
 
   // Import localDb to get provider connection names and API keys
   const { getProviderConnections, getApiKeys, getProviderNodes } = await import("@/lib/localDb.js");
@@ -508,8 +526,12 @@ export async function getUsageStats() {
     })
     .slice(0, 20);
 
+  const lifetimeTotalRequests = typeof db.data.totalRequestsLifetime === "number"
+    ? db.data.totalRequestsLifetime
+    : history.length;
+
   const stats = {
-    totalRequests: history.length,
+    totalRequests: lifetimeTotalRequests,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
     totalCost: 0,
@@ -570,8 +592,8 @@ export async function getUsageStats() {
     const completionTokens = entry.tokens?.completion_tokens || 0;
     const entryTime = new Date(entry.timestamp);
 
-    // Calculate cost for this entry
-    const entryCost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    // Use pre-stored cost (saved at request time), avoid recalculating
+    const entryCost = entry.cost || 0;
 
     stats.totalPromptTokens += promptTokens;
     stats.totalCompletionTokens += completionTokens;

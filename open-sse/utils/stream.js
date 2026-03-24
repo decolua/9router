@@ -6,7 +6,7 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
 
 export { COLORS, formatSSE };
 
-const sharedDecoder = new TextDecoder();
+// sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
 
 /**
@@ -49,6 +49,9 @@ export function createSSEStream(options = {}) {
   let buffer = "";
   let usage = null;
 
+  // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
 
   let totalContentLength = 0;
@@ -61,7 +64,7 @@ export function createSSEStream(options = {}) {
       if (!ttftAt) {
         ttftAt = Date.now();
       }
-      const text = sharedDecoder.decode(chunk, { stream: true });
+      const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
@@ -84,8 +87,10 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-              if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              if (parsed.choices !== undefined) {
+                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
+                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              }
 
               // Strip Azure-specific non-standard fields from streaming chunks
               if (parsed.prompt_filter_results !== undefined) {
@@ -157,10 +162,12 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
-        const parsed = parseSSELine(trimmed);
+        const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
-        if (parsed && parsed.done) {
+        // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
+        // For other formats: done=true is the [DONE] sentinel, skip
+        if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
@@ -249,7 +256,7 @@ export function createSSEStream(options = {}) {
     flush(controller) {
       trackPendingRequest(model, provider, connectionId, false);
       try {
-        const remaining = sharedDecoder.decode();
+        const remaining = decoder.decode();
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {

@@ -3,6 +3,8 @@ import { getApiKeys, createApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { validateAllowedModelsFormat } from "@/shared/utils/model-pattern-matcher";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/keys - List API keys
 export async function GET() {
   try {

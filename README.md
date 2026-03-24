@@ -5,17 +5,15 @@
   
   **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
   
-  **Free AI Provider for OpenClaw.**
-  
-  <p align="center">
-    <img src="./public/providers/openclaw.png" alt="OpenClaw" width="80"/>
-  </p>
+  **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
   
   [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+
+  [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
 </div>
 
 ---
@@ -132,6 +130,217 @@ Default URLs:
 
 [▶️ Watch on YouTube](https://www.youtube.com/watch?v=o3qYCyjrFYg)
 
+</div>
+
+---
+
+## 🛠️ Supported CLI Tools
+
+9Router works seamlessly with all major AI coding tools:
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="120">
+        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
+        <b>Claude-Code</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/openclaw.png" width="60" alt="OpenClaw"/><br/>
+        <b>OpenClaw</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
+        <b>Codex</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/opencode.png" width="60" alt="OpenCode"/><br/>
+        <b>OpenCode</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
+        <b>Cursor</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="120">
+        <img src="./public/providers/cline.png" width="60" alt="Cline"/><br/>
+        <b>Cline</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/continue.png" width="60" alt="Continue"/><br/>
+        <b>Continue</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/droid.png" width="60" alt="Droid"/><br/>
+        <b>Droid</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
+        <b>Roo</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/copilot.png" width="60" alt="Copilot"/><br/>
+        <b>Copilot</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
+        <b>Kilo Code</b>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
+## 🌐 Supported Providers
+
+### 🔐 OAuth Providers
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="120">
+        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
+        <b>Claude-Code</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
+        <b>Antigravity</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
+        <b>Codex</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/github.png" width="60" alt="GitHub"/><br/>
+        <b>GitHub</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
+        <b>Cursor</b>
+      </td>
+    </tr>
+  </table>
+</div>
+
+### 🆓 Free Providers
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="150">
+        <img src="./public/providers/iflow.png" width="70" alt="iFlow"/><br/>
+        <b>iFlow AI</b><br/>
+        <sub>8+ models • Unlimited</sub>
+      </td>
+      <td align="center" width="150">
+        <img src="./public/providers/qwen.png" width="70" alt="Qwen"/><br/>
+        <b>Qwen Code</b><br/>
+        <sub>3+ models • Unlimited</sub>
+      </td>
+      <td align="center" width="150">
+        <img src="./public/providers/gemini-cli.png" width="70" alt="Gemini CLI"/><br/>
+        <b>Gemini CLI</b><br/>
+        <sub>180K/month FREE</sub>
+      </td>
+      <td align="center" width="150">
+        <img src="./public/providers/kiro.png" width="70" alt="Kiro"/><br/>
+        <b>Kiro AI</b><br/>
+        <sub>Claude • Unlimited</sub>
+      </td>
+    </tr>
+  </table>
+</div>
+
+### 🔑 API Key Providers (40+)
+
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="100">
+        <img src="./public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
+        <sub>OpenRouter</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/glm.png" width="50" alt="GLM"/><br/>
+        <sub>GLM</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/kimi.png" width="50" alt="Kimi"/><br/>
+        <sub>Kimi</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/minimax.png" width="50" alt="MiniMax"/><br/>
+        <sub>MiniMax</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/openai.png" width="50" alt="OpenAI"/><br/>
+        <sub>OpenAI</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/anthropic.png" width="50" alt="Anthropic"/><br/>
+        <sub>Anthropic</sub>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="100">
+        <img src="./public/providers/gemini.png" width="50" alt="Gemini"/><br/>
+        <sub>Gemini</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/deepseek.png" width="50" alt="DeepSeek"/><br/>
+        <sub>DeepSeek</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/groq.png" width="50" alt="Groq"/><br/>
+        <sub>Groq</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/xai.png" width="50" alt="xAI"/><br/>
+        <sub>xAI</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/mistral.png" width="50" alt="Mistral"/><br/>
+        <sub>Mistral</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/perplexity.png" width="50" alt="Perplexity"/><br/>
+        <sub>Perplexity</sub>
+      </td>
+    </tr>
+    <tr>
+      <td align="center" width="100">
+        <img src="./public/providers/together.png" width="50" alt="Together"/><br/>
+        <sub>Together AI</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/fireworks.png" width="50" alt="Fireworks"/><br/>
+        <sub>Fireworks</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/cerebras.png" width="50" alt="Cerebras"/><br/>
+        <sub>Cerebras</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/cohere.png" width="50" alt="Cohere"/><br/>
+        <sub>Cohere</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
+        <sub>NVIDIA</sub>
+      </td>
+      <td align="center" width="100">
+        <img src="./public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
+        <sub>SiliconFlow</sub>
+      </td>
+    </tr>
+  </table>
+  <p><i>...and 20+ more providers including Nebius, Chutes, Hyperbolic, and custom OpenAI/Anthropic compatible endpoints</i></p>
 </div>
 
 ---
@@ -909,21 +1118,6 @@ Notes:
 **Dashboard opens on wrong port**
 - Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
 
-**Cloud sync errors**
-- Verify `BASE_URL` points to your running instance (example: `http://localhost:20128`)
-- Verify `CLOUD_URL` points to your expected cloud endpoint (example: `https://9router.com`)
-- Keep `NEXT_PUBLIC_*` values aligned with server-side values when possible.
-
-**Cloud endpoint `stream=false` returns 500 (`Unexpected token 'd'...`)**
-- Symptom usually appears on public cloud endpoint (`https://9router.com/v1`) for non-streaming calls.
-- Root cause: upstream returns SSE payload (`data: ...`) while client expects JSON.
-- Workaround: use `stream=true` for cloud direct calls.
-- Local 9Router runtime includes SSE→JSON fallback for non-streaming calls when upstream returns `text/event-stream`.
-
-**Cloud says connected, but request still fails with `Invalid API key`**
-- Create a fresh key from local dashboard (`/api/keys`) and run cloud sync (`Enable Cloud` then `Sync Now`).
-- Old/non-synced keys can still return `401` on cloud even if local endpoint works.
-
 **First login not working**
 - Check `INITIAL_PASSWORD` in `.env`
 - If unset, fallback password is `123456`
@@ -971,80 +1165,6 @@ Authorization: Bearer your-api-key
 → Returns all models + combos in OpenAI format
 ```
 
-### Compatibility Endpoints
-
-- `POST /v1/chat/completions`
-- `POST /v1/messages`
-- `POST /v1/responses`
-- `GET /v1/models`
-- `POST /v1/messages/count_tokens`
-- `GET /v1beta/models`
-- `POST /v1beta/models/{...path}` (Gemini-style `generateContent`)
-- `POST /v1/api/chat` (Ollama-style transform path)
-
-### Cloud Validation Scripts
-
-Added test scripts under `tester/security/`:
-
-- `tester/security/test-docker-hardening.sh`
-  - Builds Docker image and validates hardening checks (`/api/cloud/auth` auth guard, `REQUIRE_API_KEY`, secure auth cookie behavior).
-- `tester/security/test-cloud-openai-compatible.sh`
-  - Sends a direct OpenAI-compatible request to cloud endpoint (`https://9router.com/v1/chat/completions`) with provided model/key.
-- `tester/security/test-cloud-sync-and-call.sh`
-  - End-to-end flow: create local key -> enable/sync cloud -> call cloud endpoint with retry.
-  - Includes fallback check with `stream=true` to distinguish auth errors from non-streaming parse issues.
-
-Security note for cloud test scripts:
-
-- Never hardcode real API keys in scripts/commits.
-- Provide keys only via environment variables:
-  - `API_KEY`, `CLOUD_API_KEY`, or `OPENAI_API_KEY` (supported by `test-cloud-openai-compatible.sh`)
-- Example:
-
-```bash
-OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatible.sh
-```
-
-Expected behavior from recent validation:
-
-- Local runtime (`http://127.0.0.1:20128/v1/chat/completions`): works with `stream=false` and `stream=true`.
-- Docker runtime (same API path exposed by container): hardening checks pass, cloud auth guard works, strict API key mode works when enabled.
-- Public cloud endpoint (`https://9router.com/v1/chat/completions`):
-  - `stream=true`: expected to succeed (SSE chunks returned).
-  - `stream=false`: may fail with `500` + parse error (`Unexpected token 'd'`) when upstream returns SSE content to a non-streaming client path.
-
-### Dashboard and Management API
-
-- Auth/settings: `/api/auth/login`, `/api/auth/logout`, `/api/settings`, `/api/settings/require-login`
-- Provider management: `/api/providers`, `/api/providers/[id]`, `/api/providers/[id]/test`, `/api/providers/[id]/models`, `/api/providers/validate`, `/api/provider-nodes*`
-- OAuth flows: `/api/oauth/[provider]/[action]` (+ provider-specific imports like Cursor/Kiro)
-- Routing config: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
-- Usage/logs: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
-- Cloud sync: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
-- CLI helpers: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
-
-### Authentication Behavior
-
-- Dashboard routes (`/dashboard/*`) use `auth_token` cookie protection.
-- Login uses saved password hash when present; otherwise it falls back to `INITIAL_PASSWORD`.
-- `requireLogin` can be toggled via `/api/settings/require-login`.
-
-### Request Processing (High Level)
-
-1. Client sends request to `/v1/*`.
-2. Route handler calls `handleChat` (`src/sse/handlers/chat.js`).
-3. Model is resolved (direct provider/model or alias/combo resolution).
-4. Credentials are selected from local DB with account availability filtering.
-5. `handleChatCore` (`open-sse/handlers/chatCore.js`) detects format and translates request.
-6. Provider executor sends upstream request.
-7. Stream is translated back to client format when needed.
-8. Usage/logging is recorded (`src/lib/usageDb.js`).
-9. Fallback applies on provider/account/model errors according to combo rules.
-
-Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-
----
-
 ## 📧 Support
 
 - **Website**: [9router.com](https://9router.com)
@@ -1057,7 +1177,7 @@ Full architecture reference: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 Thanks to all contributors who helped make 9Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
@@ -1065,17 +1185,7 @@ Thanks to all contributors who helped make 9Router better!
 
 [![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
 
-### How to Contribute
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
----
 
 ## 🔀 Forks
 
@@ -1098,3 +1208,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
+

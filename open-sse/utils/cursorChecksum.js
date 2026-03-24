@@ -106,22 +106,38 @@ export function buildCursorHeaders(accessToken, machineId = null, ghostMode = tr
   const clientKey = generateHashed64Hex(cleanToken);
   const checksum = generateCursorChecksum(effectiveMachineId);
 
+  // Detect OS
+  let os = "linux";
+  if (typeof process !== "undefined") {
+    if (process.platform === "win32") os = "windows";
+    else if (process.platform === "darwin") os = "macos";
+  }
+
+  // Detect architecture
+  let arch = "x64";
+  if (typeof process !== "undefined") {
+    if (process.arch === "arm64") arch = "aarch64";
+  }
+
   return {
-    "Authorization": `Bearer ${cleanToken}`,
+    "authorization": `Bearer ${cleanToken}`,
     "connect-accept-encoding": "gzip",
     "connect-protocol-version": "1",
-    "Content-Type": "application/connect+proto",
-    "User-Agent": "connect-es/1.6.1",
+    "content-type": "application/connect+proto",
+    "user-agent": "connect-es/1.6.1",
     "x-amzn-trace-id": `Root=${crypto.randomUUID()}`,
     "x-client-key": clientKey,
     "x-cursor-checksum": checksum,
-    "x-cursor-client-version": "1.1.3",
+    "x-cursor-client-version": "2.3.41",
+    "x-cursor-client-type": "ide",
+    "x-cursor-client-os": os,
+    "x-cursor-client-arch": arch,
+    "x-cursor-client-device-type": "desktop",
     "x-cursor-config-version": crypto.randomUUID(),
     "x-cursor-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     "x-ghost-mode": ghostMode ? "true" : "false",
     "x-request-id": crypto.randomUUID(),
-    "x-session-id": sessionId,
-    "Host": "api2.cursor.sh"
+    "x-session-id": sessionId
   };
 }
 

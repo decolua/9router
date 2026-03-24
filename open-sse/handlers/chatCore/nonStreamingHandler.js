@@ -1,8 +1,9 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
-import { HTTP_STATUS } from "../../config/constants.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -76,8 +77,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     const toolCalls = [];
 
     for (const block of responseBody.content) {
-      if (block.type === "text") textContent += block.text;
-      else if (block.type === "thinking") thinkingContent += block.thinking || "";
+      if (block.type === "text") {
+        // Strip markdown code block markers (e.g. kimi wraps JSON in ```json...```)
+        const raw = block.text ?? "";
+        const text = raw.replace(/^\s*```\s*json\s*\n?/i, "").replace(/\n?\s*```\s*$/i, "");
+        textContent += text;
+      } else if (block.type === "thinking") thinkingContent += block.thinking || "";
       else if (block.type === "tool_use") {
         toolCalls.push({ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
       }
@@ -109,6 +114,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       };
     }
     return result;
+  }
+
+  // Ollama
+  if (targetFormat === FORMATS.OLLAMA) {
+    return ollamaBodyToOpenAI(responseBody);
   }
 
   return responseBody;
@@ -150,6 +160,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
+
+  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
+  if (translatedResponse?.choices?.[0]) {
+    const choice = translatedResponse.choices[0];
+    const msg = choice.message;
+    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+      choice.finish_reason = "tool_calls";
+    }
+  }
 
   // Ensure OpenAI-required fields
   if (!translatedResponse.object) translatedResponse.object = "chat.completion";

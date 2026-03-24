@@ -169,7 +169,7 @@ wire_api = "responses"
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">

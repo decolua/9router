@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 
 /**
@@ -32,6 +32,21 @@ export class CodexExecutor extends BaseExecutor {
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
+    }
+
+    // Normalize image content: image_url → input_image (Responses API format)
+    if (Array.isArray(body.input)) {
+      for (const item of body.input) {
+        if (Array.isArray(item.content)) {
+          item.content = item.content.map(c => {
+            if (c.type === "image_url") {
+              const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+              return { type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" };
+            }
+            return c;
+          });
+        }
+      }
     }
 
     // Ensure streaming is enabled (Codex API requires it)

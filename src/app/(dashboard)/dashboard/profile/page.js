@@ -190,6 +190,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateComboStrategy = async (strategy) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategy: strategy }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, comboStrategy: strategy }));
+      }
+    } catch (err) {
+      console.error("Failed to update combo strategy:", err);
+    }
+  };
+
   const updateStickyLimit = async (limit) => {
     const numLimit = parseInt(limit);
     if (isNaN(numLimit) || numLimit < 1) return;
@@ -220,24 +235,6 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update require login:", err);
-    }
-  };
-
-  const updateObservabilitySetting = async (key, value) => {
-    const numValue = parseInt(value);
-    if (isNaN(numValue) || numValue < 1) return;
-
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: numValue }),
-      });
-      if (res.ok) {
-        setSettings(prev => ({ ...prev, [key]: numValue }));
-      }
-    } catch (err) {
-      console.error(`Failed to update ${key}:`, err);
     }
   };
 
@@ -332,7 +329,7 @@ export default function ProfilePage() {
     }
   };
 
-  const observabilityEnabled = settings.observabilityEnabled !== false;
+  const observabilityEnabled = settings.observabilityEnabled === true;
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -536,6 +533,21 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Combo Round Robin */}
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <p className="font-medium">Combo Round Robin</p>
+                <p className="text-sm text-text-muted">
+                  Cycle through providers in combos instead of always starting with first
+                </p>
+              </div>
+              <Toggle
+                checked={settings.comboStrategy === "round-robin"}
+                onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
+                disabled={loading}
+              />
+            </div>
+
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
@@ -623,102 +635,18 @@ export default function ProfilePage() {
             </div>
             <h3 className="text-lg font-semibold">Observability</h3>
           </div>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Enable Observability</p>
-                <p className="text-sm text-text-muted">
-                  Turn request detail recording on/off globally
-                </p>
-              </div>
-              <Toggle
-                checked={observabilityEnabled}
-                onChange={updateObservabilityEnabled}
-                disabled={loading}
-              />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Enable Observability</p>
+              <p className="text-sm text-text-muted">
+                Record request details for inspection in the logs view
+              </p>
             </div>
-
-            <div className={cn("flex flex-col gap-4", !observabilityEnabled && "opacity-60")}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Max Records</p>
-                <p className="text-sm text-text-muted">
-                  Maximum request detail records to keep (older records are auto-deleted)
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="100"
-                max="10000"
-                step="100"
-                value={settings.observabilityMaxRecords || 1000}
-                onChange={(e) => updateObservabilitySetting("observabilityMaxRecords", parseInt(e.target.value))}
-                disabled={loading || !observabilityEnabled}
-                className="w-28 text-center"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Batch Size</p>
-                <p className="text-sm text-text-muted">
-                  Number of items to accumulate before writing to database (higher = better performance)
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="5"
-                max="100"
-                step="5"
-                value={settings.observabilityBatchSize || 20}
-                onChange={(e) => updateObservabilitySetting("observabilityBatchSize", parseInt(e.target.value))}
-                disabled={loading || !observabilityEnabled}
-                className="w-28 text-center"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Flush Interval (ms)</p>
-                <p className="text-sm text-text-muted">
-                  Maximum time to wait before flushing buffer (prevents data loss during low traffic)
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="1000"
-                max="30000"
-                step="1000"
-                value={settings.observabilityFlushIntervalMs || 5000}
-                onChange={(e) => updateObservabilitySetting("observabilityFlushIntervalMs", parseInt(e.target.value))}
-                disabled={loading || !observabilityEnabled}
-                className="w-28 text-center"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium">Max JSON Size (KB)</p>
-                <p className="text-sm text-text-muted">
-                  Maximum size for each JSON field (request/response) before truncation
-                </p>
-              </div>
-              <Input
-                type="number"
-                min="100"
-                max="10240"
-                step="100"
-                value={settings.observabilityMaxJsonSize || 1024}
-                onChange={(e) => updateObservabilitySetting("observabilityMaxJsonSize", parseInt(e.target.value))}
-                disabled={loading || !observabilityEnabled}
-                className="w-28 text-center"
-              />
-            </div>
-
-            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
-              Current: Keeps {settings.observabilityMaxRecords || 1000} records, batches every {settings.observabilityBatchSize || 20} requests, max {settings.observabilityMaxJsonSize || 1024}KB per field
-            </p>
-            </div>
+            <Toggle
+              checked={observabilityEnabled}
+              onChange={updateObservabilityEnabled}
+              disabled={loading}
+            />
           </div>
         </Card>
 

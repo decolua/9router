@@ -20,6 +20,9 @@ function convertMessages(messages, tools, model) {
   let pendingImages = [];
   let currentRole = null;
 
+  // Only Claude models support images in Kiro
+  const supportsImages = model && model.toLowerCase().includes("claude");
+
   const flushPending = () => {
     if (currentRole === "user") {
       const content = pendingUserContent.join("\n\n").trim() || "continue";
@@ -54,13 +57,17 @@ function convertMessages(messages, tools, model) {
             description = `Tool: ${name}`;
           }
           
+          const schema = t.function?.parameters || t.parameters || t.input_schema || {};
+          // Normalize schema: Kiro requires required[] and proper type/properties
+          const normalizedSchema = Object.keys(schema).length === 0
+            ? { type: "object", properties: {}, required: [] }
+            : { ...schema, required: schema.required ?? [] };
+
           return {
             toolSpecification: {
               name,
               description,
-              inputSchema: {
-                json: t.function?.parameters || t.parameters || t.input_schema || {}
-              }
+              inputSchema: { json: normalizedSchema }
             }
           };
         });
@@ -108,17 +115,24 @@ function convertMessages(messages, tools, model) {
         for (const c of msg.content) {
           if (c.type === "text" || c.text) {
             textParts.push(c.text || "");
-          } else if (c.type === "image_url") {
+          } else if (supportsImages && c.type === "image_url") {
+            // OpenAI format: image_url.url with data URI
             const url = c.image_url?.url || "";
             const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
             if (base64Match) {
-              // Extract format from media type (e.g. "image/png" → "png")
               const mediaType = base64Match[1];
               const format = mediaType.split("/")[1] || mediaType;
               pendingImages.push({ format, source: { bytes: base64Match[2] } });
             } else if (url.startsWith("http://") || url.startsWith("https://")) {
-              // Kiro images field only supports base64 — fallback to URL text
+              // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
+            }
+          } else if (supportsImages && c.type === "image") {
+            // Claude format: source.type = "base64", source.media_type, source.data
+            if (c.source?.type === "base64" && c.source?.data) {
+              const mediaType = c.source.media_type || "image/png";
+              const format = mediaType.split("/")[1] || mediaType;
+              pendingImages.push({ format, source: { bytes: c.source.data } });
             }
           }
         }
@@ -215,36 +229,39 @@ function convertMessages(messages, tools, model) {
     flushPending();
   }
   
-  // If last message in history is userInputMessage, use it as currentMessage
-  if (history.length > 0 && history[history.length - 1].userInputMessage) {
-    currentMessage = history.pop();
+  // Pop last userInputMessage as currentMessage (search from end, skip trailing assistant messages)
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].userInputMessage) {
+      currentMessage = history.splice(i, 1)[0];
+      break;
+    }
   }
 
-  const firstHistoryItem = history[0];
-  if (firstHistoryItem?.userInputMessage?.userInputMessageContext?.tools && 
-      !currentMessage?.userInputMessage?.userInputMessageContext?.tools) {
-    if (!currentMessage.userInputMessage.userInputMessageContext) {
-      currentMessage.userInputMessage.userInputMessageContext = {};
-    }
-    currentMessage.userInputMessage.userInputMessageContext.tools = 
-      firstHistoryItem.userInputMessage.userInputMessageContext.tools;
-  }
-    
+  // Grab tools from first history item BEFORE cleanup removes them
+  const firstHistoryTools = history[0]?.userInputMessage?.userInputMessageContext?.tools;
+
   // Clean up history for Kiro API compatibility
   history.forEach(item => {
     if (item.userInputMessage?.userInputMessageContext?.tools) {
       delete item.userInputMessage.userInputMessageContext.tools;
     }
-    
-    if (item.userInputMessage?.userInputMessageContext && 
+    if (item.userInputMessage?.userInputMessageContext &&
         Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
       delete item.userInputMessage.userInputMessageContext;
     }
-    
     if (item.userInputMessage && !item.userInputMessage.modelId) {
       item.userInputMessage.modelId = model;
     }
   });
+
+  // Inject tools into currentMessage AFTER cleanup
+  if (firstHistoryTools && currentMessage?.userInputMessage &&
+      !currentMessage.userInputMessage.userInputMessageContext?.tools) {
+    if (!currentMessage.userInputMessage.userInputMessageContext) {
+      currentMessage.userInputMessage.userInputMessageContext = {};
+    }
+    currentMessage.userInputMessage.userInputMessageContext.tools = firstHistoryTools;
+  }
 
   return { history, currentMessage };
 }

@@ -19,6 +19,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
   const popupRef = useRef(null);
+  const pollingAbortRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
@@ -66,11 +67,26 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+    pollingAbortRef.current = false;
     setPolling(true);
     const maxAttempts = 60;
 
     for (let i = 0; i < maxAttempts; i++) {
+      // Check if polling should be aborted
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted");
+        setPolling(false);
+        return;
+      }
+
       await new Promise((r) => setTimeout(r, interval * 1000));
+
+      // Check again after sleep
+      if (pollingAbortRef.current) {
+        console.log("[OAuthModal] Polling aborted after sleep");
+        setPolling(false);
+        return;
+      }
 
       try {
         const res = await fetch(`/api/oauth/${provider}/poll`, {
@@ -82,6 +98,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const data = await res.json();
 
         if (data.success) {
+          pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -182,7 +199,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setIsDeviceCode(false);
       setDeviceData(null);
       setPolling(false);
+      pollingAbortRef.current = false;
       startOAuthFlow();
+    } else if (!isOpen) {
+      // Abort polling when modal closes
+      pollingAbortRef.current = true;
     }
   }, [isOpen, provider, startOAuthFlow]);
 

@@ -1,7 +1,8 @@
 const fs = require("fs");
 const crypto = require("crypto");
 const { exec } = require("child_process");
-const { execWithPassword } = require("../dns/dnsConfig.js");
+const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
+const { log, err } = require("../logger");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -26,9 +27,14 @@ async function checkCertInstalled(certPath) {
 function checkCertInstalledMac(certPath) {
   return new Promise((resolve) => {
     try {
-      const fingerprint = getCertFingerprint(certPath);
-      exec(`security find-certificate -a -Z /Library/Keychains/System.keychain | grep -i "${fingerprint}"`, (error) => {
-        resolve(!error);
+      const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
+      // security verify-cert returns 0 only if cert is trusted by system policy
+      exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, (error) => {
+        if (!error) return resolve(true);
+        // Fallback: check if fingerprint appears in System keychain with trust
+        exec(`security dump-trust-settings -d 2>/dev/null | grep -i "${fingerprint}"`, (err2, stdout2) => {
+          resolve(!err2 && !!stdout2?.trim());
+        });
       });
     } catch {
       resolve(false);
@@ -38,8 +44,8 @@ function checkCertInstalledMac(certPath) {
 
 function checkCertInstalledWindows(certPath) {
   return new Promise((resolve) => {
-    // Check Root store for our cert by subject name
-    exec("certutil -store Root daily-cloudcode-pa.googleapis.com", (error) => {
+    // Check Root store for our Root CA by common name
+    exec("certutil -store Root \"9Router MITM Root CA\"", { windowsHide: true }, (error) => {
       resolve(!error);
     });
   });
@@ -55,7 +61,7 @@ async function installCert(sudoPassword, certPath) {
 
   const isInstalled = await checkCertInstalled(certPath);
   if (isInstalled) {
-    console.log("✅ Certificate already installed");
+    log("🔐 Cert: already trusted ✅");
     return;
   }
 
@@ -69,10 +75,12 @@ async function installCert(sudoPassword, certPath) {
 }
 
 async function installCertMac(sudoPassword, certPath) {
-  const command = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
+  // Remove all old certs with same name first to avoid duplicate/stale cert conflict
+  const deleteOld = `security delete-certificate -c "9Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
+  const install = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
-    await execWithPassword(command, sudoPassword);
-    console.log(`✅ Installed certificate to system keychain: ${certPath}`);
+    await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
+    log("🔐 Cert: ✅ installed to system keychain");
   } catch (error) {
     const msg = error.message?.includes("canceled") ? "User canceled authorization" : "Certificate install failed";
     throw new Error(msg);
@@ -80,15 +88,14 @@ async function installCertMac(sudoPassword, certPath) {
 }
 
 async function installCertWindows(certPath) {
-  const escaped = certPath.replace(/'/g, "''");
-  const psCommand = `Start-Process certutil -ArgumentList '-addstore','Root','${escaped}' -Verb RunAs -Wait -WindowStyle Hidden`;
+  // Process already has admin rights — run certutil directly, no UAC needed
   return new Promise((resolve, reject) => {
     exec(
-      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      `certutil -addstore Root "${certPath}"`,
       { windowsHide: true },
       (error) => {
         if (error) reject(new Error(`Failed to install certificate: ${error.message}`));
-        else { console.log("✅ Installed certificate to Windows Root store"); resolve(); }
+        else { log("🔐 Cert: ✅ installed to Windows Root store"); resolve(); }
       }
     );
   });
@@ -100,7 +107,7 @@ async function installCertWindows(certPath) {
 async function uninstallCert(sudoPassword, certPath) {
   const isInstalled = await checkCertInstalled(certPath);
   if (!isInstalled) {
-    console.log("Certificate not found in system store");
+    log("🔐 Cert: not found in system store");
     return;
   }
 
@@ -118,49 +125,56 @@ async function uninstallCertMac(sudoPassword, certPath) {
   const command = `security delete-certificate -Z "${fingerprint}" /Library/Keychains/System.keychain`;
   try {
     await execWithPassword(command, sudoPassword);
-    console.log("✅ Uninstalled certificate from system keychain");
+    log("🔐 Cert: ✅ uninstalled from system keychain");
   } catch (err) {
     throw new Error("Failed to uninstall certificate");
   }
 }
 
 async function uninstallCertWindows() {
-  const psCommand = `Start-Process certutil -ArgumentList '-delstore','Root','daily-cloudcode-pa.googleapis.com' -Verb RunAs -Wait -WindowStyle Hidden`;
+  // Process already has admin rights — run certutil directly, no UAC needed
   return new Promise((resolve, reject) => {
     exec(
-      `powershell -NonInteractive -WindowStyle Hidden -Command "${psCommand}"`,
+      `certutil -delstore Root "9Router MITM Root CA"`,
       { windowsHide: true },
       (error) => {
         if (error) reject(new Error(`Failed to uninstall certificate: ${error.message}`));
-        else { console.log("✅ Uninstalled certificate from Windows Root store"); resolve(); }
+        else { log("🔐 Cert: ✅ uninstalled from Windows Root store"); resolve(); }
       }
     );
   });
 }
 
 function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
 }
 
 async function installCertLinux(sudoPassword, certPath) {
-  const destFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  if (!isSudoAvailable()) {
+    log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
+    return;
+  }
+  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
   // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
   const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
     await execWithPassword(cmd, sudoPassword);
-    console.log("✅ Installed certificate to Linux trust store");
+    log("🔐 Cert: ✅ installed to Linux trust store");
   } catch (error) {
     throw new Error("Certificate install failed");
   }
 }
 
 async function uninstallCertLinux(sudoPassword) {
-  const destFile = `${LINUX_CERT_DIR}/9router-mitm.crt`;
+  if (!isSudoAvailable()) {
+    return;
+  }
+  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
     await execWithPassword(cmd, sudoPassword);
-    console.log("✅ Uninstalled certificate from Linux trust store");
+    log("🔐 Cert: ✅ uninstalled from Linux trust store");
   } catch (error) {
     throw new Error("Failed to uninstall certificate");
   }

@@ -43,6 +43,7 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 const defaultData = {
   providerConnections: [],
   providerNodes: [],
+  proxyPools: [],
   modelAliases: {},
   mitmAlias: {},
   combos: [],
@@ -52,6 +53,9 @@ const defaultData = {
     tunnelEnabled: false,
     tunnelUrl: "",
     stickyRoundRobinLimit: 3,
+    providerStrategies: {},
+    comboStrategy: "fallback",
+    comboStrategies: {},
     requireLogin: true,
     observabilityEnabled: true,
     observabilityMaxRecords: 1000,
@@ -69,6 +73,7 @@ function cloneDefaultData() {
   return {
     providerConnections: [],
     providerNodes: [],
+    proxyPools: [],
     modelAliases: {},
     mitmAlias: {},
     combos: [],
@@ -78,6 +83,9 @@ function cloneDefaultData() {
       tunnelEnabled: false,
       tunnelUrl: "",
       stickyRoundRobinLimit: 3,
+      providerStrategies: {},
+      comboStrategy: "fallback",
+      comboStrategies: {},
       requireLogin: true,
       observabilityEnabled: true,
       observabilityMaxRecords: 1000,
@@ -313,12 +321,110 @@ export async function deleteProviderNode(id) {
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
   }
-  
+
   const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
   if (index === -1) return null;
 
   const [removed] = db.data.providerNodes.splice(index, 1);
+  await db.write();
+
+  return removed;
+}
+
+// ============ Proxy Pools ============
+
+/**
+ * Get proxy pools
+ */
+export async function getProxyPools(filter = {}) {
+  const db = await getDb();
+  let pools = db.data.proxyPools || [];
+
+  if (filter.isActive !== undefined) {
+    pools = pools.filter((pool) => pool.isActive === filter.isActive);
+  }
+
+  if (filter.testStatus) {
+    pools = pools.filter((pool) => pool.testStatus === filter.testStatus);
+  }
+
+  return pools.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+}
+
+/**
+ * Get proxy pool by ID
+ */
+export async function getProxyPoolById(id) {
+  const db = await getDb();
+  return (db.data.proxyPools || []).find((pool) => pool.id === id) || null;
+}
+
+/**
+ * Create proxy pool
+ */
+export async function createProxyPool(data) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const now = new Date().toISOString();
+  const pool = {
+    id: data.id || uuidv4(),
+    name: data.name,
+    proxyUrl: data.proxyUrl,
+    noProxy: data.noProxy || "",
+    isActive: data.isActive !== undefined ? data.isActive : true,
+    strictProxy: data.strictProxy === true,
+    testStatus: data.testStatus || "unknown",
+    lastTestedAt: data.lastTestedAt || null,
+    lastError: data.lastError || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  db.data.proxyPools.push(pool);
+  await db.write();
+
+  return pool;
+}
+
+/**
+ * Update proxy pool
+ */
+export async function updateProxyPool(id, data) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const index = db.data.proxyPools.findIndex((pool) => pool.id === id);
+  if (index === -1) return null;
+
+  db.data.proxyPools[index] = {
+    ...db.data.proxyPools[index],
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await db.write();
+  return db.data.proxyPools[index];
+}
+
+/**
+ * Delete proxy pool
+ */
+export async function deleteProxyPool(id) {
+  const db = await getDb();
+  if (!db.data.proxyPools) {
+    db.data.proxyPools = [];
+  }
+
+  const index = db.data.proxyPools.findIndex((pool) => pool.id === id);
+  if (index === -1) return null;
+
+  const [removed] = db.data.proxyPools.splice(index, 1);
   await db.write();
 
   return removed;
@@ -994,7 +1100,11 @@ export async function getPricingForModel(provider, model) {
     return pricing[alias][model] || null;
   }
 
-  return null;
+  // Fallback: strip vendor prefix (e.g. "deepseek/deepseek-chat" → "deepseek-chat")
+  // then lookup in MODEL_PRICING (provider-agnostic explicit map)
+  const { MODEL_PRICING } = await import("@/shared/constants/pricing.js");
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  return MODEL_PRICING[baseModel] || MODEL_PRICING[model] || null;
 }
 
 /**

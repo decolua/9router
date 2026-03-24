@@ -3,7 +3,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { checkFallbackError, isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter } from "open-sse/services/accountFallback.js";
 import { getComboModelsFromData, handleComboChat } from "open-sse/services/combo.js";
-import { HTTP_STATUS } from "open-sse/config/constants.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { parseApiKey, extractBearerToken } from "../utils/apiKey.js";
