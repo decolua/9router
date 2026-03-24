@@ -17,6 +17,11 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { QUOTA_TARGET_CONNECTION_HEADER } from "@/shared/services/quotaAutoTriggerService";
+
+function getPreferredConnectionId(request) {
+  return request?.headers?.get(QUOTA_TARGET_CONNECTION_HEADER) || null;
+}
 
 /**
  * Handle chat completion request
@@ -24,6 +29,7 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const preferredConnectionId = getPreferredConnectionId(request);
   let body;
   try {
     body = await request.json();
@@ -88,12 +94,12 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    
+
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, preferredConnectionId),
       log,
       comboName: modelStr,
       comboStrategy
@@ -101,13 +107,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, preferredConnectionId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, preferredConnectionId = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -119,12 +125,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
-      
+
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, preferredConnectionId),
         log,
         comboName: modelStr,
         comboStrategy
@@ -152,7 +158,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      preferredConnectionId
+    );
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

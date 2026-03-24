@@ -511,5 +511,21 @@
   "Server Disconnected": "服务器已断开",
   "The proxy server has been stopped.": "代理服务器已停止。",
   "Reload Page": "重新加载页面",
-  "Service is running in terminal. You can close this web page. Shutdown will stop the service.": "服务正在终端中运行。您可以关闭此网页。关闭将停止服务。"
+  "Service is running in terminal. You can close this web page. Shutdown will stop the service.": "服务正在终端中运行。您可以关闭此网页。关闭将停止服务。",
+  "Auto Window Rolling": "自动窗口滚动",
+  "Auto-refresh": "自动刷新",
+  "When enabled, it runs once immediately, then refreshes automatically once every hour. Opening or switching to this page will not trigger an extra run.": "启用后会立即执行一次，之后每小时自动刷新一次。打开或切换到此页面不会额外触发新的执行。",
+  "Running...": "执行中...",
+  "Refreshing": "刷新中",
+  "Refresh failed": "刷新失败",
+  "Refresh successful": "刷新成功",
+  "Unknown model": "未知模型",
+  "N/A": "不可用",
+  "Just now": "刚刚",
+  "m ago": "分钟前",
+  "h ago": "小时前",
+  "d ago": "天前",
+  "Quota exhausted": "额度已耗尽",
+  "Keep the AI service rolling-window quota rotating and refreshing to avoid long waits after one-time exhaustion.": "让 AI 服务的滚动窗口额度持续轮转刷新，避免一次性用尽后长时间等待。",
+  "These internal refresh requests consume provider quota and will appear in usage history/logs.": "这些内部刷新请求会消耗提供商额度，并会出现在使用历史和日志中。"
 }

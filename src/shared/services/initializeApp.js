@@ -2,6 +2,7 @@ import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } f
 import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import { getQuotaAutoTriggerService } from "@/shared/services/quotaAutoTriggerService";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
@@ -49,6 +50,11 @@ const WATCHDOG_INTERVAL_MS = 60000;
 const NETWORK_CHECK_INTERVAL_MS = 5000;
 const NETWORK_RESTART_COOLDOWN_MS = 30000;
 
+function isBuildPhase() {
+  return process.env.NEXT_PHASE === "phase-production-build"
+    || process.argv.join(" ").includes("next build");
+}
+
 /**
  * Initialize app on startup
  * - Cleanup stale data
@@ -94,6 +100,13 @@ export async function initializeApp() {
 
     // Auto-start MITM if it was enabled before restart
     autoStartMitm();
+
+    // Background quota auto-trigger scheduler
+    if (!isBuildPhase()) {
+      getQuotaAutoTriggerService().start().catch((error) => {
+        console.error("[InitApp] Quota auto-trigger start failed:", error);
+      });
+    }
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
