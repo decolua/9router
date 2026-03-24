@@ -18,14 +18,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: npm install
-      - name: Run tests
-        run: npm test 2>&1 | tee test-output.txt
-      - name: Upload test output
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-output-node-${{ matrix.node-version }}
-          path: test-output.txt
+      - run: npm test
 
   build:
     runs-on: ubuntu-latest
@@ -45,11 +38,4 @@ jobs:
         with:
           node-version: 20
       - run: npm install
-      - name: Run ESLint
-        run: npx eslint . 2>&1 | tee lint-output.txt
-      - name: Upload lint output
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: lint-output
-          path: lint-output.txt
+      - run: npx eslint .
