@@ -212,6 +212,22 @@ export const CLI_TOOLS = {
 }`,
     },
   },
+  windsurf: {
+    id: "windsurf",
+    name: "Windsurf",
+    icon: "wind_power",
+    color: "#00BCD4",
+    description: "Windsurf AI Code Editor",
+    configType: "guide",
+    guideSteps: [
+      { step: 1, title: "Open Settings", desc: "Go to Settings (Cmd+, / Ctrl+,) → AI or Models section" },
+      { step: 2, title: "Add Custom Provider", desc: "Find \"Custom Model Provider\" or \"External API\" and click Add" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "API Key", type: "apiKeySelector" },
+      { step: 5, title: "Select Model", type: "modelSelector" },
+      { step: 6, title: "Save & Select", desc: "Save settings, then choose your custom model from Windsurf's model selector" },
+    ],
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",
