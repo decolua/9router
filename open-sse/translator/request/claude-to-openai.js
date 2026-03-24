@@ -73,6 +73,16 @@ export function claudeToOpenAIRequest(model, body, stream) {
   return result;
 }
 
+// Collapse text-only content arrays into a plain string.
+// Many OpenAI-compatible providers reject array-of-text payloads.
+function normalizeOpenAIContent(parts) {
+  if (parts.length === 0) return "";
+  if (parts.every((part) => part.type === "text")) {
+    return parts.map((part) => part.text || "").join("\n");
+  }
+  return parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts;
+}
+
 // Fix missing tool responses - add empty responses for tool_calls without responses
 function fixMissingToolResponses(messages) {
   for (let i = 0; i < messages.length; i++) {
@@ -177,9 +187,7 @@ function convertClaudeMessage(msg) {
     // If has tool results, return array of tool messages
     if (toolResults.length > 0) {
       if (parts.length > 0) {
-        const textContent = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        const textContent = normalizeOpenAIContent(parts);
         return [...toolResults, { role: "user", content: textContent }];
       }
       return toolResults;
@@ -189,9 +197,7 @@ function convertClaudeMessage(msg) {
     if (toolCalls.length > 0) {
       const result = { role: "assistant" };
       if (parts.length > 0) {
-        result.content = parts.length === 1 && parts[0].type === "text" 
-          ? parts[0].text 
-          : parts;
+        result.content = normalizeOpenAIContent(parts);
       }
       result.tool_calls = toolCalls;
       return result;
@@ -201,7 +207,7 @@ function convertClaudeMessage(msg) {
     if (parts.length > 0) {
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: normalizeOpenAIContent(parts)
       };
     }
     
