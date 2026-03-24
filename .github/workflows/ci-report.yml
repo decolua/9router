@@ -1,0 +1,124 @@
+name: CI Report
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  pull-requests: write
+  actions: read
+
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR number
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id
+            });
+
+            // Get PR number from the workflow run
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              console.log('No PR associated with this workflow run');
+              return;
+            }
+            core.setOutput('pr-number', prs[0].number);
+
+      - name: Get job results
+        id: jobs
+        if: steps.pr.outputs.pr-number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jobs = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.payload.workflow_run.id
+            });
+
+            const results = {};
+            for (const job of jobs.data.jobs) {
+              results[job.name] = job.conclusion;
+            }
+            core.setOutput('results', JSON.stringify(results));
+
+      - name: Post results comment
+        if: steps.pr.outputs.pr-number
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.pr.outputs.pr-number }};
+            const results = JSON.parse('${{ steps.jobs.outputs.results }}');
+            const runUrl = context.payload.workflow_run.html_url;
+            const conclusion = context.payload.workflow_run.conclusion;
+
+            // Find and delete any previous CI report comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber
+            });
+            for (const c of comments.data) {
+              if (c.user.type === 'Bot' && (c.body.includes('All checks passed') || c.body.includes('Some checks failed') || c.body.includes('Running checks'))) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: c.id
+                });
+              }
+            }
+
+            const icon = (result) => result === 'success' ? '✅' : result === 'skipped' ? '⏭️' : '❌';
+
+            const testNode20 = results['test (20)'] || 'unknown';
+            const testNode22 = results['test (22)'] || 'unknown';
+            const build = results['build'] || 'unknown';
+            const lint = results['lint'] || 'unknown';
+
+            const allPassed = conclusion === 'success';
+
+            let body = '';
+            if (allPassed) {
+              body = '✅ **All checks passed**\n\n';
+            } else {
+              body = '❌ **Some checks failed**\n\n';
+            }
+
+            body += `| Check | Status |\n|---|---|\n`;
+            body += `| Tests (Node 20) | ${icon(testNode20)} |\n`;
+            body += `| Tests (Node 22) | ${icon(testNode22)} |\n`;
+            body += `| Build | ${icon(build)} |\n`;
+            body += `| Lint | ${icon(lint)} |\n`;
+            body += `\n[View full run](${runUrl})\n`;
+
+            if (!allPassed) {
+              body += '\n---\n\n';
+              if (testNode20 !== 'success' || testNode22 !== 'success') {
+                body += '### Test failures\n';
+                if (testNode20 !== 'success') body += `- Node 20: ${testNode20}\n`;
+                if (testNode22 !== 'success') body += `- Node 22: ${testNode22}\n`;
+                body += `\nCheck the [test artifacts](${runUrl}) for details.\n\n`;
+              }
+              if (build !== 'success') {
+                body += `### Build failed\nCheck the [build log](${runUrl}) for details.\n\n`;
+              }
+              if (lint !== 'success') {
+                body += `### Lint issues\nCheck the [lint output](${runUrl}) for details.\n\n`;
+              }
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: body
+            });
