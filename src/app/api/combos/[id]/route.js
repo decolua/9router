@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 
-// Validate combo name: only a-z, A-Z, 0-9, -, _
+// Validate combo name: only a-z, A-Z, 0-9, -, _, .
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // GET /api/combos/[id] - Get combo by ID

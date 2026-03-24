@@ -5,7 +5,7 @@ import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } fr
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
-// Validate combo name: only a-z, A-Z, 0-9, -, _
+// Validate combo name: only a-z, A-Z, 0-9, -, _, .
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 export default function CombosPage() {
