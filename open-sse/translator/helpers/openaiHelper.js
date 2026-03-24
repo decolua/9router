@@ -1,4 +1,10 @@
 // OpenAI helper functions for translator
+import {
+  normalizeToolDescription,
+  sanitizeJsonSchemaForOpenAI,
+  sanitizeOpenAIChatTool,
+  sanitizeRequestTools
+} from "./toolSchemaCompat.js";
 
 // Valid OpenAI content block types
 export const VALID_OPENAI_CONTENT_TYPES = ["text", "image_url", "image"];
@@ -7,68 +13,68 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 export function filterToOpenAIFormat(body) {
-  if (!body.messages || !Array.isArray(body.messages)) return body;
-  
-  body.messages = body.messages.map(msg => {
-    // Keep tool messages as-is (OpenAI format)
-    if (msg.role === "tool") return msg;
-    
-    // Keep assistant messages with tool_calls as-is
-    if (msg.role === "assistant" && msg.tool_calls) return msg;
-    
-    // Handle string content
-    if (typeof msg.content === "string") return msg;
-    
-    // Handle array content
-    if (Array.isArray(msg.content)) {
-      const filteredContent = [];
+  if (body.messages && Array.isArray(body.messages)) {
+    body.messages = body.messages.map(msg => {
+      // Keep tool messages as-is (OpenAI format)
+      if (msg.role === "tool") return msg;
       
-      for (const block of msg.content) {
-        // Skip thinking blocks
-        if (block.type === "thinking" || block.type === "redacted_thinking") continue;
+      // Keep assistant messages with tool_calls as-is
+      if (msg.role === "assistant" && msg.tool_calls) return msg;
+      
+      // Handle string content
+      if (typeof msg.content === "string") return msg;
+      
+      // Handle array content
+      if (Array.isArray(msg.content)) {
+        const filteredContent = [];
         
-        // Only keep valid OpenAI content types
-        if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
-          // Remove signature field if exists
-          const { signature, cache_control, ...cleanBlock } = block;
-          filteredContent.push(cleanBlock);
-        } else if (block.type === "tool_use") {
-          // Convert tool_use to tool_calls format (handled separately)
-          continue;
-        } else if (block.type === "tool_result") {
-          // Keep tool_result but clean it
-          const { signature, cache_control, ...cleanBlock } = block;
-          filteredContent.push(cleanBlock);
+        for (const block of msg.content) {
+          // Skip thinking blocks
+          if (block.type === "thinking" || block.type === "redacted_thinking") continue;
+          
+          // Only keep valid OpenAI content types
+          if (VALID_OPENAI_CONTENT_TYPES.includes(block.type)) {
+            // Remove signature field if exists
+            const { signature, cache_control, ...cleanBlock } = block;
+            filteredContent.push(cleanBlock);
+          } else if (block.type === "tool_use") {
+            // Convert tool_use to tool_calls format (handled separately)
+            continue;
+          } else if (block.type === "tool_result") {
+            // Keep tool_result but clean it
+            const { signature, cache_control, ...cleanBlock } = block;
+            filteredContent.push(cleanBlock);
+          }
         }
+        
+        // If all content was filtered, add empty text
+        if (filteredContent.length === 0) {
+          filteredContent.push({ type: "text", text: "" });
+        }
+        
+        return { ...msg, content: filteredContent };
       }
       
-      // If all content was filtered, add empty text
-      if (filteredContent.length === 0) {
-        filteredContent.push({ type: "text", text: "" });
-      }
+      return msg;
+    });
+    
+    // Filter out messages with only empty text (but NEVER filter tool messages)
+    body.messages = body.messages.filter(msg => {
+      // Always keep tool messages
+      if (msg.role === "tool") return true;
+      // Always keep assistant messages with tool_calls
+      if (msg.role === "assistant" && msg.tool_calls) return true;
       
-      return { ...msg, content: filteredContent };
-    }
-    
-    return msg;
-  });
-  
-  // Filter out messages with only empty text (but NEVER filter tool messages)
-  body.messages = body.messages.filter(msg => {
-    // Always keep tool messages
-    if (msg.role === "tool") return true;
-    // Always keep assistant messages with tool_calls
-    if (msg.role === "assistant" && msg.tool_calls) return true;
-    
-    if (typeof msg.content === "string") return msg.content.trim() !== "";
-    if (Array.isArray(msg.content)) {
-      return msg.content.some(b => 
-        (b.type === "text" && b.text?.trim()) ||
-        b.type !== "text"
-      );
-    }
-    return true;
-  });
+      if (typeof msg.content === "string") return msg.content.trim() !== "";
+      if (Array.isArray(msg.content)) {
+        return msg.content.some(b => 
+          (b.type === "text" && b.text?.trim()) ||
+          b.type !== "text"
+        );
+      }
+      return true;
+    });
+  }
 
   // Remove empty tools array (some providers like QWEN reject it)
   if (body.tools && Array.isArray(body.tools) && body.tools.length === 0) {
@@ -79,7 +85,7 @@ export function filterToOpenAIFormat(body) {
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
       // Already OpenAI format
-      if (tool.type === "function" && tool.function) return tool;
+      if (tool.type === "function" && tool.function) return sanitizeOpenAIChatTool(tool);
       
       // Claude format: {name, description, input_schema}
       if (tool.name && (tool.input_schema || tool.description)) {
@@ -87,8 +93,8 @@ export function filterToOpenAIFormat(body) {
           type: "function",
           function: {
             name: tool.name,
-            description: tool.description || "",
-            parameters: tool.input_schema || { type: "object", properties: {} }
+            description: normalizeToolDescription(tool.description),
+            parameters: sanitizeJsonSchemaForOpenAI(tool.input_schema)
           }
         };
       }
@@ -99,14 +105,16 @@ export function filterToOpenAIFormat(body) {
           type: "function",
           function: {
             name: fn.name,
-            description: fn.description || "",
-            parameters: fn.parameters || { type: "object", properties: {} }
+            description: normalizeToolDescription(fn.description),
+            parameters: sanitizeJsonSchemaForOpenAI(fn.parameters)
           }
         }));
       }
       
       return tool;
     }).flat();
+
+    body = sanitizeRequestTools(body);
   }
 
   // Normalize tool_choice to OpenAI format
@@ -124,4 +132,3 @@ export function filterToOpenAIFormat(body) {
 
   return body;
 }
-
