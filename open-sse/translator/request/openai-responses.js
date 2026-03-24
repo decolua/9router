@@ -7,6 +7,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
+import { coerceSchemaNumericConstraints } from "../helpers/openaiHelper.js";
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -134,8 +135,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           type: "function",
           function: {
             name,
-            description: tool.description,
-            parameters: tool.parameters,
+            description: typeof tool.description === "string" ? tool.description : "",
+            parameters: coerceSchemaNumericConstraints(tool.parameters),
             strict: tool.strict
           }
         };
@@ -255,8 +256,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         return {
           type: "function",
           name: tool.function.name,
-          description: tool.function.description,
-          parameters: tool.function.parameters,
+          description: typeof tool.function.description === "string" ? tool.function.description : "",
+          parameters: coerceSchemaNumericConstraints(tool.function.parameters),
           strict: tool.function.strict
         };
       }

@@ -88,7 +88,7 @@ export function filterToOpenAIFormat(body) {
           function: {
             name: tool.name,
             description: tool.description || "",
-            parameters: tool.input_schema || { type: "object", properties: {} }
+            parameters: coerceSchemaNumericConstraints(tool.input_schema || { type: "object", properties: {} })
           }
         };
       }
@@ -100,7 +100,7 @@ export function filterToOpenAIFormat(body) {
           function: {
             name: fn.name,
             description: fn.description || "",
-            parameters: fn.parameters || { type: "object", properties: {} }
+            parameters: coerceSchemaNumericConstraints(fn.parameters || { type: "object", properties: {} })
           }
         }));
       }
@@ -123,5 +123,42 @@ export function filterToOpenAIFormat(body) {
   }
 
   return body;
+}
+
+// JSON Schema keywords whose values must be integers (not strings)
+const NUMERIC_SCHEMA_KEYWORDS = [
+  "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+  "minLength", "maxLength", "minItems", "maxItems",
+  "minProperties", "maxProperties", "multipleOf"
+];
+
+/**
+ * Recursively coerce string numeric values for integer-typed JSON Schema keywords.
+ * Fixes errors like: '[codex] Invalid schema: '64' is not of type 'integer''
+ * when MCP tools or clients serialize numeric constraints as strings.
+ */
+export function coerceSchemaNumericConstraints(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+
+  if (Array.isArray(schema)) {
+    for (const item of schema) coerceSchemaNumericConstraints(item);
+    return schema;
+  }
+
+  for (const key of NUMERIC_SCHEMA_KEYWORDS) {
+    if (typeof schema[key] === "string") {
+      const parsed = Number(schema[key]);
+      if (!isNaN(parsed)) schema[key] = parsed;
+    }
+  }
+
+  // Recurse into nested schemas
+  for (const value of Object.values(schema)) {
+    if (value && typeof value === "object") {
+      coerceSchemaNumericConstraints(value);
+    }
+  }
+
+  return schema;
 }
 

@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+import { coerceSchemaNumericConstraints } from "../helpers/openaiHelper.js";
 
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream) {
@@ -59,8 +60,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
       type: "function",
       function: {
         name: tool.name,
-        description: tool.description,
-        parameters: tool.input_schema || { type: "object", properties: {} }
+        description: typeof tool.description === "string" ? tool.description : "",
+        parameters: coerceSchemaNumericConstraints(tool.input_schema || { type: "object", properties: {} })
       }
     }));
   }
