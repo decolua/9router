@@ -87,7 +87,7 @@ export function filterToOpenAIFormat(body) {
           type: "function",
           function: {
             name: tool.name,
-            description: tool.description || "",
+            description: typeof tool.description === "string" ? tool.description : "",
             parameters: tool.input_schema || { type: "object", properties: {} }
           }
         };
@@ -99,7 +99,7 @@ export function filterToOpenAIFormat(body) {
           type: "function",
           function: {
             name: fn.name,
-            description: fn.description || "",
+            description: typeof fn.description === "string" ? fn.description : "",
             parameters: fn.parameters || { type: "object", properties: {} }
           }
         }));
