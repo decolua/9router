@@ -53,10 +53,19 @@ export class VertexExecutor extends BaseExecutor {
       return rawKey ? `${url}?key=${rawKey}` : url;
     }
 
-    // Gemini on Vertex: always use global publishers endpoint
+    // Gemini on Vertex
     const action = stream ? "streamGenerateContent" : "generateContent";
-    let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
 
+    if (saJson) {
+      // SA JSON + Bearer token: must use project-scoped path to avoid RESOURCE_PROJECT_INVALID
+      const location = credentials?.providerSpecificData?.location || "us-central1";
+      let url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:${action}`;
+      if (stream) url += "?alt=sse";
+      return url;
+    }
+
+    // Raw API key: use global publishers endpoint with ?key= param
+    let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
     if (rawKey) url += `?key=${rawKey}`;
     return url;
   }
