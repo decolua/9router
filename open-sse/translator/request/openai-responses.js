@@ -134,7 +134,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           type: "function",
           function: {
             name,
-            description: tool.description,
+            description: typeof tool.description === "string" ? tool.description : "",
             parameters: tool.parameters,
             strict: tool.strict
           }
@@ -255,7 +255,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         return {
           type: "function",
           name: tool.function.name,
-          description: tool.function.description,
+          description: typeof tool.function.description === "string" ? tool.function.description : "",
           parameters: tool.function.parameters,
           strict: tool.function.strict
         };
