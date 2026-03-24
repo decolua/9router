@@ -44,12 +44,15 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tunnelShortId, setTunnelShortId] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
   const [tunnelProgress, setTunnelProgress] = useState("");
   const [tunnelStatus, setTunnelStatus] = useState(null);
   const [showDisableModal, setShowDisableModal] = useState(false);
   const [showEnableModal, setShowEnableModal] = useState(false);
+  // API key visibility toggle state
+  const [visibleKeys, setVisibleKeys] = useState(new Set());
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -224,6 +227,7 @@ export default function APIPageClient({ machineId }) {
         const data = await tunnelRes.json();
         setTunnelEnabled(data.enabled || false);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
       }
     } catch (error) {
@@ -287,6 +291,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(true);
         setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
         setTunnelShortId(data.shortId || "");
         setTunnelStatus({ type: "success", message: "Tunnel connected!" });
       } else {
@@ -311,6 +316,7 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(false);
         setTunnelUrl("");
+        setTunnelPublicUrl("");
         setTunnelStatus({ type: "success", message: "Tunnel disabled" });
         setShowDisableModal(false);
       } else {
@@ -352,6 +358,12 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
       if (res.ok) {
         setKeys(keys.filter((k) => k.id !== id));
+        // Clean up visibility state
+        setVisibleKeys(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       }
     } catch (error) {
       console.log("Error deleting key:", error);
@@ -373,6 +385,20 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const maskKey = (fullKey) => {
+    if (!fullKey) return "";
+    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+  };
+
+  const toggleKeyVisibility = (keyId) => {
+    setVisibleKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(keyId)) next.delete(keyId);
+      else next.add(keyId);
+      return next;
+    });
+  };
+
   const [baseUrl, setBaseUrl] = useState("/v1");
 
   // Hydration fix: Only access window on client side
@@ -391,7 +417,7 @@ export default function APIPageClient({ machineId }) {
     );
   }
 
-  const currentEndpoint = tunnelEnabled && tunnelUrl ? `${tunnelUrl}/v1` : baseUrl;
+  const currentEndpoint = tunnelEnabled && tunnelPublicUrl ? `${tunnelPublicUrl}/v1` : baseUrl;
 
   return (
     <div className="flex flex-col gap-8">
@@ -506,7 +532,18 @@ export default function APIPageClient({ machineId }) {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{key.name}</p>
                   <div className="flex items-center gap-2 mt-1">
-                    <code className="text-xs text-text-muted font-mono">{key.key}</code>
+                    <code className="text-xs text-text-muted font-mono">
+                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                    </code>
+                    <button
+                      onClick={() => toggleKeyVisibility(key.id)}
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
+                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                      </span>
+                    </button>
                     <button
                       onClick={() => copy(key.key, key.id)}
                       className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"

@@ -144,7 +144,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
     const data = {
-      label: config.name || p.name || p.provider,
+      label: (config.name !== p.provider ? config.name : null) || p.name || p.provider,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),

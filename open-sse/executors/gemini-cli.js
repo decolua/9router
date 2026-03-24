@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, OAUTH_ENDPOINTS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../config/appConstants.js";
 
 export class GeminiCLIExecutor extends BaseExecutor {
   constructor() {
@@ -15,11 +16,15 @@ export class GeminiCLIExecutor extends BaseExecutor {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      ...(stream && { "Accept": "text/event-stream" })
+      "User-Agent": geminiCLIUserAgent(this._currentModel),
+      "X-Goog-Api-Client": GEMINI_CLI_API_CLIENT,
+      "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Store model for use in buildHeaders (called by base.execute after transformRequest)
+    this._currentModel = model;
     if (!body.project && credentials?.projectId) {
       body.project = credentials.projectId;
     }

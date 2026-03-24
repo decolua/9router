@@ -1,5 +1,5 @@
-import { HTTP_STATUS } from "../config/constants.js";
-import { shouldUseProxy } from "../utils/proxy-agent-factory.js";
+import { HTTP_STATUS, RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -26,10 +26,19 @@ export class BaseExecutor {
    * @param {object} credentials - Provider credentials (may include proxy config)
    * @returns {Promise<Agent|null>} Proxy agent or null (for direct connection)
    */
-  async getProxyAgent(targetUrl, credentials = {}) {
-    const proxyConfig = credentials.proxy || null;
-    const globalNoProxy = process.env.NO_PROXY || process.env.no_proxy || '';
-    return shouldUseProxy(targetUrl, proxyConfig, globalNoProxy);
+  /**
+   * Build per-provider proxy options from credentials
+   * @param {object} credentials - Provider credentials (may include proxy config)
+   * @returns {object|null} Proxy options for proxyAwareFetch
+   */
+  getProviderProxyOptions(credentials = {}) {
+    const proxyConfig = credentials.proxy;
+    if (!proxyConfig?.url) return null;
+    return {
+      enabled: true,
+      url: proxyConfig.url,
+      noProxy: Array.isArray(proxyConfig.bypass) ? proxyConfig.bypass.join(',') : '',
+    };
   }
 
   getProvider() {
@@ -98,34 +107,39 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
+    const retryAttemptsByUrl = {};
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
-      const headers = this.buildHeaders(credentials, stream);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
+      const headers = this.buildHeaders(credentials, stream);
 
-      // Get proxy agent
-      const proxyAgent = await this.getProxyAgent(url, credentials);
+      if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
+
+      // Build per-provider proxy options (merged with global proxyOptions)
+      const providerProxy = this.getProviderProxyOptions(credentials);
+      const effectiveProxyOptions = providerProxy || proxyOptions;
 
       try {
-        const fetchOptions = {
+        const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
           body: JSON.stringify(transformedBody),
           signal
-        };
+        }, effectiveProxyOptions);
 
-        // Add dispatcher for proxy agent if available
-        if (proxyAgent) {
-          fetchOptions.dispatcher = proxyAgent;
-          log?.debug?.("PROXY", `Using proxy for ${url}`);
+        // Retry 429 with fixed delay before falling back to next URL
+        if (response.status === HTTP_STATUS.RATE_LIMITED && retryAttemptsByUrl[urlIndex] < RETRY_CONFIG.maxAttempts) {
+          retryAttemptsByUrl[urlIndex]++;
+          log?.debug?.("RETRY", `429 retry ${retryAttemptsByUrl[urlIndex]}/${RETRY_CONFIG.maxAttempts} after ${RETRY_CONFIG.delayMs / 1000}s`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+          urlIndex--;
+          continue;
         }
-
-        const response = await fetch(url, fetchOptions);
 
         if (this.shouldRetry(response.status, urlIndex)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);

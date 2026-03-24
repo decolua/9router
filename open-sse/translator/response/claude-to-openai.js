@@ -111,24 +111,22 @@ export function claudeToOpenAIResponse(chunk, state) {
         const outputTokens = typeof chunk.usage.output_tokens === "number" ? chunk.usage.output_tokens : 0;
         const cacheReadTokens = typeof chunk.usage.cache_read_input_tokens === "number" ? chunk.usage.cache_read_input_tokens : 0;
         const cacheCreationTokens = typeof chunk.usage.cache_creation_input_tokens === "number" ? chunk.usage.cache_creation_input_tokens : 0;
-        
-        // Use OpenAI format keys for consistent logging in stream.js
+
+        // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
+        const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+
         state.usage = {
-          prompt_tokens: inputTokens,
+          prompt_tokens: promptTokens,
           completion_tokens: outputTokens,
+          total_tokens: promptTokens + outputTokens,
           input_tokens: inputTokens,
           output_tokens: outputTokens
         };
-        
-        // Store cache tokens if present
-        if (cacheReadTokens > 0) {
-          state.usage.cache_read_input_tokens = cacheReadTokens;
-        }
-        if (cacheCreationTokens > 0) {
-          state.usage.cache_creation_input_tokens = cacheCreationTokens;
-        }
+
+        if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
+        if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
       }
-      
+
       if (chunk.delta?.stop_reason) {
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
         const finalChunk = {
@@ -136,45 +134,25 @@ export function claudeToOpenAIResponse(chunk, state) {
           object: "chat.completion.chunk",
           created: Math.floor(Date.now() / 1000),
           model: state.model,
-          choices: [{
-            index: 0,
-            delta: {},
-            finish_reason: state.finishReason
-          }]
+          choices: [{ index: 0, delta: {}, finish_reason: state.finishReason }]
         };
-        
-        // Include usage in final chunk if available
-        if (state.usage && typeof state.usage === "object") {
-          const inputTokens = state.usage.input_tokens || 0;
-          const outputTokens = state.usage.output_tokens || 0;
-          const cachedTokens = state.usage.cache_read_input_tokens || 0;
-          const cacheCreationTokens = state.usage.cache_creation_input_tokens || 0;
-          
-          // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
-          // completion_tokens = output_tokens
-          // total_tokens = prompt_tokens + completion_tokens
-          const promptTokens = inputTokens + cachedTokens + cacheCreationTokens;
-          const completionTokens = outputTokens;
-          const totalTokens = promptTokens + completionTokens;
-          
+
+        if (state.usage) {
           finalChunk.usage = {
-            prompt_tokens: promptTokens,
-            completion_tokens: completionTokens,
-            total_tokens: totalTokens
+            prompt_tokens: state.usage.prompt_tokens,
+            completion_tokens: state.usage.completion_tokens,
+            total_tokens: state.usage.total_tokens
           };
-          
-          // Add prompt_tokens_details if cached tokens exist
-          if (cachedTokens > 0 || cacheCreationTokens > 0) {
+
+          const cacheRead = state.usage.cache_read_input_tokens;
+          const cacheCreate = state.usage.cache_creation_input_tokens;
+          if (cacheRead > 0 || cacheCreate > 0) {
             finalChunk.usage.prompt_tokens_details = {};
-            if (cachedTokens > 0) {
-              finalChunk.usage.prompt_tokens_details.cached_tokens = cachedTokens;
-            }
-            if (cacheCreationTokens > 0) {
-              finalChunk.usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
-            }
+            if (cacheRead > 0) finalChunk.usage.prompt_tokens_details.cached_tokens = cacheRead;
+            if (cacheCreate > 0) finalChunk.usage.prompt_tokens_details.cache_creation_tokens = cacheCreate;
           }
         }
-        
+
         results.push(finalChunk);
         state.finishReasonSent = true;
       }

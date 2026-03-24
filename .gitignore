@@ -16,7 +16,7 @@
 # next.js
 /.next/
 /out/
-
+product
 # production
 /build
 
@@ -55,7 +55,6 @@ RM.vn.md
 RM.md
 cursor/*
 PUBLIC.md
-scripts/*
 Thanks.md
 PUBLIC.en.md
 PR/*
@@ -74,3 +73,5 @@ plans/
 AGENTS.md
 CLAUDE.md
 release-manifest.json
+deploy.sh
+ecosystem.config.*

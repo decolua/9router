@@ -8,32 +8,39 @@ export const DEFAULT_PRICING = {
   // Claude Code (cc)
   cc: {
     "claude-opus-4-6": {
-      input: 15.00,
+      input: 5.00,
       output: 25.00,
-      cached: 2.50,
-      reasoning: 15.00,
-      cache_creation: 15.00
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
     },
     "claude-opus-4-5-20251101": {
-      input: 15.00,
+      input: 5.00,
       output: 25.00,
-      cached: 2.50,
+      cached: 0.50,
+      reasoning: 25.00,
+      cache_creation: 6.25
+    },
+    "claude-sonnet-4-6": {
+      input: 3.00,
+      output: 15.00,
+      cached: 0.30,
       reasoning: 15.00,
-      cache_creation: 15.00
+      cache_creation: 3.75
     },
     "claude-sonnet-4-5-20250929": {
       input: 3.00,
       output: 15.00,
-      cached: 1.50,
+      cached: 0.30,
       reasoning: 15.00,
-      cache_creation: 3.00
+      cache_creation: 3.75
     },
     "claude-haiku-4-5-20251001": {
-      input: 0.50,
-      output: 2.50,
-      cached: 0.25,
-      reasoning: 2.50,
-      cache_creation: 0.50
+      input: 1.00,
+      output: 5.00,
+      cached: 0.10,
+      reasoning: 5.00,
+      cache_creation: 1.25
     }
   },
 
@@ -737,6 +744,20 @@ export const DEFAULT_PRICING = {
 
   // MiniMax
   minimax: {
+    "MiniMax-M2.7": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
+    },
+    "MiniMax-M2.5": {
+      input: 0.50,
+      output: 2.00,
+      cached: 0.25,
+      reasoning: 3.00,
+      cache_creation: 0.50
+    },
     "MiniMax-M2.1": {
       input: 0.50,
       output: 2.00,
@@ -744,7 +765,36 @@ export const DEFAULT_PRICING = {
       reasoning: 3.00,
       cache_creation: 0.50
     }
+  },
+
+  // DeepSeek (official API pricing: https://api-docs.deepseek.com/quick_start/pricing)
+  deepseek: {
+    "deepseek-chat": {
+      input: 0.28,
+      output: 0.42,
+      cached: 0.028,
+      reasoning: 0.42,
+      cache_creation: 0.28
+    },
+    "deepseek-reasoner": {
+      input: 0.28,
+      output: 0.42,
+      cached: 0.028,
+      reasoning: 0.42,
+      cache_creation: 0.28
+    }
   }
+};
+
+/**
+ * Provider-agnostic fallback pricing, keyed by model base name.
+ * Used when provider-specific lookup fails (e.g. openrouter, cu, fireworks use prefixed model IDs).
+ * Strip prefix before lookup: "deepseek/deepseek-chat" → "deepseek-chat"
+ */
+export const MODEL_PRICING = {
+  // DeepSeek
+  "deepseek-chat":     { input: 0.28, output: 0.42, cached: 0.028, reasoning: 0.42, cache_creation: 0.28 },
+  "deepseek-reasoner": { input: 0.28, output: 0.42, cached: 0.028, reasoning: 0.42, cache_creation: 0.28 },
 };
 
 /**

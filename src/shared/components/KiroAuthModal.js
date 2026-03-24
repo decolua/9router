@@ -74,13 +74,13 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
       });
 
       const data = await res.json();
-      
+
       if (!res.ok) {
         throw new Error(data.error || "Import failed");
       }
 
-      // Success - close modal
-      onClose();
+      // Success - notify parent to refresh connections
+      onMethodSelect("import");
     } catch (err) {
       setError(err.message);
     } finally {

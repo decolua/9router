@@ -49,7 +49,7 @@ export function transformToOllama(response, model) {
               const formattedCalls = toolCallsArr.map(tc => ({
                 function: {
                   name: tc.function.name,
-                  arguments: JSON.parse(tc.function.arguments || "{}")
+                  arguments: (() => { try { return JSON.parse(tc.function.arguments || "{}"); } catch { return {}; } })()
                 }
               }));
               const ollama = JSON.stringify({ 
@@ -75,6 +75,9 @@ export function transformToOllama(response, model) {
     }
   });
 
+  if (!response.body) {
+    return new Response("", { status: response.status, headers: { "Content-Type": "application/x-ndjson" } });
+  }
   return new Response(response.body.pipeThrough(transform), {
     headers: { "Content-Type": "application/x-ndjson", "Access-Control-Allow-Origin": "*" }
   });

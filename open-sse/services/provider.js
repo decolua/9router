@@ -1,4 +1,5 @@
-import { PROVIDERS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -32,6 +33,16 @@ function buildOpenAICompatibleUrl(baseUrl, apiType) {
 function buildAnthropicCompatibleUrl(baseUrl) {
   const normalized = baseUrl.replace(/\/$/, "");
   return `${normalized}/messages`;
+}
+
+function buildQwenBaseUrl(resourceUrl, fallbackBaseUrl) {
+  const fallback = (fallbackBaseUrl || "").replace(/\/chat\/completions$/, "");
+  const raw = typeof resourceUrl === "string" ? resourceUrl.trim() : "";
+  if (!raw) return fallback;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw.replace(/\/$/, "");
+  }
+  return `https://${raw.replace(/\/$/, "")}/v1`;
 }
 
 // Detect request format from body structure
@@ -178,6 +189,11 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
     case "codex":
       return config.baseUrl;
 
+    case "qwen": {
+      const baseUrl = buildQwenBaseUrl(options?.qwenResourceUrl, config.baseUrl);
+      return `${baseUrl}/chat/completions`;
+    }
+
     case "github":
       return config.baseUrl;
 
@@ -239,7 +255,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         }
         break;
   
-      case "github":
+      case "github": {
         // GitHub Copilot requires special headers to mimic VSCode
         // Prioritize copilotToken from providerSpecificData, fallback to accessToken
         const githubToken = credentials.copilotToken || credentials.accessToken;
@@ -263,6 +279,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         headers["X-Initiator"] = "user";
         headers["Accept"] = "application/json";
         break;
+      }
   
       case "codex":
       case "qwen":
@@ -270,12 +287,22 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       case "openrouter":
         headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         break;
+
+      case "cline":
+        Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
+        break;
   
       case "glm":
       case "kimi":
       case "minimax":
         // Claude-compatible API providers use x-api-key
         headers["x-api-key"] = credentials.apiKey;
+        break;
+
+      case "vertex":
+      case "vertex-partner":
+        // Vertex uses async token minting — headers are set by VertexExecutor._buildHeadersAsync()
+        // Do NOT set Authorization here; it would leak the raw SA JSON as Bearer token
         break;
   
       default:

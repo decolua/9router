@@ -20,7 +20,7 @@ function getOAuthPlatformEnum() {
 export const CLAUDE_CONFIG = {
   clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
   authorizeUrl: "https://claude.ai/oauth/authorize",
-  tokenUrl: "https://console.anthropic.com/v1/oauth/token",
+  tokenUrl: "https://api.anthropic.com/v1/oauth/token",
   scopes: ["org:create_api_key", "user:profile", "user:inference"],
   codeChallengeMethod: "S256",
 };
@@ -97,7 +97,8 @@ export const ANTIGRAVITY_CONFIG = {
   onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
   loadCodeAssistUserAgent: "google-api-nodejs-client/9.15.1",
   loadCodeAssistApiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  loadCodeAssistClientMetadata: JSON.stringify({ ideType: 9, platform: getOAuthPlatformEnum(), pluginType: 2 }),
+  // String enum matches CLIProxyAPI Go source (internal/auth/antigravity/constants.go)
+  loadCodeAssistClientMetadata: JSON.stringify({ ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }),
 };
 
 /**

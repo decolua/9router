@@ -1,15 +1,15 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, HTTP_STATUS } from "../config/constants.js";
+import { PROVIDERS } from "../config/providers.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
   parseConnectRPCFrame,
   extractTextFromResponse
 } from "../utils/cursorProtobuf.js";
+import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
-import { buildCursorRequest } from "../translator/request/openai-to-cursor.js";
-import crypto from "crypto";
-import { v5 as uuidv5 } from "uuid";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
 
 // Detect cloud environment
@@ -36,18 +36,50 @@ const COMPRESS_FLAG = {
   GZIP_TRAILER: 0x03
 };
 
+const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
+const debugLog = (...args) => {
+  if (CURSOR_STREAM_DEBUG) console.log(...args);
+};
+
 function decompressPayload(payload, flags) {
-  // ConnectRPC trailer frame (flags & 0x02) - contains status JSON, not compressed data
-  if (flags & COMPRESS_FLAG.TRAILER) {
-    return payload;
+  // Check if payload is JSON error (starts with {"error")
+  if (payload.length > 10 && payload[0] === 0x7b && payload[1] === 0x22) {
+    try {
+      const text = payload.toString("utf-8");
+      if (text.startsWith('{"error"')) {
+        debugLog(`[DECOMPRESS] Detected JSON error, skipping decompression`);
+        return payload;
+      }
+    } catch {}
   }
 
-  if (flags === COMPRESS_FLAG.GZIP) {
+  if (
+    flags === COMPRESS_FLAG.GZIP ||
+    flags === COMPRESS_FLAG.TRAILER ||
+    flags === COMPRESS_FLAG.GZIP_TRAILER
+  ) {
+    // Primary: try gzip decompression (standard gzip header 0x1f 0x8b)
     try {
       return zlib.gunzipSync(payload);
-    } catch (err) {
-      console.log(`[DECOMPRESS ERROR] flags=${flags}, payloadSize=${payload.length}, error=${err.message}`);
-      return payload;
+    } catch (gzipErr) {
+      // Fallback: TRAILER and GZIP_TRAILER frames sometimes use raw zlib deflate format
+      try {
+        return zlib.inflateSync(payload);
+      } catch (deflateErr) {
+        // Last resort: try raw deflate (no zlib header)
+        try {
+          return zlib.inflateRawSync(payload);
+        } catch (rawErr) {
+          debugLog(
+            `[DECOMPRESS ERROR] flags=${flags}, payloadSize=${payload.length}, gzip=${gzipErr.message}, deflate=${deflateErr.message}, raw=${rawErr.message}`
+          );
+          debugLog(
+            `[DECOMPRESS ERROR] First 50 bytes (hex):`,
+            payload.slice(0, 50).toString("hex")
+          );
+          return payload;
+        }
+      }
     }
   }
   return payload;
@@ -82,46 +114,6 @@ export class CursorExecutor extends BaseExecutor {
     return `${this.config.baseUrl}${this.config.chatPath}`;
   }
 
-  // Jyh cipher checksum for Cursor API authentication
-  generateChecksum(machineId) {
-    const timestamp = Math.floor(Date.now() / 1000000);
-    const byteArray = new Uint8Array([
-      (timestamp >> 40) & 0xFF,
-      (timestamp >> 32) & 0xFF,
-      (timestamp >> 24) & 0xFF,
-      (timestamp >> 16) & 0xFF,
-      (timestamp >> 8) & 0xFF,
-      timestamp & 0xFF
-    ]);
-
-    let t = 165;
-    for (let i = 0; i < byteArray.length; i++) {
-      byteArray[i] = ((byteArray[i] ^ t) + (i % 256)) & 0xFF;
-      t = byteArray[i];
-    }
-
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let encoded = "";
-
-    for (let i = 0; i < byteArray.length; i += 3) {
-      const a = byteArray[i];
-      const b = i + 1 < byteArray.length ? byteArray[i + 1] : 0;
-      const c = i + 2 < byteArray.length ? byteArray[i + 2] : 0;
-
-      encoded += alphabet[a >> 2];
-      encoded += alphabet[((a & 3) << 4) | (b >> 4)];
-
-      if (i + 1 < byteArray.length) {
-        encoded += alphabet[((b & 15) << 2) | (c >> 6)];
-      }
-      if (i + 2 < byteArray.length) {
-        encoded += alphabet[c & 63];
-      }
-    }
-
-    return `${encoded}${machineId}`;
-  }
-
   buildHeaders(credentials) {
     const accessToken = credentials.accessToken;
     const machineId = credentials.providerSpecificData?.machineId;
@@ -131,45 +123,25 @@ export class CursorExecutor extends BaseExecutor {
       throw new Error("Machine ID is required for Cursor API");
     }
 
-    const cleanToken = accessToken.includes("::") ? accessToken.split("::")[1] : accessToken;
-
-    return {
-      "authorization": `Bearer ${cleanToken}`,
-      "connect-accept-encoding": "gzip",
-      "connect-protocol-version": "1",
-      "content-type": "application/connect+proto",
-      "user-agent": "connect-es/1.6.1",
-      "x-amzn-trace-id": `Root=${crypto.randomUUID()}`,
-      "x-client-key": crypto.createHash("sha256").update(cleanToken).digest("hex"),
-      "x-cursor-checksum": this.generateChecksum(machineId),
-      "x-cursor-client-version": "2.3.41",
-      "x-cursor-client-type": "ide",
-      "x-cursor-client-os": process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux",
-      "x-cursor-client-arch": process.arch === "arm64" ? "aarch64" : "x64",
-      "x-cursor-client-device-type": "desktop",
-      "x-cursor-config-version": crypto.randomUUID(),
-      "x-cursor-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      "x-ghost-mode": ghostMode ? "true" : "false",
-      "x-request-id": crypto.randomUUID(),
-      "x-session-id": uuidv5(cleanToken, uuidv5.DNS),
-    };
+    return buildCursorHeaders(accessToken, machineId, ghostMode);
   }
 
   transformRequest(model, body, stream, credentials) {
-    const translatedBody = buildCursorRequest(model, body, stream, credentials);
-    const messages = translatedBody.messages || [];
-    const tools = translatedBody.tools || body.tools || [];
+    // Messages are already translated by chatCore (claude→openai→cursor)
+    // Do NOT call buildCursorRequest again — double-translation drops tool_results
+    const messages = body.messages || [];
+    const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
     return generateCursorBody(messages, model, tools, reasoningEffort);
   }
 
-  async makeFetchRequest(url, headers, body, signal) {
-    const response = await fetch(url, {
+  async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
+    const response = await proxyAwareFetch(url, {
       method: "POST",
       headers,
       body,
       signal
-    });
+    }, proxyOptions);
 
     return {
       status: response.status,
@@ -183,13 +155,30 @@ export class CursorExecutor extends BaseExecutor {
       throw new Error("http2 module not available");
     }
 
+    const HTTP2_TIMEOUT_MS = 60000; // 60s max — prevent hung sessions
+
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
       const client = http2.connect(`https://${urlObj.host}`);
       const chunks = [];
       let responseHeaders = {};
+      let settled = false;
 
-      client.on("error", reject);
+      // Ensure client is always closed on settle
+      const finish = (fn) => (...args) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(hangTimeout);
+        client.close();
+        fn(...args);
+      };
+
+      // Hard timeout: close session if server never responds
+      const hangTimeout = setTimeout(finish(() => {
+        reject(new Error("HTTP/2 request timed out"));
+      }), HTTP2_TIMEOUT_MS);
+
+      client.on("error", finish(reject));
 
       const req = client.request({
         ":method": "POST",
@@ -201,25 +190,18 @@ export class CursorExecutor extends BaseExecutor {
 
       req.on("response", (hdrs) => { responseHeaders = hdrs; });
       req.on("data", (chunk) => { chunks.push(chunk); });
-      req.on("end", () => {
-        client.close();
+      req.on("end", finish(() => {
         resolve({
           status: responseHeaders[":status"],
           headers: responseHeaders,
           body: Buffer.concat(chunks)
         });
-      });
-      req.on("error", (err) => {
-        client.close();
-        reject(err);
-      });
+      }));
+      req.on("error", finish(reject));
 
       if (signal) {
-        signal.addEventListener("abort", () => {
-          req.close();
-          client.close();
-          reject(new Error("Request aborted"));
-        });
+        const onAbort = finish(() => reject(new Error("Request aborted")));
+        signal.addEventListener("abort", onAbort, { once: true });
       }
 
       req.write(body);
@@ -227,15 +209,16 @@ export class CursorExecutor extends BaseExecutor {
     });
   }
 
-  async execute({ model, body, stream, credentials, signal, log }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials);
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     try {
-      const response = http2 
+      const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
+      const response = (http2 && !shouldForceFetch)
         ? await this.makeHttp2Request(url, headers, transformedBody, signal)
-        : await this.makeFetchRequest(url, headers, transformedBody, signal);
+        : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
@@ -280,53 +263,87 @@ export class CursorExecutor extends BaseExecutor {
     let totalContent = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
+    const finalizedIds = new Set();
     let frameCount = 0;
 
+    debugLog(`[CURSOR BUFFER] Total length: ${buffer.length} bytes`);
+
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) break;
+      if (offset + 5 > buffer.length) {
+        debugLog(
+          `[CURSOR BUFFER] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
+        );
+        break;
+      }
 
       const flags = buffer[offset];
       const length = buffer.readUInt32BE(offset + 1);
 
-      if (offset + 5 + length > buffer.length) break;
+      debugLog(
+        `[CURSOR BUFFER] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
+      );
+
+      if (offset + 5 + length > buffer.length) {
+        debugLog(
+          `[CURSOR BUFFER] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
+        );
+        break;
+      }
 
       let payload = buffer.slice(offset + 5, offset + 5 + length);
       offset += 5 + length;
       frameCount++;
 
-      // Stop at ConnectRPC trailer frame (end of response, anything after is a separate response)
-      if (flags & COMPRESS_FLAG.TRAILER) {
-        break;
+      payload = decompressPayload(payload, flags);
+      if (!payload) {
+        debugLog(`[CURSOR BUFFER] Frame ${frameCount}: decompression failed, skipping`);
+        continue;
       }
 
-      payload = decompressPayload(payload, flags);
-      if (!payload) continue;
-
-      try {
-        const text = payload.toString("utf-8");
-        if (text.startsWith("{") && text.includes('"error"')) {
-          return createErrorResponse(JSON.parse(text));
-        }
-      } catch {}
+      // Check for JSON error frames (byte guard: skip toString on non-JSON frames)
+      if (payload.length > 0 && payload[0] === 0x7b) {
+        try {
+          const text = payload.toString("utf-8");
+          if (text.includes('"error"')) {
+            const hasContent = totalContent || toolCallsMap.size > 0;
+            debugLog(
+              `[CURSOR BUFFER] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`
+            );
+            if (hasContent) {
+              break;
+            }
+            return createErrorResponse(JSON.parse(text));
+          }
+        } catch {}
+      }
 
       const result = extractTextFromResponse(new Uint8Array(payload));
+      debugLog(`[CURSOR DECODED] Frame ${frameCount}:`, result);
 
       if (result.error) {
-        return new Response(JSON.stringify({
-          error: {
-            message: result.error,
-            type: "rate_limit_error",
-            code: "rate_limited"
+        const hasContent = totalContent || toolCallsMap.size > 0;
+        debugLog(`[CURSOR BUFFER] Decoded error (hasContent=${hasContent}): ${result.error}`);
+        if (hasContent) {
+          break;
+        }
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: result.error,
+              type: "rate_limit_error",
+              code: "rate_limited"
+            }
+          }),
+          {
+            status: HTTP_STATUS.RATE_LIMITED,
+            headers: { "Content-Type": "application/json" }
           }
-        }), {
-          status: HTTP_STATUS.RATE_LIMITED,
-          headers: { "Content-Type": "application/json" }
-        });
+        );
       }
 
       if (result.toolCall) {
         const tc = result.toolCall;
-        
+
         if (toolCallsMap.has(tc.id)) {
           // Accumulate arguments for existing tool call
           const existing = toolCallsMap.get(tc.id);
@@ -336,10 +353,11 @@ export class CursorExecutor extends BaseExecutor {
           // New tool call
           toolCallsMap.set(tc.id, { ...tc });
         }
-        
+
         // Push to final array when isLast is true
         if (tc.isLast) {
           const finalToolCall = toolCallsMap.get(tc.id);
+          finalizedIds.add(tc.id);
           toolCalls.push({
             id: finalToolCall.id,
             type: finalToolCall.type,
@@ -350,14 +368,19 @@ export class CursorExecutor extends BaseExecutor {
           });
         }
       }
-      
+
       if (result.text) totalContent += result.text;
     }
+
+    debugLog(
+      `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
+    );
 
     // Finalize all remaining tool calls in map (in case stream ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {
       // Check if already in final array
-      if (!toolCalls.find(t => t.id === id)) {
+      if (!finalizedIds.has(id)) {
+        debugLog(`[CURSOR BUFFER] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`);
         toolCalls.push({
           id: tc.id,
           type: tc.type,
@@ -368,6 +391,8 @@ export class CursorExecutor extends BaseExecutor {
         });
       }
     }
+
+    debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
 
     const message = {
@@ -409,176 +434,294 @@ export class CursorExecutor extends BaseExecutor {
     let totalContent = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
+    const finalizedIds = new Set();
+    const emittedToolCallIds = new Set();
     let frameCount = 0;
 
+    debugLog(`[CURSOR BUFFER SSE] Total length: ${buffer.length} bytes`);
+
     while (offset < buffer.length) {
-      if (offset + 5 > buffer.length) break;
+      if (offset + 5 > buffer.length) {
+        debugLog(
+          `[CURSOR BUFFER SSE] Reached end, offset=${offset}, remaining=${buffer.length - offset}`
+        );
+        break;
+      }
 
       const flags = buffer[offset];
       const length = buffer.readUInt32BE(offset + 1);
 
-      if (offset + 5 + length > buffer.length) break;
+      debugLog(
+        `[CURSOR BUFFER SSE] Frame ${frameCount + 1}: flags=0x${flags.toString(16).padStart(2, "0")}, length=${length}`
+      );
+
+      if (offset + 5 + length > buffer.length) {
+        debugLog(
+          `[CURSOR BUFFER SSE] Incomplete frame, offset=${offset}, length=${length}, buffer.length=${buffer.length}`
+        );
+        break;
+      }
 
       let payload = buffer.slice(offset + 5, offset + 5 + length);
       offset += 5 + length;
       frameCount++;
 
-      // Stop at ConnectRPC trailer frame (end of response, anything after is a separate response)
-      if (flags & COMPRESS_FLAG.TRAILER) {
-        break;
+      payload = decompressPayload(payload, flags);
+      if (!payload) {
+        debugLog(`[CURSOR BUFFER SSE] Frame ${frameCount}: decompression failed, skipping`);
+        continue;
       }
 
-      payload = decompressPayload(payload, flags);
-      if (!payload) continue;
-
-      try {
-        const text = payload.toString("utf-8");
-        if (text.startsWith("{") && text.includes('"error"')) {
-          return createErrorResponse(JSON.parse(text));
-        }
-      } catch {}
+      // Check for JSON error frames (byte-guard: only decode if starts with '{')
+      if (payload[0] === 0x7b) {
+        try {
+          const text = payload.toString("utf-8");
+          if (text.includes('"error"')) {
+            const hasContent = chunks.length > 0 || totalContent || toolCallsMap.size > 0;
+            debugLog(
+              `[CURSOR BUFFER SSE] Error frame (hasContent=${hasContent}): ${text.slice(0, 500)}`
+            );
+            if (hasContent) {
+              break;
+            }
+            return createErrorResponse(JSON.parse(text));
+          }
+        } catch {}
+      }
 
       const result = extractTextFromResponse(new Uint8Array(payload));
+      debugLog(`[CURSOR DECODED SSE] Frame ${frameCount}:`, result);
 
       if (result.error) {
-        return new Response(JSON.stringify({
-          error: {
-            message: result.error,
-            type: "rate_limit_error",
-            code: "rate_limited"
+        const hasContent = chunks.length > 0 || totalContent || toolCallsMap.size > 0;
+        debugLog(`[CURSOR BUFFER SSE] Decoded error (hasContent=${hasContent}): ${result.error}`);
+        if (hasContent) {
+          break;
+        }
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: result.error,
+              type: "rate_limit_error",
+              code: "rate_limited"
+            }
+          }),
+          {
+            status: HTTP_STATUS.RATE_LIMITED,
+            headers: { "Content-Type": "application/json" }
           }
-        }), {
-          status: HTTP_STATUS.RATE_LIMITED,
-          headers: { "Content-Type": "application/json" }
-        });
+        );
       }
 
       if (result.toolCall) {
         const tc = result.toolCall;
-        
+
         if (chunks.length === 0) {
-          chunks.push(`data: ${JSON.stringify({
-            id: responseId,
-            object: "chat.completion.chunk",
-            created,
-            model,
-            choices: [{
-              index: 0,
-              delta: { role: "assistant", content: "" },
-              finish_reason: null
-            }]
-          })}\n\n`);
+          chunks.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: "assistant", content: "" },
+                  finish_reason: null
+                }
+              ]
+            })}\n\n`
+          );
         }
-        
+
         if (toolCallsMap.has(tc.id)) {
           // Accumulate arguments for existing tool call
           const existing = toolCallsMap.get(tc.id);
           const oldArgsLen = existing.function.arguments.length;
           existing.function.arguments += tc.function.arguments;
           existing.isLast = tc.isLast;
-          
+
           // Stream the delta arguments
           if (tc.function.arguments) {
-            chunks.push(`data: ${JSON.stringify({
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: { 
-                  tool_calls: [{ 
-                    index: existing.index,
-                    id: tc.id,
-                    type: "function",
-                    function: {
-                      name: tc.function.name,
-                      arguments: tc.function.arguments
-                    }
-                  }] 
-                },
-                finish_reason: null
-              }]
-            })}\n\n`);
+            emittedToolCallIds.add(tc.id);
+            chunks.push(
+              `data: ${JSON.stringify({
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: existing.index,
+                          id: tc.id,
+                          type: "function",
+                          function: {
+                            name: tc.function.name,
+                            arguments: tc.function.arguments
+                          }
+                        }
+                      ]
+                    },
+                    finish_reason: null
+                  }
+                ]
+              })}\n\n`
+            );
           }
         } else {
           // New tool call - assign index and add to map
           const toolCallIndex = toolCalls.length;
+          finalizedIds.add(tc.id);
           toolCalls.push({ ...tc, index: toolCallIndex });
           toolCallsMap.set(tc.id, { ...tc, index: toolCallIndex });
-          
+
           // Stream initial tool call with name
-          chunks.push(`data: ${JSON.stringify({
-            id: responseId,
-            object: "chat.completion.chunk",
-            created,
-            model,
-            choices: [{
-              index: 0,
-              delta: { 
-                tool_calls: [{ 
-                  index: toolCallIndex,
-                  id: tc.id,
-                  type: "function",
-                  function: {
-                    name: tc.function.name,
-                    arguments: tc.function.arguments
-                  }
-                }] 
-              },
-              finish_reason: null
-            }]
-          })}\n\n`);
+          emittedToolCallIds.add(tc.id);
+          chunks.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: toolCallIndex,
+                        id: tc.id,
+                        type: "function",
+                        function: {
+                          name: tc.function.name,
+                          arguments: tc.function.arguments
+                        }
+                      }
+                    ]
+                  },
+                  finish_reason: null
+                }
+              ]
+            })}\n\n`
+          );
         }
       }
 
       if (result.text) {
         totalContent += result.text;
-        chunks.push(`data: ${JSON.stringify({
+        chunks.push(
+          `data: ${JSON.stringify({
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta:
+                  chunks.length === 0 && toolCalls.length === 0
+                    ? { role: "assistant", content: result.text }
+                    : { content: result.text },
+                finish_reason: null
+              }
+            ]
+          })}\n\n`
+        );
+      }
+    }
+
+    debugLog(
+      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`
+    );
+
+    // Finalize all remaining tool calls in map (stream may have ended without isLast=true)
+    for (const [id, tc] of toolCallsMap.entries()) {
+      if (!finalizedIds.has(id)) {
+        debugLog(`[CURSOR BUFFER SSE] Finalizing incomplete tool call: ${id}, isLast=${tc.isLast}`);
+        const toolCallIndex = toolCalls.length;
+        toolCalls.push({
+          id: tc.id,
+          type: tc.type,
+          index: toolCallIndex,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments
+          }
+        });
+
+        // Emit SSE chunk for the finalized tool call if not already emitted
+        if (!emittedToolCallIds.has(tc.id)) {
+          chunks.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: toolCallIndex,
+                        id: tc.id,
+                        type: "function",
+                        function: {
+                          name: tc.function.name,
+                          arguments: tc.function.arguments
+                        }
+                      }
+                    ]
+                  },
+                  finish_reason: null
+                }
+              ]
+            })}\n\n`
+          );
+        }
+      }
+    }
+
+    if (chunks.length === 0 && toolCalls.length === 0) {
+      chunks.push(
+        `data: ${JSON.stringify({
           id: responseId,
           object: "chat.completion.chunk",
           created,
           model,
-          choices: [{
-            index: 0,
-            delta: chunks.length === 0 && toolCalls.length === 0
-              ? { role: "assistant", content: result.text }
-              : { content: result.text },
-            finish_reason: null
-          }]
-        })}\n\n`);
-      }
-    }
-
-
-    if (chunks.length === 0 && toolCalls.length === 0) {
-      chunks.push(`data: ${JSON.stringify({
-        id: responseId,
-        object: "chat.completion.chunk",
-        created,
-        model,
-        choices: [{
-          index: 0,
-          delta: { role: "assistant", content: "" },
-          finish_reason: null
-        }]
-      })}\n\n`);
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", content: "" },
+              finish_reason: null
+            }
+          ]
+        })}\n\n`
+      );
     }
 
     const usage = estimateUsage(body, totalContent.length, FORMATS.OPENAI);
 
-    chunks.push(`data: ${JSON.stringify({
-      id: responseId,
-      object: "chat.completion.chunk",
-      created,
-      model,
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
-      }],
-      usage
-    })}\n\n`);
+    chunks.push(
+      `data: ${JSON.stringify({
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
+          }
+        ],
+        usage
+      })}\n\n`
+    );
     chunks.push("data: [DONE]\n\n");
 
     return new Response(chunks.join(""), {

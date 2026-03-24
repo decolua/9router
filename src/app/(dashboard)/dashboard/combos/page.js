@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
-const VALID_NAME_REGEX = /^[a-zA-Z0-9_-]+$/;
+const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
@@ -14,6 +14,7 @@ export default function CombosPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
+  const [comboStrategies, setComboStrategies] = useState({});
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -22,20 +23,20 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
+        fetch("/api/settings"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
       if (combosRes.ok) setCombos(combosData.combos || []);
       if (providersRes.ok) {
-        const active = (providersData.connections || []).filter(
-          c => c.testStatus === "active" || c.testStatus === "success"
-        );
-        setActiveProviders(active);
+        setActiveProviders(providersData.connections || []);
       }
+      setComboStrategies(settingsData.comboStrategies || {});
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -93,6 +94,27 @@ export default function CombosPage() {
     }
   };
 
+  const handleToggleRoundRobin = async (comboName, enabled) => {
+    try {
+      const updated = { ...comboStrategies };
+      if (enabled) {
+        updated[comboName] = { fallbackStrategy: "round-robin" };
+      } else {
+        delete updated[comboName];
+      }
+      
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboStrategies: updated }),
+      });
+      
+      setComboStrategies(updated);
+    } catch (error) {
+      console.log("Error updating combo strategy:", error);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -141,6 +163,8 @@ export default function CombosPage() {
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              roundRobinEnabled={comboStrategies[combo.name]?.fallbackStrategy === "round-robin"}
+              onToggleRoundRobin={(enabled) => handleToggleRoundRobin(combo.name, enabled)}
             />
           ))}
         </div>
@@ -168,7 +192,7 @@ export default function CombosPage() {
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
+function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
   return (
     <Card padding="sm" className="group">
       <div className="flex items-center justify-between">
@@ -207,24 +231,110 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete }) {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button
-            onClick={onEdit}
-            className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
-            title="Edit"
-          >
-            <span className="material-symbols-outlined text-[16px]">edit</span>
-          </button>
-          <button
-            onClick={onDelete}
-            className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
-            title="Delete"
-          >
-            <span className="material-symbols-outlined text-[16px]">delete</span>
-          </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Round Robin Toggle */}
+          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-xs text-text-muted font-medium">Round Robin</span>
+            <Toggle
+              size="sm"
+              checked={roundRobinEnabled}
+              onChange={onToggleRoundRobin}
+            />
+          </div>
+          
+          <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={onEdit}
+              className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors"
+              title="Edit"
+            >
+              <span className="material-symbols-outlined text-[16px]">edit</span>
+            </button>
+            <button
+              onClick={onDelete}
+              className="p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-colors"
+              title="Delete"
+            >
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+            </button>
+          </div>
         </div>
       </div>
     </Card>
+  );
+}
+
+// Inline editable model item
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(model);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== model) onEdit(trimmed);
+    else setDraft(model); // revert if empty or unchanged
+    setEditing(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") { setDraft(model); setEditing(false); }
+  };
+
+  return (
+    <div className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors">
+      {/* Index badge */}
+      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+
+      {/* Inline editable model value */}
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={handleKeyDown}
+          className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono bg-white dark:bg-black/20 border border-primary/40 rounded outline-none text-text-main"
+        />
+      ) : (
+        <div
+          className="flex-1 min-w-0 px-1.5 py-0.5 text-xs font-mono text-text-main truncate cursor-text hover:bg-black/5 dark:hover:bg-white/5 rounded"
+          onClick={() => setEditing(true)}
+          title="Click to edit"
+        >
+          {model}
+        </div>
+      )}
+
+      {/* Priority arrows */}
+      <div className="flex items-center gap-0.5">
+        <button
+          onClick={onMoveUp}
+          disabled={isFirst}
+          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move up"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
+        </button>
+        <button
+          onClick={onMoveDown}
+          disabled={isLast}
+          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          title="Move down"
+        >
+          <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
+        </button>
+      </div>
+
+      {/* Remove */}
+      <button
+        onClick={onRemove}
+        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        title="Remove"
+      >
+        <span className="material-symbols-outlined text-[12px]">close</span>
+      </button>
+    </div>
   );
 }
 
@@ -236,25 +346,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
-  const [providerNodes, setProviderNodes] = useState([]);
 
   const fetchModalData = async () => {
     try {
-      const [aliasesRes, nodesRes] = await Promise.all([
-        fetch("/api/models/alias"),
-        fetch("/api/provider-nodes"),
-      ]);
-
-      if (!aliasesRes.ok || !nodesRes.ok) {
-        throw new Error(`Failed to fetch data: aliases=${aliasesRes.status}, nodes=${nodesRes.status}`);
-      }
-
-      const [aliasesData, nodesData] = await Promise.all([
-        aliasesRes.json(),
-        nodesRes.json(),
-      ]);
+      const aliasesRes = await fetch("/api/models/alias");
+      if (!aliasesRes.ok) return;
+      const aliasesData = await aliasesRes.json();
       setModelAliases(aliasesData.aliases || {});
-      setProviderNodes(nodesData.nodes || []);
     } catch (error) {
       console.error("Error fetching modal data:", error);
     }
@@ -270,7 +368,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
       return false;
     }
     if (!VALID_NAME_REGEX.test(value)) {
-      setNameError("Only letters, numbers, - and _ allowed");
+      setNameError("Only letters, numbers, -, _ and . allowed");
       return false;
     }
     setNameError("");
@@ -293,21 +391,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   const handleRemoveModel = (index) => {
     setModels(models.filter((_, i) => i !== index));
   };
-
-  // Format model display name with readable provider name
-  const formatModelDisplay = useCallback((modelValue) => {
-    const parts = modelValue.split('/');
-    if (parts.length !== 2) return modelValue;
-    
-    const [providerId, modelId] = parts;
-    const matchedNode = providerNodes.find(node => node.id === providerId);
-    
-    if (matchedNode) {
-      return `${matchedNode.name}/${modelId}`;
-    }
-    
-    return modelValue;
-  }, [providerNodes]);
 
   const handleMoveUp = (index) => {
     if (index === 0) return;
@@ -350,7 +433,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
               error={nameError}
             />
             <p className="text-[10px] text-text-muted mt-0.5">
-              Only letters, numbers, - and _ allowed
+              Only letters, numbers, -, _ and . allowed
             </p>
           </div>
 
@@ -366,52 +449,26 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             ) : (
               <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
                 {models.map((model, index) => (
-                  <div
+                  <ModelItem
                     key={index}
-                    className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-black/[0.02] dark:bg-white/[0.02] hover:bg-black/[0.04] dark:hover:bg-white/[0.04] transition-colors"
-                  >
-                    {/* Index badge */}
-                    <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
-
-                    {/* Model display - show readable name only */}
-                    <div className="flex-1 min-w-0 px-1.5 py-0.5 text-xs text-text-main truncate">
-                      {formatModelDisplay(model)}
-                    </div>
-
-                    {/* Priority arrows - horizontal, always visible */}
-                    <div className="flex items-center gap-0.5">
-                      <button
-                        onClick={() => handleMoveUp(index)}
-                        disabled={index === 0}
-                        className={`p-0.5 rounded ${index === 0 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-                        title="Move up"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
-                      </button>
-                      <button
-                        onClick={() => handleMoveDown(index)}
-                        disabled={index === models.length - 1}
-                        className={`p-0.5 rounded ${index === models.length - 1 ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
-                        title="Move down"
-                      >
-                        <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
-                      </button>
-                    </div>
-
-                    {/* Remove - always visible */}
-                    <button
-                      onClick={() => handleRemoveModel(index)}
-                      className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
-                      title="Remove"
-                    >
-                      <span className="material-symbols-outlined text-[12px]">close</span>
-                    </button>
-                  </div>
+                    index={index}
+                    model={model}
+                    isFirst={index === 0}
+                    isLast={index === models.length - 1}
+                    onEdit={(newVal) => {
+                      const updated = [...models];
+                      updated[index] = newVal;
+                      setModels(updated);
+                    }}
+                    onMoveUp={() => handleMoveUp(index)}
+                    onMoveDown={() => handleMoveDown(index)}
+                    onRemove={() => handleRemoveModel(index)}
+                  />
                 ))}
               </div>
             )}
 
-            {/* Add Model button - moved to bottom */}
+            {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-text-muted hover:text-primary hover:border-primary/30 transition-colors flex items-center justify-center gap-1"
@@ -450,4 +507,3 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
     </>
   );
 }
-

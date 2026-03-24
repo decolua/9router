@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
+import { Card, Button, ModelSelectModal, ManualConfigModal, Tooltip } from "@/shared/components";
 import Image from "next/image";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -17,8 +17,9 @@ export default function ClaudeToolCard({
   hasActiveProviders,
   apiKeys,
   cloudEnabled,
+  initialStatus,
 }) {
-  const [claudeStatus, setClaudeStatus] = useState(null);
+  const [claudeStatus, setClaudeStatus] = useState(initialStatus || null);
   const [checkingClaude, setCheckingClaude] = useState(false);
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -30,6 +31,7 @@ export default function ClaudeToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [ccFilterNaming, setCcFilterNaming] = useState(false);
   const hasInitializedModels = useRef(false);
 
   const getConfigStatus = () => {
@@ -52,11 +54,32 @@ export default function ClaudeToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
+    if (initialStatus) setClaudeStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     if (isExpanded && !claudeStatus) {
       checkClaudeStatus();
       fetchModelAliases();
     }
-  }, [isExpanded, claudeStatus]);
+    if (isExpanded) fetchModelAliases();
+  }, [isExpanded]);
+
+  useEffect(() => {
+    fetch("/api/settings").then(r => r.json()).then(data => {
+      setCcFilterNaming(!!data.ccFilterNaming);
+    }).catch(() => {});
+  }, []);
+
+  const handleCcFilterNamingToggle = async (e) => {
+    const value = e.target.checked;
+    setCcFilterNaming(value);
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ccFilterNaming: value }),
+    }).catch(() => {});
+  };
 
   const fetchModelAliases = async () => {
     try {
@@ -200,7 +223,7 @@ export default function ClaudeToolCard({
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
+    <Card padding="xs" className="overflow-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
@@ -313,6 +336,19 @@ export default function ClaudeToolCard({
                     {modelMappings[model.alias] && <button onClick={() => onModelMappingChange(model.alias, "")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                 ))}
+
+                {/* CC Filter Naming */}
+                <div className="flex items-center gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Filter naming</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input type="checkbox" checked={ccFilterNaming} onChange={handleCcFilterNamingToggle} className="w-3.5 h-3.5 accent-primary cursor-pointer" />
+                    <span className="text-xs text-text-muted">Filter naming requests</span>
+                  </label>
+                  <Tooltip text="Intercepts Claude Code's topic-naming requests and returns a fake response locally, saving API tokens.">
+                    <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
+                  </Tooltip>
+                </div>
               </div>
 
               {message && (

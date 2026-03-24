@@ -3,6 +3,9 @@
  * Centralized DRY approach for all OAuth providers
  */
 
+// Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
+import "open-sse/index.js";
+
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
   CLAUDE_CONFIG,
@@ -17,7 +20,6 @@ import {
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
   CLINE_CONFIG,
-  getOAuthClientMetadata,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -252,18 +254,23 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      const headers = {
-        Authorization: `Bearer ${tokens.access_token}`,
+      // Matches CLIProxyAPI Go source: string enum, no mode field
+      const loadHeaders = {
+        "Authorization": `Bearer ${tokens.access_token}`,
         "Content-Type": "application/json",
         "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
         "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
+        "x-request-source": "local",
       };
-      const metadata = getOAuthClientMetadata();
+      const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          "x-request-source": "local",
+        },
       });
       const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
 
@@ -273,13 +280,12 @@ const PROVIDERS = {
       try {
         const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
           method: "POST",
-          headers,
-          body: JSON.stringify({ metadata, mode: 1 }),
+          headers: loadHeaders,
+          body: JSON.stringify({ metadata }),
         });
         if (loadRes.ok) {
           const data = await loadRes.json();
           projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
-          // Extract tier ID
           if (Array.isArray(data.allowedTiers)) {
             for (const tier of data.allowedTiers) {
               if (tier.isDefault && tier.id) {
@@ -293,32 +299,27 @@ const PROVIDERS = {
         console.log("Failed to load code assist:", e);
       }
 
-      // Onboard user to enable Gemini Code Assist
+      // Fire-and-forget onboarding — does not block DB save
       if (projectId) {
-        try {
+        const doOnboard = async () => {
           for (let i = 0; i < 10; i++) {
-            const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
-              method: "POST",
-              headers,
-              body: JSON.stringify({ tierId, metadata, cloudaicompanionProject: projectId, mode: 1 }),
-            });
-            if (onboardRes.ok) {
-              const result = await onboardRes.json();
-              if (result.done === true) {
-                // Extract final project ID from response
-                if (result.response?.cloudaicompanionProject) {
-                  const respProject = result.response.cloudaicompanionProject;
-                  projectId = typeof respProject === 'string' ? respProject.trim() : (respProject.id || projectId);
-                }
-                break;
+            try {
+              const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
+                method: "POST",
+                headers: loadHeaders,
+                body: JSON.stringify({ tierId, metadata }),
+              });
+              if (onboardRes.ok) {
+                const result = await onboardRes.json();
+                if (result.done === true) break;
               }
+            } catch (e) {
+              break;
             }
-            // Wait 5 seconds before retry
             await new Promise(resolve => setTimeout(resolve, 5000));
           }
-        } catch (e) {
-          console.log("Failed to onboard user:", e);
-        }
+        };
+        doOnboard().catch(() => {});
       }
 
       return { userInfo, projectId };
@@ -376,7 +377,7 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      // Fetch user info
+      // Fetch user info (MUST succeed to get API key)
       const userInfoRes = await fetch(
         `${IFLOW_CONFIG.userInfoUrl}?accessToken=${encodeURIComponent(tokens.access_token)}`,
         {
@@ -385,8 +386,30 @@ const PROVIDERS = {
           },
         }
       );
-      const result = userInfoRes.ok ? await userInfoRes.json() : {};
-      const userInfo = result.success ? result.data : {};
+      
+      if (!userInfoRes.ok) {
+        const errorText = await userInfoRes.text();
+        throw new Error(`Failed to fetch user info: ${errorText}`);
+      }
+      
+      const result = await userInfoRes.json();
+      if (!result.success) {
+        throw new Error(`User info request failed: ${result.message || 'Unknown error'}`);
+      }
+      
+      const userInfo = result.data || {};
+      
+      // Validate API key (critical for iFlow)
+      if (!userInfo.apiKey || userInfo.apiKey.trim() === "") {
+        throw new Error("Empty API key returned from iFlow");
+      }
+      
+      // Validate email/phone
+      const email = userInfo.email?.trim() || userInfo.phone?.trim();
+      if (!email) {
+        throw new Error("Missing account email/phone in user info");
+      }
+      
       return { userInfo };
     },
     mapTokens: (tokens, extra) => ({
@@ -637,6 +660,7 @@ const PROVIDERS = {
             access_token: data.accessToken,
             refresh_token: data.refreshToken,
             expires_in: data.expiresIn,
+            profile_arn: data?.profileArn || null,
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
@@ -652,15 +676,19 @@ const PROVIDERS = {
         },
       };
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      providerSpecificData: {
-        clientId: tokens._clientId,
-        clientSecret: tokens._clientSecret,
-      },
-    }),
+    mapTokens: (tokens) => {
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+        providerSpecificData: {
+          profileArn: tokens?.profile_arn || null,
+          clientId: tokens._clientId,
+          clientSecret: tokens._clientSecret,
+        },
+      };
+      return mapped;
+    },
   },
 
   cursor: {
@@ -763,7 +791,18 @@ const PROVIDERS = {
       if (!response.ok) return { ok: false, data: { error: "poll_failed", error_description: `Poll failed: ${response.status}` } };
       const data = await response.json();
       if (data.status === "approved" && data.token) {
-        return { ok: true, data: { access_token: data.token, _userEmail: data.userEmail } };
+        // Fetch profile to get orgId for X-Kilocode-OrganizationID header
+        let orgId = null;
+        try {
+          const profileRes = await fetch(`${config.apiBaseUrl}/api/profile`, {
+            headers: { "Authorization": `Bearer ${data.token}` }
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json();
+            orgId = profile.organizations?.[0]?.id || null;
+          }
+        } catch {}
+        return { ok: true, data: { access_token: data.token, _userEmail: data.userEmail, _orgId: orgId } };
       }
       return { ok: false, data: { error: "authorization_pending" } };
     },
@@ -772,6 +811,7 @@ const PROVIDERS = {
       refreshToken: null,
       expiresIn: null,
       email: tokens._userEmail,
+      ...(tokens._orgId ? { providerSpecificData: { orgId: tokens._orgId } } : {}),
     }),
   },
 

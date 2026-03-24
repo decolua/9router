@@ -32,7 +32,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     convertedBody.stream = false;
   }
 
-  // Call chat core handler
+  // Call chat core handler — force sourceFormat so streaming path knows this is a Responses API client
   const result = await handleChatCore({
     body: convertedBody,
     modelInfo,
@@ -41,7 +41,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onCredentialsRefreshed,
     onRequestSuccess,
     onDisconnect,
-    connectionId
+    connectionId,
+    sourceFormatOverride: "openai-responses"
   });
 
   if (!result.success || !result.response) {

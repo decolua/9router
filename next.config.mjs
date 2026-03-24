@@ -1,12 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  serverExternalPackages: ["better-sqlite3"],
   images: {
     unoptimized: true
   },
-  env: {
-    NEXT_PUBLIC_CLOUD_URL: "https://9router.com",
-  },
+  env: {},
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {

@@ -1,7 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
-import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/constants.js";
+import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 
 function generateUUID() {
@@ -178,19 +178,21 @@ function openaiToGeminiBase(model, body, stream) {
     for (const t of body.tools) {
       // Check if already in Anthropic/Claude format (no type field, direct name/description/input_schema)
       if (t.name && t.input_schema) {
+        const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(t.input_schema || { type: "object", properties: {} }));
         functionDeclarations.push({
           name: t.name,
           description: t.description || "",
-          parameters: t.input_schema || { type: "object", properties: {} }
+          parameters: cleanedSchema
         });
       }
       // OpenAI format
       else if (t.type === "function" && t.function) {
         const fn = t.function;
+        const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(fn.parameters || { type: "object", properties: {} }));
         functionDeclarations.push({
           name: fn.name,
           description: fn.description || "",
-          parameters: fn.parameters || { type: "object", properties: {} }
+          parameters: cleanedSchema
         });
       }
     }

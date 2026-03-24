@@ -1,21 +1,79 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections, createProviderConnection, getProviderNodeById } from "@/models";
+import {
+  getProviderConnections,
+  createProviderConnection,
+  getProviderNodeById,
+  getProviderNodes,
+  getProxyPoolById,
+} from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+
+export const dynamic = "force-dynamic";
+
+function normalizeProxyConfig(body = {}) {
+  const enabled = body?.connectionProxyEnabled === true;
+  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
+  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+
+  if (enabled && !url) {
+    return { error: "Connection proxy URL is required when connection proxy is enabled" };
+  }
+
+  return {
+    connectionProxyEnabled: enabled,
+    connectionProxyUrl: url,
+    connectionNoProxy: noProxy,
+  };
+}
+
+async function normalizeProxyPoolId(proxyPoolId) {
+  if (proxyPoolId === undefined || proxyPoolId === null || proxyPoolId === "" || proxyPoolId === "__none__") {
+    return { proxyPoolId: null };
+  }
+
+  const normalizedId = String(proxyPoolId).trim();
+  if (!normalizedId) {
+    return { proxyPoolId: null };
+  }
+
+  const proxyPool = await getProxyPoolById(normalizedId);
+  if (!proxyPool) {
+    return { error: "Proxy pool not found" };
+  }
+
+  return { proxyPoolId: normalizedId };
+}
 
 // GET /api/providers - List all connections
 export async function GET() {
   try {
     const connections = await getProviderConnections();
-    
-    // Hide sensitive fields
-    const safeConnections = connections.map(c => ({
-      ...c,
-      apiKey: undefined,
-      accessToken: undefined,
-      refreshToken: undefined,
-      idToken: undefined,
-    }));
+
+    // Build nodeNameMap for compatible providers (id → name)
+    let nodeNameMap = {};
+    try {
+      const nodes = await getProviderNodes();
+      for (const node of nodes) {
+        if (node.id && node.name) nodeNameMap[node.id] = node.name;
+      }
+    } catch { }
+
+    // Hide sensitive fields, enrich name for compatible providers
+    const safeConnections = connections.map(c => {
+      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+      const name = isCompatible
+        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        : c.name;
+      return {
+        ...c,
+        name,
+        apiKey: undefined,
+        accessToken: undefined,
+        refreshToken: undefined,
+        idToken: undefined,
+      };
+    });
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
@@ -29,11 +87,21 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
+    const proxyConfig = normalizeProxyConfig(body);
+    if (proxyConfig.error) {
+      return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
+    }
+
+    const proxyPoolResult = await normalizeProxyPoolId(body.proxyPoolId);
+    if (proxyPoolResult.error) {
+      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+    }
+    const proxyPoolId = proxyPoolResult.proxyPoolId;
 
     // Validation
-    const isValidProvider = APIKEY_PROVIDERS[provider] || 
-                          isOpenAICompatibleProvider(provider) || 
-                          isAnthropicCompatibleProvider(provider);
+    const isValidProvider = APIKEY_PROVIDERS[provider] ||
+      isOpenAICompatibleProvider(provider) ||
+      isAnthropicCompatibleProvider(provider);
 
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
@@ -82,6 +150,17 @@ export async function POST(request) {
       };
     }
 
+    const mergedProviderSpecificData = {
+      ...(providerSpecificData || {}),
+      connectionProxyEnabled: proxyConfig.connectionProxyEnabled,
+      connectionProxyUrl: proxyConfig.connectionProxyUrl,
+      connectionNoProxy: proxyConfig.connectionNoProxy,
+    };
+
+    if (proxyPoolId !== null) {
+      mergedProviderSpecificData.proxyPoolId = proxyPoolId;
+    }
+
     const newConnection = await createProviderConnection({
       provider,
       authType: "apikey",
@@ -90,7 +169,7 @@ export async function POST(request) {
       priority: priority || 1,
       globalPriority: globalPriority || null,
       defaultModel: defaultModel || null,
-      providerSpecificData,
+      providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
     });

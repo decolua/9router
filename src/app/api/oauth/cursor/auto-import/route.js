@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { access, constants } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
-import Database from "better-sqlite3";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
-const MACHINE_ID_KEYS = ["storage.serviceMachineId", "storage.machineId", "telemetry.machineId"];
+const MACHINE_ID_KEYS = [
+  "storage.serviceMachineId",
+  "storage.machineId",
+  "telemetry.machineId",
+];
 
 /** Get candidate db paths by platform */
 function getCandidatePaths(platform) {
@@ -13,38 +20,65 @@ function getCandidatePaths(platform) {
 
   if (platform === "darwin") {
     return [
-      join(home, "Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
-      join(home, "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb"),
+      join(
+        home,
+        "Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+      ),
+      join(
+        home,
+        "Library/Application Support/Cursor - Insiders/User/globalStorage/state.vscdb",
+      ),
     ];
   }
 
   if (platform === "win32") {
     const appData = process.env.APPDATA || join(home, "AppData", "Roaming");
-    const localAppData = process.env.LOCALAPPDATA || join(home, "AppData", "Local");
+    const localAppData =
+      process.env.LOCALAPPDATA || join(home, "AppData", "Local");
     return [
       join(appData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(appData, "Cursor - Insiders", "User", "globalStorage", "state.vscdb"),
+      join(
+        appData,
+        "Cursor - Insiders",
+        "User",
+        "globalStorage",
+        "state.vscdb",
+      ),
       join(localAppData, "Cursor", "User", "globalStorage", "state.vscdb"),
-      join(localAppData, "Programs", "Cursor", "User", "globalStorage", "state.vscdb"),
+      join(
+        localAppData,
+        "Programs",
+        "Cursor",
+        "User",
+        "globalStorage",
+        "state.vscdb",
+      ),
     ];
   }
 
-  // Linux
   return [
     join(home, ".config/Cursor/User/globalStorage/state.vscdb"),
     join(home, ".config/cursor/User/globalStorage/state.vscdb"),
   ];
 }
 
-/** Extract tokens from open db, with fuzzy fallback */
-function extractTokens(db, platform) {
-  const desiredKeys = [...ACCESS_TOKEN_KEYS, ...MACHINE_ID_KEYS];
-  const rows = db.prepare(
-    `SELECT key, value FROM itemTable WHERE key IN (${desiredKeys.map(() => "?").join(",")})`
-  ).all(...desiredKeys);
+const normalize = (value) => {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "string" ? parsed : value;
+  } catch {
+    return value;
+  }
+};
 
-  const normalize = (value) => {
-    if (typeof value !== "string") return value;
+/**
+ * Extract tokens via sqlite3 CLI.
+ * Keeps the route build-safe by avoiding optional sql.js bundling.
+ */
+async function extractTokensViaCLI(dbPath) {
+  const normalize = (raw) => {
+    const value = raw.trim();
     try {
       const parsed = JSON.parse(value);
       return typeof parsed === "string" ? parsed : value;
@@ -53,46 +87,57 @@ function extractTokens(db, platform) {
     }
   };
 
-  const tokens = {};
-  for (const row of rows) {
-    if (ACCESS_TOKEN_KEYS.includes(row.key) && !tokens.accessToken) {
-      tokens.accessToken = normalize(row.value);
-    } else if (MACHINE_ID_KEYS.includes(row.key) && !tokens.machineId) {
-      tokens.machineId = normalize(row.value);
+  const query = async (sql) => {
+    const { stdout } = await execFileAsync("sqlite3", [dbPath, sql], {
+      timeout: 10000,
+    });
+    return stdout.trim();
+  };
+
+  // Try each key in priority order
+  let accessToken = null;
+  for (const key of ACCESS_TOKEN_KEYS) {
+    try {
+      const raw = await query(
+        `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
+      );
+      if (raw) {
+        accessToken = normalize(raw);
+        break;
+      }
+    } catch {
+      /* try next */
     }
   }
 
-  // Fuzzy fallback for all platforms when exact keys miss
-  if (!tokens.accessToken || !tokens.machineId) {
-    const fallbackRows = db.prepare(
-      "SELECT key, value FROM itemTable WHERE key LIKE '%cursorAuth/%' OR key LIKE '%machineId%' OR key LIKE '%serviceMachineId%'"
-    ).all();
-
-    for (const row of fallbackRows) {
-      const key = row.key || "";
-      const value = normalize(row.value);
-      if (!tokens.accessToken && key.toLowerCase().includes("accesstoken")) {
-        tokens.accessToken = value;
+  let machineId = null;
+  for (const key of MACHINE_ID_KEYS) {
+    try {
+      const raw = await query(
+        `SELECT value FROM itemTable WHERE key='${key}' LIMIT 1`,
+      );
+      if (raw) {
+        machineId = normalize(raw);
+        break;
       }
-      if (!tokens.machineId && key.toLowerCase().includes("machineid")) {
-        tokens.machineId = value;
-      }
+    } catch {
+      /* try next */
     }
   }
 
-  return tokens;
+  return { accessToken, machineId };
 }
 
 /**
  * GET /api/oauth/cursor/auto-import
- * Auto-detect and extract Cursor tokens from local SQLite database
+ * Auto-detect and extract Cursor tokens from local SQLite database.
+ * Strategy: sqlite3 CLI → manual fallback
  */
 export async function GET() {
   try {
     const platform = process.platform;
     const candidates = getCandidatePaths(platform);
 
-    // Find first readable db path
     let dbPath = null;
     for (const candidate of candidates) {
       try {
@@ -111,44 +156,48 @@ export async function GET() {
       });
     }
 
-    let db;
-    try {
-      db = new Database(dbPath, { readonly: true, fileMustExist: true });
-    } catch (error) {
-      return NextResponse.json({
-        found: false,
-        error: `Found Cursor database at:\n${dbPath}\n\nBut could not open it: ${error.message}`,
-      });
-    }
-
-    try {
-      const tokens = extractTokens(db, platform);
-      db.close();
-
-      if (!tokens.accessToken || !tokens.machineId) {
+    // On Linux, verify Cursor is actually installed (not just leftover config)
+    if (platform === "linux") {
+      let cursorInstalled = false;
+      try {
+        await execFileAsync("which", ["cursor"], { timeout: 5000 });
+        cursorInstalled = true;
+      } catch {
+        try {
+          const desktopFile = join(homedir(), ".local/share/applications/cursor.desktop");
+          await access(desktopFile, constants.R_OK);
+          cursorInstalled = true;
+        } catch { /* not found */ }
+      }
+      if (!cursorInstalled) {
         return NextResponse.json({
           found: false,
-          error: "Tokens not found in database. Please login to Cursor IDE first.",
+          error: "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
         });
       }
-
-      return NextResponse.json({
-        found: true,
-        accessToken: tokens.accessToken,
-        machineId: tokens.machineId,
-      });
-    } catch (error) {
-      db?.close();
-      return NextResponse.json({
-        found: false,
-        error: `Failed to read database: ${error.message}`,
-      });
     }
+
+    // Strategy 1: sqlite3 CLI
+    try {
+      const tokens = await extractTokensViaCLI(dbPath);
+      if (tokens.accessToken && tokens.machineId) {
+        return NextResponse.json({
+          found: true,
+          accessToken: tokens.accessToken,
+          machineId: tokens.machineId,
+        });
+      }
+    } catch {
+      // sqlite3 CLI not available
+    }
+
+    // Strategy 2: ask user to paste manually
+    return NextResponse.json({ found: false, windowsManual: true, dbPath });
   } catch (error) {
     console.log("Cursor auto-import error:", error);
     return NextResponse.json(
       { found: false, error: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
