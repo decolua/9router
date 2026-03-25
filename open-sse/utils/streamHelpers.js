@@ -6,9 +6,8 @@ export function parseSSELine(line, format = null) {
 
   const trimmed = line.trim();
 
-  // NDJSON format (Ollama) or raw JSON without "data:" prefix
-  // Some providers stream bare JSON objects instead of SSE.
-  if (format === FORMATS.OLLAMA || (trimmed.startsWith("{") && !trimmed.startsWith("data:"))) {
+  // NDJSON format (Ollama): bare JSON objects without "data:" prefix
+  if (format === FORMATS.OLLAMA) {
     if (trimmed.startsWith("{")) {
       try {
         return JSON.parse(trimmed);
@@ -16,23 +15,34 @@ export function parseSSELine(line, format = null) {
         return null;
       }
     }
-    if (format === FORMATS.OLLAMA) return null;
+    return null;
   }
 
   // Standard SSE format: "data: {...}"
-  if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
+  if (line.charCodeAt(0) === 100) { // 'd' = 100
+    const data = line.slice(5).trim();
+    if (data === "[DONE]") return { done: true };
 
-  const data = line.slice(5).trim();
-  if (data === "[DONE]") return { done: true };
-
-  try {
-    return JSON.parse(data);
-  } catch (error) {
-    if (data.length > 0 && data.length < 1000) {
-      console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
+    try {
+      return JSON.parse(data);
+    } catch (error) {
+      if (data.length > 0 && data.length < 1000) {
+        console.log(`[WARN] Failed to parse SSE line (${data.length} chars): ${data.substring(0, 100)}...`);
+      }
+      return null;
     }
-    return null;
   }
+
+  // Fallback: some providers stream bare JSON without "data:" prefix
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 // Check if chunk has valuable content (not empty)

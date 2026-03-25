@@ -64,6 +64,29 @@ describe("requestContext caching", () => {
     expect(localDbMocks.getComboByName).toHaveBeenCalledTimes(1);
   });
 
+  it("caches different combo names independently", async () => {
+    const context = createRequestContext();
+    const fastCombo = { name: "fast", models: ["a"] };
+    const slowCombo = { name: "slow", models: ["b"] };
+    localDbMocks.getComboByName.mockImplementation((name) =>
+      Promise.resolve(name === "fast" ? fastCombo : slowCombo)
+    );
+
+    const [fast, slow] = await Promise.all([
+      getRequestComboByName("fast", context),
+      getRequestComboByName("slow", context),
+    ]);
+
+    expect(fast).toBe(fastCombo);
+    expect(slow).toBe(slowCombo);
+    expect(localDbMocks.getComboByName).toHaveBeenCalledTimes(2);
+
+    // Second lookup reuses cache
+    const fast2 = await getRequestComboByName("fast", context);
+    expect(fast2).toBe(fastCombo);
+    expect(localDbMocks.getComboByName).toHaveBeenCalledTimes(2);
+  });
+
   it("reuses model aliases within the same request context", async () => {
     const context = createRequestContext();
     const aliases = { sonnet: "claude/sonnet-4" };

@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { claudeToOpenAIRequest } from "../../open-sse/translator/request/claude-to-openai.js";
-import { filterToOpenAIFormat } from "../../open-sse/translator/helpers/openaiHelper.js";
+import { filterToOpenAIFormat, normalizeOpenAIContent } from "../../open-sse/translator/helpers/openaiHelper.js";
 import { parseSSELine } from "../../open-sse/utils/streamHelpers.js";
 
 describe("request normalization", () => {
@@ -96,14 +96,51 @@ describe("request normalization", () => {
     expect(userMessage.content).toBe("hello\nworld");
   });
 
-  it("parseSSELine supports provider raw NDJSON stream lines", () => {
+  describe("normalizeOpenAIContent (shared implementation)", () => {
+    it("returns empty string for empty array", () => {
+      expect(normalizeOpenAIContent([])).toBe("");
+    });
+
+    it("flattens multiple text blocks into joined string", () => {
+      const content = [
+        { type: "text", text: "hello" },
+        { type: "text", text: "world" },
+      ];
+      expect(normalizeOpenAIContent(content)).toBe("hello\nworld");
+    });
+
+    it("unwraps single text block to plain string", () => {
+      const content = [{ type: "text", text: "solo" }];
+      expect(normalizeOpenAIContent(content)).toBe("solo");
+    });
+
+    it("preserves multimodal array as-is", () => {
+      const content = [
+        { type: "text", text: "describe" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,abc" } },
+      ];
+      const result = normalizeOpenAIContent(content);
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(2);
+    });
+
+    it("handles text blocks with empty text", () => {
+      const content = [
+        { type: "text", text: "" },
+        { type: "text", text: "hi" },
+      ];
+      expect(normalizeOpenAIContent(content)).toBe("\nhi");
+    });
+  });
+
+  it("parseSSELine supports Ollama NDJSON with explicit format", () => {
     const raw = JSON.stringify({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
       done: false,
     });
 
-    const parsed = parseSSELine(raw);
+    const parsed = parseSSELine(raw, "ollama");
     expect(parsed).toEqual({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
@@ -111,8 +148,20 @@ describe("request normalization", () => {
     });
   });
 
-  it("parseSSELine still supports SSE data lines", () => {
+  it("parseSSELine falls back to raw JSON for unknown formats", () => {
+    const raw = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
+    const parsed = parseSSELine(raw);
+    expect(parsed.choices[0].delta.content).toBe("hi");
+  });
+
+  it("parseSSELine prefers SSE data: prefix over raw JSON fallback", () => {
     const parsed = parseSSELine('data: {"choices":[{"delta":{"content":"hi"}}]}');
     expect(parsed.choices[0].delta.content).toBe("hi");
+  });
+
+  it("parseSSELine returns null for non-JSON non-SSE lines", () => {
+    expect(parseSSELine("event: message")).toBeNull();
+    expect(parseSSELine(": comment")).toBeNull();
+    expect(parseSSELine("not json at all")).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+import { normalizeOpenAIContent } from "../helpers/openaiHelper.js";
 
 // Convert Claude request to OpenAI format
 export function claudeToOpenAIRequest(model, body, stream) {
@@ -71,16 +72,6 @@ export function claudeToOpenAIRequest(model, body, stream) {
   }
 
   return result;
-}
-
-// Collapse text-only content arrays into a plain string.
-// Many OpenAI-compatible providers reject array-of-text payloads.
-function normalizeOpenAIContent(parts) {
-  if (parts.length === 0) return "";
-  if (parts.every((part) => part.type === "text")) {
-    return parts.map((part) => part.text || "").join("\n");
-  }
-  return parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts;
 }
 
 // Fix missing tool responses - add empty responses for tool_calls without responses

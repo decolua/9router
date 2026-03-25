@@ -6,7 +6,8 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 
 // Collapse text-only content arrays into a plain string.
 // Many OpenAI-compatible providers reject array-of-text payloads.
-function normalizeOpenAIContent(content) {
+export function normalizeOpenAIContent(content) {
+  if (content.length === 0) return "";
   if (content.every((block) => block.type === "text")) {
     return content.map((block) => block.text || "").join("\n");
   }

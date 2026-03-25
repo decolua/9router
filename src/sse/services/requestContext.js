@@ -27,19 +27,9 @@ export async function getRequestProviderNodes(type, requestContext) {
 }
 
 export async function getRequestComboByName(name, requestContext) {
-  const combosByName = await getCachedValue(requestContext, "combosByNamePromise", async () => new Map());
-
-  if (combosByName.has(name)) {
-    return combosByName.get(name);
-  }
-
-  const comboPromise = getComboByName(name).then((combo) => {
-    combosByName.set(name, combo || null);
-    return combo || null;
-  });
-
-  combosByName.set(name, comboPromise);
-  return comboPromise;
+  return getCachedValue(requestContext, `combo:${name}`, () =>
+    getComboByName(name).then((combo) => combo || null)
+  );
 }
 
 export async function getRequestModelAliases(requestContext) {
