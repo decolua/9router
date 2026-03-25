@@ -85,11 +85,11 @@ function getEnvProxyUrl(targetUrl) {
 
   if (protocol === "https:") {
     return process.env.HTTPS_PROXY || process.env.https_proxy ||
-           process.env.ALL_PROXY || process.env.all_proxy;
+      process.env.ALL_PROXY || process.env.all_proxy;
   }
 
   return process.env.HTTP_PROXY || process.env.http_proxy ||
-         process.env.ALL_PROXY || process.env.all_proxy;
+    process.env.ALL_PROXY || process.env.all_proxy;
 }
 
 /**
@@ -100,7 +100,7 @@ function normalizeProxyUrl(proxyUrl) {
   if (!normalizedInput) return null;
 
   try {
-    // eslint-disable-next-line no-new
+
     new URL(normalizedInput);
     return normalizedInput;
   } catch {

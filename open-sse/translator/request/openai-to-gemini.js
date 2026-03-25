@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+// import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 
@@ -102,16 +102,16 @@ function openaiToGeminiBase(model, body, stream) {
       } else if (role === "assistant") {
         const parts = [];
 
-        // Thinking/reasoning → thought part with signature
+        // Thinking/reasoning → thought part
         if (msg.reasoning_content) {
           parts.push({
             thought: true,
             text: msg.reasoning_content
           });
-          parts.push({
-            thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
-            text: ""
-          });
+          // parts.push({
+          //   thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+          //   text: ""
+          // });
         }
 
         if (content) {
@@ -128,7 +128,7 @@ function openaiToGeminiBase(model, body, stream) {
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
             parts.push({
-              thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+              // thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
               functionCall: {
                 id: tc.id,
                 name: sanitizeGeminiFunctionName(tc.function.name),
