@@ -1530,7 +1530,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex gap-1">
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
