@@ -538,6 +538,88 @@ Environment variables actively used by code:
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
+
+### Per-Provider Proxy Configuration
+
+_Updated: 2026-02-24_
+
+Each provider connection can have its own proxy configuration, enabling different proxy settings for different providers.
+
+**API Endpoints:**
+- `GET/PUT/DELETE /api/providers/[id]/proxy` - Manage proxy config for a provider
+- `POST /api/providers/[id]/proxy/test` - Test proxy connectivity
+
+**Proxy Config Schema:**
+```javascript
+{
+  proxy: {
+    url: "http://user:pass@proxy.com:8080" | "socks5://proxy.com:1080",
+    bypass: ["*.local", "localhost", "192.168.*"]  // optional
+  }
+}
+```
+
+**Proxy Flow:**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as API Client
+    participant Core as chatCore
+    participant Exec as BaseExecutor
+    participant Factory as ProxyAgentFactory
+    participant Provider as AI Provider
+
+    Client->>Core: /v1/chat/completions
+    Core->>Exec: execute({ credentials, ... })
+    Exec->>Exec: getProxyAgent(targetUrl, credentials)
+
+    alt Per-provider proxy configured
+        Exec->>Factory: shouldUseProxy(url, credentials.proxy, globalNoProxy)
+        Factory->>Factory: Check bypass patterns
+        alt Should bypass
+            Factory-->>Exec: null (direct connection)
+        else Should use proxy
+            Factory->>Factory: getProxyAgent(proxyUrl)
+            Factory-->>Exec: ProxyAgent
+        end
+    else No per-provider proxy
+        Exec->>Factory: shouldUseProxy(url, null, globalNoProxy)
+        Factory->>Factory: Check env vars (HTTP_PROXY, etc.)
+        alt Global proxy configured
+            Factory-->>Exec: ProxyAgent
+        else No proxy
+            Factory-->>Exec: null (direct connection)
+        end
+    end
+
+    Exec->>Provider: fetch(url, { dispatcher: agent })
+```
+
+**Supported Proxy Protocols:**
+- HTTP (`http://proxy.com:8080`)
+- HTTPS (`https://proxy.com:8080`)
+- SOCKS4 (`socks4://proxy.com:1080`)
+- SOCKS5 (`socks5://proxy.com:1080`)
+
+**Proxy Authentication:**
+Embedded in URL as `protocol://user:pass@host:port`
+
+**Priority Order:**
+1. Per-provider proxy config (from `credentials.proxy`)
+2. Global environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`)
+3. Direct connection
+
+**Bypass Patterns:**
+- Merged from per-provider `proxy.bypass` array and global `NO_PROXY` env var
+- Supports wildcards: `*.local`, `192.168.*`
+- Exact match: `localhost`
+- Suffix match: `.example.com` matches `api.example.com`
+
+**Implementation Files:**
+- `open-sse/utils/proxy-agent-factory.js` - Agent creation and caching
+- `open-sse/executors/base.js` - Integration into executor
+- `src/lib/localDb.js` - Proxy config persistence
+- `src/app/api/providers/[id]/proxy/*` - API endpoints
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
 
 ## Known Architectural Notes

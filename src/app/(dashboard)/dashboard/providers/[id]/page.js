@@ -1787,9 +1787,13 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
     name: "",
     priority: 1,
     apiKey: "",
+    proxyUrl: "",
+    proxyBypass: "",
   });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [proxyTestResult, setProxyTestResult] = useState(null);
+  const [testingProxy, setTestingProxy] = useState(false);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1800,9 +1804,12 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        proxyUrl: connection.proxy?.url || "",
+        proxyBypass: (connection.proxy?.bypass || []).join(", "),
       });
       setTestResult(null);
       setValidationResult(null);
+      setProxyTestResult(null);
     }
   }, [connection]);
 
@@ -1840,6 +1847,21 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
     }
   };
 
+  const handleTestProxy = async () => {
+    if (!formData.proxyUrl) return;
+    setTestingProxy(true);
+    setProxyTestResult(null);
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/proxy/test`, { method: "POST" });
+      const data = await res.json();
+      setProxyTestResult(data.success ? "success" : "failed");
+    } catch {
+      setProxyTestResult("failed");
+    } finally {
+      setTestingProxy(false);
+    }
+  };
+
   const handleSubmit = async () => {
     setSaving(true);
     try {
@@ -1847,6 +1869,21 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
         name: formData.name,
         priority: formData.priority,
       };
+
+      // Per-provider proxy settings
+      if (formData.proxyUrl) {
+        const bypassList = formData.proxyBypass
+          .split(",")
+          .map(s => s.trim())
+          .filter(Boolean);
+        updates.proxy = {
+          url: formData.proxyUrl,
+          bypass: bypassList,
+        };
+      } else {
+        updates.proxy = null;
+      }
+
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -1946,6 +1983,40 @@ function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }
             )}
           </div>
         )}
+
+        {/* Proxy Settings */}
+        <div className="border-t border-border pt-4 mt-2">
+          <h3 className="text-sm font-medium mb-3">Proxy Settings (Optional)</h3>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2">
+              <Input
+                label="Proxy URL"
+                value={formData.proxyUrl}
+                onChange={(e) => setFormData({ ...formData, proxyUrl: e.target.value })}
+                placeholder="http://user:pass@proxy.com:8080"
+                hint="HTTP, HTTPS, or SOCKS5 proxy. Leave empty to use global proxy settings."
+                className="flex-1"
+              />
+              <div className="pt-6">
+                <Button onClick={handleTestProxy} disabled={!formData.proxyUrl || testingProxy} variant="secondary">
+                  {testingProxy ? "Testing..." : "Test"}
+                </Button>
+              </div>
+            </div>
+            {proxyTestResult && (
+              <Badge variant={proxyTestResult === "success" ? "success" : "error"}>
+                {proxyTestResult === "success" ? "Proxy Working" : "Proxy Failed"}
+              </Badge>
+            )}
+            <Input
+              label="Bypass Patterns"
+              value={formData.proxyBypass}
+              onChange={(e) => setFormData({ ...formData, proxyBypass: e.target.value })}
+              placeholder="*.local, localhost, 192.168.*"
+              hint="Comma-separated host patterns to bypass proxy. Wildcards supported."
+            />
+          </div>
+        </div>
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>

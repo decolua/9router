@@ -64,6 +64,14 @@ package-lock.json
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
 README1.md
+plans/
+.repomixignore
+
+# Local config files
+.claude/
+.opencode/
+AGENTS.md
+CLAUDE.md
+release-manifest.json
 deploy.sh
 ecosystem.config.*
-
