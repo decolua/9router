@@ -682,6 +682,13 @@ export default function ProviderDetailPage() {
         </div>
       </div>
 
+      {providerInfo.deprecated && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
+          <span className="material-symbols-outlined text-[16px] text-text-muted mt-0.5 shrink-0">info</span>
+          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.deprecationNotice}</p>
+        </div>
+      )}
+
       {isCompatible && providerNode && (
         <Card>
           <div className="flex items-center justify-between mb-4">
@@ -1530,7 +1537,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex gap-1">
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>

@@ -6,14 +6,14 @@ import { FORMATS } from "../formats.js";
  *
  * Ollama expects:
  * - model: string
- * - messages: Array<{role: string, content: string}>
+ * - messages: Array<{role: string, content: string, images?: string[] }>
  * - stream: boolean
  * - options?: {temperature?: number, num_predict?: number}
  *
  * Key differences from OpenAI:
  * - Content must be string, not array
- * - No support for tool_calls in request (tools are handled differently)
- * - tool role maps to user
+ * - Multimodal images should be mapped to `message.images[]` (raw base64, no data: prefix)
+ * - tool role maps to tool (Ollama supports tool messages)
  */
 export function openaiToOllamaRequest(model, body, stream) {
   const result = {
@@ -121,14 +121,21 @@ function normalizeMessages(messages) {
     // Normal messages
     const role = msg.role;
     const content = normalizeContent(msg.content);
+    const images = extractImagesFromContent(msg.content);
 
     // Skip empty messages (except assistant)
     if (!content && role !== "assistant") continue;
 
-    result.push({
+    const out = {
       role: role,
       content: content
-    });
+    };
+
+    if (images.length > 0) {
+      out.images = images;
+    }
+
+    result.push(out);
   }
 
   return result;
@@ -153,6 +160,32 @@ function normalizeContent(content) {
   }
 
   return "";
+}
+
+/**
+ * Extract base64 images from OpenAI multimodal content blocks.
+ * OpenAI image block format:
+ *   { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+ * Ollama expects raw base64 strings in message.images[].
+ */
+function extractImagesFromContent(content) {
+  if (!Array.isArray(content)) return [];
+
+  const images = [];
+
+  for (const block of content) {
+    if (!block || block.type !== "image_url") continue;
+
+    const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+    if (typeof url !== "string" || !url) continue;
+
+    const m = url.match(/^data:[^;]+;base64,([\s\S]+)$/);
+    if (!m) continue;
+
+    images.push(m[1]);
+  }
+
+  return images;
 }
 
 // Register translator

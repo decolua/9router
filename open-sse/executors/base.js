@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
@@ -81,6 +81,9 @@ export class BaseExecutor {
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
+    
+    // Merge default retry config with provider-specific config
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
@@ -97,10 +100,11 @@ export class BaseExecutor {
           signal
         }, proxyOptions);
 
-        // Retry 429 with fixed delay before falling back to next URL
-        if (response.status === HTTP_STATUS.RATE_LIMITED && retryAttemptsByUrl[urlIndex] < RETRY_CONFIG.maxAttempts) {
+        // Retry based on status code config
+        const maxRetries = retryConfig[response.status] || 0;
+        if (maxRetries > 0 && retryAttemptsByUrl[urlIndex] < maxRetries) {
           retryAttemptsByUrl[urlIndex]++;
-          log?.debug?.("RETRY", `429 retry ${retryAttemptsByUrl[urlIndex]}/${RETRY_CONFIG.maxAttempts} after ${RETRY_CONFIG.delayMs / 1000}s`);
+          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
           await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
           urlIndex--;
           continue;

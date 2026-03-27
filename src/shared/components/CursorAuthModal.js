@@ -131,11 +131,8 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                   </p>
                 </div>
                 <p className="text-xs text-amber-700 dark:text-amber-300">
-                  Run this command in your terminal, then click <strong>Retry</strong>:
+                  Make sure Cursor IDE has been opened at least once, then click <strong>Retry</strong>. If the problem persists, paste your tokens manually below.
                 </p>
-                <pre className="text-xs bg-black/10 dark:bg-white/10 rounded p-2 font-mono select-all">
-                  npm i better-sqlite3 -g
-                </pre>
                 <Button onClick={runAutoDetect} variant="outline" fullWidth>
                   Retry
                 </Button>

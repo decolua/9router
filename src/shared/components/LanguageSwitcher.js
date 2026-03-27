@@ -110,10 +110,7 @@ export default function LanguageSwitcher({ className = "" }) {
         data-i18n-skip="true"
       >
         <span className="text-xl">{getLocaleInfo(locale).flag}</span>
-        <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
-        <span className="material-symbols-outlined text-base">
-          {isOpen ? "expand_less" : "expand_more"}
-        </span>
+        <span className="text-xs font-medium uppercase">{locale.split("-")[0]}</span>
       </button>
 
       {/* Portal modal - renders at document.body to avoid parent layout constraints */}

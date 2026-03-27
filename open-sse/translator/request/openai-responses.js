@@ -8,6 +8,10 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
 
+// Responses API enforces max 64 chars on call_id (#393)
+const MAX_CALL_ID_LEN = 64;
+const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
@@ -134,7 +138,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           type: "function",
           function: {
             name,
-            description: tool.description,
+            description: String(tool.description || ""),
             parameters: tool.parameters,
             strict: tool.strict
           }
@@ -221,7 +225,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       for (const tc of msg.tool_calls) {
         result.input.push({
           type: "function_call",
-          call_id: tc.id,
+          call_id: clampCallId(tc.id),
           name: tc.function?.name || "",
           arguments: tc.function?.arguments || "{}"
         });
@@ -237,7 +241,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           : JSON.stringify(msg.content);
       result.input.push({
         type: "function_call_output",
-        call_id: msg.tool_call_id,
+        call_id: clampCallId(msg.tool_call_id),
         output
       });
     }
@@ -255,7 +259,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         return {
           type: "function",
           name: tool.function.name,
-          description: tool.function.description,
+          description: String(tool.function.description || ""),
           parameters: tool.function.parameters,
           strict: tool.function.strict
         };

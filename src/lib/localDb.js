@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
+import lockfile from "proper-lockfile";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -161,6 +162,78 @@ function ensureDbShape(data) {
 // Singleton instance
 let dbInstance = null;
 
+// Lock options for proper-lockfile
+const LOCK_OPTIONS = {
+  retries: {
+    retries: 5,
+    minTimeout: 100,
+    maxTimeout: 2000,
+  },
+  stale: 10000, // Consider lock stale after 10s
+};
+
+/**
+ * Safely read database with file locking
+ */
+async function safeRead(db) {
+  if (isCloud) {
+    await db.read();
+    return;
+  }
+
+  let release = null;
+  try {
+    // Acquire lock before reading
+    release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
+    await db.read();
+  } catch (error) {
+    if (error.code === "ELOCKED") {
+      console.warn("[DB] File is locked, retrying read...");
+      throw error;
+    }
+    throw error;
+  } finally {
+    if (release) {
+      try {
+        await release();
+      } catch (err) {
+        // Ignore unlock errors
+      }
+    }
+  }
+}
+
+/**
+ * Safely write database with file locking
+ */
+async function safeWrite(db) {
+  if (isCloud) {
+    await db.write();
+    return;
+  }
+
+  let release = null;
+  try {
+    // Acquire lock before writing
+    release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
+    await db.write();
+  } catch (error) {
+    if (error.code === "ELOCKED") {
+      console.warn("[DB] File is locked, retrying write...");
+      throw error;
+    }
+    throw error;
+  } finally {
+    if (release) {
+      try {
+        await release();
+      } catch (err) {
+        // Ignore unlock errors
+      }
+    }
+  }
+}
+
 /**
  * Get database instance (singleton)
  */
@@ -182,12 +255,12 @@ export async function getDb() {
 
   // Always read latest disk state to avoid stale singleton data across route workers.
   try {
-    await dbInstance.read();
+    await safeRead(dbInstance);
   } catch (error) {
     if (error instanceof SyntaxError) {
       console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
       dbInstance.data = cloneDefaultData();
-      await dbInstance.write();
+      await safeWrite(dbInstance);
     } else {
       throw error;
     }
@@ -196,12 +269,12 @@ export async function getDb() {
   // Initialize/migrate missing keys for older DB schema versions.
   if (!dbInstance.data) {
     dbInstance.data = cloneDefaultData();
-    await dbInstance.write();
+    await safeWrite(dbInstance);
   } else {
     const { data, changed } = ensureDbShape(dbInstance.data);
     dbInstance.data = data;
     if (changed) {
-      await dbInstance.write();
+      await safeWrite(dbInstance);
     }
   }
 
@@ -279,7 +352,7 @@ export async function createProviderNode(data) {
   };
 
   db.data.providerNodes.push(node);
-  await db.write();
+  await safeWrite(db);
 
   return node;
 }
@@ -303,7 +376,7 @@ export async function updateProviderNode(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  await db.write();
+  await safeWrite(db);
 
   return db.data.providerNodes[index];
 }
@@ -322,7 +395,7 @@ export async function deleteProviderNode(id) {
   if (index === -1) return null;
 
   const [removed] = db.data.providerNodes.splice(index, 1);
-  await db.write();
+  await safeWrite(db);
 
   return removed;
 }
@@ -380,7 +453,7 @@ export async function createProxyPool(data) {
   };
 
   db.data.proxyPools.push(pool);
-  await db.write();
+  await safeWrite(db);
 
   return pool;
 }
@@ -403,7 +476,7 @@ export async function updateProxyPool(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  await db.write();
+  await safeWrite(db);
   return db.data.proxyPools[index];
 }
 
@@ -420,7 +493,7 @@ export async function deleteProxyPool(id) {
   if (index === -1) return null;
 
   const [removed] = db.data.proxyPools.splice(index, 1);
-  await db.write();
+  await safeWrite(db);
 
   return removed;
 }
@@ -435,7 +508,7 @@ export async function deleteProviderConnectionsByProvider(providerId) {
     (connection) => connection.provider !== providerId
   );
   const deletedCount = beforeCount - db.data.providerConnections.length;
-  await db.write();
+  await safeWrite(db);
   return deletedCount;
 }
 
@@ -474,7 +547,7 @@ export async function createProviderConnection(data) {
       ...data,
       updatedAt: now,
     };
-    await db.write();
+    await safeWrite(db);
     return db.data.providerConnections[existingIndex];
   }
   
@@ -535,7 +608,7 @@ export async function createProviderConnection(data) {
   }
   
   db.data.providerConnections.push(connection);
-  await db.write();
+  await safeWrite(db);
 
   // Reorder to ensure consistency
   await reorderProviderConnections(data.provider);
@@ -560,7 +633,7 @@ export async function updateProviderConnection(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  await db.write();
+  await safeWrite(db);
 
   // Reorder if priority was changed
   if (data.priority !== undefined) {
@@ -582,7 +655,7 @@ export async function deleteProviderConnection(id) {
   const providerId = db.data.providerConnections[index].provider;
 
   db.data.providerConnections.splice(index, 1);
-  await db.write();
+  await safeWrite(db);
 
   // Reorder to fill gaps
   await reorderProviderConnections(providerId);
@@ -612,7 +685,7 @@ export async function reorderProviderConnections(providerId) {
     conn.priority = index + 1;
   });
 
-  await db.write();
+  await safeWrite(db);
 }
 
 // ============ Model Aliases ============
@@ -631,7 +704,7 @@ export async function getModelAliases() {
 export async function setModelAlias(alias, model) {
   const db = await getDb();
   db.data.modelAliases[alias] = model;
-  await db.write();
+  await safeWrite(db);
 }
 
 /**
@@ -640,7 +713,7 @@ export async function setModelAlias(alias, model) {
 export async function deleteModelAlias(alias) {
   const db = await getDb();
   delete db.data.modelAliases[alias];
-  await db.write();
+  await safeWrite(db);
 }
 
 // ============ MITM Alias ============
@@ -656,7 +729,7 @@ export async function setMitmAliasAll(toolName, mappings) {
   const db = await getDb();
   if (!db.data.mitmAlias) db.data.mitmAlias = {};
   db.data.mitmAlias[toolName] = mappings || {};
-  await db.write();
+  await safeWrite(db);
 }
 
 // ============ Combos ============
@@ -702,7 +775,7 @@ export async function createCombo(data) {
   };
   
   db.data.combos.push(combo);
-  await db.write();
+  await safeWrite(db);
   return combo;
 }
 
@@ -722,7 +795,7 @@ export async function updateCombo(id, data) {
     updatedAt: new Date().toISOString(),
   };
   
-  await db.write();
+  await safeWrite(db);
   return db.data.combos[index];
 }
 
@@ -737,7 +810,7 @@ export async function deleteCombo(id) {
   if (index === -1) return false;
   
   db.data.combos.splice(index, 1);
-  await db.write();
+  await safeWrite(db);
   return true;
 }
 
@@ -790,7 +863,7 @@ export async function createApiKey(name, machineId) {
   };
   
   db.data.apiKeys.push(apiKey);
-  await db.write();
+  await safeWrite(db);
   
   return apiKey;
 }
@@ -805,7 +878,7 @@ export async function deleteApiKey(id) {
   if (index === -1) return false;
   
   db.data.apiKeys.splice(index, 1);
-  await db.write();
+  await safeWrite(db);
   
   return true;
 }
@@ -829,7 +902,7 @@ export async function updateApiKey(id, data) {
     ...db.data.apiKeys[index],
     ...data,
   };
-  await db.write();
+  await safeWrite(db);
   return db.data.apiKeys[index];
 }
 
@@ -873,7 +946,7 @@ export async function cleanupProviderConnections() {
   }
 
   if (cleaned > 0) {
-    await db.write();
+    await safeWrite(db);
   }
   return cleaned;
 }
@@ -897,7 +970,7 @@ export async function updateSettings(updates) {
     ...db.data.settings,
     ...updates
   };
-  await db.write();
+  await safeWrite(db);
   return db.data.settings;
 }
 
@@ -931,7 +1004,7 @@ export async function importDb(payload) {
   const { data: normalized } = ensureDbShape(nextData);
   const db = await getDb();
   db.data = normalized;
-  await db.write();
+  await safeWrite(db);
 
   return db.data;
 }
@@ -1071,7 +1144,7 @@ export async function updatePricing(pricingData) {
     }
   }
 
-  await db.write();
+  await safeWrite(db);
   return db.data.pricing;
 }
 
@@ -1101,7 +1174,7 @@ export async function resetPricing(provider, model) {
     delete db.data.pricing[provider];
   }
 
-  await db.write();
+  await safeWrite(db);
   return db.data.pricing;
 }
 
@@ -1111,6 +1184,6 @@ export async function resetPricing(provider, model) {
 export async function resetAllPricing() {
   const db = await getDb();
   db.data.pricing = {};
-  await db.write();
+  await safeWrite(db);
   return db.data.pricing;
 }

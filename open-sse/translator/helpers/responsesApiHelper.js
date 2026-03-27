@@ -1,6 +1,8 @@
 /**
  * Normalize Responses API input to array format.
  * Accepts string or array, returns array of message items.
+ * An empty array is treated like an empty string — providers require at least one user
+ * message, so we inject a placeholder rather than forwarding an empty messages[].
  * @param {string|Array} input - raw input from Responses API body
  * @returns {Array|null} normalized array or null if invalid
  */
@@ -9,7 +11,13 @@ export function normalizeResponsesInput(input) {
     const text = input.trim() === "" ? "..." : input;
     return [{ type: "message", role: "user", content: [{ type: "input_text", text }] }];
   }
-  if (Array.isArray(input)) return input;
+  if (Array.isArray(input)) {
+    // Empty input[] would produce messages:[] which all providers reject (#389)
+    if (input.length === 0) {
+      return [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
+    }
+    return input;
+  }
   return null;
 }
 
