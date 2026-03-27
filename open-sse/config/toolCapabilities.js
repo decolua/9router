@@ -23,15 +23,12 @@ export const BUILT_IN_TOOLS = {
 //                 (translation needed — not yet implemented, see FUTURE_TRANSLATABLE)
 //   NONE:         provider has no web search capability
 const PROVIDER_TOOL_SUPPORT = {
-  // --- PASS-THROUGH (Anthropic-compatible, accept web_search_20250305 as-is) ---
+  // --- PASS-THROUGH (Anthropic servers, accept web_search_20250305 as-is) ---
   claude: new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
   anthropic: new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
-  // Claude-compatible API proxies that pass through to Anthropic backends
-  glm: new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
-  kimi: new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
-  minimax: new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
-  "minimax-cn": new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
-  "kimi-coding": new Set([BUILT_IN_TOOLS.WEB_SEARCH, BUILT_IN_TOOLS.WEB_FETCH]),
+  // Note: glm, kimi, minimax use Claude wire format but their backends are NOT
+  // Anthropic — they have their own model-driven search or no search at all.
+  // Do NOT add them here; they go in FUTURE_TRANSLATABLE or get stripped.
 };
 
 // Providers with native web search in a DIFFERENT format.
@@ -43,30 +40,44 @@ const PROVIDER_TOOL_SUPPORT = {
 //
 // Provider          | Native format                              | Notes
 // -----------------|--------------------------------------------|------
-// gemini           | tools: [{ google_search: {} }]             | Google Search grounding via GenerateContent API
+// gemini           | tools: [{ googleSearch: {} }]              | Google Search grounding
 // gemini-cli       | same as gemini                             | Cloud Code uses same Gemini API
 // antigravity      | same as gemini                             | Google's tool, uses Gemini backend
 // vertex           | same as gemini                             | Vertex AI Gemini models
 // xai              | tools: [{ type: "web_search" }]            | Grok web_search via /v1/responses
-// perplexity       | implicit (all queries search the web)      | No tool needed — Sonar models always search
-// openai           | tools: [{ type: "web_search" }]            | Only in Responses API, not chat completions
-// codex            | tools: [{ type: "web_search" }]            | Uses OpenAI Responses API format
-// cohere           | connectors (external RAG setup)            | Not a simple tool — requires connector config
+// perplexity       | web_search_options: {} (automatic)          | Sonar models always search, can configure
+// openai           | tools: [{ type: "web_search_preview" }]    | Responses API only, not chat completions
+// groq             | model: "groq/compound" (automatic)          | Server-side search on compound models
+// qwen             | enable_search: true (DashScope param)       | Alibaba DashScope API specific
+// mistral          | tools: [{ type: "web_search" }]            | Agents API only, not chat completions
+// openrouter       | plugins: [{ type: "web_search" }]          | Plugin system, works across models
+// glm              | model-driven agentic tool use               | GLM-4.5/4.7 have browsing capabilities
+// kimi             | model-native search/browse                  | K2/K2.5 have built-in search + browsing
 //
 // NOT translatable (no native web search):
-// deepseek, groq, mistral, together, fireworks, cerebras, nvidia,
-// github (Copilot), kiro, cursor, ollama, nebius, siliconflow,
-// hyperbolic, alicode, alicode-intl, glm-cn, openrouter, kilocode,
-// opencode, cline, nanobanana, chutes, vertex-partner, qwen, iflow
+// deepseek, together, fireworks, cerebras, nvidia, github (Copilot),
+// kiro, cursor, ollama-local, nebius, siliconflow, hyperbolic,
+// alicode, alicode-intl, glm-cn, kilocode, opencode, cline,
+// nanobanana, chutes, vertex-partner, iflow, minimax, minimax-cn,
+// kimi-coding
+//
+// DEPRECATED web search:
+// cohere — connectors removed September 2025
+// codex — OpenAI explicitly does NOT support web_search on codex models
 export const FUTURE_TRANSLATABLE = {
-  gemini: { tool: "google_search", format: "gemini" },
-  "gemini-cli": { tool: "google_search", format: "gemini" },
-  antigravity: { tool: "google_search", format: "gemini" },
-  vertex: { tool: "google_search", format: "gemini" },
+  gemini: { tool: "googleSearch", format: "gemini" },
+  "gemini-cli": { tool: "googleSearch", format: "gemini" },
+  antigravity: { tool: "googleSearch", format: "gemini" },
+  vertex: { tool: "googleSearch", format: "gemini" },
   xai: { tool: "web_search", format: "xai-responses" },
   perplexity: { tool: null, format: "implicit" },
-  openai: { tool: "web_search", format: "openai-responses" },
-  codex: { tool: "web_search", format: "openai-responses" },
+  openai: { tool: "web_search_preview", format: "openai-responses" },
+  groq: { tool: null, format: "compound-model" },
+  qwen: { tool: null, format: "dashscope-param" },
+  mistral: { tool: "web_search", format: "agents-api" },
+  openrouter: { tool: "web_search", format: "plugins" },
+  glm: { tool: null, format: "model-agentic" },
+  kimi: { tool: null, format: "model-native" },
 };
 
 /**

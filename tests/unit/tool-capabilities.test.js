@@ -40,9 +40,9 @@ describe("Tool Capabilities", () => {
       expect(supportsBuiltInTool("anthropic", BUILT_IN_TOOLS.WEB_SEARCH)).toBe(true);
     });
 
-    it("should return true for Claude-compatible providers", () => {
+    it("should return false for Claude-wire-format providers (not actual Anthropic)", () => {
       for (const provider of ["glm", "kimi", "minimax", "minimax-cn", "kimi-coding"]) {
-        expect(supportsBuiltInTool(provider, BUILT_IN_TOOLS.WEB_SEARCH)).toBe(true);
+        expect(supportsBuiltInTool(provider, BUILT_IN_TOOLS.WEB_SEARCH)).toBe(false);
       }
     });
 
@@ -245,11 +245,11 @@ describe("Tool stripping with system message injection", () => {
       expect(result.system).toBeUndefined();
     });
 
-    it("should preserve web_search for Claude-compatible providers", async () => {
+    it("should preserve web_search for actual Anthropic providers only", async () => {
       const mod = await import("../../open-sse/translator/helpers/claudeHelper.js");
       prepareClaudeRequest = mod.prepareClaudeRequest;
 
-      for (const provider of ["glm", "kimi", "minimax", "anthropic"]) {
+      for (const provider of ["claude", "anthropic"]) {
         const body = {
           messages: [{ role: "user", content: [{ type: "text", text: "search" }] }],
           tools: [{ type: "web_search_20250305" }],
@@ -260,14 +260,32 @@ describe("Tool stripping with system message injection", () => {
         expect(hasWebSearch).toBe(true);
       }
     });
+
+    it("should strip web_search for Claude-wire-format providers that are not Anthropic", async () => {
+      const mod = await import("../../open-sse/translator/helpers/claudeHelper.js");
+      prepareClaudeRequest = mod.prepareClaudeRequest;
+
+      for (const provider of ["glm", "kimi", "minimax"]) {
+        const body = {
+          messages: [{ role: "user", content: [{ type: "text", text: "search" }] }],
+          tools: [{ type: "web_search_20250305" }],
+        };
+
+        const result = prepareClaudeRequest(structuredClone(body), provider);
+        // Should be stripped since these are not actual Anthropic backends
+        expect(result.tools).toBeUndefined();
+        // Should have system notice
+        expect(result.system).toBeDefined();
+      }
+    });
   });
 });
 
 describe("FUTURE_TRANSLATABLE provider map", () => {
-  it("should document Gemini family as google_search format", () => {
+  it("should document Gemini family as googleSearch format", () => {
     for (const provider of ["gemini", "gemini-cli", "antigravity", "vertex"]) {
       expect(FUTURE_TRANSLATABLE[provider]).toBeDefined();
-      expect(FUTURE_TRANSLATABLE[provider].tool).toBe("google_search");
+      expect(FUTURE_TRANSLATABLE[provider].tool).toBe("googleSearch");
       expect(FUTURE_TRANSLATABLE[provider].format).toBe("gemini");
     }
   });
@@ -284,17 +302,29 @@ describe("FUTURE_TRANSLATABLE provider map", () => {
     expect(FUTURE_TRANSLATABLE.perplexity.format).toBe("implicit");
   });
 
-  it("should document OpenAI and Codex as web_search with openai-responses format", () => {
-    for (const provider of ["openai", "codex"]) {
-      expect(FUTURE_TRANSLATABLE[provider]).toBeDefined();
-      expect(FUTURE_TRANSLATABLE[provider].tool).toBe("web_search");
-      expect(FUTURE_TRANSLATABLE[provider].format).toBe("openai-responses");
-    }
+  it("should document OpenAI as web_search_preview with openai-responses format", () => {
+    expect(FUTURE_TRANSLATABLE.openai).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.openai.tool).toBe("web_search_preview");
+    expect(FUTURE_TRANSLATABLE.openai.format).toBe("openai-responses");
+  });
+
+  it("should document Groq, Qwen, Mistral, OpenRouter as having native search", () => {
+    expect(FUTURE_TRANSLATABLE.groq).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.qwen).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.mistral).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.openrouter).toBeDefined();
+  });
+
+  it("should document GLM and Kimi as model-native search", () => {
+    expect(FUTURE_TRANSLATABLE.glm).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.glm.format).toBe("model-agentic");
+    expect(FUTURE_TRANSLATABLE.kimi).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.kimi.format).toBe("model-native");
   });
 
   it("should not include providers without native web search", () => {
-    const noSearch = ["deepseek", "groq", "mistral", "together", "fireworks",
-      "cerebras", "nvidia", "github", "kiro", "cursor", "ollama"];
+    const noSearch = ["deepseek", "together", "fireworks",
+      "cerebras", "nvidia", "github", "kiro", "cursor"];
     for (const provider of noSearch) {
       expect(FUTURE_TRANSLATABLE[provider]).toBeUndefined();
     }
