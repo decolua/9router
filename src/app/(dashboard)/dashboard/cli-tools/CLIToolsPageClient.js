@@ -24,7 +24,7 @@ export default function CLIToolsPageClient({ machineId }) {
   const [modelMappings, setModelMappings] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
-  const [tunnelUrl, setTunnelUrl] = useState("");
+  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
 
@@ -67,7 +67,7 @@ export default function CLIToolsPageClient({ machineId }) {
       if (tunnelRes.ok) {
         const data = await tunnelRes.json();
         setTunnelEnabled(data.enabled || false);
-        setTunnelUrl(data.tunnelUrl || "");
+        setTunnelPublicUrl(data.publicUrl || "");
       }
     } catch (error) {
       console.log("Error loading settings:", error);
@@ -128,7 +128,7 @@ export default function CLIToolsPageClient({ machineId }) {
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelUrl) return tunnelUrl;
+    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
     if (typeof window !== "undefined") return window.location.origin;
     return "http://localhost:20128";
