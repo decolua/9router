@@ -16,6 +16,7 @@ import {
   extractBuiltInTools,
   getUnsupportedBuiltInTools,
   BUILT_IN_TOOLS,
+  FUTURE_TRANSLATABLE,
 } from "../../open-sse/config/toolCapabilities.js";
 
 describe("Tool Capabilities", () => {
@@ -259,5 +260,43 @@ describe("Tool stripping with system message injection", () => {
         expect(hasWebSearch).toBe(true);
       }
     });
+  });
+});
+
+describe("FUTURE_TRANSLATABLE provider map", () => {
+  it("should document Gemini family as google_search format", () => {
+    for (const provider of ["gemini", "gemini-cli", "antigravity", "vertex"]) {
+      expect(FUTURE_TRANSLATABLE[provider]).toBeDefined();
+      expect(FUTURE_TRANSLATABLE[provider].tool).toBe("google_search");
+      expect(FUTURE_TRANSLATABLE[provider].format).toBe("gemini");
+    }
+  });
+
+  it("should document xAI as web_search with xai-responses format", () => {
+    expect(FUTURE_TRANSLATABLE.xai).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.xai.tool).toBe("web_search");
+    expect(FUTURE_TRANSLATABLE.xai.format).toBe("xai-responses");
+  });
+
+  it("should document Perplexity as implicit (no tool needed)", () => {
+    expect(FUTURE_TRANSLATABLE.perplexity).toBeDefined();
+    expect(FUTURE_TRANSLATABLE.perplexity.tool).toBeNull();
+    expect(FUTURE_TRANSLATABLE.perplexity.format).toBe("implicit");
+  });
+
+  it("should document OpenAI and Codex as web_search with openai-responses format", () => {
+    for (const provider of ["openai", "codex"]) {
+      expect(FUTURE_TRANSLATABLE[provider]).toBeDefined();
+      expect(FUTURE_TRANSLATABLE[provider].tool).toBe("web_search");
+      expect(FUTURE_TRANSLATABLE[provider].format).toBe("openai-responses");
+    }
+  });
+
+  it("should not include providers without native web search", () => {
+    const noSearch = ["deepseek", "groq", "mistral", "together", "fireworks",
+      "cerebras", "nvidia", "github", "kiro", "cursor", "ollama"];
+    for (const provider of noSearch) {
+      expect(FUTURE_TRANSLATABLE[provider]).toBeUndefined();
+    }
   });
 });
