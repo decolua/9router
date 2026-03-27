@@ -2,6 +2,7 @@
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { adjustMaxTokens } from "./maxTokensHelper.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
+import { supportsBuiltInTool, isBuiltInTool, getUnsupportedBuiltInTools } from "../../config/toolCapabilities.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -166,11 +167,33 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
     }
   }
 
-  // 3. Tools: filter built-in tools for non-Anthropic providers, then handle cache_control
+  // 3. Tools: handle built-in tools based on provider capabilities, then cache_control
   if (body.tools && Array.isArray(body.tools)) {
-    // Strip built-in tools (e.g. web_search_20250305) for providers that don't support them
-    if (provider !== "claude") {
-      body.tools = body.tools.filter(tool => !tool.type || tool.type === "function");
+    // Check which built-in tools this provider doesn't support
+    const unsupported = getUnsupportedBuiltInTools(provider, body.tools);
+
+    if (unsupported.length > 0) {
+      // Strip unsupported built-in tools
+      body.tools = body.tools.filter(tool => {
+        if (!isBuiltInTool(tool)) return true;
+        const toolId = tool.type || tool.name;
+        return !unsupported.includes(toolId);
+      });
+
+      // Tell the model which tools are unavailable on this provider
+      const toolNames = unsupported.map(t => t.replace(/_\d+$/, "").replace(/_/g, " ")).join(", ");
+      const notice = `Note: ${toolNames} is not available on this provider. Do not attempt to use it. Answer using your existing knowledge instead.`;
+
+      if (body.system && Array.isArray(body.system)) {
+        body.system.push({ type: "text", text: notice });
+      } else if (typeof body.system === "string") {
+        body.system = [
+          { type: "text", text: body.system },
+          { type: "text", text: notice }
+        ];
+      } else {
+        body.system = [{ type: "text", text: notice }];
+      }
     }
 
     body.tools = body.tools.map((tool, i) => {

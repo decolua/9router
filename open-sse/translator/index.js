@@ -3,6 +3,7 @@ import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHe
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
+import { isBuiltInTool, getUnsupportedBuiltInTools } from "../config/toolCapabilities.js";
 
 // Registry for translators
 const requestRegistry = new Map();
@@ -88,6 +89,32 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
+    // Strip unsupported built-in tools and notify model
+    if (provider && result.tools && Array.isArray(result.tools)) {
+      const unsupported = getUnsupportedBuiltInTools(provider, result.tools);
+      if (unsupported.length > 0) {
+        result.tools = result.tools.filter(tool => !isBuiltInTool(tool));
+
+        const toolNames = unsupported.map(t => t.replace(/_\d+$/, "").replace(/_/g, " ")).join(", ");
+        const notice = `Note: ${toolNames} is not available on this provider. Do not attempt to use it. Answer using your existing knowledge instead.`;
+
+        // Inject as system message
+        if (result.messages && Array.isArray(result.messages)) {
+          const lastSystemIdx = result.messages.findLastIndex(m => m.role === "system");
+          if (lastSystemIdx >= 0) {
+            const sysMsg = result.messages[lastSystemIdx];
+            if (typeof sysMsg.content === "string") {
+              sysMsg.content = sysMsg.content + "\n\n" + notice;
+            } else {
+              result.messages.splice(lastSystemIdx + 1, 0, { role: "system", content: notice });
+            }
+          } else {
+            result.messages.unshift({ role: "system", content: notice });
+          }
+        }
+      }
+    }
+
     result = filterToOpenAIFormat(result);
   }
 
