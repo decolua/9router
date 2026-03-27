@@ -54,10 +54,12 @@ export class VertexExecutor extends BaseExecutor {
     }
 
     // Gemini on Vertex: always use global publishers endpoint
-    const action = stream ? "streamGenerateContent" : "generateContent";
+    // ?alt=sse is required for proper SSE streaming (matches every other Gemini executor)
+    const action = stream ? "streamGenerateContent?alt=sse" : "generateContent";
     let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
 
-    if (rawKey) url += `?key=${rawKey}`;
+    // rawKey goes as a query param; use & because ?alt=sse already starts the query string
+    if (rawKey) url += `&key=${rawKey}`;
     return url;
   }
 
