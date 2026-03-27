@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.3.61",
+  "version": "0.3.62",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -27,6 +27,7 @@
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
+    "proper-lockfile": "^4.1.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-is": "^16.13.1",

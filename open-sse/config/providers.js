@@ -33,6 +33,7 @@ export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",
+    retry: { 429: 0 },
     headers: {
       "Anthropic-Version": "2023-06-01",
       "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
