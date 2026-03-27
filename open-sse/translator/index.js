@@ -32,6 +32,7 @@ function ensureInitialized() {
   require("./request/openai-to-claude.js");
   require("./request/gemini-to-openai.js");
   require("./request/openai-to-gemini.js");
+  require("./request/openai-to-vertex.js");
   require("./request/antigravity-to-openai.js");
   require("./request/openai-responses.js");
   require("./request/openai-to-kiro.js");

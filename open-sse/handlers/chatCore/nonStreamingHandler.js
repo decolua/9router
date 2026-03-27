@@ -15,7 +15,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   if (targetFormat === sourceFormat || targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
-  if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI) {
+  if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
     const response = responseBody.response || responseBody;
     if (!response?.candidates?.[0]) return responseBody;
 

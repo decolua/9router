@@ -303,7 +303,7 @@ export const PROVIDERS = {
   // baseUrl is not used; VertexExecutor.buildUrl() constructs it dynamically
   vertex: {
     baseUrl: "https://aiplatform.googleapis.com",
-    format: "gemini"
+    format: "vertex"
   },
   // Vertex AI - Partner models (Claude, Llama, Mistral, GLM) via SA JSON
   // Uses OpenAI-compatible global endpoint (or rawPredict for Anthropic)
