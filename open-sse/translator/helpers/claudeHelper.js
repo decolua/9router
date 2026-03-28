@@ -133,9 +133,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
       const msg = filtered[i];
 
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
-        // Add cache_control to last block of first (from end) assistant with content
+        // Add cache_control to last non-thinking block of first (from end) assistant with content
+        // thinking/redacted_thinking blocks do not support cache_control
         if (!lastAssistantProcessed && msg.content.length > 0) {
-          msg.content[msg.content.length - 1].cache_control = { type: "ephemeral" };
+          for (let j = msg.content.length - 1; j >= 0; j--) {
+            const block = msg.content[j];
+            if (block.type !== "thinking" && block.type !== "redacted_thinking") {
+              block.cache_control = { type: "ephemeral" };
+              break;
+            }
+          }
           lastAssistantProcessed = true;
         }
 
