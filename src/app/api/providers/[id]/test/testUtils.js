@@ -499,6 +499,11 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "opencode": {
+        const baseUrl = connection.providerSpecificData?.baseUrl || "http://localhost:4096/v1";
+        const res = await fetchWithConnectionProxy(`${baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy).catch(() => null);
+        return { valid: res?.ok ?? false, error: res?.ok ? null : "OpenCode server not running on port 4096" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

@@ -196,6 +196,16 @@ export async function POST(request) {
           break;
         }
 
+        case "opencode": {
+          // OpenCode runs a local OpenAI-compatible server
+          const opencodeRes = await fetch("http://localhost:4096/v1/models", {
+            headers: { "Authorization": `Bearer ${apiKey}` },
+          }).catch(() => null);
+          isValid = opencodeRes?.ok ?? false;
+          error = isValid ? null : "OpenCode server not running on port 4096";
+          break;
+        }
+
         case "deepgram": {
           const res = await fetch("https://api.deepgram.com/v1/projects", {
             headers: { "Authorization": `Token ${apiKey}` },

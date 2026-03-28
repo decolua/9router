@@ -7,7 +7,12 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, OAUTH_PROVIDERS } from "@/shared/constants/providers";
+
+// Local CLI tools that expose an OpenAI-compatible API on localhost
+const LOCAL_CLI_PROVIDERS = {
+  opencode: { baseUrl: "http://localhost:4096/v1" },
+};
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +66,7 @@ export async function GET() {
 
     // Hide sensitive fields, enrich name for compatible providers
     const safeConnections = connections.map(c => {
-      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider) || LOCAL_CLI_PROVIDERS[c.provider];
       const name = isCompatible
         ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
@@ -101,7 +106,8 @@ export async function POST(request) {
     // Validation
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
       isOpenAICompatibleProvider(provider) ||
-      isAnthropicCompatibleProvider(provider);
+      isAnthropicCompatibleProvider(provider) ||
+      LOCAL_CLI_PROVIDERS[provider];
 
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
@@ -147,6 +153,17 @@ export async function POST(request) {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+      };
+    } else if (LOCAL_CLI_PROVIDERS[provider]) {
+      const localConfig = LOCAL_CLI_PROVIDERS[provider];
+      const existingConnections = await getProviderConnections({ provider });
+      if (existingConnections.length > 0) {
+        return NextResponse.json({ error: `Only one connection is allowed for ${provider}` }, { status: 400 });
+      }
+
+      providerSpecificData = {
+        baseUrl: localConfig.baseUrl,
+        nodeName: OAUTH_PROVIDERS[provider]?.name || provider,
       };
     }
 
