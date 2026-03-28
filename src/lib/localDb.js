@@ -101,6 +101,29 @@ function cloneDefaultData() {
   };
 }
 
+function ensureDataDirExists() {
+  if (isCloud) return;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function ensureDbFileExists() {
+  if (isCloud) return;
+
+  ensureDataDirExists();
+
+  if (fs.existsSync(DB_FILE)) return;
+
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(cloneDefaultData(), null, 2), {
+      flag: "wx",
+    });
+  } catch (error) {
+    if (error.code !== "EEXIST") {
+      throw error;
+    }
+  }
+}
+
 function ensureDbShape(data) {
   const defaults = cloneDefaultData();
   const next = data && typeof data === "object" ? data : {};
@@ -183,6 +206,7 @@ async function safeRead(db) {
 
   let release = null;
   try {
+    ensureDbFileExists();
     // Acquire lock before reading
     release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
     await db.read();
@@ -214,6 +238,7 @@ async function safeWrite(db) {
 
   let release = null;
   try {
+    ensureDbFileExists();
     // Acquire lock before writing
     release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
     await db.write();
@@ -249,6 +274,7 @@ export async function getDb() {
   }
 
   if (!dbInstance) {
+    ensureDbFileExists();
     const adapter = new JSONFile(DB_FILE);
     dbInstance = new Low(adapter, cloneDefaultData());
   }
