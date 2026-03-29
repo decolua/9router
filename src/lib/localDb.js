@@ -40,11 +40,6 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Seed db.json with defaults on first run so proper-lockfile never hits ENOENT
-if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
-}
-
 // Default data structure
 const defaultData = {
   providerConnections: [],
@@ -63,7 +58,7 @@ const defaultData = {
     comboStrategy: "fallback",
     comboStrategies: {},
     requireLogin: true,
-    enableObservability: false,
+    observabilityEnabled: true,
     observabilityMaxRecords: 1000,
     observabilityBatchSize: 20,
     observabilityFlushIntervalMs: 5000,
@@ -74,6 +69,11 @@ const defaultData = {
   },
   pricing: {} // NEW: pricing configuration
 };
+
+// Seed db.json with defaults on first run so proper-lockfile never hits ENOENT
+if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
+}
 
 function cloneDefaultData() {
   return {
@@ -93,7 +93,7 @@ function cloneDefaultData() {
       comboStrategy: "fallback",
       comboStrategies: {},
       requireLogin: true,
-      enableObservability: false,
+      observabilityEnabled: true,
       observabilityMaxRecords: 1000,
       observabilityBatchSize: 20,
       observabilityFlushIntervalMs: 5000,
@@ -167,31 +167,50 @@ function ensureDbShape(data) {
 // Singleton instance
 let dbInstance = null;
 
-// In-memory read cache to avoid redundant disk reads under high load
-const DB_CACHE_TTL = 500; // ms
-let dbCache = { data: null, ts: 0 };
-
-// Serialize all DB operations (reads on cache-miss + writes) to prevent race conditions
-let dbQueue = Promise.resolve();
-
-function withDbLock(fn) {
-  const next = dbQueue.then(fn, fn);
-  dbQueue = next.catch(() => {});
-  return next;
-}
-
-// Lock options for proper-lockfile
+// Lock options for proper-lockfile (increased retries for multi-process robustness)
 const LOCK_OPTIONS = {
   retries: {
-    retries: 5,
-    minTimeout: 100,
-    maxTimeout: 2000,
+    retries: 15,
+    minTimeout: 50,
+    maxTimeout: 3000,
   },
   stale: 10000, // Consider lock stale after 10s
 };
 
+// In-process mutex to serialize DB access within the same process
+// This prevents ELOCKED when concurrent requests in the same process try to acquire the file lock
+class LocalMutex {
+  constructor() {
+    this._queue = [];
+    this._locked = false;
+  }
+
+  async acquire() {
+    if (!this._locked) {
+      this._locked = true;
+      return () => this._release();
+    }
+    return new Promise((resolve) => {
+      this._queue.push(resolve);
+    }).then(() => () => this._release());
+  }
+
+  _release() {
+    const next = this._queue.shift();
+    if (next) {
+      next();
+    } else {
+      this._locked = false;
+    }
+  }
+}
+
+// Singleton local mutex for in-process serialization
+const localMutex = new LocalMutex();
+
 /**
  * Safely read database with file locking
+ * Uses local mutex first to serialize within-process access, then file lock for cross-process
  */
 async function safeRead(db) {
   if (isCloud) {
@@ -199,9 +218,11 @@ async function safeRead(db) {
     return;
   }
 
+  // Acquire local mutex first (in-process serialization)
+  const releaseLocal = await localMutex.acquire();
   let release = null;
   try {
-    // Acquire lock before reading
+    // Acquire file lock (cross-process serialization)
     release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
     await db.read();
   } catch (error) {
@@ -218,12 +239,13 @@ async function safeRead(db) {
         // Ignore unlock errors
       }
     }
+    releaseLocal();
   }
 }
 
 /**
- * Safely write database with file locking.
- * Always invalidates read cache so next read reflects the latest state.
+ * Safely write database with file locking
+ * Uses local mutex first to serialize within-process access, then file lock for cross-process
  */
 async function safeWrite(db) {
   if (isCloud) {
@@ -231,12 +253,13 @@ async function safeWrite(db) {
     return;
   }
 
+  // Acquire local mutex first (in-process serialization)
+  const releaseLocal = await localMutex.acquire();
   let release = null;
   try {
+    // Acquire file lock (cross-process serialization)
     release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
     await db.write();
-    // Invalidate cache immediately after a successful write
-    dbCache.ts = 0;
   } catch (error) {
     if (error.code === "ELOCKED") {
       console.warn("[DB] File is locked, retrying write...");
@@ -251,77 +274,55 @@ async function safeWrite(db) {
         // Ignore unlock errors
       }
     }
+    releaseLocal();
   }
 }
 
 /**
- * Get database instance (singleton).
- *
- * Hot path: if cache is fresh, return immediately without any I/O or queuing.
- * Cold path: serialize via withDbLock to prevent concurrent reads from racing
- * against in-flight writes (eliminates lost-update race condition).
+ * Get database instance (singleton)
  */
 export async function getDb() {
   if (isCloud) {
+    // Return in-memory DB for Workers
     if (!dbInstance) {
       const data = cloneDefaultData();
-      dbInstance = new Low({ read: async () => {}, write: async () => {} }, data);
+      dbInstance = new Low({ read: async () => { }, write: async () => { } }, data);
       dbInstance.data = data;
     }
     return dbInstance;
   }
 
-  // Hot path: cache hit — no lock, no disk I/O
-  if (dbCache.data && Date.now() - dbCache.ts < DB_CACHE_TTL) {
-    if (!dbInstance) {
-      const adapter = new JSONFile(DB_FILE);
-      dbInstance = new Low(adapter, dbCache.data);
-    }
-    dbInstance.data = dbCache.data;
-    return dbInstance;
+  if (!dbInstance) {
+    const adapter = new JSONFile(DB_FILE);
+    dbInstance = new Low(adapter, cloneDefaultData());
   }
 
-  // Cold path: serialize with writes to prevent race conditions
-  return withDbLock(async () => {
-    // Re-check cache inside lock — another queued task may have already loaded it
-    if (dbCache.data && Date.now() - dbCache.ts < DB_CACHE_TTL) {
-      dbInstance.data = dbCache.data;
-      return dbInstance;
-    }
-
-    if (!dbInstance) {
-      const adapter = new JSONFile(DB_FILE);
-      dbInstance = new Low(adapter, cloneDefaultData());
-    }
-
-    try {
-      await safeRead(dbInstance);
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        console.warn("[DB] Corrupt JSON detected, resetting to defaults...");
-        dbInstance.data = cloneDefaultData();
-        await safeWrite(dbInstance);
-      } else {
-        throw error;
-      }
-    }
-
-    // Initialize/migrate missing keys for older DB schema versions
-    if (!dbInstance.data) {
+  // Always read latest disk state to avoid stale singleton data across route workers.
+  try {
+    await safeRead(dbInstance);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
       dbInstance.data = cloneDefaultData();
       await safeWrite(dbInstance);
     } else {
-      const { data, changed } = ensureDbShape(dbInstance.data);
-      dbInstance.data = data;
-      if (changed) await safeWrite(dbInstance);
+      throw error;
     }
+  }
 
-    // Update cache after successful read
-    dbCache.data = dbInstance.data;
-    dbCache.ts = Date.now();
+  // Initialize/migrate missing keys for older DB schema versions.
+  if (!dbInstance.data) {
+    dbInstance.data = cloneDefaultData();
+    await safeWrite(dbInstance);
+  } else {
+    const { data, changed } = ensureDbShape(dbInstance.data);
+    dbInstance.data = data;
+    if (changed) {
+      await safeWrite(dbInstance);
+    }
+  }
 
-    return dbInstance;
-  });
+  return dbInstance;
 }
 
 // ============ Provider Connections ============
@@ -332,17 +333,17 @@ export async function getDb() {
 export async function getProviderConnections(filter = {}) {
   const db = await getDb();
   let connections = db.data.providerConnections || [];
-  
+
   if (filter.provider) {
     connections = connections.filter(c => c.provider === filter.provider);
   }
   if (filter.isActive !== undefined) {
     connections = connections.filter(c => c.isActive === filter.isActive);
   }
-  
+
   // Sort by priority (lower = higher priority)
   connections.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  
+
   return connections;
 }
 
@@ -375,12 +376,12 @@ export async function getProviderNodeById(id) {
  */
 export async function createProviderNode(data) {
   const db = await getDb();
-  
+
   // Initialize providerNodes if undefined (backward compatibility)
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
   }
-  
+
   const now = new Date().toISOString();
 
   const node = {
@@ -408,7 +409,7 @@ export async function updateProviderNode(id, data) {
   if (!db.data.providerNodes) {
     db.data.providerNodes = [];
   }
-  
+
   const index = db.data.providerNodes.findIndex((node) => node.id === id);
 
   if (index === -1) return null;
@@ -569,7 +570,7 @@ export async function getProviderConnectionById(id) {
 export async function createProviderConnection(data) {
   const db = await getDb();
   const now = new Date().toISOString();
-  
+
   // Check for existing connection with same provider and email (for OAuth)
   // or same provider and name (for API key)
   let existingIndex = -1;
@@ -582,7 +583,7 @@ export async function createProviderConnection(data) {
       c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
     );
   }
-  
+
   // If exists, update instead of create
   if (existingIndex !== -1) {
     db.data.providerConnections[existingIndex] = {
@@ -593,7 +594,7 @@ export async function createProviderConnection(data) {
     await safeWrite(db);
     return db.data.providerConnections[existingIndex];
   }
-  
+
   // Generate name for OAuth if not provided
   let connectionName = data.name || null;
   if (!connectionName && data.authType === "oauth") {
@@ -617,7 +618,7 @@ export async function createProviderConnection(data) {
     const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
     connectionPriority = maxPriority + 1;
   }
-  
+
   // Create new connection - only save fields with actual values
   const connection = {
     id: uuidv4(),
@@ -638,7 +639,7 @@ export async function createProviderConnection(data) {
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
     "consecutiveUseCount"
   ];
-  
+
   for (const field of optionalFields) {
     if (data[field] !== undefined && data[field] !== null) {
       connection[field] = data[field];
@@ -649,9 +650,12 @@ export async function createProviderConnection(data) {
   if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
     connection.providerSpecificData = data.providerSpecificData;
   }
-  
+
   db.data.providerConnections.push(connection);
-  await reorderProviderConnections(data.provider, db);
+  await safeWrite(db);
+
+  // Reorder to ensure consistency
+  await reorderProviderConnections(data.provider);
 
   return connection;
 }
@@ -673,11 +677,11 @@ export async function updateProviderConnection(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  // Reorder if priority was changed, reuse same db instance to avoid double-read
+  await safeWrite(db);
+
+  // Reorder if priority was changed
   if (data.priority !== undefined) {
-    await reorderProviderConnections(providerId, db);
-  } else {
-    await safeWrite(db);
+    await reorderProviderConnections(providerId);
   }
 
   return db.data.providerConnections[index];
@@ -695,35 +699,37 @@ export async function deleteProviderConnection(id) {
   const providerId = db.data.providerConnections[index].provider;
 
   db.data.providerConnections.splice(index, 1);
-  // Reorder to fill gaps, reuse same db instance to avoid double-read
-  await reorderProviderConnections(providerId, db);
+  await safeWrite(db);
+
+  // Reorder to fill gaps
+  await reorderProviderConnections(providerId);
 
   return true;
 }
 
 /**
- * Reorder provider connections to ensure unique, sequential priorities.
- * Accepts an existing db instance to avoid redundant getDb() calls and
- * prevent double-read race conditions within the same write operation.
+ * Reorder provider connections to ensure unique, sequential priorities
  */
-export async function reorderProviderConnections(providerId, db) {
-  const instance = db || (await getDb());
-  if (!instance.data.providerConnections) return;
+export async function reorderProviderConnections(providerId) {
+  const db = await getDb();
+  if (!db.data.providerConnections) return;
 
-  const providerConnections = instance.data.providerConnections
+  const providerConnections = db.data.providerConnections
     .filter(c => c.provider === providerId)
     .sort((a, b) => {
+      // Sort by priority first
       const pDiff = (a.priority || 0) - (b.priority || 0);
       if (pDiff !== 0) return pDiff;
       // Use updatedAt as tie-breaker (newer first)
       return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
     });
 
+  // Re-assign sequential priorities
   providerConnections.forEach((conn, index) => {
     conn.priority = index + 1;
   });
 
-  await safeWrite(instance);
+  await safeWrite(db);
 }
 
 // ============ Model Aliases ============
@@ -802,7 +808,7 @@ export async function getComboByName(name) {
 export async function createCombo(data) {
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
-  
+
   const now = new Date().toISOString();
   const combo = {
     id: uuidv4(),
@@ -811,7 +817,7 @@ export async function createCombo(data) {
     createdAt: now,
     updatedAt: now,
   };
-  
+
   db.data.combos.push(combo);
   await safeWrite(db);
   return combo;
@@ -823,16 +829,16 @@ export async function createCombo(data) {
 export async function updateCombo(id, data) {
   const db = await getDb();
   if (!db.data.combos) db.data.combos = [];
-  
+
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return null;
-  
+
   db.data.combos[index] = {
     ...db.data.combos[index],
     ...data,
     updatedAt: new Date().toISOString(),
   };
-  
+
   await safeWrite(db);
   return db.data.combos[index];
 }
@@ -843,10 +849,10 @@ export async function updateCombo(id, data) {
 export async function deleteCombo(id) {
   const db = await getDb();
   if (!db.data.combos) return false;
-  
+
   const index = db.data.combos.findIndex(c => c.id === id);
   if (index === -1) return false;
-  
+
   db.data.combos.splice(index, 1);
   await safeWrite(db);
   return true;
@@ -883,14 +889,14 @@ export async function createApiKey(name, machineId) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
-  
+
   const db = await getDb();
   const now = new Date().toISOString();
-  
+
   // Always use new format: sk-{machineId}-{keyId}-{crc8}
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
   const result = generateApiKeyWithMachine(machineId);
-  
+
   const apiKey = {
     id: uuidv4(),
     name: name,
@@ -899,10 +905,10 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: now,
   };
-  
+
   db.data.apiKeys.push(apiKey);
   await safeWrite(db);
-  
+
   return apiKey;
 }
 
@@ -912,12 +918,12 @@ export async function createApiKey(name, machineId) {
 export async function deleteApiKey(id) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
-  
+
   if (index === -1) return false;
-  
+
   db.data.apiKeys.splice(index, 1);
   await safeWrite(db);
-  
+
   return true;
 }
 

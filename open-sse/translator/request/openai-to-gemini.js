@@ -1,8 +1,15 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-// import { DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
+
+// Decode base64url → standard base64 (for restoring thoughtSignature)
+function fromBase64Url(b64url) {
+  let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  // Restore padding
+  while (b64.length % 4) b64 += "=";
+  return b64;
+}
 
 function generateUUID() {
   return crypto.randomUUID();
@@ -58,26 +65,32 @@ function openaiToGeminiBase(model, body, stream) {
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
 
-  // Build tool_call_id -> name map
+  // Strip embedded thoughtSignature from a tool_call id ("rawId_TSIG_sig" → "rawId")
+  const stripSig = (id) => {
+    const sep = id ? id.indexOf("_TSIG_") : -1;
+    return sep !== -1 ? id.slice(0, sep) : id;
+  };
+
+  // Build tool_call_id -> name map (keyed by rawId)
   const tcID2Name = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === "assistant" && msg.tool_calls) {
         for (const tc of msg.tool_calls) {
           if (tc.type === "function" && tc.id && tc.function?.name) {
-            tcID2Name[tc.id] = tc.function.name;
+            tcID2Name[stripSig(tc.id)] = tc.function.name;
           }
         }
       }
     }
   }
 
-  // Build tool responses cache
+  // Build tool responses cache (keyed by rawId)
   const toolResponses = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === "tool" && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
+        toolResponses[stripSig(msg.tool_call_id)] = msg.content;
       }
     }
   }
@@ -102,18 +115,6 @@ function openaiToGeminiBase(model, body, stream) {
       } else if (role === "assistant") {
         const parts = [];
 
-        // Thinking/reasoning → thought part
-        if (msg.reasoning_content) {
-          parts.push({
-            thought: true,
-            text: msg.reasoning_content
-          });
-          // parts.push({
-          //   thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
-          //   text: ""
-          // });
-        }
-
         if (content) {
           const text = typeof content === "string" ? content : extractTextContent(content);
           if (text) {
@@ -127,15 +128,22 @@ function openaiToGeminiBase(model, body, stream) {
             if (tc.type !== "function") continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            parts.push({
-              // thoughtSignature: DEFAULT_THINKING_GEMINI_SIGNATURE,
+            // Extract thoughtSignature embedded in ID as "rawId_TSIG_base64urlsig"
+            const sepIdx = tc.id.indexOf("_TSIG_");
+            const rawId = sepIdx !== -1 ? tc.id.slice(0, sepIdx) : tc.id;
+            const encodedSig = sepIdx !== -1 ? tc.id.slice(sepIdx + 6) : "";
+            const fcPart = {
               functionCall: {
-                id: tc.id,
+                id: rawId,
                 name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
-            });
-            toolCallIds.push(tc.id);
+            };
+            if (encodedSig) {
+              fcPart.thoughtSignature = fromBase64Url(encodedSig);
+            }
+            parts.push(fcPart);
+            toolCallIds.push(rawId);
           }
 
           if (parts.length > 0) {
