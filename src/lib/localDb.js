@@ -35,9 +35,14 @@ function getUserDataDir() {
 const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "db.json");
 
-// Ensure data directory exists
-if (!isCloud && !fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data directory and db file exist (proper-lockfile requires the file for lstat)
+if (!isCloud) {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(DB_FILE, "{}");
+  }
 }
 
 // Default data structure

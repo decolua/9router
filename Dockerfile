@@ -30,8 +30,8 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 
 RUN mkdir -p /app/data
 
-# Fix permissions at runtime (handles mounted volumes)
-RUN printf '#!/bin/sh\nchown -R node:node /app/data 2>/dev/null; exec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Fix permissions at runtime (handles mounted volumes and custom DATA_DIR)
+RUN printf '#!/bin/sh\nDIR="${DATA_DIR:-/app/data}"\nmkdir -p "$DIR"\nchown -R node:node "$DIR" 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 RUN apk add --no-cache su-exec
 
 EXPOSE 20128
