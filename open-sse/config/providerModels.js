@@ -197,7 +197,6 @@ export const PROVIDER_MODELS = {
     { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image Preview" },
     // Gemini 3 series
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
-    { id: "gemini-3-flash-lite-preview", name: "Gemini 3 Flash Lite Preview" },
     // Gemini 2.5 series
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
