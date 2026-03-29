@@ -145,7 +145,7 @@ function ensureDbShape(data) {
       }
     }
 
-    // Migrate existing API keys to have isActive and allowedModels
+    // Migrate existing API keys to have isActive, allowedModels, and allowedConnections
     if (key === "apiKeys" && Array.isArray(next.apiKeys)) {
       for (const apiKey of next.apiKeys) {
         if (apiKey.isActive === undefined || apiKey.isActive === null) {
@@ -154,6 +154,10 @@ function ensureDbShape(data) {
         }
         if (apiKey.allowedModels === undefined) {
           apiKey.allowedModels = [];
+          changed = true;
+        }
+        if (apiKey.allowedConnections === undefined) {
+          apiKey.allowedConnections = [];
           changed = true;
         }
       }
@@ -845,8 +849,9 @@ function generateShortKey() {
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
  * @param {string[]} [allowedModels] - Optional model restrictions
+ * @param {string[]} [allowedConnections] - Optional connection restrictions (connection IDs)
  */
-export async function createApiKey(name, machineId, allowedModels) {
+export async function createApiKey(name, machineId, allowedModels, allowedConnections) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -865,6 +870,7 @@ export async function createApiKey(name, machineId, allowedModels) {
     machineId: machineId,
     isActive: true,
     allowedModels: Array.isArray(allowedModels) ? allowedModels : [],
+    allowedConnections: Array.isArray(allowedConnections) ? allowedConnections : [],
     createdAt: now,
   };
   

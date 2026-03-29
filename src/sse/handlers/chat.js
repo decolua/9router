@@ -83,14 +83,20 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
-  // Check per-key model restrictions (only for active keys with restrictions)
+  // Check per-key model/connection restrictions
+  let allowedConnections = null;
   if (apiKey) {
     const keyRecord = await getCachedApiKeyRecord(apiKey);
-    if (keyRecord?.isActive !== false && keyRecord?.allowedModels?.length > 0) {
-      const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
-      if (!allowed) {
-        log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
-        return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+    if (keyRecord?.isActive !== false) {
+      if (keyRecord?.allowedModels?.length > 0) {
+        const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
+        if (!allowed) {
+          log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+        }
+      }
+      if (keyRecord?.allowedConnections?.length > 0) {
+        allowedConnections = keyRecord.allowedConnections;
       }
     }
   }
@@ -102,12 +108,12 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    
+
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy})`);
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, allowedConnections),
       log,
       comboName: modelStr,
       comboStrategy
@@ -115,13 +121,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, allowedConnections);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, allowedConnections = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -138,7 +144,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, allowedConnections),
         log,
         comboName: modelStr,
         comboStrategy
@@ -166,7 +172,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, allowedConnections);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

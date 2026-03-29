@@ -62,14 +62,20 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
-  // Check per-key model restrictions (only for active keys with restrictions)
+  // Check per-key model/connection restrictions
+  let allowedConnections = null;
   if (apiKey) {
     const keyRecord = await getCachedApiKeyRecord(apiKey);
-    if (keyRecord?.isActive !== false && keyRecord?.allowedModels?.length > 0) {
-      const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
-      if (!allowed) {
-        log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
-        return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+    if (keyRecord?.isActive !== false) {
+      if (keyRecord?.allowedModels?.length > 0) {
+        const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
+        if (!allowed) {
+          log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+        }
+      }
+      if (keyRecord?.allowedConnections?.length > 0) {
+        allowedConnections = keyRecord.allowedConnections;
       }
     }
   }
@@ -99,7 +105,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, allowedConnections);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

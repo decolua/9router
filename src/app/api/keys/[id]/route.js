@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, allowedModels } = body;
+    const { isActive, allowedModels, allowedConnections } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -34,6 +34,11 @@ export async function PUT(request, { params }) {
     if (allowedModels !== undefined) {
       updateData.allowedModels = Array.isArray(allowedModels)
         ? allowedModels.filter(m => typeof m === "string" && m.trim() !== "")
+        : [];
+    }
+    if (allowedConnections !== undefined) {
+      updateData.allowedConnections = Array.isArray(allowedConnections)
+        ? allowedConnections.filter(c => typeof c === "string" && c.trim() !== "")
         : [];
     }
 
