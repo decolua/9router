@@ -13,8 +13,9 @@ let selectionMutex = Promise.resolve();
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {string[]|null} allowedConnectionIds - If set, only these connection IDs are allowed (per-key restriction)
  */
-export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null) {
+export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, allowedConnectionIds = null) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
@@ -38,9 +39,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out model-locked, excluded, and non-allowed connections
+    const allowedSet = Array.isArray(allowedConnectionIds) && allowedConnectionIds.length > 0
+      ? new Set(allowedConnectionIds)
+      : null;
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
+      if (allowedSet && !allowedSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
     });

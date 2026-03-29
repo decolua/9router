@@ -22,6 +22,7 @@ function cloneRecord(record) {
   return {
     ...record,
     allowedModels: record.allowedModels ? [...record.allowedModels] : [],
+    allowedConnections: record.allowedConnections ? [...record.allowedConnections] : [],
   };
 }
 
@@ -68,6 +69,7 @@ const MOCK_KEY = {
   machineId: "m1",
   isActive: true,
   allowedModels: ["openai/gpt-4", "anthropic/*"],
+  allowedConnections: ["conn-1", "conn-2"],
   createdAt: "2026-01-01T00:00:00Z",
 };
 
@@ -92,11 +94,13 @@ describe("getCachedApiKeyRecord", () => {
   it("returns clone — mutations don't affect cache", async () => {
     const r1 = await getCachedApiKeyRecord("sk-test-abc");
     r1.allowedModels.push("hacked/*");
+    r1.allowedConnections.push("conn-hacked");
     r1.name = "mutated";
 
     const r2 = await getCachedApiKeyRecord("sk-test-abc");
     expect(r2.name).toBe("Test Key");
     expect(r2.allowedModels).toEqual(["openai/gpt-4", "anthropic/*"]);
+    expect(r2.allowedConnections).toEqual(["conn-1", "conn-2"]);
   });
 
   it("returns null for non-existent key", async () => {
@@ -170,5 +174,17 @@ describe("cloneRecord", () => {
   it("handles missing allowedModels", () => {
     const cloned = cloneRecord({ id: "1" });
     expect(cloned.allowedModels).toEqual([]);
+  });
+
+  it("deep clones allowedConnections array", () => {
+    const original = { id: "1", allowedConnections: ["conn-a", "conn-b"] };
+    const cloned = cloneRecord(original);
+    cloned.allowedConnections.push("conn-c");
+    expect(original.allowedConnections).toEqual(["conn-a", "conn-b"]);
+  });
+
+  it("handles missing allowedConnections", () => {
+    const cloned = cloneRecord({ id: "1" });
+    expect(cloned.allowedConnections).toEqual([]);
   });
 });

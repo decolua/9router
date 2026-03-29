@@ -32,6 +32,12 @@ export default function APIPageClient({ machineId }) {
   const [modelSearch, setModelSearch] = useState("");
   const [customModelInput, setCustomModelInput] = useState("");
   const [savingModels, setSavingModels] = useState(false);
+  // Connection restrictions state
+  const [showConnectionsModal, setShowConnectionsModal] = useState(null); // key ID being edited
+  const [availableConnections, setAvailableConnections] = useState([]);
+  const [selectedConnections, setSelectedConnections] = useState([]);
+  const [connectionSearch, setConnectionSearch] = useState("");
+  const [savingConnections, setSavingConnections] = useState(false);
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
@@ -451,6 +457,47 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const handleOpenConnectionsModal = async (key) => {
+    setShowConnectionsModal(key.id);
+    setSelectedConnections(key.allowedConnections || []);
+    setConnectionSearch("");
+    try {
+      const res = await fetch("/api/providers");
+      const data = res.ok ? await res.json() : { connections: [] };
+      setAvailableConnections(data.connections || []);
+    } catch {
+      setAvailableConnections([]);
+    }
+  };
+
+  const handleSaveConnections = async () => {
+    if (!showConnectionsModal) return;
+    setSavingConnections(true);
+    try {
+      const res = await fetch(`/api/keys/${showConnectionsModal}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedConnections: selectedConnections }),
+      });
+      if (res.ok) {
+        setKeys(prev => prev.map(k =>
+          k.id === showConnectionsModal ? { ...k, allowedConnections: selectedConnections } : k
+        ));
+        setShowConnectionsModal(null);
+      }
+    } catch (error) {
+      console.log("Error saving connections:", error);
+    } finally {
+      setSavingConnections(false);
+    }
+  };
+
+  const toggleConnection = (connId) => {
+    setSelectedConnections(prev =>
+      prev.includes(connId) ? prev.filter(c => c !== connId) : [...prev, connId]
+    );
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -628,6 +675,11 @@ export default function APIPageClient({ machineId }) {
                         {key.allowedModels.length} model{key.allowedModels.length !== 1 ? "s" : ""}
                       </span>
                     )}
+                    {key.allowedConnections?.length > 0 && (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                        {key.allowedConnections.length} account{key.allowedConnections.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
                   </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
@@ -640,6 +692,13 @@ export default function APIPageClient({ machineId }) {
                     title="Model restrictions"
                   >
                     <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
+                  <button
+                    onClick={() => handleOpenConnectionsModal(key)}
+                    className="p-2 hover:bg-purple-500/10 rounded text-text-muted hover:text-purple-500 opacity-0 group-hover:opacity-100 transition-all"
+                    title="Account restrictions"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">manage_accounts</span>
                   </button>
                   <Toggle
                     size="sm"
@@ -837,6 +896,105 @@ export default function APIPageClient({ machineId }) {
               variant="ghost"
               fullWidth
               disabled={tunnelLoading}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Account Restrictions Modal */}
+      <Modal
+        isOpen={!!showConnectionsModal}
+        title="Account Restrictions"
+        onClose={() => !savingConnections && setShowConnectionsModal(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-3">
+            <p className="text-xs text-purple-700 dark:text-purple-300">
+              Select which provider accounts this API key can use. Leave empty for unrestricted access. Only selected accounts will be used for requests with this key.
+            </p>
+          </div>
+
+          {!requireApiKey && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+              <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                <strong>Warning:</strong> &quot;Require API key&quot; is off. Users can bypass restrictions by omitting their key.
+              </p>
+            </div>
+          )}
+
+          {/* Selected accounts count */}
+          {selectedConnections.length > 0 && (
+            <p className="text-xs text-text-muted">
+              {selectedConnections.length} account{selectedConnections.length !== 1 ? "s" : ""} selected
+            </p>
+          )}
+
+          {/* Search */}
+          <Input
+            value={connectionSearch}
+            onChange={(e) => setConnectionSearch(e.target.value)}
+            placeholder="Search accounts..."
+            className="text-sm"
+          />
+
+          {/* Available connections list */}
+          <div className="max-h-72 overflow-y-auto border border-border rounded-lg divide-y divide-border">
+            {availableConnections
+              .filter(c => {
+                if (!connectionSearch) return true;
+                const q = connectionSearch.toLowerCase();
+                return (c.name || "").toLowerCase().includes(q)
+                  || (c.displayName || "").toLowerCase().includes(q)
+                  || (c.provider || "").toLowerCase().includes(q)
+                  || (c.email || "").toLowerCase().includes(q);
+              })
+              .map(conn => (
+                <label
+                  key={conn.id}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedConnections.includes(conn.id)}
+                    onChange={() => toggleConnection(conn.id)}
+                    className="rounded"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {conn.displayName || conn.name || conn.email || conn.id.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-text-muted truncate">
+                      {conn.provider}{conn.email ? ` \u00B7 ${conn.email}` : ""}
+                    </p>
+                  </div>
+                  {conn.isActive === false && (
+                    <span className="text-xs text-orange-500">Inactive</span>
+                  )}
+                </label>
+              ))}
+            {availableConnections.filter(c => {
+              if (!connectionSearch) return true;
+              const q = connectionSearch.toLowerCase();
+              return (c.name || "").toLowerCase().includes(q)
+                || (c.displayName || "").toLowerCase().includes(q)
+                || (c.provider || "").toLowerCase().includes(q)
+                || (c.email || "").toLowerCase().includes(q);
+            }).length === 0 && (
+              <p className="px-3 py-4 text-xs text-text-muted text-center">No accounts found</p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button onClick={handleSaveConnections} fullWidth disabled={savingConnections}>
+              {savingConnections ? "Saving..." : "Save"}
+            </Button>
+            <Button
+              onClick={() => setShowConnectionsModal(null)}
+              variant="ghost"
+              fullWidth
+              disabled={savingConnections}
             >
               Cancel
             </Button>

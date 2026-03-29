@@ -29,6 +29,7 @@ function cloneRecord(record) {
   return {
     ...record,
     allowedModels: record.allowedModels ? [...record.allowedModels] : [],
+    allowedConnections: record.allowedConnections ? [...record.allowedConnections] : [],
   };
 }
 
