@@ -168,7 +168,8 @@ export const PROVIDERS = {
       "X-Initiator": "user",
       "Accept": "application/json",
       "Content-Type": "application/json"
-    }
+    },
+    clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",

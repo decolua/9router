@@ -373,18 +373,22 @@ export async function refreshIflowToken(refreshToken, log) {
  * Specialized refresh for GitHub Copilot OAuth tokens
  */
 export async function refreshGitHubToken(refreshToken, log) {
+  const params = {
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+    client_id: PROVIDERS.github.clientId,
+  };
+  if (PROVIDERS.github.clientSecret) {
+    params.client_secret = PROVIDERS.github.clientSecret;
+  }
+
   const response = await fetch(OAUTH_ENDPOINTS.github.token, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: PROVIDERS.github.clientId,
-      client_secret: PROVIDERS.github.clientSecret,
-    }),
+    body: new URLSearchParams(params),
   });
 
   if (!response.ok) {
