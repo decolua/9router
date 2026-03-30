@@ -29,6 +29,11 @@ export class BaseExecutor {
       const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
+      const normalized = baseUrl.replace(/\/$/, "");
+      return `${normalized}/messages`;
+    }
     const baseUrls = this.getBaseUrls();
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
@@ -39,10 +44,23 @@ export class BaseExecutor {
       ...this.config.headers
     };
 
-    if (credentials.accessToken) {
-      headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-    } else if (credentials.apiKey) {
-      headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+      // Anthropic-compatible providers use x-api-key header
+      if (credentials.apiKey) {
+        headers["x-api-key"] = credentials.apiKey;
+      } else if (credentials.accessToken) {
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      }
+      if (!headers["anthropic-version"]) {
+        headers["anthropic-version"] = "2023-06-01";
+      }
+    } else {
+      // Standard Bearer token auth for other providers
+      if (credentials.accessToken) {
+        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      } else if (credentials.apiKey) {
+        headers["Authorization"] = `Bearer ${credentials.apiKey}`;
+      }
     }
 
     if (stream) {

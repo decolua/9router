@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_PREFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -256,6 +256,197 @@ export class AntigravityExecutor extends BaseExecutor {
 
     throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
   }
+
+  /**
+   * Cloak tools before sending to Antigravity provider (anti-ban):
+   * - Rename client tools with ide_ prefix
+   * - Inject AG default decoy tools (same names, neutral description/properties)
+   * Returns { cloakedBody, toolNameMap } where toolNameMap maps prefixed → original
+   */
+  static cloakTools(body) {
+    const tools = body.request?.tools;
+    if (!tools || tools.length === 0) {
+      return { cloakedBody: body, toolNameMap: null };
+    }
+
+    const toolNameMap = new Map();
+    const allDeclarations = [];
+
+    // First: add AG decoy tools (to appear first in the list)
+    allDeclarations.push(...AG_DECOY_TOOLS);
+
+    // Second: add renamed client tools
+    for (const toolGroup of tools) {
+      if (!toolGroup.functionDeclarations) continue;
+
+      for (const func of toolGroup.functionDeclarations) {
+        // Skip if already an AG default tool name
+        if (AG_DEFAULT_TOOLS.has(func.name)) {
+          allDeclarations.push(func);
+          continue;
+        }
+
+        const prefixed = `${AG_TOOL_PREFIX}${func.name}`;
+        toolNameMap.set(prefixed, func.name);
+        allDeclarations.push({ ...func, name: prefixed });
+      }
+    }
+
+    // Rename tool names in conversation history (contents)
+    const cloakedContents = body.request?.contents?.map(msg => {
+      if (!msg.parts) return msg;
+      
+      const cloakedParts = msg.parts.map(part => {
+        // Rename functionCall.name
+        if (part.functionCall && !AG_DEFAULT_TOOLS.has(part.functionCall.name)) {
+          return {
+            ...part,
+            functionCall: {
+              ...part.functionCall,
+              name: `${AG_TOOL_PREFIX}${part.functionCall.name}`
+            }
+          };
+        }
+        
+        // Rename functionResponse.name
+        if (part.functionResponse && !AG_DEFAULT_TOOLS.has(part.functionResponse.name)) {
+          return {
+            ...part,
+            functionResponse: {
+              ...part.functionResponse,
+              name: `${AG_TOOL_PREFIX}${part.functionResponse.name}`
+            }
+          };
+        }
+        
+        return part;
+      });
+      
+      return { ...msg, parts: cloakedParts };
+    });
+
+    // Single functionDeclarations group with decoys first, then renamed client tools
+    return {
+      cloakedBody: {
+        ...body,
+        request: {
+          ...body.request,
+          tools: [{ functionDeclarations: allDeclarations }],
+          contents: cloakedContents || body.request.contents
+        }
+      },
+      toolNameMap
+    };
+  }
 }
+
+// AG decoy tools — same names as AG native defaults, redirect to ide_ prefixed tools
+const AG_DECOY_TOOLS = [
+  {
+    name: "browser_subagent",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "command_status",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "find_by_name",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "generate_image",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "grep_search",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_dir",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_resources",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "mcp_sequential-thinking_sequentialthinking",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "multi_replace_file_content",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "notify_user",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_resource",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_terminal",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_url_content",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "replace_file_content",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "run_command",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "search_web",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "send_command_input",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "task_boundary",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_content_chunk",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_file",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "write_to_file",
+    description: "Use ide_ prefixed tools instead",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  }
+];
 
 export default AntigravityExecutor;

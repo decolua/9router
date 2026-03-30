@@ -59,9 +59,11 @@ export function openaiToAntigravityResponse(chunk, state) {
       const accum = state._toolCallAccum[idx];
       let args = {};
       try { args = JSON.parse(accum.arguments); } catch { /* empty */ }
+      // Restore original tool name if it was prefixed during cloaking
+      const originalName = state.toolNameMap?.get(accum.name) || accum.name;
       parts.push({
         functionCall: {
-          name: accum.name,
+          name: originalName,
           args
         }
       });

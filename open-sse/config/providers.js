@@ -168,7 +168,8 @@ export const PROVIDERS = {
       "X-Initiator": "user",
       "Accept": "application/json",
       "Content-Type": "application/json"
-    }
+    },
+    clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
@@ -315,5 +316,15 @@ export const PROVIDERS = {
   "vertex-partner": {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "openai"
+  },
+  // GitLab Duo - OpenAI-compatible chat endpoint
+  gitlab: {
+    baseUrl: "https://gitlab.com/api/v4/chat/completions",
+    format: "openai",
+  },
+  // CodeBuddy (Tencent) - uses device_code polling auth, no chat completions baseUrl needed
+  codebuddy: {
+    baseUrl: "https://copilot.tencent.com/v1/chat/completions",
+    format: "openai",
   },
 };

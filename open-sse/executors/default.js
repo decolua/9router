@@ -2,6 +2,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
+import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -43,9 +44,41 @@ export class DefaultExecutor extends BaseExecutor {
       case "gemini":
         credentials.apiKey ? headers["x-goog-api-key"] = credentials.apiKey : headers["Authorization"] = `Bearer ${credentials.accessToken}`;
         break;
-      case "claude":
-        credentials.apiKey ? headers["x-api-key"] = credentials.apiKey : headers["Authorization"] = `Bearer ${credentials.accessToken}`;
+      case "claude": {
+        // Overlay live cached headers from real Claude Code client over static defaults.
+        // Static headers (Title-Case) remain as cold-start fallback.
+        const cached = getCachedClaudeHeaders();
+        if (cached) {
+          // Remove Title-Case static keys that conflict with incoming lowercase cached keys
+          for (const lcKey of Object.keys(cached)) {
+            // Build the Title-Case equivalent: "anthropic-version" → "Anthropic-Version"
+            const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, c) => sep + c.toUpperCase());
+
+            // Special handling for Anthropic-Beta to preserve required flags like OAuth
+            if (lcKey === "anthropic-beta") {
+              const staticBetaStr = headers[titleKey] || headers[lcKey] || "";
+              const staticFlags = new Set(staticBetaStr.split(",").map(f => f.trim()).filter(Boolean));
+              const cachedFlags = new Set(cached[lcKey].split(",").map(f => f.trim()).filter(Boolean));
+
+              // Merge all static flags (which contain oauth, thinking, etc) into the cached ones
+              for (const flag of staticFlags) {
+                cachedFlags.add(flag);
+              }
+
+              cached[lcKey] = Array.from(cachedFlags).join(",");
+            }
+
+            if (titleKey !== lcKey && headers[titleKey] !== undefined) {
+              delete headers[titleKey];
+            }
+          }
+          Object.assign(headers, cached);
+        }
+        credentials.apiKey
+          ? (headers["x-api-key"] = credentials.apiKey)
+          : (headers["Authorization"] = `Bearer ${credentials.accessToken}`);
         break;
+      }
       case "glm":
       case "kimi":
       case "minimax":
@@ -66,6 +99,11 @@ export class DefaultExecutor extends BaseExecutor {
           if (!headers["anthropic-version"]) {
             headers["anthropic-version"] = "2023-06-01";
           }
+        } else if (this.provider === "gitlab") {
+          // GitLab Duo uses Bearer token (PAT with ai_features scope, or OAuth access token)
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        } else if (this.provider === "codebuddy") {
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         } else if (this.provider === "kilocode") {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
           if (credentials.providerSpecificData?.orgId) {
@@ -76,6 +114,33 @@ export class DefaultExecutor extends BaseExecutor {
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
+    }
+
+    // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
+    if (this.provider?.startsWith?.("anthropic-compatible-")) {
+      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
+      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
+      if (!isOfficialAnthropic) {
+        delete headers["anthropic-dangerous-direct-browser-access"];
+        delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
+        delete headers["x-app"];
+        delete headers["X-App"];
+        // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
+        for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
+          if (headers[betaKey]) {
+            const filtered = headers[betaKey]
+              .split(",")
+              .map(s => s.trim())
+              .filter(f => f && f !== "claude-code-20250219")
+              .join(",");
+            if (filtered) {
+              headers[betaKey] = filtered;
+            } else {
+              delete headers[betaKey];
+            }
+          }
+        }
+      }
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
@@ -192,8 +257,8 @@ export class DefaultExecutor extends BaseExecutor {
     const kimiHeaders = buildKimiHeaders();
     const response = await fetch("https://auth.kimi.com/api/oauth/token", {
       method: "POST",
-      headers: { 
-        "Content-Type": "application/x-www-form-urlencoded", 
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
         ...kimiHeaders
       },

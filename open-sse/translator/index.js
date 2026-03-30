@@ -3,6 +3,7 @@ import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHe
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
+import { AntigravityExecutor } from "../executors/antigravity.js";
 
 // Registry for translators
 const requestRegistry = new Map();
@@ -95,6 +96,16 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
     result = prepareClaudeRequest(result, provider, apiKey);
+  }
+
+  // Antigravity cloaking: rename client tools + inject decoys (anti-ban)
+  // Skip if client is native AG (userAgent = antigravity)
+  if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
+    const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
+    result = cloakedBody;
+    if (toolNameMap?.size > 0) {
+      result._toolNameMap = toolNameMap;
+    }
   }
 
   return result;

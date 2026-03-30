@@ -7,6 +7,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
+import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -42,6 +44,7 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
+  cacheClaudeHeaders(clientRawRequest.headers);
 
   // Log request endpoint and model
   const url = new URL(request.url);

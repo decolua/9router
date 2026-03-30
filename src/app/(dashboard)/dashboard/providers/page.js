@@ -16,6 +16,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
+  FREE_TIER_PROVIDERS,
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
@@ -286,11 +287,11 @@ export default function ProvidersPage() {
         </div>
       </div>
 
-      {/* Free Providers */}
+      {/* Free & Free Tier Providers */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold flex items-center gap-2">
-            Free Providers
+            Free &amp; Free Tier Providers
           </h2>
           <button
             onClick={() => handleBatchTest("free")}
@@ -320,6 +321,16 @@ export default function ProvidersPage() {
               stats={getProviderStats(key, "oauth")}
               authType="free"
               onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+            />
+          ))}
+          {Object.entries(FREE_TIER_PROVIDERS).map(([key, info]) => (
+            <ApiKeyProviderCard
+              key={key}
+              providerId={key}
+              provider={info}
+              stats={getProviderStats(key, "apikey")}
+              authType="apikey"
+              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
             />
           ))}
         </div>

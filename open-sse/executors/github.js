@@ -243,15 +243,19 @@ export class GithubExecutor extends BaseExecutor {
 
   async refreshGitHubToken(refreshToken, log) {
     try {
+      const params = {
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: this.config.clientId,
+      };
+      if (this.config.clientSecret) {
+        params.client_secret = this.config.clientSecret;
+      }
+
       const response = await fetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret
-        })
+        body: new URLSearchParams(params)
       });
       if (!response.ok) return null;
       const tokens = await response.json();

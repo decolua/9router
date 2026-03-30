@@ -355,6 +355,14 @@ function flushEvents(state) {
   return events;
 }
 
+// currentToolCallId is intentionally sticky for the current turn so flush/completion
+  // can still finalize as tool_calls even if the tool call was emitted before stream end.
+function computeFinishReason(state) {
+   return state.toolCallIndex > 0 || state.currentToolCallId
+    ? "tool_calls"
+    : "stop";
+}
+
 /**
  * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
  * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
@@ -362,22 +370,30 @@ function flushEvents(state) {
 export function openaiResponsesToOpenAIResponse(chunk, state) {
   if (!chunk) {
     // Flush: send final chunk with finish_reason
-    if (!state.finishReasonSent && state.started) {
-      state.finishReasonSent = true;
-      const hasToolCalls = state.toolCallIndex > 0;
-      return {
-        id: state.chatId || `chatcmpl-${Date.now()}`,
-        object: "chat.completion.chunk",
-        created: state.created || Math.floor(Date.now() / 1000),
-        model: state.model || "unknown",
-        choices: [{
-          index: 0,
-          delta: {},
-          finish_reason: hasToolCalls ? "tool_calls" : "stop"
-        }]
-      };
+    if (state.finishReasonSent || !state.started) return null;
+
+    const finishReason = computeFinishReason(state);
+
+    state.finishReasonSent = true;
+    state.finishReason = finishReason;
+
+    const finalChunk = {
+      id: state.chatId || `chatcmpl-${Date.now()}`,
+      object: "chat.completion.chunk",
+      created: state.created || Math.floor(Date.now() / 1000),
+      model: state.model || "unknown",
+      choices: [{
+        index: 0,
+        delta: {},
+        finish_reason: finishReason
+      }]
+    };
+
+    if (state.usage && typeof state.usage === "object") {
+      finalChunk.usage = state.usage;
     }
-    return null;
+
+    return finalChunk;
   }
 
   // Handle different event types from Responses API
@@ -505,10 +521,10 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     }
     
     if (!state.finishReasonSent) {
+      const finishReason = computeFinishReason(state);
+
       state.finishReasonSent = true;
-      const hasToolCalls = state.toolCallIndex > 0;
-      const resolvedFinishReason = hasToolCalls ? "tool_calls" : "stop";
-      state.finishReason = resolvedFinishReason; // Mark for usage injection in stream.js
+      state.finishReason = finishReason; // Mark for usage injection in stream.js
       
       const finalChunk = {
         id: state.chatId,
@@ -518,7 +534,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         choices: [{
           index: 0,
           delta: {},
-          finish_reason: resolvedFinishReason
+          finish_reason: finishReason
         }]
       };
       
@@ -571,4 +587,3 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 // Register both directions
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, null, openaiToOpenAIResponsesResponse);
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, null, openaiResponsesToOpenAIResponse);
-

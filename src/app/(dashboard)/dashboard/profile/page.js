@@ -243,13 +243,13 @@ export default function ProfilePage() {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ observabilityEnabled: enabled }),
+        body: JSON.stringify({ enableObservability: enabled }),
       });
       if (res.ok) {
-        setSettings(prev => ({ ...prev, observabilityEnabled: enabled }));
+        setSettings(prev => ({ ...prev, enableObservability: enabled }));
       }
     } catch (err) {
-      console.error("Failed to update observabilityEnabled:", err);
+      console.error("Failed to update enableObservability:", err);
     }
   };
 
@@ -329,7 +329,7 @@ export default function ProfilePage() {
     }
   };
 
-  const observabilityEnabled = settings.observabilityEnabled === true;
+  const observabilityEnabled = settings.enableObservability === true;
 
   return (
     <div className="max-w-2xl mx-auto">
