@@ -66,6 +66,11 @@ export class DefaultExecutor extends BaseExecutor {
           if (!headers["anthropic-version"]) {
             headers["anthropic-version"] = "2023-06-01";
           }
+        } else if (this.provider === "gitlab") {
+          // GitLab Duo uses Bearer token (PAT with ai_features scope, or OAuth access token)
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
+        } else if (this.provider === "codebuddy") {
+          headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         } else if (this.provider === "kilocode") {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
           if (credentials.providerSpecificData?.orgId) {

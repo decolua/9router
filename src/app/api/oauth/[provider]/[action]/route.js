@@ -22,7 +22,11 @@ export async function GET(request, { params }) {
 
     if (action === "authorize") {
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
-      const authData = generateAuthData(provider, redirectUri);
+      // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
+      const reservedParams = new Set(["redirect_uri"]);
+      const meta = {};
+      searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
+      const authData = generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
     }
 
@@ -35,7 +39,7 @@ export async function GET(request, { params }) {
       const authData = generateAuthData(provider, null);
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider);
@@ -70,7 +74,7 @@ export async function POST(request, { params }) {
     }
 
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state } = body;
+      const { code, redirectUri, codeVerifier, state, meta } = body;
 
       // Cline uses authorization_code without PKCE
       const noPkceExchangeProviders = ["cline"];
@@ -78,8 +82,8 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
-      // Exchange code for tokens
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state);
+      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
+      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
 
       // Save to database
       const connection = await createProviderConnection({
@@ -111,7 +115,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode"];
+      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy"];
       let result;
       if (noPkceProviders.includes(provider)) {
         result = await pollForToken(provider, deviceCode);

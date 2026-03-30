@@ -316,4 +316,14 @@ export const PROVIDERS = {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "openai"
   },
+  // GitLab Duo - OpenAI-compatible chat endpoint
+  gitlab: {
+    baseUrl: "https://gitlab.com/api/v4/chat/completions",
+    format: "openai",
+  },
+  // CodeBuddy (Tencent) - uses device_code polling auth, no chat completions baseUrl needed
+  codebuddy: {
+    baseUrl: "https://copilot.tencent.com/v1/chat/completions",
+    format: "openai",
+  },
 };

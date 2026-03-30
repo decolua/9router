@@ -40,6 +40,11 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// Seed db.json with defaults on first run so proper-lockfile never hits ENOENT
+if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(defaultData, null, 2));
+}
+
 // Default data structure
 const defaultData = {
   providerConnections: [],
@@ -58,7 +63,7 @@ const defaultData = {
     comboStrategy: "fallback",
     comboStrategies: {},
     requireLogin: true,
-    observabilityEnabled: true,
+    enableObservability: false,
     observabilityMaxRecords: 1000,
     observabilityBatchSize: 20,
     observabilityFlushIntervalMs: 5000,
@@ -88,7 +93,7 @@ function cloneDefaultData() {
       comboStrategy: "fallback",
       comboStrategies: {},
       requireLogin: true,
-      observabilityEnabled: true,
+      enableObservability: false,
       observabilityMaxRecords: 1000,
       observabilityBatchSize: 20,
       observabilityFlushIntervalMs: 5000,
@@ -162,6 +167,19 @@ function ensureDbShape(data) {
 // Singleton instance
 let dbInstance = null;
 
+// In-memory read cache to avoid redundant disk reads under high load
+const DB_CACHE_TTL = 500; // ms
+let dbCache = { data: null, ts: 0 };
+
+// Serialize all DB operations (reads on cache-miss + writes) to prevent race conditions
+let dbQueue = Promise.resolve();
+
+function withDbLock(fn) {
+  const next = dbQueue.then(fn, fn);
+  dbQueue = next.catch(() => {});
+  return next;
+}
+
 // Lock options for proper-lockfile
 const LOCK_OPTIONS = {
   retries: {
@@ -204,7 +222,8 @@ async function safeRead(db) {
 }
 
 /**
- * Safely write database with file locking
+ * Safely write database with file locking.
+ * Always invalidates read cache so next read reflects the latest state.
  */
 async function safeWrite(db) {
   if (isCloud) {
@@ -214,9 +233,10 @@ async function safeWrite(db) {
 
   let release = null;
   try {
-    // Acquire lock before writing
     release = await lockfile.lock(DB_FILE, LOCK_OPTIONS);
     await db.write();
+    // Invalidate cache immediately after a successful write
+    dbCache.ts = 0;
   } catch (error) {
     if (error.code === "ELOCKED") {
       console.warn("[DB] File is locked, retrying write...");
@@ -235,11 +255,14 @@ async function safeWrite(db) {
 }
 
 /**
- * Get database instance (singleton)
+ * Get database instance (singleton).
+ *
+ * Hot path: if cache is fresh, return immediately without any I/O or queuing.
+ * Cold path: serialize via withDbLock to prevent concurrent reads from racing
+ * against in-flight writes (eliminates lost-update race condition).
  */
 export async function getDb() {
   if (isCloud) {
-    // Return in-memory DB for Workers
     if (!dbInstance) {
       const data = cloneDefaultData();
       dbInstance = new Low({ read: async () => {}, write: async () => {} }, data);
@@ -248,37 +271,57 @@ export async function getDb() {
     return dbInstance;
   }
 
-  if (!dbInstance) {
-    const adapter = new JSONFile(DB_FILE);
-    dbInstance = new Low(adapter, cloneDefaultData());
+  // Hot path: cache hit — no lock, no disk I/O
+  if (dbCache.data && Date.now() - dbCache.ts < DB_CACHE_TTL) {
+    if (!dbInstance) {
+      const adapter = new JSONFile(DB_FILE);
+      dbInstance = new Low(adapter, dbCache.data);
+    }
+    dbInstance.data = dbCache.data;
+    return dbInstance;
   }
 
-  // Always read latest disk state to avoid stale singleton data across route workers.
-  try {
-    await safeRead(dbInstance);
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
+  // Cold path: serialize with writes to prevent race conditions
+  return withDbLock(async () => {
+    // Re-check cache inside lock — another queued task may have already loaded it
+    if (dbCache.data && Date.now() - dbCache.ts < DB_CACHE_TTL) {
+      dbInstance.data = dbCache.data;
+      return dbInstance;
+    }
+
+    if (!dbInstance) {
+      const adapter = new JSONFile(DB_FILE);
+      dbInstance = new Low(adapter, cloneDefaultData());
+    }
+
+    try {
+      await safeRead(dbInstance);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        console.warn("[DB] Corrupt JSON detected, resetting to defaults...");
+        dbInstance.data = cloneDefaultData();
+        await safeWrite(dbInstance);
+      } else {
+        throw error;
+      }
+    }
+
+    // Initialize/migrate missing keys for older DB schema versions
+    if (!dbInstance.data) {
       dbInstance.data = cloneDefaultData();
       await safeWrite(dbInstance);
     } else {
-      throw error;
+      const { data, changed } = ensureDbShape(dbInstance.data);
+      dbInstance.data = data;
+      if (changed) await safeWrite(dbInstance);
     }
-  }
 
-  // Initialize/migrate missing keys for older DB schema versions.
-  if (!dbInstance.data) {
-    dbInstance.data = cloneDefaultData();
-    await safeWrite(dbInstance);
-  } else {
-    const { data, changed } = ensureDbShape(dbInstance.data);
-    dbInstance.data = data;
-    if (changed) {
-      await safeWrite(dbInstance);
-    }
-  }
+    // Update cache after successful read
+    dbCache.data = dbInstance.data;
+    dbCache.ts = Date.now();
 
-  return dbInstance;
+    return dbInstance;
+  });
 }
 
 // ============ Provider Connections ============
@@ -608,10 +651,7 @@ export async function createProviderConnection(data) {
   }
   
   db.data.providerConnections.push(connection);
-  await safeWrite(db);
-
-  // Reorder to ensure consistency
-  await reorderProviderConnections(data.provider);
+  await reorderProviderConnections(data.provider, db);
 
   return connection;
 }
@@ -633,11 +673,11 @@ export async function updateProviderConnection(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  await safeWrite(db);
-
-  // Reorder if priority was changed
+  // Reorder if priority was changed, reuse same db instance to avoid double-read
   if (data.priority !== undefined) {
-    await reorderProviderConnections(providerId);
+    await reorderProviderConnections(providerId, db);
+  } else {
+    await safeWrite(db);
   }
 
   return db.data.providerConnections[index];
@@ -655,37 +695,35 @@ export async function deleteProviderConnection(id) {
   const providerId = db.data.providerConnections[index].provider;
 
   db.data.providerConnections.splice(index, 1);
-  await safeWrite(db);
-
-  // Reorder to fill gaps
-  await reorderProviderConnections(providerId);
+  // Reorder to fill gaps, reuse same db instance to avoid double-read
+  await reorderProviderConnections(providerId, db);
 
   return true;
 }
 
 /**
- * Reorder provider connections to ensure unique, sequential priorities
+ * Reorder provider connections to ensure unique, sequential priorities.
+ * Accepts an existing db instance to avoid redundant getDb() calls and
+ * prevent double-read race conditions within the same write operation.
  */
-export async function reorderProviderConnections(providerId) {
-  const db = await getDb();
-  if (!db.data.providerConnections) return;
+export async function reorderProviderConnections(providerId, db) {
+  const instance = db || (await getDb());
+  if (!instance.data.providerConnections) return;
 
-  const providerConnections = db.data.providerConnections
+  const providerConnections = instance.data.providerConnections
     .filter(c => c.provider === providerId)
     .sort((a, b) => {
-      // Sort by priority first
       const pDiff = (a.priority || 0) - (b.priority || 0);
       if (pDiff !== 0) return pDiff;
       // Use updatedAt as tie-breaker (newer first)
       return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
     });
 
-  // Re-assign sequential priorities
   providerConnections.forEach((conn, index) => {
     conn.priority = index + 1;
   });
 
-  await safeWrite(db);
+  await safeWrite(instance);
 }
 
 // ============ Model Aliases ============

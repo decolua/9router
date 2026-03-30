@@ -68,6 +68,14 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   cline: { refreshable: true },
+  gitlab: {
+    // Test by hitting the GitLab user API — requires api or read_user scope
+    url: "https://gitlab.com/api/v4/user",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
+  codebuddy: { tokenExists: true },
 };
 
 async function probeClineAccessToken(accessToken) {
