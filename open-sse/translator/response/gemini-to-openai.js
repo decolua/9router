@@ -59,7 +59,9 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
         
         if (hasFunctionCall) {
-          const fcName = part.functionCall.name;
+          const rawName = part.functionCall.name;
+          // Restore original tool name from mapping (AG cloaking)
+          const fcName = state.toolNameMap?.get(rawName) || rawName;
           const fcArgs = part.functionCall.args || {};
           const toolCallIndex = state.functionIndex++;
           
@@ -107,7 +109,9 @@ export function geminiToOpenAIResponse(chunk, state) {
 
       // Function call
       if (part.functionCall) {
-        const fcName = part.functionCall.name;
+        const rawName = part.functionCall.name;
+        // Restore original tool name from mapping (AG cloaking)
+        const fcName = state.toolNameMap?.get(rawName) || rawName;
         const fcArgs = part.functionCall.args || {};
         const toolCallIndex = state.functionIndex++;
         
