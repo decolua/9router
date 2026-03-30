@@ -70,7 +70,9 @@ export function geminiToOpenAIResponse(chunk, state) {
 
       // Emit function call, attaching the best available thoughtSignature
       if (hasFunctionCall) {
-        const fcName = part.functionCall.name;
+        const rawName = part.functionCall.name;
+        // Restore original tool name from mapping (AG cloaking)
+        const fcName = state.toolNameMap?.get(rawName) || rawName;
         const fcArgs = part.functionCall.args || {};
         const toolCallIndex = state.functionIndex++;
         // Use signature from this part, or the one carried from a preceding part
