@@ -3,24 +3,33 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, Badge } from "@/shared/components";
 import Link from "next/link";
+import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils";
+
+// Model to highlight in the quota summary
+const HIGHLIGHT_MODEL = "claude-sonnet-4-6";
+
+/**
+ * Get progress color based on remaining percentage
+ */
+function getQuotaColor(pct) {
+  if (pct > 70) return "text-green-500";
+  if (pct >= 30) return "text-yellow-500";
+  return "text-red-500";
+}
+
+function getQuotaBg(pct) {
+  if (pct > 70) return "bg-green-500";
+  if (pct >= 30) return "bg-yellow-500";
+  return "bg-red-500";
+}
 
 /**
  * Token Swap Pool Card — standalone card for token rotation mode.
- *
- * Clearly separated from Model Routing (MitmToolCard).
- * Has its own enable/disable toggle stored in settings.tokenSwapEnabled.
- * Shows prerequisite status (MITM server + DNS).
- *
- * When enabled:
- *  - MITM intercepts Antigravity requests
- *  - Swaps IDE auth token with pool account token
- *  - Auto-retries on 429 with next account (round-robin)
- *  - Model routing (mitmAlias) is BYPASSED
  */
 export default function TokenSwapPoolCard({ tool, connections = [], serverRunning, dnsActive, onToggle }) {
   const [enabled, setEnabled] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const [now] = useState(() => Date.now());
+  const [quotas, setQuotas] = useState({}); // { [connId]: { quotas: [], error: string|null, loading: bool } }
 
   const fetchEnabled = useCallback(async () => {
     try {
@@ -35,6 +44,42 @@ export default function TokenSwapPoolCard({ tool, connections = [], serverRunnin
   useEffect(() => {
     fetchEnabled();
   }, [fetchEnabled]);
+
+  // Fetch quota for each pool account
+  const fetchQuotas = useCallback(async (accounts) => {
+    if (!accounts || accounts.length === 0) return;
+
+    // Mark all as loading
+    const loadingState = {};
+    accounts.forEach(acc => { loadingState[acc.id] = { quotas: [], error: null, loading: true }; });
+    setQuotas(prev => ({ ...prev, ...loadingState }));
+
+    // Fetch in parallel
+    await Promise.all(accounts.map(async (acc) => {
+      try {
+        const res = await fetch(`/api/usage/${acc.id}`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          setQuotas(prev => ({
+            ...prev,
+            [acc.id]: { quotas: [], error: errData.error || `HTTP ${res.status}`, loading: false },
+          }));
+          return;
+        }
+        const data = await res.json();
+        const parsed = parseQuotaData(tool.tokenSwapProvider || "antigravity", data);
+        setQuotas(prev => ({
+          ...prev,
+          [acc.id]: { quotas: parsed, error: null, loading: false },
+        }));
+      } catch (err) {
+        setQuotas(prev => ({
+          ...prev,
+          [acc.id]: { quotas: [], error: err.message || "Failed", loading: false },
+        }));
+      }
+    }));
+  }, [tool.tokenSwapProvider]);
 
   if (!tool?.supportsTokenSwap) return null;
 
@@ -60,9 +105,65 @@ export default function TokenSwapPoolCard({ tool, connections = [], serverRunnin
   );
   const activeCount = poolAccounts.length;
 
+  // Auto-fetch quotas when enabled and accounts available
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    if (enabled && activeCount > 0) {
+      fetchQuotas(poolAccounts);
+    }
+  }, [enabled, activeCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Prerequisites check
   const prereqsMet = serverRunning && dnsActive;
   const isFullyActive = enabled && prereqsMet && activeCount > 0;
+
+  /**
+   * Render inline quota info for a single account
+   */
+  const renderAccountQuota = (accId) => {
+    const q = quotas[accId];
+    if (!q) return null;
+    if (q.loading) {
+      return (
+        <span className="text-[10px] text-text-muted animate-pulse shrink-0">loading…</span>
+      );
+    }
+    if (q.error) {
+      return (
+        <span className="text-[10px] text-red-400 shrink-0" title={q.error}>⛔ bad account</span>
+      );
+    }
+    if (!q.quotas || q.quotas.length === 0) {
+      return (
+        <span className="text-[10px] text-text-muted shrink-0">no quota data</span>
+      );
+    }
+
+    // Find highlight model, fallback to first quota with data
+    const highlight = q.quotas.find(m =>
+      m.modelKey?.includes(HIGHLIGHT_MODEL) || m.name?.toLowerCase().includes("opus")
+    ) || q.quotas[0];
+
+    if (!highlight) return null;
+
+    const pct = highlight.remainingPercentage !== undefined
+      ? Math.round(highlight.remainingPercentage)
+      : highlight.total > 0
+        ? Math.round(((highlight.total - highlight.used) / highlight.total) * 100)
+        : null;
+
+    if (pct === null) return null;
+
+    return (
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="text-[10px] text-text-muted truncate max-w-[80px]">{highlight.name}</span>
+        <div className="w-12 h-1.5 rounded-full bg-surface-alt overflow-hidden shrink-0">
+          <div className={`h-full rounded-full ${getQuotaBg(pct)}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+        </div>
+        <span className={`text-[10px] font-medium shrink-0 ${getQuotaColor(pct)}`}>{pct}%</span>
+      </div>
+    );
+  };
 
   return (
     <Card padding="xs" className="overflow-hidden">
@@ -142,51 +243,42 @@ export default function TokenSwapPoolCard({ tool, connections = [], serverRunnin
             </div>
           </div>
 
-          {/* Pool accounts */}
+          {/* Pool accounts with quota */}
           <div className="flex flex-col gap-1 px-1">
-            <div className="flex items-center gap-2 mb-0.5">
-              <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">Pool Accounts</p>
-              <span className="text-[10px] text-text-muted">
-                {activeCount > 0 ? `${activeCount} active` : "none"}
-              </span>
-              {activeCount > 1 && (
-                <span className="text-[9px] text-text-muted bg-surface border border-border px-1 py-0.5 rounded">
-                  round-robin
+            <div className="flex items-center justify-between mb-0.5">
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] uppercase tracking-wider text-text-muted font-semibold">Pool Accounts</p>
+                <span className="text-[10px] text-text-muted">
+                  {activeCount > 0 ? `${activeCount} active` : "none"}
                 </span>
+                {activeCount > 1 && (
+                  <span className="text-[9px] text-text-muted bg-surface border border-border px-1 py-0.5 rounded">
+                    round-robin
+                  </span>
+                )}
+              </div>
+              {activeCount > 0 && (
+                <button
+                  onClick={() => fetchQuotas(poolAccounts)}
+                  className="text-[10px] text-text-muted hover:text-primary flex items-center gap-0.5 transition-colors"
+                  title="Refresh quotas"
+                >
+                  <span className="material-symbols-outlined text-[12px]">refresh</span>
+                </button>
               )}
             </div>
 
             {activeCount > 0 ? (
               <>
-                {poolAccounts.map((acc) => {
-                  // Only warn "expires soon" if token has no refreshToken (can't auto-renew)
-                  const hasRefresh = !!acc.refreshToken;
-                  const isExpired = acc.expiresAt && new Date(acc.expiresAt).getTime() < now;
-                  const nearExpiry = !hasRefresh && acc.expiresAt
-                    ? new Date(acc.expiresAt).getTime() - now < 60 * 60 * 1000 // 1h
-                    : false;
-                  const showWarning = nearExpiry || (!hasRefresh && isExpired);
-                  return (
-                    <div key={acc.id} className="flex items-center gap-2 px-1 py-0.5">
-                      <span
-                        className={`material-symbols-outlined text-[14px] shrink-0 ${
-                          showWarning ? "text-amber-500" : "text-green-500"
-                        }`}
-                      >
-                        {showWarning ? "warning" : "check_circle"}
-                      </span>
-                      <span className="flex-1 text-xs text-text-main truncate">
-                        {acc.email || acc.name || acc.id.slice(0, 16)}
-                      </span>
-                      {hasRefresh && (
-                        <span className="text-[10px] text-green-500/70 shrink-0">auto-refresh</span>
-                      )}
-                      {showWarning && (
-                        <span className="text-[10px] text-amber-500 shrink-0">expires soon</span>
-                      )}
-                    </div>
-                  );
-                })}
+                {poolAccounts.map((acc) => (
+                  <div key={acc.id} className="flex items-center gap-2 px-1 py-1 rounded hover:bg-surface-alt/50 transition-colors">
+                    <span className="material-symbols-outlined text-[14px] shrink-0 text-green-500">check_circle</span>
+                    <span className="flex-1 text-xs text-text-main truncate min-w-0">
+                      {acc.email || acc.name || acc.id.slice(0, 16)}
+                    </span>
+                    {renderAccountQuota(acc.id)}
+                  </div>
+                ))}
                 <Link
                   href="/dashboard/providers"
                   className="text-[11px] text-primary hover:underline flex items-center gap-1 px-1 mt-1"
