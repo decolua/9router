@@ -180,6 +180,11 @@ export default function MitmToolCard({
               </div>
             )}
 
+            {/* Quick Action: Re-Launch IDE */}
+            {tool.id === "antigravity" && (
+              <IdeLaunchAction />
+            )}
+
             {/* Info */}
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
@@ -317,3 +322,83 @@ export default function MitmToolCard({
     </>
   );
 }
+
+/**
+ * Sub-component: Re-Launch Antigravity IDE
+ */
+function IdeLaunchAction() {
+  const [status, setStatus] = useState(null); // { installed, running, pids }
+  const [launching, setLaunching] = useState(false);
+  const [result, setResult] = useState(null); // { success, message } | { error }
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/antigravity-ide");
+      if (res.ok) setStatus(await res.json());
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/antigravity-ide");
+        if (res.ok && mounted) setStatus(await res.json());
+      } catch { /* ignore */ }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const handleRelaunch = async () => {
+    setLaunching(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/antigravity-ide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "relaunch" }),
+      });
+      const data = await res.json();
+      setResult(data);
+      // Re-check status after launch
+      setTimeout(fetchStatus, 3000);
+    } catch (err) {
+      setResult({ success: false, error: err.message });
+    }
+    setLaunching(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-1">
+      <button
+        onClick={handleRelaunch}
+        disabled={launching || status?.installed === false}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-border hover:bg-surface-alt transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title={status?.installed === false ? "Antigravity IDE not found" : "Kill & relaunch Antigravity IDE"}
+      >
+        <span className={`material-symbols-outlined text-[14px] ${launching ? "animate-spin" : ""}`}>
+          {launching ? "progress_activity" : "refresh"}
+        </span>
+        {launching ? "Launching…" : "Re-Launch IDE"}
+      </button>
+
+      {/* Status indicator */}
+      {status && (
+        <span className="flex items-center gap-1 text-[10px] text-text-muted">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+            !status.installed ? "bg-gray-400" : status.running ? "bg-green-500" : "bg-red-400"
+          }`} />
+          {!status.installed ? "Not installed" : status.running ? "Running" : "Stopped"}
+        </span>
+      )}
+
+      {/* Result feedback */}
+      {result && !launching && (
+        <span className={`text-[10px] ${result.success ? "text-green-500" : "text-red-400"}`}>
+          {result.success ? "✓" : "✗"} {result.message || result.error}
+        </span>
+      )}
+    </div>
+  );
+}
+
