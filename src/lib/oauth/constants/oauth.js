@@ -63,6 +63,17 @@ export const QWEN_CONFIG = {
   codeChallengeMethod: "S256",
 };
 
+// Qoder OAuth Configuration (Device Token Flow)
+export const QODER_CONFIG = {
+  apiBaseUrl: "https://api2.qoder.sh",
+  deviceTokenUrl: "https://api2.qoder.sh/api/v1/deviceToken/poll",
+  deviceRefreshUrl: "https://api2.qoder.sh/api/v1/deviceToken/refresh",
+  refreshUrl: "https://api2.qoder.sh/api/v3/user/refresh_token",
+  userInfoUrl: "https://api2.qoder.sh/api/v1/userinfo",
+  statusUrl: "https://api2.qoder.sh/api/v3/user/status",
+  loginUrl: "https://qoder.com/login",
+};
+
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = {
   clientId: "10009311001",
@@ -250,6 +261,7 @@ export const PROVIDERS = {
   CODEX: "codex",
   GEMINI: "gemini-cli",
   QWEN: "qwen",
+  QODER: "qoder",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",
   OPENAI: "openai",

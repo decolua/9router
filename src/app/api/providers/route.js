@@ -7,7 +7,7 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +100,7 @@ export async function POST(request) {
 
     // Validation
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
+      FREE_TIER_PROVIDERS[provider] ||
       isOpenAICompatibleProvider(provider) ||
       isAnthropicCompatibleProvider(provider);
 

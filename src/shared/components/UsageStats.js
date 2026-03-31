@@ -191,6 +191,7 @@ export default function UsageStats() {
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
+  const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [period, setPeriod] = useState("7d");
 
@@ -236,14 +237,14 @@ export default function UsageStats() {
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Only update real-time fields from SSE, keep filtered stats intact
-        setStats((prev) => prev ? {
-          ...prev,
+        // Always merge only real-time fields, never overwrite full stats from REST
+        setStats((prev) => ({
+          ...(prev || {}),
           activeRequests: data.activeRequests,
           recentRequests: data.recentRequests,
           errorProvider: data.errorProvider,
           pending: data.pending,
-        } : data);
+        }));
         setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
@@ -443,6 +444,20 @@ export default function UsageStats() {
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
+          <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
+            <button
+              onClick={() => setViewMode("costs")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            >
+              Costs
+            </button>
+            <button
+              onClick={() => setViewMode("tokens")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+            >
+              Tokens
+            </button>
+          </div>
         </div>
         {loading ? spinner : activeTableConfig && (
           <UsageTable
@@ -453,6 +468,7 @@ export default function UsageStats() {
             sortBy={sortBy}
             sortOrder={sortOrder}
             onToggleSort={toggleSort}
+            viewMode={viewMode}
             storageKey={activeTableConfig.storageKey}
             renderSummaryCells={activeTableConfig.renderSummaryCells}
             renderDetailCells={activeTableConfig.renderDetailCells}

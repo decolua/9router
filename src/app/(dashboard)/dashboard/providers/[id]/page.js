@@ -737,7 +737,7 @@ export default function ProviderDetailPage() {
       {providerInfo.notice && !providerInfo.deprecated && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
           <span className="material-symbols-outlined text-[16px] text-text-muted shrink-0">info</span>
-          <p className="text-xs text-text-muted leading-relaxed flex-1">{providerInfo.notice.text}</p>
+          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
