@@ -79,18 +79,30 @@ function isTokenSwapEnabled(provider) {
     if (!fs.existsSync(DB_FILE)) return false;
     const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
     // Explicit toggle — must be enabled in settings
-    if (!db.settings?.tokenSwapEnabled) return false;
-    return getActiveConnections(provider).length > 0;
+    if (!db.settings?.tokenSwapEnabled) {
+      return false;
+    }
+    const active = getActiveConnections(provider);
+    if (active.length === 0) {
+      log(`⚙️ [token-pool] swap enabled in settings but no active ${provider} connections`);
+      return false;
+    }
+    return true;
   } catch { return false; }
 }
 
 function getNextConnection(provider) {
   const connections = getActiveConnections(provider);
   if (connections.length === 0) return null;
-  if (connections.length === 1) return connections[0];
+  if (connections.length === 1) {
+    log(`🎯 [token-pool] selected: "${connections[0].name || connections[0].email || connections[0].id.slice(0, 8)}" (only account)`);
+    return connections[0];
+  }
   const idx = (rrState[provider] || 0) % connections.length;
   rrState[provider] = idx + 1;
-  return connections[idx];
+  const selected = connections[idx];
+  log(`🎯 [token-pool] round-robin[${idx}/${connections.length}]: "${selected.name || selected.email || selected.id.slice(0, 8)}"`);
+  return selected;
 }
 
 function getAllActiveConnections(provider) {
