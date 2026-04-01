@@ -56,17 +56,20 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   ensureInitialized();
   let result = body;
 
-  // Normalize thinking config: remove if lastMessage is not user
-  normalizeThinkingConfig(result);
+  // LOSSLESS PASSTHROUGH: Skip all modifications when same format
+  // This ensures Claude→Claude and OpenAI→OpenAI are truly lossless
+  const isSameFormat = sourceFormat === targetFormat;
 
-  // Always ensure tool_calls have id (some providers require it)
-  ensureToolCallIds(result);
-  
-  // Fix missing tool responses (insert empty tool_result if needed)
-  fixMissingToolResponses(result);
+  if (!isSameFormat) {
+    // Normalize thinking config: remove if lastMessage is not user
+    normalizeThinkingConfig(result);
 
-  // If same format, skip translation steps
-  if (sourceFormat !== targetFormat) {
+    // Always ensure tool_calls have id (some providers require it)
+    ensureToolCallIds(result);
+    
+    // Fix missing tool responses (insert empty tool_result if needed)
+    fixMissingToolResponses(result);
+
     // Step 1: source -> openai (if source is not openai)
     if (sourceFormat !== FORMATS.OPENAI) {
       const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
@@ -84,18 +87,18 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         result = fromOpenAI(model, result, stream, credentials);
       }
     }
-  }
 
-  // Always normalize to clean OpenAI format when target is OpenAI
-  // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
-  if (targetFormat === FORMATS.OPENAI) {
-    result = filterToOpenAIFormat(result);
-  }
+    // Normalize to clean OpenAI format when target is OpenAI
+    // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
+    if (targetFormat === FORMATS.OPENAI) {
+      result = filterToOpenAIFormat(result);
+    }
 
-  // Final step: prepare request for Claude format endpoints
-  if (targetFormat === FORMATS.CLAUDE) {
-    const apiKey = credentials?.accessToken || credentials?.apiKey || null;
-    result = prepareClaudeRequest(result, provider, apiKey);
+    // Final step: prepare request for Claude format endpoints
+    if (targetFormat === FORMATS.CLAUDE) {
+      const apiKey = credentials?.accessToken || credentials?.apiKey || null;
+      result = prepareClaudeRequest(result, provider, apiKey);
+    }
   }
 
   // Antigravity cloaking: rename client tools + inject decoys (anti-ban)
