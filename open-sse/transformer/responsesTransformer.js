@@ -307,6 +307,11 @@ export function createResponsesApiTransformStream(logger = null) {
 
         // Handle text content (may contain <think> tags)
         if (delta.content) {
+          // Close reasoning if we had reasoning_content and now have content
+          if (state.reasoningId && !state.reasoningDone) {
+            closeReasoning(controller);
+          }
+
           let content = delta.content;
 
           if (content.includes("<think>")) {
@@ -333,24 +338,27 @@ export function createResponsesApiTransformStream(logger = null) {
 
           // Regular text content
           if (content) {
-            if (!state.msgItemAdded[idx]) {
-              state.msgItemAdded[idx] = true;
-              const msgId = `msg_${state.responseId}_${idx}`;
-              
+            // Use different output_index if reasoning was emitted
+            const msgIdx = state.reasoningId ? state.reasoningIndex + 1 : idx;
+
+            if (!state.msgItemAdded[msgIdx]) {
+              state.msgItemAdded[msgIdx] = true;
+              const msgId = `msg_${state.responseId}_${msgIdx}`;
+
               emit(controller, "response.output_item.added", {
                 type: "response.output_item.added",
-                output_index: idx,
+                output_index: msgIdx,
                 item: { id: msgId, type: "message", content: [], role: "assistant" }
               });
             }
 
-            if (!state.msgContentAdded[idx]) {
-              state.msgContentAdded[idx] = true;
-              
+            if (!state.msgContentAdded[msgIdx]) {
+              state.msgContentAdded[msgIdx] = true;
+
               emit(controller, "response.content_part.added", {
                 type: "response.content_part.added",
-                item_id: `msg_${state.responseId}_${idx}`,
-                output_index: idx,
+                item_id: `msg_${state.responseId}_${msgIdx}`,
+                output_index: msgIdx,
                 content_index: 0,
                 part: { type: "output_text", annotations: [], logprobs: [], text: "" }
               });
@@ -358,21 +366,23 @@ export function createResponsesApiTransformStream(logger = null) {
 
             emit(controller, "response.output_text.delta", {
               type: "response.output_text.delta",
-              item_id: `msg_${state.responseId}_${idx}`,
-              output_index: idx,
+              item_id: `msg_${state.responseId}_${msgIdx}`,
+              output_index: msgIdx,
               content_index: 0,
               delta: content,
               logprobs: []
             });
 
-            if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
-            state.msgTextBuf[idx] += content;
+            if (!state.msgTextBuf[msgIdx]) state.msgTextBuf[msgIdx] = "";
+            state.msgTextBuf[msgIdx] += content;
           }
         }
 
         // Handle tool_calls
         if (delta.tool_calls) {
-          closeMessage(controller, idx);
+          // Use correct msgIdx if reasoning was emitted
+          const msgIdx = state.reasoningId ? state.reasoningIndex + 1 : idx;
+          closeMessage(controller, msgIdx);
 
           for (const tc of delta.tool_calls) {
             const tcIdx = tc.index ?? 0;
