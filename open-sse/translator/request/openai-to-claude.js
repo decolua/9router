@@ -172,20 +172,44 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // Thinking configuration
-  // Convert reasoning_effort to thinking config for Claude-compatible providers
+  // For Claude 4.6 models: use effort + adaptive thinking (budget_tokens deprecated)
+  // For older Claude models: use budget_tokens
+  const modelLower = model.toLowerCase();
+  const isClaude46 = modelLower.includes('claude') && (
+    modelLower.includes('4-6') ||
+    modelLower.includes('4.6')
+  );
+
   if (body.thinking) {
-    result.thinking = {
-      type: body.thinking.type || "enabled",
-      budget_tokens: body.thinking.budget_tokens || DEFAULT_BUDGET_TOKENS,
-      ...(body.thinking.max_tokens && { max_tokens: body.thinking.max_tokens })
-    };
+    // Explicit thinking config provided
+    if (isClaude46 && !body.thinking.type) {
+      // Default to adaptive for 4.6 models
+      result.thinking = { type: "adaptive" };
+    } else {
+      result.thinking = {
+        type: body.thinking.type || "enabled",
+        ...(body.thinking.budget_tokens && { budget_tokens: body.thinking.budget_tokens }),
+        ...(body.thinking.max_tokens && { max_tokens: body.thinking.max_tokens })
+      };
+    }
+    // Handle output_config.effort if provided
+    if (body.output_config?.effort) {
+      result.output_config = { effort: body.output_config.effort };
+    }
   } else if (body.reasoning_effort) {
-    // Map reasoning_effort to budget_tokens
-    const budgetMap = { low: 1024, medium: 8192, high: 32768 };
-    result.thinking = {
-      type: "enabled",
-      budget_tokens: budgetMap[body.reasoning_effort] || DEFAULT_BUDGET_TOKENS
-    };
+    // Map reasoning_effort based on model version
+    if (isClaude46) {
+      // 4.6 models: use effort + adaptive thinking
+      result.thinking = { type: "adaptive" };
+      result.output_config = { effort: body.reasoning_effort };
+    } else {
+      // Older models: use budget_tokens
+      const budgetMap = { low: 1024, medium: 8192, high: 32768 };
+      result.thinking = {
+        type: "enabled",
+        budget_tokens: budgetMap[body.reasoning_effort] || DEFAULT_BUDGET_TOKENS
+      };
+    }
   }
 
   // Attach toolNameMap to result for response translation
