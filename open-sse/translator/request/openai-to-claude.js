@@ -2,6 +2,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
+import { DEFAULT_BUDGET_TOKENS } from "../../config/runtimeConfig.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -171,11 +172,19 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // Thinking configuration
+  // Convert reasoning_effort to thinking config for Claude-compatible providers
   if (body.thinking) {
     result.thinking = {
       type: body.thinking.type || "enabled",
-      ...(body.thinking.budget_tokens && { budget_tokens: body.thinking.budget_tokens }),
+      budget_tokens: body.thinking.budget_tokens || DEFAULT_BUDGET_TOKENS,
       ...(body.thinking.max_tokens && { max_tokens: body.thinking.max_tokens })
+    };
+  } else if (body.reasoning_effort) {
+    // Map reasoning_effort to budget_tokens
+    const budgetMap = { low: 1024, medium: 8192, high: 32768 };
+    result.thinking = {
+      type: "enabled",
+      budget_tokens: budgetMap[body.reasoning_effort] || DEFAULT_BUDGET_TOKENS
     };
   }
 
