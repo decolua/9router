@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { join, dirname } from "path";
+import { isNineRemoteEnabled } from "@/lib/nineRemoteConfig";
 
 // Use npm from the same Node.js that runs Next.js — ensures 9remote
 // lands in the correct global bin (nvm or system, whichever is active)
@@ -16,6 +17,10 @@ function installPackage() {
 }
 
 export async function POST() {
+  if (!isNineRemoteEnabled()) {
+    return NextResponse.json({ ok: false, error: "9Remote is disabled" }, { status: 404 });
+  }
+
   try {
     await installPackage();
     return NextResponse.json({ ok: true });

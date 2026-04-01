@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import NineRemoteModal from "./NineRemoteModal";
+import { getNineRemotePublicUrl, isNineRemoteEnabled } from "@/lib/nineRemoteConfig";
 
 // step 0-4 từ 9remote SSE: 0=Stopped,1=Preparing,2=Connecting,3=Tunneling,4=Ready
 const STEP = { STOPPED: 0, PREPARING: 1, CONNECTING: 2, TUNNELING: 3, READY: 4 };
@@ -19,11 +20,13 @@ const stepStyle = (step, installed) => {
 };
 
 export default function NineRemoteButton() {
+  const enabled = isNineRemoteEnabled();
   const [isOpen, setIsOpen] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [step, setStep] = useState(STEP.STOPPED);
   const esRef = useRef(null);
   const retryRef = useRef(null);
+  const remoteBaseUrl = getNineRemotePublicUrl();
 
   const scheduleRetry = () => {
     clearTimeout(retryRef.current);
@@ -31,10 +34,12 @@ export default function NineRemoteButton() {
   };
 
   const connect = () => {
+    if (!enabled) return;
+
     esRef.current?.close();
     clearTimeout(retryRef.current);
 
-    const es = new EventSource("http://localhost:2208/api/ui/events");
+    const es = new EventSource(`${remoteBaseUrl}/api/ui/events`);
 
     es.onmessage = (e) => {
       try {
@@ -57,6 +62,8 @@ export default function NineRemoteButton() {
   };
 
   useEffect(() => {
+    if (!enabled) return undefined;
+
     // Check installed once on mount (no polling, just 1 call)
     fetch("/api/9remote/status")
       .then((r) => r.json())
@@ -69,13 +76,15 @@ export default function NineRemoteButton() {
       esRef.current?.close();
       clearTimeout(retryRef.current);
     };
-  }, []);
+  }, [enabled, remoteBaseUrl]);
 
   // When modal closes, reconnect SSE immediately (user may have just started 9remote)
   const handleClose = () => {
     setIsOpen(false);
     setTimeout(connect, 800);
   };
+
+  if (!enabled) return null;
 
   const { color, glow } = stepStyle(step, installed);
   const isPulsing = installed && step >= STEP.PREPARING && step <= STEP.TUNNELING;
