@@ -2,18 +2,10 @@
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3"],
-  outputFileTracingExcludes: {
-    "*": [
-      "**/Cookies/**",
-      "**/AppData/Local/**",
-      "**/node_modules/.cache/**",
-    ],
-  },
   images: {
     unoptimized: true
   },
   env: {},
-  turbopack: {},
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {

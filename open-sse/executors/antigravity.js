@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_PREFIX } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -259,9 +259,9 @@ export class AntigravityExecutor extends BaseExecutor {
 
   /**
    * Cloak tools before sending to Antigravity provider (anti-ban):
-   * - Rename client tools with ide_ prefix
-   * - Inject AG default decoy tools (same names, neutral description/properties)
-   * Returns { cloakedBody, toolNameMap } where toolNameMap maps prefixed → original
+   * - Rename client tools with _ide suffix
+   * - Inject AG default decoy tools after client tools
+   * Returns { cloakedBody, toolNameMap } where toolNameMap maps suffixed → original
    */
   static cloakTools(body) {
     const tools = body.request?.tools;
@@ -270,27 +270,27 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const toolNameMap = new Map();
-    const allDeclarations = [];
+    const clientDeclarations = [];
 
-    // First: add AG decoy tools (to appear first in the list)
-    allDeclarations.push(...AG_DECOY_TOOLS);
-
-    // Second: add renamed client tools
+    // First: collect renamed client tools
     for (const toolGroup of tools) {
       if (!toolGroup.functionDeclarations) continue;
 
       for (const func of toolGroup.functionDeclarations) {
         // Skip if already an AG default tool name
         if (AG_DEFAULT_TOOLS.has(func.name)) {
-          allDeclarations.push(func);
+          clientDeclarations.push(func);
           continue;
         }
 
-        const prefixed = `${AG_TOOL_PREFIX}${func.name}`;
-        toolNameMap.set(prefixed, func.name);
-        allDeclarations.push({ ...func, name: prefixed });
+        const suffixed = `${func.name}${AG_TOOL_SUFFIX}`;
+        toolNameMap.set(suffixed, func.name);
+        clientDeclarations.push({ ...func, name: suffixed });
       }
     }
+
+    // Client tools first, then AG decoy tools
+    const allDeclarations = [...clientDeclarations, ...AG_DECOY_TOOLS];
 
     // Rename tool names in conversation history (contents)
     const cloakedContents = body.request?.contents?.map(msg => {
@@ -303,7 +303,7 @@ export class AntigravityExecutor extends BaseExecutor {
             ...part,
             functionCall: {
               ...part.functionCall,
-              name: `${AG_TOOL_PREFIX}${part.functionCall.name}`
+              name: `${part.functionCall.name}${AG_TOOL_SUFFIX}`
             }
           };
         }
@@ -314,7 +314,7 @@ export class AntigravityExecutor extends BaseExecutor {
             ...part,
             functionResponse: {
               ...part.functionResponse,
-              name: `${AG_TOOL_PREFIX}${part.functionResponse.name}`
+              name: `${part.functionResponse.name}${AG_TOOL_SUFFIX}`
             }
           };
         }
@@ -325,7 +325,7 @@ export class AntigravityExecutor extends BaseExecutor {
       return { ...msg, parts: cloakedParts };
     });
 
-    // Single functionDeclarations group with decoys first, then renamed client tools
+    // Single functionDeclarations group: client tools first, then decoys
     return {
       cloakedBody: {
         ...body,
@@ -340,111 +340,111 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 }
 
-// AG decoy tools — same names as AG native defaults, redirect to ide_ prefixed tools
+// AG decoy tools — same names as AG native defaults, redirect to _ide suffixed tools
 const AG_DECOY_TOOLS = [
   {
     name: "browser_subagent",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "command_status",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "find_by_name",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "generate_image",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "grep_search",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "list_dir",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "list_resources",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "mcp_sequential-thinking_sequentialthinking",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "multi_replace_file_content",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "notify_user",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "read_resource",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "read_terminal",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "read_url_content",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "replace_file_content",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "run_command",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "search_web",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "send_command_input",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "task_boundary",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "view_content_chunk",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "view_file",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   },
   {
     name: "write_to_file",
-    description: "Use ide_ prefixed tools instead",
+    description: "This tool is currently unavailable.",
     parameters: { type: "OBJECT", properties: {}, required: [] }
   }
 ];

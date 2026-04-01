@@ -95,6 +95,7 @@ export async function POST(request) {
     if (!settings.agents) settings.agents = {};
     if (!settings.agents.defaults) settings.agents.defaults = {};
     if (!settings.agents.defaults.model) settings.agents.defaults.model = {};
+    if (!settings.agents.defaults.models) settings.agents.defaults.models = {};
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
@@ -102,7 +103,13 @@ export async function POST(request) {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
     // Update agents.defaults.model.primary
-    settings.agents.defaults.model.primary = `9router/${model}`;
+    const fullModelId = `9router/${model}`;
+    settings.agents.defaults.model.primary = fullModelId;
+
+    // IMPORTANT: Add to allowlist in agents.defaults.models
+    if (!settings.agents.defaults.models[fullModelId]) {
+      settings.agents.defaults.models[fullModelId] = {};
+    }
 
     // Update models.providers.9router
     settings.models.providers["9router"] = {
@@ -158,6 +165,17 @@ export async function DELETE() {
       // Remove providers object if empty
       if (Object.keys(settings.models.providers).length === 0) {
         delete settings.models.providers;
+      }
+    }
+
+    // Remove 9router models from agents.defaults.models allowlist
+    if (settings.agents?.defaults?.models) {
+      const keysToRemove = Object.keys(settings.agents.defaults.models).filter((k) => k.startsWith("9router/"));
+      for (const key of keysToRemove) {
+        delete settings.agents.defaults.models[key];
+      }
+      if (Object.keys(settings.agents.defaults.models).length === 0) {
+        delete settings.agents.defaults.models;
       }
     }
 

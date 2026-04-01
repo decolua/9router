@@ -1,11 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 
-// Encode base64 → base64url (safe for tool_call IDs: only [a-zA-Z0-9_-])
-function toBase64Url(b64) {
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
   if (!chunk) return null;
@@ -23,7 +18,6 @@ export function geminiToOpenAIResponse(chunk, state) {
     state.messageId = response.responseId || `msg_${Date.now()}`;
     state.model = response.modelVersion || "gemini";
     state.functionIndex = 0;
-    state.pendingThoughtSignature = null;
     results.push({
       id: `chatcmpl-${state.messageId}`,
       object: "chat.completion.chunk",
@@ -40,19 +34,66 @@ export function geminiToOpenAIResponse(chunk, state) {
   // Process parts
   if (content?.parts) {
     for (const part of content.parts) {
-      const partThoughtSig = part.thoughtSignature || part.thought_signature || "";
+      const hasThoughtSig = part.thoughtSignature || part.thought_signature;
       const isThought = part.thought === true;
-
-      // Accumulate thoughtSignature across parts: a sig-only part precedes the functionCall part
-      if (partThoughtSig) {
-        state.pendingThoughtSignature = partThoughtSig;
+      
+      // Handle thought signature (thinking mode)
+      if (hasThoughtSig) {
+        const hasTextContent = part.text !== undefined && part.text !== "";
+        const hasFunctionCall = !!part.functionCall;
+        
+        if (hasTextContent) {
+          results.push({
+            id: `chatcmpl-${state.messageId}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: state.model,
+            choices: [{
+              index: 0,
+              delta: isThought 
+                ? { reasoning_content: part.text }
+                : { content: part.text },
+              finish_reason: null
+            }]
+          });
+        }
+        
+        if (hasFunctionCall) {
+          const rawName = part.functionCall.name;
+          // Restore original tool name from mapping (AG cloaking)
+          const fcName = state.toolNameMap?.get(rawName) || rawName;
+          const fcArgs = part.functionCall.args || {};
+          const toolCallIndex = state.functionIndex++;
+          
+          const toolCall = {
+            id: `${fcName}-${Date.now()}-${toolCallIndex}`,
+            index: toolCallIndex,
+            type: "function",
+            function: {
+              name: fcName,
+              arguments: JSON.stringify(fcArgs)
+            }
+          };
+          
+          state.toolCalls.set(toolCallIndex, toolCall);
+          
+          results.push({
+            id: `chatcmpl-${state.messageId}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: state.model,
+            choices: [{
+              index: 0,
+              delta: { tool_calls: [toolCall] },
+              finish_reason: null
+            }]
+          });
+        }
+        continue;
       }
 
-      const hasTextContent = part.text !== undefined && part.text !== "";
-      const hasFunctionCall = !!part.functionCall;
-
-      // Emit reasoning/thought text
-      if (hasTextContent) {
+      // Text content (non-thinking)
+      if (part.text !== undefined && part.text !== "") {
         results.push({
           id: `chatcmpl-${state.messageId}`,
           object: "chat.completion.chunk",
@@ -60,31 +101,22 @@ export function geminiToOpenAIResponse(chunk, state) {
           model: state.model,
           choices: [{
             index: 0,
-            delta: isThought
-              ? { reasoning_content: part.text }
-              : { content: part.text },
+            delta: { content: part.text },
             finish_reason: null
           }]
         });
       }
 
-      // Emit function call, attaching the best available thoughtSignature
-      if (hasFunctionCall) {
+      // Function call
+      if (part.functionCall) {
         const rawName = part.functionCall.name;
         // Restore original tool name from mapping (AG cloaking)
         const fcName = state.toolNameMap?.get(rawName) || rawName;
         const fcArgs = part.functionCall.args || {};
         const toolCallIndex = state.functionIndex++;
-        // Use signature from this part, or the one carried from a preceding part
-        const thoughtSig = partThoughtSig || state.pendingThoughtSignature || "";
-        if (thoughtSig) state.pendingThoughtSignature = null; // consumed
-        // Encode signature using _TSIG_ delimiter and base64url for safe tool_call ID
-        const toolCallId = thoughtSig
-          ? `${fcName}-${Date.now()}-${toolCallIndex}_TSIG_${toBase64Url(thoughtSig)}`
-          : `${fcName}-${Date.now()}-${toolCallIndex}`;
-
+        
         const toolCall = {
-          id: toolCallId,
+          id: `${fcName}-${Date.now()}-${toolCallIndex}`,
           index: toolCallIndex,
           type: "function",
           function: {
@@ -92,9 +124,9 @@ export function geminiToOpenAIResponse(chunk, state) {
             arguments: JSON.stringify(fcArgs)
           }
         };
-
+        
         state.toolCalls.set(toolCallIndex, toolCall);
-
+        
         results.push({
           id: `chatcmpl-${state.messageId}`,
           object: "chat.completion.chunk",
@@ -209,5 +241,4 @@ export function geminiToOpenAIResponse(chunk, state) {
 register(FORMATS.GEMINI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 register(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, null, geminiToOpenAIResponse);
-register(FORMATS.VERTEX, FORMATS.OPENAI, null, geminiToOpenAIResponse);
 

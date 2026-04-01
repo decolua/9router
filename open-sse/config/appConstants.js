@@ -62,8 +62,8 @@ export const CLIENT_METADATA = {
 // Internal anti-loop header
 export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
-// Prefix added to client tools when forwarding to Antigravity provider (anti-ban cloaking)
-export const AG_TOOL_PREFIX = "ide_";
+// Suffix added to client tools when forwarding to Antigravity provider (anti-ban cloaking)
+export const AG_TOOL_SUFFIX = "_ide";
 
 // AG native default tools — kept as decoys with neutral description/properties
 // These names must match exactly what AG sends in the real request log
