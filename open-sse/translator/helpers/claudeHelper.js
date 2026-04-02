@@ -21,7 +21,7 @@ export function hasValidContent(msg) {
 // 2. Merge consecutive same-role messages
 export function fixToolUseOrdering(messages) {
   if (messages.length <= 1) return messages;
-  
+
   // Pass 1: Fix assistant messages with tool_use - remove text after tool_use
   for (const msg of messages) {
     if (msg.role === "assistant" && Array.isArray(msg.content)) {
@@ -30,7 +30,7 @@ export function fixToolUseOrdering(messages) {
         // Keep only: thinking blocks + tool_use blocks (remove text blocks after tool_use)
         const newContent = [];
         let foundToolUse = false;
-        
+
         for (const block of msg.content) {
           if (block.type === "tool_use") {
             foundToolUse = true;
@@ -43,27 +43,27 @@ export function fixToolUseOrdering(messages) {
           }
           // Skip text blocks AFTER tool_use
         }
-        
+
         msg.content = newContent;
       }
     }
   }
-  
+
   // Pass 2: Merge consecutive same-role messages
   const merged = [];
-  
+
   for (const msg of messages) {
     const last = merged[merged.length - 1];
-    
+
     if (last && last.role === msg.role) {
       // Merge content arrays
       const lastContent = Array.isArray(last.content) ? last.content : [{ type: "text", text: last.content }];
       const msgContent = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
-      
+
       // Put tool_result first, then other content
       const toolResults = [...lastContent.filter(b => b.type === "tool_result"), ...msgContent.filter(b => b.type === "tool_result")];
       const otherContent = [...lastContent.filter(b => b.type !== "tool_result"), ...msgContent.filter(b => b.type !== "tool_result")];
-      
+
       last.content = [...toolResults, ...otherContent];
     } else {
       // Ensure content is array
@@ -71,7 +71,7 @@ export function fixToolUseOrdering(messages) {
       merged.push({ role: msg.role, content: [...content] });
     }
   }
-  
+
   return merged;
 }
 
@@ -101,7 +101,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
     // Pass 1: remove cache_control + filter empty messages
     for (let i = 0; i < len; i++) {
       const msg = body.messages[i];
-      
+
       // Remove cache_control from content blocks
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
@@ -131,19 +131,26 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
     let lastAssistantProcessed = false;
     for (let i = filtered.length - 1; i >= 0; i--) {
       const msg = filtered[i];
-      
+
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
-        // Add cache_control to last block of first (from end) assistant with content
+        // Add cache_control to last non-thinking block of first (from end) assistant with content
+        // thinking/redacted_thinking blocks do not support cache_control
         if (!lastAssistantProcessed && msg.content.length > 0) {
-          msg.content[msg.content.length - 1].cache_control = { type: "ephemeral" };
+          for (let j = msg.content.length - 1; j >= 0; j--) {
+            const block = msg.content[j];
+            if (block.type !== "thinking" && block.type !== "redacted_thinking") {
+              block.cache_control = { type: "ephemeral" };
+              break;
+            }
+          }
           lastAssistantProcessed = true;
         }
 
         // Handle thinking blocks for Anthropic endpoint only
-        if (provider === "claude") {
+        if (provider === "claude" || provider?.startsWith("anthropic-compatible")) {
           let hasToolUse = false;
           let hasThinking = false;
-          
+
           // Always replace signature for all thinking blocks
           for (const block of msg.content) {
             if (block.type === "thinking" || block.type === "redacted_thinking") {
@@ -189,7 +196,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
   }
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
-  if (provider === "claude" && apiKey) {
+  if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
     body = applyCloaking(body, apiKey);
   }
 

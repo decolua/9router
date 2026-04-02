@@ -91,11 +91,16 @@ export function openaiToClaudeRequest(model, body, stream) {
     for (let i = result.messages.length - 1; i >= 0; i--) {
       const message = result.messages[i];
       if (message.role === "assistant" && Array.isArray(message.content) && message.content.length > 0) {
-        const lastBlock = message.content[message.content.length - 1];
-        if (lastBlock) {
-          lastBlock.cache_control = { type: "ephemeral" };
-          break;
+        // Find the last block that can have cache_control (not thinking blocks)
+        const validBlockTypes = ["text", "tool_use", "tool_result", "image"];
+        for (let j = message.content.length - 1; j >= 0; j--) {
+          const block = message.content[j];
+          if (validBlockTypes.includes(block.type)) {
+            block.cache_control = { type: "ephemeral" };
+            break;
+          }
         }
+        break;
       }
     }
   }
@@ -141,13 +146,13 @@ Respond ONLY with the JSON object, no other text.`);
 
       const toolData = toolType === "function" && tool.function ? tool.function : tool;
       const originalName = toolData.name;
-      
+
       // Claude OAuth requires prefixed tool names to avoid conflicts
       const toolName = CLAUDE_OAUTH_TOOL_PREFIX + originalName;
-      
+
       // Store mapping for response translation (prefixed → original)
       toolNameMap.set(toolName, originalName);
-      
+
       result.tools.push({
         name: toolName,
         description: toolData.description || "",
@@ -235,6 +240,10 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         } else if (part.type === "tool_use") {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: "tool_use", id: part.id, name: part.name, input: part.input });
+        } else if (part.type === "thinking") {
+          // Include thinking block but strip cache_control (not allowed on thinking blocks)
+          const { cache_control, ...thinkingBlock } = part;
+          blocks.push(thinkingBlock);
         }
       }
     } else if (msg.content) {
@@ -297,17 +306,17 @@ function tryParseJSON(str) {
 // OpenAI -> Claude format for Antigravity (without system prompt modifications)
 function openaiToClaudeRequestForAntigravity(model, body, stream) {
   const result = openaiToClaudeRequest(model, body, stream);
-  
+
   // Remove Claude Code system prompt, keep only user's system messages
   if (result.system && Array.isArray(result.system)) {
-    result.system = result.system.filter(block => 
+    result.system = result.system.filter(block =>
       !block.text || !block.text.includes("You are Claude Code")
     );
     if (result.system.length === 0) {
       delete result.system;
     }
   }
-  
+
   // Strip prefix from tool names for Antigravity (doesn't use Claude OAuth)
   if (result.tools && Array.isArray(result.tools)) {
     result.tools = result.tools.map(tool => {
@@ -320,14 +329,14 @@ function openaiToClaudeRequestForAntigravity(model, body, stream) {
       return tool;
     });
   }
-  
+
   // Strip prefix from tool_use in messages
   if (result.messages && Array.isArray(result.messages)) {
     result.messages = result.messages.map(msg => {
       if (!msg.content || !Array.isArray(msg.content)) {
         return msg;
       }
-      
+
       const updatedContent = msg.content.map(block => {
         if (block.type === "tool_use" && block.name && block.name.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           return {
@@ -337,11 +346,11 @@ function openaiToClaudeRequestForAntigravity(model, body, stream) {
         }
         return block;
       });
-      
+
       return { ...msg, content: updatedContent };
     });
   }
-  
+
   return result;
 }
 

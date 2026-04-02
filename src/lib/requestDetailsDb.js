@@ -65,8 +65,8 @@ async function getObservabilityConfig() {
     const { getSettings } = await import("@/lib/localDb");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.observabilityEnabled === "boolean"
-      ? settings.observabilityEnabled
+    const enabled = typeof settings.enableObservability === "boolean"
+      ? settings.enableObservability
       : envEnabled;
 
     cachedConfig = {
@@ -78,7 +78,7 @@ async function getObservabilityConfig() {
     };
   } catch {
     cachedConfig = {
-      enabled: true,
+      enabled: false,
       maxRecords: DEFAULT_MAX_RECORDS,
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,

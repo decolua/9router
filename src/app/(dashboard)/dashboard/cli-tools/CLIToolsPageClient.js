@@ -187,7 +187,7 @@ export default function CLIToolsPageClient({ machineId }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {!hasActiveProviders && (
+      {/* {!hasActiveProviders && (
         <Card className="border-yellow-500/50 bg-yellow-500/5">
           <div className="flex items-center gap-3">
             <span className="material-symbols-outlined text-yellow-500">warning</span>
@@ -197,7 +197,7 @@ export default function CLIToolsPageClient({ machineId }) {
             </div>
           </div>
         </Card>
-      )}
+      )} */}
       <div className="flex flex-col gap-4">
         {regularTools.map(([toolId, tool]) => renderToolCard(toolId, tool))}
       </div>

@@ -5,10 +5,11 @@ import PropTypes from "prop-types";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select } from "@/shared/components";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -36,6 +37,8 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [suggestedModels, setSuggestedModels] = useState([]);
+  const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -48,7 +51,7 @@ export default function ProviderDetailPage() {
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
       }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
+    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
@@ -74,6 +77,15 @@ export default function ProviderDetailPage() {
       console.log("Error fetching aliases:", error);
     }
   }, []);
+
+  // Fetch free models from Kilo API for kilocode provider
+  useEffect(() => {
+    if (providerId !== "kilocode") return;
+    fetch("/api/providers/kilo/free-models")
+      .then((res) => res.json())
+      .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
+      .catch(() => {});
+  }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -188,6 +200,13 @@ export default function ProviderDetailPage() {
     fetchConnections();
     fetchAliases();
   }, [fetchConnections, fetchAliases]);
+
+  // Fetch suggested models from provider's public API (if configured)
+  useEffect(() => {
+    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+    if (!fetcher) return;
+    fetchSuggestedModels(fetcher).then(setSuggestedModels);
+  }, [providerId]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -528,18 +547,11 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    if (providerInfo.passthroughModels) {
-      return (
-        <PassthroughModelsSection
-          providerAlias={providerAlias}
-          modelAliases={modelAliases}
-          copied={copied}
-          onCopy={copy}
-          onSetAlias={handleSetAlias}
-          onDeleteAlias={handleDeleteAlias}
-        />
-      );
-    }
+    // Combine hardcoded models with Kilo free models (deduplicated)
+    const displayModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ];
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
@@ -547,6 +559,8 @@ export default function ProviderDetailPage() {
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
         // Only show if not already in hardcoded list
+        // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
+        if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
         return !models.some((m) => m.id === modelId) && alias === modelId;
       })
       .map(([alias, fullModel]) => ({
@@ -557,7 +571,7 @@ export default function ProviderDetailPage() {
 
     return (
       <div className="flex flex-wrap gap-3">
-        {models.map((model) => {
+        {displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -576,6 +590,7 @@ export default function ProviderDetailPage() {
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
+              isFree={model.isFree}
             />
           );
         })}
@@ -606,6 +621,36 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
+
+        {/* Suggested models from provider API — show only models not yet added */}
+        {suggestedModels.length > 0 && (() => {
+          const addedFullModels = new Set(Object.values(modelAliases));
+          const notAdded = suggestedModels.filter(
+            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`)
+          );
+          if (notAdded.length === 0) return null;
+          return (
+            <div className="w-full mt-2">
+              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <div className="flex flex-wrap gap-2">
+                {notAdded.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={async () => {
+                      const alias = m.id.split("/").pop();
+                      await handleSetAlias(m.id, alias, providerStorageAlias);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    {m.id.split("/").pop()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -686,6 +731,23 @@ export default function ProviderDetailPage() {
         <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
           <span className="material-symbols-outlined text-[16px] text-text-muted mt-0.5 shrink-0">info</span>
           <p className="text-xs text-text-muted leading-relaxed">{providerInfo.deprecationNotice}</p>
+        </div>
+      )}
+
+      {providerInfo.notice && !providerInfo.deprecated && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
+          <span className="material-symbols-outlined text-[16px] text-text-muted shrink-0">info</span>
+          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.notice.text}</p>
+          {providerInfo.notice.apiKeyUrl && (
+            <a
+              href={providerInfo.notice.apiKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline shrink-0"
+            >
+              Get API Key →
+            </a>
+          )}
         </div>
       )}
 
@@ -824,7 +886,7 @@ export default function ProviderDetailPage() {
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">
-            {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
+            {"Available Models"}
           </h2>
         </div>
         {!!modelsTestError && (
@@ -846,6 +908,13 @@ export default function ProviderDetailPage() {
       ) : providerId === "cursor" ? (
         <CursorAuthModal
           isOpen={showOAuthModal}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowOAuthModal(false)}
+        />
+      ) : providerId === "gitlab" ? (
+        <GitLabAuthModal
+          isOpen={showOAuthModal}
+          providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
         />
@@ -891,13 +960,17 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
-      {!isCompatible && !providerInfo?.passthroughModels && (
+      {!isCompatible && (
         <AddCustomModelModal
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           onSave={async (modelId) => {
-            await handleSetAlias(modelId, modelId, providerStorageAlias);
+            // For passthrough providers (OpenRouter), use last segment as alias to avoid slash conflicts
+            const alias = providerInfo?.passthroughModels
+              ? modelId.split("/").pop()
+              : modelId;
+            await handleSetAlias(modelId, alias, providerStorageAlias);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
@@ -907,7 +980,7 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -931,26 +1004,34 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
         </span>
         <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
         {onTest && (
+          <div className="relative group/btn">
+            <button
+              onClick={onTest}
+              disabled={isTesting}
+              className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+            >
+              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                {isTesting ? "progress_activity" : "science"}
+              </span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {isTesting ? "Testing..." : "Test"}
+            </span>
+          </div>
+        )}
+        <div className="relative group/btn">
           <button
-            onClick={onTest}
-            disabled={isTesting}
-            className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-            title="Test model"
+            onClick={() => onCopy(fullModel, `model-${model.id}`)}
+            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
           >
-            <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-              {isTesting ? "progress_activity" : "science"}
+            <span className="material-symbols-outlined text-sm">
+              {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>
-        )}
-        <button
-          onClick={() => onCopy(fullModel, `model-${model.id}`)}
-          className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-          title="Copy model"
-        >
-          <span className="material-symbols-outlined text-sm">
-            {copied === `model-${model.id}` ? "check" : "content_copy"}
+          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
-        </button>
+        </div>
         {isCustom && (
           <button
             onClick={onDeleteAlias}
@@ -975,6 +1056,7 @@ ModelRow.propTypes = {
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
+  isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
@@ -1102,27 +1184,35 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
         <p className="text-sm font-medium truncate">{modelId}</p>
 
         <div className="flex items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          <button
-            onClick={() => onCopy(fullModel, `model-${modelId}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-            title="Copy model"
-          >
-            <span className="material-symbols-outlined text-sm">
-              {copied === `model-${modelId}` ? "check" : "content_copy"}
-            </span>
-          </button>
-          {onTest && (
+        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <div className="relative group/btn">
             <button
-              onClick={onTest}
-              disabled={isTesting}
-              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
-              title="Test model"
+              onClick={() => onCopy(fullModel, `model-${modelId}`)}
+              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-                {isTesting ? "progress_activity" : "science"}
+              <span className="material-symbols-outlined text-sm">
+                {copied === `model-${modelId}` ? "check" : "content_copy"}
               </span>
             </button>
+            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {copied === `model-${modelId}` ? "Copied!" : "Copy"}
+            </span>
+          </div>
+          {onTest && (
+            <div className="relative group/btn">
+              <button
+                onClick={onTest}
+                disabled={isTesting}
+                className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                  {isTesting ? "progress_activity" : "science"}
+                </span>
+              </button>
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+                {isTesting ? "Testing..." : "Test"}
+              </span>
+            </div>
           )}
         </div>
       </div>

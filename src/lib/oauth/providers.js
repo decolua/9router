@@ -12,6 +12,7 @@ import {
   CODEX_CONFIG,
   GEMINI_CONFIG,
   QWEN_CONFIG,
+  QODER_CONFIG,
   IFLOW_CONFIG,
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
@@ -20,6 +21,8 @@ import {
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
   CLINE_CONFIG,
+  GITLAB_CONFIG,
+  CODEBUDDY_CONFIG,
 } from "./constants/oauth";
 
 // Provider configurations
@@ -410,6 +413,84 @@ const PROVIDERS = {
         throw new Error("Missing account email/phone in user info");
       }
       
+      return { userInfo };
+    },
+    mapTokens: (tokens, extra) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      apiKey: extra?.userInfo?.apiKey,
+      email: extra?.userInfo?.email || extra?.userInfo?.phone,
+      displayName: extra?.userInfo?.nickname || extra?.userInfo?.name,
+    }),
+  },
+
+  qoder: {
+    config: QODER_CONFIG,
+    flowType: "authorization_code",
+    buildAuthUrl: (config, redirectUri, state) => {
+      const params = new URLSearchParams({
+        client_id: config.clientId,
+        response_type: "code",
+        redirect_uri: redirectUri,
+        state: state,
+      });
+      return `${config.authorizeUrl}?${params.toString()}`;
+    },
+    exchangeToken: async (config, code, redirectUri) => {
+      const basicAuth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
+
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          Authorization: `Basic ${basicAuth}`,
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: code,
+          redirect_uri: redirectUri,
+          client_id: config.clientId,
+          client_secret: config.clientSecret,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Token exchange failed: ${error}`);
+      }
+
+      return await response.json();
+    },
+    postExchange: async (tokens) => {
+      // Fetch user info (MUST succeed to get API key)
+      const userInfoRes = await fetch(
+        `${QODER_CONFIG.userInfoUrl}?accessToken=${encodeURIComponent(tokens.access_token)}`,
+        { headers: { Accept: "application/json" } }
+      );
+
+      if (!userInfoRes.ok) {
+        const errorText = await userInfoRes.text();
+        throw new Error(`Failed to fetch user info: ${errorText}`);
+      }
+
+      const result = await userInfoRes.json();
+      if (!result.success) {
+        throw new Error(`User info request failed: ${result.message || "Unknown error"}`);
+      }
+
+      const userInfo = result.data || {};
+
+      if (!userInfo.apiKey || userInfo.apiKey.trim() === "") {
+        throw new Error("Empty API key returned from Qoder");
+      }
+
+      const email = userInfo.email?.trim() || userInfo.phone?.trim();
+      if (!email) {
+        throw new Error("Missing account email/phone in user info");
+      }
+
       return { userInfo };
     },
     mapTokens: (tokens, extra) => ({
@@ -873,6 +954,140 @@ const PROVIDERS = {
       providerSpecificData: { firstName: tokens.firstName, lastName: tokens.lastName },
     }),
   },
+  // GitLab Duo - Authorization Code Flow with PKCE
+  // Supports two login modes via loginMode metadata: "oauth" (default) or "pat"
+  gitlab: {
+    config: GITLAB_CONFIG,
+    flowType: "authorization_code_pkce",
+    buildAuthUrl: (config, redirectUri, state, codeChallenge, meta = {}) => {
+      const baseUrl = meta.baseUrl || config.defaultBaseUrl;
+      const clientId = meta.clientId || "";
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        state,
+        scope: config.scope,
+        code_challenge: codeChallenge,
+        code_challenge_method: config.codeChallengeMethod,
+      });
+      return `${baseUrl}${config.authorizeUrlPath}?${params.toString()}`;
+    },
+    exchangeToken: async (config, code, redirectUri, codeVerifier, state, meta = {}) => {
+      const baseUrl = meta.baseUrl || config.defaultBaseUrl;
+      const clientId = meta.clientId || "";
+      const clientSecret = meta.clientSecret || "";
+      const body = new URLSearchParams({
+        client_id: clientId,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      });
+      if (clientSecret) body.set("client_secret", clientSecret);
+      const response = await fetch(`${baseUrl}${config.tokenUrlPath}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: body.toString(),
+      });
+      if (!response.ok) throw new Error(`GitLab token exchange failed: ${await response.text()}`);
+      const tokens = await response.json();
+      // Fetch user info
+      const userRes = await fetch(`${baseUrl}${config.userInfoUrlPath}`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const user = userRes.ok ? await userRes.json() : {};
+      return { ...tokens, _user: user, _baseUrl: baseUrl, _clientId: clientId };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      scope: tokens.scope,
+      providerSpecificData: {
+        username: tokens._user?.username || "",
+        email: tokens._user?.email || tokens._user?.public_email || "",
+        name: tokens._user?.name || "",
+        baseUrl: tokens._baseUrl,
+        clientId: tokens._clientId,
+        authKind: "oauth",
+      },
+    }),
+  },
+
+  // CodeBuddy (Tencent) - Browser OAuth Polling Flow
+  // 1. POST stateUrl → get { state, authUrl }
+  // 2. Open authUrl in browser
+  // 3. Poll tokenUrl with state until success (code 0) or timeout
+  codebuddy: {
+    config: CODEBUDDY_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const response = await fetch(`${config.stateUrl}?platform=${config.platform}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": config.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "copilot.tencent.com",
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-Product": "SaaS",
+        },
+        body: "{}",
+      });
+      if (!response.ok) throw new Error(`CodeBuddy state request failed: ${await response.text()}`);
+      const data = await response.json();
+      if (data.code !== 0 || !data.data?.state || !data.data?.authUrl) {
+        throw new Error(`CodeBuddy state error: ${data.msg || "missing state/authUrl"}`);
+      }
+      return {
+        device_code: data.data.state,
+        verification_uri: data.data.authUrl,
+        user_code: "",
+        interval: config.pollInterval / 1000,
+        _isCodeBuddy: true,
+      };
+    },
+    pollToken: async (config, deviceCode) => {
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent": config.userAgent,
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Domain": "copilot.tencent.com",
+          "X-No-Authorization": "true",
+          "X-No-User-Id": "true",
+          "X-Product": "SaaS",
+        },
+        body: JSON.stringify({ state: deviceCode }),
+      });
+      if (!response.ok) return { ok: false, data: { error: "request_failed" } };
+      const data = await response.json();
+      // code 11217 = pending, code 0 = success
+      if (data.code === 0 && data.data?.accessToken) {
+        return {
+          ok: true,
+          data: {
+            access_token: data.data.accessToken,
+            refresh_token: data.data.refreshToken || "",
+            token_type: data.data.tokenType || "Bearer",
+          },
+        };
+      }
+      if (data.code === 11217) return { ok: true, data: { error: "authorization_pending" } };
+      return { ok: false, data: { error: data.msg || "unknown_error" } };
+    },
+    mapTokens: (tokens) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: 86400,
+      providerSpecificData: {},
+    }),
+  },
 };
 
 /**
@@ -895,8 +1110,9 @@ export function getProviderNames() {
 
 /**
  * Generate auth data for a provider
+ * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export function generateAuthData(providerName, redirectUri) {
+export function generateAuthData(providerName, redirectUri, meta) {
   const provider = getProvider(providerName);
   const { codeVerifier, codeChallenge, state } = generatePKCE();
 
@@ -905,9 +1121,9 @@ export function generateAuthData(providerName, redirectUri) {
     // Device code flow doesn't have auth URL upfront
     authUrl = null;
   } else if (provider.flowType === "authorization_code_pkce") {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, codeChallenge);
+    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, codeChallenge, meta || {});
   } else {
-    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state);
+    authUrl = provider.buildAuthUrl(provider.config, redirectUri, state, undefined, meta || {});
   }
 
   return {
@@ -924,11 +1140,12 @@ export function generateAuthData(providerName, redirectUri) {
 
 /**
  * Exchange code for tokens
+ * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state) {
+export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta) {
   const provider = getProvider(providerName);
 
-  const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state);
+  const tokens = await provider.exchangeToken(provider.config, code, redirectUri, codeVerifier, state, meta || {});
 
   let extra = null;
   if (provider.postExchange) {
