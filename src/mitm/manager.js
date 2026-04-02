@@ -450,7 +450,9 @@ async function startServer(apiKey, sudoPassword) {
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else if (isSudoAvailable()) {
-    const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
+    // Pass HOME explicitly so os.homedir() resolves to the unprivileged user's home
+    // instead of /root when sudo resets the environment.
+    const inlineCmd = `HOME='${os.homedir()}' ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
       { detached: false, stdio: ["pipe", "pipe", "pipe"] }
