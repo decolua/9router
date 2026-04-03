@@ -532,21 +532,79 @@ async function getCodexUsage(accessToken) {
 
 /**
  * Kiro (AWS CodeWhisperer) Usage
+ *
+ * Two distinct flows:
+ * - Enterprise IDC (no profileArn): Amazon Q GET endpoint works without profileArn
+ * - Builder ID / Social Auth (has profileArn): CodeWhisperer POST → Q GET fallback
  */
 async function getKiroUsage(accessToken, providerSpecificData) {
-  // Default profileArn fallback
-  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
-  const profileArn = providerSpecificData?.profileArn || DEFAULT_PROFILE_ARN;
+  const profileArn = providerSpecificData?.profileArn;
+  // CodeWhisperer is only in us-east-1; Q endpoint also uses us-east-1
+  const Q_ENDPOINT = "https://q.us-east-1.amazonaws.com";
+  const CW_ENDPOINT = "https://codewhisperer.us-east-1.amazonaws.com";
 
-  try {
-    // Try old API first (POST method)
-    const payload = {
-      origin: "AI_EDITOR",
-      profileArn: profileArn,
-      resourceType: "AGENTIC_REQUEST",
+  const parseKiroUsageBreakdown = (data) => {
+    const usageList = data.usageBreakdownList || [];
+    const quotaInfo = {};
+    const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
+
+    usageList.forEach((breakdown) => {
+      // resourceType may be uppercase (e.g. "CREDIT") — normalize to lowercase key
+      const resourceType = (breakdown.resourceType || breakdown.displayName || "unknown").toLowerCase();
+      const used = breakdown.currentUsageWithPrecision || 0;
+      const total = breakdown.usageLimitWithPrecision || 0;
+
+      quotaInfo[resourceType] = {
+        used,
+        total,
+        remaining: Math.max(0, total - used),
+        resetAt,
+        unlimited: false,
+        ...(breakdown.displayName && { displayName: breakdown.displayName }),
+        ...(breakdown.unit && { unit: breakdown.unit }),
+      };
+
+      if (breakdown.freeTrialInfo) {
+        const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
+        const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
+        quotaInfo[`${resourceType}_freetrial`] = {
+          used: freeUsed,
+          total: freeTotal,
+          remaining: Math.max(0, freeTotal - freeUsed),
+          resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry) || resetAt,
+          unlimited: false,
+        };
+      }
+    });
+
+    return quotaInfo;
+  };
+
+  // Enterprise IDC accounts: Q GET endpoint works without profileArn
+  if (!profileArn) {
+    const params = new URLSearchParams({ origin: "AI_EDITOR", resourceType: "AGENTIC_REQUEST" });
+    const response = await fetch(`${Q_ENDPOINT}/getUsageLimits?${params}`, {
+      headers: { "Authorization": `Bearer ${accessToken}`, "Accept": "application/json" },
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "Kiro quota API: token expired or insufficient permissions. Chat may still work.", quotas: {} };
+    }
+    if (!response.ok) {
+      throw new Error(`Kiro Q API error (${response.status}): ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return {
+      plan: data.subscriptionInfo?.subscriptionTitle || "Kiro",
+      quotas: parseKiroUsageBreakdown(data),
+      ...(data.subscriptionInfo && { subscriptionInfo: data.subscriptionInfo }),
     };
+  }
 
-    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com", {
+  // Builder ID / Social Auth: try CodeWhisperer POST first, fall back to Q GET
+  try {
+    const response = await fetch(CW_ENDPOINT, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
@@ -554,127 +612,32 @@ async function getKiroUsage(accessToken, providerSpecificData) {
         "x-amz-target": "AmazonCodeWhispererService.GetUsageLimits",
         "Accept": "application/json",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ origin: "AI_EDITOR", profileArn, resourceType: "AGENTIC_REQUEST" }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-
-      // Handle authentication errors gracefully
-      if (response.status === 403 || response.status === 401) {
-        return {
-          message: "Kiro quota API authentication expired. Chat may still work.",
-          quotas: {}
-        };
-      }
-
-      throw new Error(`Kiro API error (${response.status}): ${errorText}`);
+    if (response.status === 401 || response.status === 403) {
+      return { message: "Kiro quota API: token expired or insufficient permissions. Chat may still work.", quotas: {} };
     }
+    if (!response.ok) throw new Error(`CodeWhisperer API error (${response.status})`);
 
     const data = await response.json();
-
-    // Parse usage data from usageBreakdownList
-    const usageList = data.usageBreakdownList || [];
-    const quotaInfo = {};
-
-    // Parse reset time - supports multiple formats (nextDateReset, resetDate, etc.)
-    const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
-
-    usageList.forEach((breakdown) => {
-      const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
-      const used = breakdown.currentUsageWithPrecision || 0;
-      const total = breakdown.usageLimitWithPrecision || 0;
-
-      quotaInfo[resourceType] = {
-        used,
-        total,
-        remaining: total - used,
-        resetAt,
-        unlimited: false,
-      };
-
-      // Add free trial if available
-      if (breakdown.freeTrialInfo) {
-        const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
-        const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-
-        quotaInfo[`${resourceType}_freetrial`] = {
-          used: freeUsed,
-          total: freeTotal,
-          remaining: freeTotal - freeUsed,
-          resetAt,
-          unlimited: false,
-        };
-      }
+    return { plan: data.subscriptionInfo?.subscriptionTitle || "Kiro", quotas: parseKiroUsageBreakdown(data) };
+  } catch (cwError) {
+    // Fallback: Q GET with profileArn
+    const params = new URLSearchParams({ origin: "AI_EDITOR", profileArn, resourceType: "AGENTIC_REQUEST" });
+    const fallbackResponse = await fetch(`${Q_ENDPOINT}/getUsageLimits?${params}`, {
+      headers: { "Authorization": `Bearer ${accessToken}`, "Accept": "application/json" },
     });
 
-    return {
-      plan: data.subscriptionInfo?.subscriptionTitle || "Kiro",
-      quotas: quotaInfo,
-    };
-  } catch (error) {
-    // Fallback to new API (GET method)
-    try {
-      const params = new URLSearchParams({
-        origin: "AI_EDITOR",
-        profileArn: profileArn,
-        resourceType: "AGENTIC_REQUEST",
-      });
-
-      const fallbackResponse = await fetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Accept": "application/json",
-        },
-      });
-
-      if (!fallbackResponse.ok) {
-        throw new Error(`Fallback API error (${fallbackResponse.status})`);
-      }
-
-      const fallbackData = await fallbackResponse.json();
-
-      // Parse new API response structure
-      const usageList = fallbackData.usageBreakdownList || [];
-      const quotaInfo = {};
-      const resetAt = parseResetTime(fallbackData.nextDateReset || fallbackData.resetDate);
-
-      usageList.forEach((breakdown) => {
-        const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
-        const used = breakdown.currentUsageWithPrecision || 0;
-        const total = breakdown.usageLimitWithPrecision || 0;
-
-        quotaInfo[resourceType] = {
-          used,
-          total,
-          remaining: total - used,
-          resetAt,
-          unlimited: false,
-        };
-
-        // Add free trial if available
-        if (breakdown.freeTrialInfo) {
-          const freeUsed = breakdown.freeTrialInfo.currentUsageWithPrecision || 0;
-          const freeTotal = breakdown.freeTrialInfo.usageLimitWithPrecision || 0;
-
-          quotaInfo[`${resourceType}_freetrial`] = {
-            used: freeUsed,
-            total: freeTotal,
-            remaining: freeTotal - freeUsed,
-            resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry),
-            unlimited: false,
-          };
-        }
-      });
-
-      return {
-        plan: fallbackData.subscriptionInfo?.subscriptionTitle || "Kiro",
-        quotas: quotaInfo,
-      };
-    } catch (fallbackError) {
-      throw new Error(`Failed to fetch Kiro usage: ${error.message} | Fallback: ${fallbackError.message}`);
+    if (!fallbackResponse.ok) {
+      throw new Error(`Failed to fetch Kiro usage: ${cwError.message} | Q fallback: ${fallbackResponse.status}`);
     }
+
+    const fallbackData = await fallbackResponse.json();
+    return {
+      plan: fallbackData.subscriptionInfo?.subscriptionTitle || "Kiro",
+      quotas: parseKiroUsageBreakdown(fallbackData),
+    };
   }
 }
 
