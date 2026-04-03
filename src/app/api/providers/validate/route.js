@@ -9,7 +9,7 @@ export async function POST(request) {
     const body = await request.json();
     const { provider, apiKey } = body;
 
-    if (!provider || !apiKey) {
+    if (!provider || (!apiKey && provider !== "ollama-local")) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
     }
 
@@ -189,9 +189,9 @@ export async function POST(request) {
             chutes: "https://llm.chutes.ai/v1/models",
             nvidia: "https://integrate.api.nvidia.com/v1/models"
           };
-          const res = await fetch(endpoints[provider], {
-            headers: { "Authorization": `Bearer ${apiKey}` },
-          });
+          const headers = {};
+          if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+          const res = await fetch(endpoints[provider], { headers });
           isValid = res.ok;
           break;
         }
