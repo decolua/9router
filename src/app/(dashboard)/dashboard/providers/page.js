@@ -362,16 +362,18 @@ export default function ProvidersPage() {
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(APIKEY_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
+          {Object.entries(APIKEY_PROVIDERS)
+            .filter(([, info]) => (info.serviceKinds ?? ["llm"]).includes("llm"))
+            .map(([key, info]) => (
+              <ApiKeyProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "apikey")}
+                authType="apikey"
+                onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+              />
+            ))}
         </div>
       </div>
 
