@@ -92,6 +92,12 @@ if (!global._statsEmitter) {
 }
 export const statsEmitter = global._statsEmitter;
 
+// Safety timers — force-clear pending counts after 1 min if END was never called
+if (!global._pendingTimers) global._pendingTimers = {};
+const pendingTimers = global._pendingTimers;
+
+const PENDING_TIMEOUT_MS = 60 * 1000; // 1 minute
+
 /**
  * Track a pending request
  * @param {string} model
@@ -102,6 +108,7 @@ export const statsEmitter = global._statsEmitter;
  */
 export function trackPendingRequest(model, provider, connectionId, started, error = false) {
   const modelKey = provider ? `${model} (${provider})` : model;
+  const timerKey = `${connectionId}|${modelKey}`;
 
   // Track by model
   if (!pendingRequests.byModel[modelKey]) pendingRequests.byModel[modelKey] = 0;
@@ -109,10 +116,28 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 
   // Track by account
   if (connectionId) {
-    const accountKey = connectionId;
-    if (!pendingRequests.byAccount[accountKey]) pendingRequests.byAccount[accountKey] = {};
-    if (!pendingRequests.byAccount[accountKey][modelKey]) pendingRequests.byAccount[accountKey][modelKey] = 0;
-    pendingRequests.byAccount[accountKey][modelKey] = Math.max(0, pendingRequests.byAccount[accountKey][modelKey] + (started ? 1 : -1));
+    if (!pendingRequests.byAccount[connectionId]) pendingRequests.byAccount[connectionId] = {};
+    if (!pendingRequests.byAccount[connectionId][modelKey]) pendingRequests.byAccount[connectionId][modelKey] = 0;
+    pendingRequests.byAccount[connectionId][modelKey] = Math.max(0, pendingRequests.byAccount[connectionId][modelKey] + (started ? 1 : -1));
+  }
+
+  if (started) {
+    // Safety timeout: force-clear if END is never called (client disconnect, crash, etc.)
+    clearTimeout(pendingTimers[timerKey]);
+    pendingTimers[timerKey] = setTimeout(() => {
+      delete pendingTimers[timerKey];
+      if (pendingRequests.byModel[modelKey] > 0) {
+        pendingRequests.byModel[modelKey] = 0;
+      }
+      if (connectionId && pendingRequests.byAccount[connectionId]?.[modelKey] > 0) {
+        pendingRequests.byAccount[connectionId][modelKey] = 0;
+      }
+      statsEmitter.emit("pending");
+    }, PENDING_TIMEOUT_MS);
+  } else {
+    // END called normally — cancel the safety timer
+    clearTimeout(pendingTimers[timerKey]);
+    delete pendingTimers[timerKey];
   }
 
   // Track error provider (auto-clears after 10s)
