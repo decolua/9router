@@ -15,6 +15,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -56,14 +57,26 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   reqLogger.logRawRequest(body);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
-  let translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, modelCaps);
-  if (!translatedBody) {
-    trackPendingRequest(model, provider, connectionId, false, true);
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+  // Native passthrough: CLI tool and provider are the same ecosystem
+  // Skip all translation/normalization — only model and Bearer are swapped
+  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
+  const passthrough = isNativePassthrough(clientTool, provider);
+
+  let translatedBody;
+  let toolNameMap;
+  if (passthrough) {
+    log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
+    translatedBody = { ...body, model };
+  } else {
+    translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, modelCaps);
+    if (!translatedBody) {
+      trackPendingRequest(model, provider, connectionId, false, true);
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+    }
+    toolNameMap = translatedBody._toolNameMap;
+    delete translatedBody._toolNameMap;
+    translatedBody.model = model;
   }
-  const toolNameMap = translatedBody._toolNameMap;
-  delete translatedBody._toolNameMap;
-  translatedBody.model = model;
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
