@@ -3,10 +3,15 @@ import { spawn } from "child_process";
 import { join, dirname } from "path";
 import os from "os";
 import { setRemoteProcess } from "@/lib/9remoteManager";
+import { isNineRemoteEnabled } from "@/lib/nineRemoteConfig";
 
 const bin9remote = join(dirname(process.execPath), "9remote");
 
 export async function POST() {
+  if (!isNineRemoteEnabled()) {
+    return NextResponse.json({ ok: false, error: "9Remote is disabled" }, { status: 404 });
+  }
+
   try {
     const nodeDir = dirname(process.execPath);
     const existingPath = process.env.PATH || "";

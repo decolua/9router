@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { getNineRemotePublicUrl } from "@/lib/nineRemoteConfig";
 
 const S = {
   CHECKING: "checking",
@@ -29,6 +30,7 @@ const BULLETS = [
 ];
 
 export default function NineRemoteModal({ isOpen, onClose, onInstalled }) {
+  const remoteBaseUrl = getNineRemotePublicUrl();
   const [state, setState] = useState(S.CHECKING);
   const [errorMsg, setErrorMsg] = useState("");
   const pollRef = useRef(null);
@@ -119,7 +121,7 @@ export default function NineRemoteModal({ isOpen, onClose, onInstalled }) {
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
         <div className="relative rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200" style={{ width: 480, height: "90vh" }}>
           <iframe
-            src="http://localhost:2208"
+            src={remoteBaseUrl}
             className="border-0 block w-full h-full"
             title="9Remote UI"
           />
