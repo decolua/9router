@@ -6,6 +6,8 @@ import os from "node:os";
 import fs from "node:fs";
 import lockfile from "proper-lockfile";
 
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
 // Get app name - fixed constant to avoid Windows path issues in standalone build
@@ -65,7 +67,8 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -101,6 +104,7 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
     },
     pricing: {},
   };
