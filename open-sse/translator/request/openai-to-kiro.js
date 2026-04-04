@@ -20,8 +20,8 @@ function convertMessages(messages, tools, model) {
   let pendingImages = [];
   let currentRole = null;
 
-  // Only Claude models support images in Kiro
-  const supportsImages = model && model.toLowerCase().includes("claude");
+  // Image support is pre-filtered by caps in translateRequest before reaching here
+  const supportsImages = true;
 
   const flushPending = () => {
     if (currentRole === "user") {

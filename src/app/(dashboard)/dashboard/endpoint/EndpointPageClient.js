@@ -446,7 +446,13 @@ export default function APIPageClient({ machineId }) {
               <Button
                 variant="primary"
                 icon="cloud_upload"
-                onClick={() => setShowEnableModal(true)}
+                onClick={() => {
+                  if (!requireApiKey) {
+                    setTunnelStatus({ type: "error", message: "Security required: Enable \"Require API key\" before activating the tunnel." });
+                    return;
+                  }
+                  setShowEnableModal(true);
+                }}
                 disabled={tunnelLoading}
                 className="bg-linear-to-r from-primary to-blue-500 hover:from-primary-hover hover:to-blue-600"
               >

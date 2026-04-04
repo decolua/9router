@@ -428,11 +428,15 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   return envelope;
 }
 
+// Detect if model should use Claude backend in Antigravity
+// Claude models have specific ID patterns — more reliable than caps at routing level
+function isClaudeModel(model) {
+  return model.toLowerCase().includes("claude");
+}
+
 // OpenAI -> Antigravity (Sandbox Cloud Code with wrapper)
 export function openaiToAntigravityRequest(model, body, stream, credentials = null) {
-  const isClaude = model.toLowerCase().includes("claude");
-
-  if (isClaude) {
+  if (isClaudeModel(model)) {
     const claudeRequest = openaiToClaudeRequestForAntigravity(model, body, stream);
     return wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials);
   }
