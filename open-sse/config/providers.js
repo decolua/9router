@@ -79,10 +79,6 @@ export const PROVIDERS = {
   qwen: {
     baseUrl: "https://portal.qwen.ai/v1/chat/completions",
     format: "openai",
-    headers: {
-      "User-Agent": "google-api-nodejs-client/9.15.1",
-      "X-Goog-Api-Client": "gl-node/22.17.0"
-    },
     clientId: "f0304373b74a44d2b584a3fb70ca9e56",
     tokenUrl: "https://chat.qwen.ai/api/v1/oauth2/token",
     authUrl: "https://chat.qwen.ai/api/v1/oauth2/device/code"
