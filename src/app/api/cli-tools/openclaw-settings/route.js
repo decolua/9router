@@ -16,7 +16,7 @@ const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json
 const checkOpenClawInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where openclaw" : "command -v openclaw";
+    const command = isWindows ? "where openclaw" : "which openclaw";
     await execAsync(command, { windowsHide: true });
     return true;
   } catch {
