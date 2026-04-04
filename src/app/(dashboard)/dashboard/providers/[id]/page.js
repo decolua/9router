@@ -610,6 +610,7 @@ export default function ProviderDetailPage() {
             onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelId === model.id}
             isCustom
+            isFree={false}
           />
         ))}
 
