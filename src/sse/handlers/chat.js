@@ -187,6 +187,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     }
 
+    // Track if credentials were refreshed during this request
+    let credentialsWereRefreshed = false;
+
     // Use shared chatCore
     const chatSettings = await getSettings();
     const result = await handleChatCore({
@@ -202,6 +205,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
+        credentialsWereRefreshed = true; // Mark that refresh happened
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
@@ -216,8 +220,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    // Mark account unavailable with refresh context
+    const { shouldFallback } = await markAccountUnavailable(
+      credentials.connectionId, 
+      result.status, 
+      result.error, 
+      provider, 
+      model,
+      { credentialsRefreshed: credentialsWereRefreshed }
+    );
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);

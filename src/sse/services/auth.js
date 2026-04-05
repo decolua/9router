@@ -1,11 +1,75 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey } from "open-sse/services/accountFallback.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
+import { getUsageForProvider } from "open-sse/services/usage.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+// Quota cache to avoid frequent API calls
+const quotaCache = new Map(); // key: connectionId:model, value: { resetAt, cachedAt }
+const QUOTA_CACHE_TTL = 60 * 1000; // 1 minute cache
+
+/**
+ * Query real quota reset time from provider API
+ * @param {object} connection - Connection object
+ * @param {string|null} model - Model name
+ * @returns {string|null} ISO timestamp, or null if query fails
+ */
+async function getQuotaResetTime(connection, model) {
+  try {
+    // Check cache first
+    const cacheKey = `${connection.id}:${model || '__all'}`;
+    const cached = quotaCache.get(cacheKey);
+    if (cached && (Date.now() - cached.cachedAt < QUOTA_CACHE_TTL)) {
+      log.debug("AUTH", `Using cached quota resetAt for ${connection.id}`);
+      return cached.resetAt;
+    }
+
+    // Query quota from provider
+    log.debug("AUTH", `Querying quota resetAt for ${connection.provider}/${model || 'all'}`);
+    const usage = await getUsageForProvider(connection);
+
+    if (!usage || !usage.quotas) {
+      log.debug("AUTH", `No quota data available for ${connection.provider}`);
+      return null;
+    }
+
+    // Find resetAt for the specific model or fallback to general quota
+    let resetAt = null;
+
+    // Priority 1: Model-specific quota
+    if (model && usage.quotas[model]?.resetAt) {
+      resetAt = usage.quotas[model].resetAt;
+      log.debug("AUTH", `Found model-specific resetAt for ${model}: ${resetAt}`);
+    }
+    // Priority 2: General session/weekly quota
+    else {
+      for (const [key, quota] of Object.entries(usage.quotas)) {
+        if (quota.resetAt) {
+          resetAt = quota.resetAt;
+          log.debug("AUTH", `Found general resetAt from ${key}: ${resetAt}`);
+          break;
+        }
+      }
+    }
+
+    if (resetAt) {
+      // Cache the result
+      quotaCache.set(cacheKey, { resetAt, cachedAt: Date.now() });
+      log.info("AUTH", `Got quota resetAt from server: ${resetAt}`);
+      return resetAt;
+    }
+
+    log.debug("AUTH", `No resetAt found in quota data`);
+    return null;
+  } catch (error) {
+    log.warn("AUTH", `Failed to query quota resetAt: ${error.message}`);
+    return null;
+  }
+}
 
 /**
  * Get provider credentials from localDb
@@ -38,8 +102,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out invalid, model-locked and excluded connections
     const availableConnections = connections.filter(c => {
+      if (c.testStatus === "invalid") return false; // Skip permanently invalid accounts
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
@@ -49,9 +114,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      const invalid = c.testStatus === "invalid";
+      if (excluded || locked || invalid) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${invalid ? "invalid" : ""} ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
       }
     });
 
@@ -155,15 +221,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
 /**
  * Mark account+model as unavailable — locks modelLock_${model} in DB.
- * All errors (429, 401, 5xx, etc.) lock per model, not per account.
+ * For 429 errors, tries to use real quota resetAt from server.
+ * For 401/403 errors, distinguishes between auth failure after refresh vs refresh failure.
  * @param {string} connectionId
  * @param {number} status - HTTP status code from upstream
  * @param {string} errorText
  * @param {string|null} provider
  * @param {string|null} model - The specific model that triggered the error
+ * @param {object} options - Additional context
+ * @param {boolean} options.credentialsRefreshed - Whether token refresh was attempted and succeeded
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, options = {}) {
+  const { credentialsRefreshed = false } = options;
+  
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -171,21 +242,47 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  // Try to get real quota reset time for 429 errors
+  let actualResetAt = null;
+  if (status === 429 && conn) {
+    actualResetAt = await getQuotaResetTime(conn, model);
+  }
 
-  await updateProviderConnection(connectionId, {
+  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+
+  // Use real resetAt if available, otherwise use local backoff calculation
+  const lockUpdate = actualResetAt
+    ? { [getModelLockKey(model)]: actualResetAt }
+    : buildModelLockUpdate(model, cooldownMs);
+
+  // Determine testStatus based on error type
+  let testStatus = "unavailable";
+  const isAuthError = (status === 401 || status === 403);
+  
+  const updateData = {
     ...lockUpdate,
-    testStatus: "unavailable",
+    testStatus,
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel
-  });
+    backoffLevel: actualResetAt ? 0 : (newBackoffLevel ?? backoffLevel) // Reset backoff if using server time
+  };
+
+  if (isAuthError) {
+    // 401/403 → mark as unavailable and disable account
+    updateData.isActive = false;
+    log.warn("AUTH", `Auth error [${status}] - disabling account (set isActive=false)`);
+  }
+
+  await updateProviderConnection(connectionId, updateData);
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  const resetInfo = actualResetAt ? "(server resetAt)" : "(local backoff)";
+  const lockValue = lockUpdate[lockKey];
+  const statusSuffix = testStatus === "invalid" ? " [INVALID]" : "";
+  
+  log.warn("AUTH", `${connName} locked ${lockKey} until ${lockValue} ${resetInfo} [${status}]${statusSuffix}`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
