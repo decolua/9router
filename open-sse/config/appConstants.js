@@ -65,6 +65,34 @@ export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local
 // Suffix added to client tools when forwarding to Antigravity provider (anti-ban cloaking)
 export const AG_TOOL_SUFFIX = "_ide";
 
+// Suffix added to client tools when forwarding to Claude provider (anti-ban cloaking)
+export const CLAUDE_TOOL_SUFFIX = "_ide";
+
+// CC native default tools — these are Claude Code's own tools, kept as decoys
+// Client tools matching these names are skipped (not renamed), others get _cc suffix
+export const CC_DEFAULT_TOOLS = new Set([
+  "Task",
+  "TaskOutput",
+  "TaskStop",
+  "TaskCreate",
+  "TaskGet",
+  "TaskUpdate",
+  "TaskList",
+  "Bash",
+  "Glob",
+  "Grep",
+  "Read",
+  "Edit",
+  "Write",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+  "AskUserQuestion",
+  "Skill",
+  "EnterPlanMode",
+  "ExitPlanMode",
+]);
+
 // AG native default tools — kept as decoys with neutral description/properties
 // These names must match exactly what AG sends in the real request log
 export const AG_DEFAULT_TOOLS = new Set([
@@ -115,7 +143,7 @@ export const LOAD_CODE_ASSIST_METADATA = {
 };
 
 // System prompts
-export const CLAUDE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
 
 // OAuth endpoints
