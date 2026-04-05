@@ -87,6 +87,8 @@ export function convertResponsesApiFormat(body) {
           tool_calls: []
         };
       }
+      // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
+      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: "function",

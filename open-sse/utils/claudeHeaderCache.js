@@ -19,6 +19,7 @@ const CLAUDE_IDENTITY_HEADERS = [
   "x-stainless-arch",
   "x-stainless-os",
   "x-stainless-timeout",
+  "x-claude-code-session-id",
   "package-version",
   "runtime-version",
   "os",

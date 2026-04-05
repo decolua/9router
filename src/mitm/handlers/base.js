@@ -1,6 +1,9 @@
 const { log, err } = require("../logger");
 
-const ROUTER_BASE = "http://localhost:20128";
+const DEFAULT_LOCAL_ROUTER = "http://localhost:20128";
+const ROUTER_BASE = String(process.env.MITM_ROUTER_BASE || DEFAULT_LOCAL_ROUTER)
+  .trim()
+  .replace(/\/+$/, "") || DEFAULT_LOCAL_ROUTER;
 const API_KEY = process.env.ROUTER_API_KEY;
 
 /**

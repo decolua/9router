@@ -1,6 +1,7 @@
 import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHelper.js";
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
+import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
@@ -51,10 +52,37 @@ function ensureInitialized() {
   require("./response/ollama-to-openai.js");
 }
 
+// Strip multimodal content blocks (image/audio/video) from messages if model doesn't support them
+function stripUnsupportedMultimodal(body, multimodal = {}) {
+  if (!body.messages || !Array.isArray(body.messages)) return;
+  for (const msg of body.messages) {
+    if (!Array.isArray(msg.content)) continue;
+    msg.content = msg.content.filter(part => {
+      if (part.type === "image_url" || part.type === "image") return multimodal.image === true;
+      if (part.type === "audio_url" || part.type === "input_audio") return multimodal.audio === true;
+      return true; // keep text, tool_use, tool_result, etc.
+    });
+    // If content array becomes empty after filtering, replace with empty string to avoid API errors
+    if (msg.content.length === 0) msg.content = "";
+  }
+}
+
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, caps = null, connectionId = null) {
   ensureInitialized();
   let result = body;
+
+  // Apply model capability guards before translation
+  if (caps) {
+    // Strip multimodal content if model doesn't support it
+    stripUnsupportedMultimodal(result, caps.multimodal || {});
+
+    // Strip thinking config if model doesn't support thinking
+    if (!caps.thinking) {
+      delete result.thinking;
+      delete result.reasoning_effort;
+    }
+  }
 
   // Normalize thinking config: remove if lastMessage is not user
   normalizeThinkingConfig(result);
@@ -95,7 +123,20 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
-    result = prepareClaudeRequest(result, provider, apiKey);
+    result = prepareClaudeRequest(result, provider, apiKey, connectionId);
+  }
+
+  // Claude cloaking: rename client tools with _cc suffix (anti-ban)
+  // Only for claude provider (not anthropic-compatible-*) with OAuth token
+  if (provider === "claude") {
+    const apiKey = credentials?.accessToken || credentials?.apiKey || null;
+    if (apiKey?.includes("sk-ant-oat")) {
+      const { body: cloakedBody, toolNameMap } = cloakClaudeTools(result);
+      result = cloakedBody;
+      if (toolNameMap?.size > 0) {
+        result._toolNameMap = toolNameMap;
+      }
+    }
   }
 
   // Antigravity cloaking: rename client tools + inject decoys (anti-ban)

@@ -1,11 +1,13 @@
 // Import directly from file to avoid pulling in server-side dependencies via index.js
 export {
   PROVIDER_MODELS,
+  MODEL_CAPS,
   getProviderModels,
   getDefaultModel,
   isValidModel as isValidModelCore,
   findModelName,
   getModelTargetFormat,
+  getModelCaps,
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId
 } from "open-sse/config/providerModels.js";

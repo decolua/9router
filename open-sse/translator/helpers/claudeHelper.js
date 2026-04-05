@@ -2,6 +2,7 @@
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { adjustMaxTokens } from "./maxTokensHelper.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
+import { deriveSessionId } from "../../utils/sessionManager.js";
 
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
@@ -81,7 +82,7 @@ export function fixToolUseOrdering(messages) {
 // - Add thinking block for Anthropic endpoint (provider === "claude")
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
-export function prepareClaudeRequest(body, provider = null, apiKey = null) {
+export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null) {
   // 1. System: remove all cache_control, add only to last block with ttl 1h
   if (body.system && Array.isArray(body.system)) {
     body.system = body.system.map((block, i) => {
@@ -196,8 +197,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null) {
   }
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
+  // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
   if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
-    body = applyCloaking(body, apiKey);
+    const sessionId = connectionId ? deriveSessionId(connectionId) : null;
+    body = applyCloaking(body, apiKey, sessionId);
   }
 
   return body;

@@ -6,6 +6,8 @@ import os from "node:os";
 import fs from "node:fs";
 import lockfile from "proper-lockfile";
 
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
 // Get app name - fixed constant to avoid Windows path issues in standalone build
@@ -65,7 +67,8 @@ const defaultData = {
     observabilityMaxJsonSize: 1024,
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
-    outboundNoProxy: ""
+    outboundNoProxy: "",
+    mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -101,6 +104,7 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
     },
     pricing: {},
   };
@@ -1076,93 +1080,65 @@ export async function getCloudUrl() {
 
 /**
  * Get pricing configuration
- * Returns merged user pricing with defaults
+ * Returns merged: PROVIDER_PRICING defaults + user overrides
  */
 export async function getPricing() {
   const db = await getDb();
   const userPricing = db.data.pricing || {};
 
-  // Import default pricing
-  const { getDefaultPricing } = await import("@/shared/constants/pricing.js");
-  const defaultPricing = getDefaultPricing();
+  const { PROVIDER_PRICING } = await import("@/shared/constants/pricing.js");
 
-  // Merge user pricing with defaults
-  // User pricing overrides defaults for specific provider/model combinations
-  const mergedPricing = {};
+  // Deep merge PROVIDER_PRICING + user overrides
+  const merged = {};
 
-  for (const [provider, models] of Object.entries(defaultPricing)) {
-    mergedPricing[provider] = { ...models };
-
-    // Apply user overrides if they exist
+  for (const [provider, models] of Object.entries(PROVIDER_PRICING)) {
+    merged[provider] = { ...models };
     if (userPricing[provider]) {
       for (const [model, pricing] of Object.entries(userPricing[provider])) {
-        if (mergedPricing[provider][model]) {
-          mergedPricing[provider][model] = { ...mergedPricing[provider][model], ...pricing };
-        } else {
-          mergedPricing[provider][model] = pricing;
-        }
+        merged[provider][model] = merged[provider][model]
+          ? { ...merged[provider][model], ...pricing }
+          : pricing;
       }
     }
   }
 
-  // Add any user-only pricing entries
+  // User-only providers not in PROVIDER_PRICING
   for (const [provider, models] of Object.entries(userPricing)) {
-    if (!mergedPricing[provider]) {
-      mergedPricing[provider] = { ...models };
+    if (!merged[provider]) {
+      merged[provider] = { ...models };
     } else {
       for (const [model, pricing] of Object.entries(models)) {
-        if (!mergedPricing[provider][model]) {
-          mergedPricing[provider][model] = pricing;
-        }
+        if (!merged[provider][model]) merged[provider][model] = pricing;
       }
     }
   }
 
-  return mergedPricing;
+  return merged;
 }
 
 /**
- * Get pricing for a specific provider and model
+ * Get pricing for a specific provider and model.
+ * Delegates to getPricingForModel in pricing.js which handles the full fallback chain:
+ *   1. PROVIDER_PRICING[provider][model]  — provider-specific override
+ *   2. MODEL_PRICING[model]               — canonical model price
+ *   3. PATTERN_PRICING                    — glob pattern match
+ *
+ * Also checks user DB overrides first.
  */
 export async function getPricingForModel(provider, model) {
-  const pricing = await getPricing();
+  if (!model) return null;
 
-  // Try direct lookup
-  if (pricing[provider]?.[model]) {
-    return pricing[provider][model];
+  const db = await getDb();
+  const userPricing = db.data.pricing || {};
+
+  // User override takes top priority
+  if (provider && userPricing[provider]?.[model]) {
+    return userPricing[provider][model];
   }
 
-  // Try mapping provider ID to alias
-  // We need to duplicate the mapping here or import it
-  // Since we can't easily import from open-sse, we'll implement the mapping locally
-  const PROVIDER_ID_TO_ALIAS = {
-    claude: "cc",
-    codex: "cx",
-    "gemini-cli": "gc",
-    qwen: "qw",
-    iflow: "if",
-    antigravity: "ag",
-    github: "gh",
-    kiro: "kr",
-    openai: "openai",
-    anthropic: "anthropic",
-    gemini: "gemini",
-    openrouter: "openrouter",
-    glm: "glm",
-    kimi: "kimi",
-    minimax: "minimax",
-  };
-
-  const alias = PROVIDER_ID_TO_ALIAS[provider];
-  if (alias && pricing[alias]) {
-    return pricing[alias][model] || null;
-  }
-
-  // Fallback: strip vendor prefix (e.g. "deepseek/deepseek-chat" → "deepseek-chat")
-  // then lookup in MODEL_PRICING (provider-agnostic explicit map)
-  const { MODEL_PRICING } = await import("@/shared/constants/pricing.js");
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  return MODEL_PRICING[baseModel] || MODEL_PRICING[model] || null;
+  // Delegate to constants fallback chain
+  const { getPricingForModel: resolve } = await import("@/shared/constants/pricing.js");
+  return resolve(provider, model);
 }
 
 /**
