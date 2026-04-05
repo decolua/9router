@@ -396,9 +396,7 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
   ],
-  openrouter: [
-    // { id: "openrouter/free", name: "Free Models (Auto)" },
-  ],
+  openrouter: [],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
