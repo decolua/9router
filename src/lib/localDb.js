@@ -69,6 +69,10 @@ const defaultData = {
     outboundProxyUrl: "",
     outboundNoProxy: "",
     mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+    webhookEnabled: false,
+    webhookUrls: [],
+    webhookThrottleMs: 300000,
+    webhookErrorCodes: [401, 403, 429, 500, 502, 503],
   },
   pricing: {} // NEW: pricing configuration
 };
@@ -105,6 +109,10 @@ function cloneDefaultData() {
       outboundProxyUrl: "",
       outboundNoProxy: "",
       mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+      webhookEnabled: false,
+      webhookUrls: [],
+      webhookThrottleMs: 300000,
+      webhookErrorCodes: [401, 403, 429, 500, 502, 503],
     },
     pricing: {},
   };

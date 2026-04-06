@@ -2,6 +2,8 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
+import { notifyProviderError } from "@/lib/notificationService.js";
+import { saveErrorRecord } from "@/lib/errorHistoryDb.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -190,6 +192,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
+
+  // Save error history and send webhook notification (fire-and-forget)
+  saveErrorRecord({ connectionId, connectionName: connName, provider, model, statusCode: status, errorMessage: reason }).catch(() => {});
+  notifyProviderError({ provider, model, connectionId, connectionName: connName, statusCode: status, errorMessage: reason }).catch(() => {});
 
   return { shouldFallback: true, cooldownMs };
 }
