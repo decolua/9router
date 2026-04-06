@@ -484,7 +484,7 @@ export default function APIPageClient({ machineId }) {
         </div>
 
         {/* Direct local endpoint */}
-        <div className="flex items-center gap-2 mt-1">
+        {/* <div className="flex items-center gap-2 mt-1">
           <span className="text-xs text-text-muted shrink-0">Direct</span>
           <span className="material-symbols-outlined text-text-muted text-[12px]">arrow_forward</span>
           <code className="flex-1 text-xs text-text-muted font-mono truncate">{baseUrl}/chat/completions</code>
@@ -495,7 +495,7 @@ export default function APIPageClient({ machineId }) {
           >
             <span className="material-symbols-outlined text-[14px]">{copied === "direct_url" ? "check" : "content_copy"}</span>
           </button>
-        </div>
+        </div> */}
 
         {/* Tunnel Status */}
         {tunnelStatus && (
