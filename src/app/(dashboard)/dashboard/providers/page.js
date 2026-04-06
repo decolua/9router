@@ -502,6 +502,7 @@ export default function ProvidersPage() {
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const isNoAuth = !!provider.noAuth;
 
   const dotColors = {
     free: "bg-green-500",
@@ -553,6 +554,8 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                       Disabled
                     </span>
                   </Badge>
+                ) : isNoAuth ? (
+                  <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>
                     {getStatusDisplay(connected, error, errorCode)}
