@@ -12,15 +12,23 @@ const execAsync = promisify(exec);
 const getDroidDir = () => path.join(os.homedir(), ".factory");
 const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 
-// Check if droid CLI is installed
+// Check if droid CLI is installed (via which/where or config file exists)
 const checkDroidInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "command -v droid";
-    await execAsync(command, { windowsHide: true });
+    const command = isWindows ? "where droid" : "which droid";
+    const env = isWindows
+      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      : process.env;
+    await execAsync(command, { windowsHide: true, env });
     return true;
   } catch {
-    return false;
+    try {
+      await fs.access(getDroidSettingsPath());
+      return true;
+    } catch {
+      return false;
+    }
   }
 };
 

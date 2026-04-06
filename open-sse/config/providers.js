@@ -332,4 +332,9 @@ export const PROVIDERS = {
     baseUrl: "https://copilot.tencent.com/v1/chat/completions",
     format: "openai",
   },
+  opencode: {
+    baseUrl: "https://opencode.ai",
+    format: "openai",
+    headers: { "x-opencode-client": "desktop" }
+  },
 };

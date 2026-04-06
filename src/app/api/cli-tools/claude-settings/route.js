@@ -16,15 +16,23 @@ const getClaudeSettingsPath = () => {
 };
 
 
-// Check if claude CLI is installed
+// Check if claude CLI is installed (via which/where or config file exists)
 const checkClaudeInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where claude" : "command -v claude";
-    await execAsync(command, { windowsHide: true });
+    const command = isWindows ? "where claude" : "which claude";
+    const env = isWindows
+      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      : process.env;
+    await execAsync(command, { windowsHide: true, env });
     return true;
   } catch {
-    return false;
+    try {
+      await fs.access(getClaudeSettingsPath());
+      return true;
+    } catch {
+      return false;
+    }
   }
 };
 

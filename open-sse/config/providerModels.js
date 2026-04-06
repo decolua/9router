@@ -328,6 +328,13 @@ export const PROVIDER_MODELS = {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
+  oc: [  // OpenCode
+    { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
+    { id: "qwen3.6-plus-free", name: "Qwen 3.6 Plus" },
+    // { id: "big-pickle", name: "Big Pickle", targetFormat: "claude" },
+    { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
+  ],
+
   cl: [  // Cline
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" },
@@ -589,6 +596,7 @@ const OAUTH_ALIASES = {
   "kimi-coding": "kmc",
   kilocode: "kc",
   cline: "cl",
+  opencode: "oc",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };

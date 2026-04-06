@@ -8,6 +8,7 @@ import { CodexExecutor } from "./codex.js";
 import { CursorExecutor } from "./cursor.js";
 import { VertexExecutor } from "./vertex.js";
 import { QwenExecutor } from "./qwen.js";
+import { OpenCodeExecutor } from "./opencode.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -23,6 +24,7 @@ const executors = {
   vertex: new VertexExecutor("vertex"),
   "vertex-partner": new VertexExecutor("vertex-partner"),
   qwen: new QwenExecutor(),
+  opencode: new OpenCodeExecutor(),
 };
 
 const defaultCache = new Map();
@@ -49,3 +51,4 @@ export { CursorExecutor } from "./cursor.js";
 export { VertexExecutor } from "./vertex.js";
 export { DefaultExecutor } from "./default.js";
 export { QwenExecutor } from "./qwen.js";
+export { OpenCodeExecutor } from "./opencode.js";

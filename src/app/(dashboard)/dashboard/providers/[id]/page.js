@@ -53,6 +53,7 @@ export default function ProviderDetailPage() {
       }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
+  const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   
@@ -588,7 +589,7 @@ export default function ProviderDetailPage() {
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
               testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
             />
@@ -607,7 +608,7 @@ export default function ProviderDetailPage() {
             onSetAlias={() => {}}
             onDeleteAlias={() => handleDeleteAlias(model.alias)}
             testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
@@ -808,80 +809,94 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Connections</h2>
-          {/* Round Robin toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted font-medium">Round Robin</span>
-            <Toggle
-              checked={providerStrategy === "round-robin"}
-              onChange={handleRoundRobinToggle}
-            />
-            {providerStrategy === "round-robin" && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-text-muted">Sticky:</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={providerStickyLimit}
-                  onChange={(e) => handleStickyLimitChange(e.target.value)}
-                  placeholder="1"
-                  className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {connections.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+      {isFreeNoAuth ? (
+        <Card>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
+              <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No connections yet</p>
-            <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
-            {!isCompatible && (
-              <div className="flex gap-2 justify-center">
-                {providerId === "iflow" && (
-                  <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
-                    Cookie Auth
-                  </Button>
-                )}
-                <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                  {providerId === "iflow" ? "OAuth" : "Add Connection"}
-                </Button>
-              </div>
-            )}
+            <div>
+              <p className="text-sm font-medium">No authentication required</p>
+              <p className="text-xs text-text-muted">This provider is ready to use.</p>
+            </div>
           </div>
-        ) : (
-          <>
-            {connectionsList}
-            {!isCompatible && (
-              <div className="flex gap-2 mt-4">
-                {providerId === "iflow" && (
+        </Card>
+      ) : (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Connections</h2>
+            {/* Round Robin toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted font-medium">Round Robin</span>
+              <Toggle
+                checked={providerStrategy === "round-robin"}
+                onChange={handleRoundRobinToggle}
+              />
+              {providerStrategy === "round-robin" && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-text-muted">Sticky:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={providerStickyLimit}
+                    onChange={(e) => handleStickyLimitChange(e.target.value)}
+                    placeholder="1"
+                    className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {connections.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+                <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+              </div>
+              <p className="text-text-main font-medium mb-1">No connections yet</p>
+              <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
+              {!isCompatible && (
+                <div className="flex gap-2 justify-center">
+                  {providerId === "iflow" && (
+                    <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                      Cookie Auth
+                    </Button>
+                  )}
+                  <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                    {providerId === "iflow" ? "OAuth" : "Add Connection"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {connectionsList}
+              {!isCompatible && (
+                <div className="flex gap-2 mt-4">
+                  {providerId === "iflow" && (
+                    <Button
+                      size="sm"
+                      icon="cookie"
+                      variant="secondary"
+                      onClick={() => setShowIFlowCookieModal(true)}
+                      title="Add connection using browser cookie"
+                    >
+                      Cookie
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    icon="cookie"
-                    variant="secondary"
-                    onClick={() => setShowIFlowCookieModal(true)}
-                    title="Add connection using browser cookie"
+                    icon="add"
+                    onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
                   >
-                    Cookie
+                    Add
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  icon="add"
-                  onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-                >
-                  Add
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </Card>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {/* Models */}
       <Card>

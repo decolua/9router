@@ -12,15 +12,24 @@ const execAsync = promisify(exec);
 const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
 const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
 
-// Check if openclaw CLI is installed
+// Check if openclaw CLI is installed (via which/where or config file exists)
 const checkOpenClawInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
     const command = isWindows ? "where openclaw" : "which openclaw";
-    await execAsync(command, { windowsHide: true });
+    // On Windows, inject %APPDATA%\npm into PATH so npm global packages are found
+    const env = isWindows
+      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      : process.env;
+    await execAsync(command, { windowsHide: true, env });
     return true;
   } catch {
-    return false;
+    try {
+      await fs.access(getOpenClawSettingsPath());
+      return true;
+    } catch {
+      return false;
+    }
   }
 };
 
@@ -42,6 +51,19 @@ const has9RouterConfig = (settings) => {
   return !!settings.models.providers["9router"];
 };
 
+// Read per-agent models.json and return current model id (without "9router/" prefix)
+const readAgentModel = async (agentDir) => {
+  try {
+    const modelsPath = path.join(agentDir, "models.json");
+    const content = await fs.readFile(modelsPath, "utf-8");
+    const data = JSON.parse(content);
+    const models = data?.providers?.["9router"]?.models;
+    return models?.[0]?.id || null;
+  } catch {
+    return null;
+  }
+};
+
 // GET - Check openclaw CLI and read current settings
 export async function GET() {
   try {
@@ -57,9 +79,19 @@ export async function GET() {
 
     const settings = await readSettings();
 
+    // Enrich agents list with current per-agent model from models.json
+    const agentList = settings?.agents?.list || [];
+    const enrichedAgents = await Promise.all(
+      agentList.map(async (agent) => {
+        const agentModel = agent.agentDir ? await readAgentModel(agent.agentDir) : null;
+        return { ...agent, currentModel: agentModel };
+      })
+    );
+
     return NextResponse.json({
       installed: true,
       settings,
+      agents: enrichedAgents,
       has9Router: has9RouterConfig(settings),
       settingsPath: getOpenClawSettingsPath(),
     });
@@ -69,10 +101,31 @@ export async function GET() {
   }
 }
 
+// Write per-agent models.json
+const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
+  await fs.mkdir(agentDir, { recursive: true });
+  const modelsPath = path.join(agentDir, "models.json");
+  let existing = {};
+  try {
+    const content = await fs.readFile(modelsPath, "utf-8");
+    existing = JSON.parse(content);
+  } catch { /* No existing */ }
+
+  if (!existing.providers) existing.providers = {};
+  existing.providers["9router"] = {
+    baseUrl,
+    apiKey: apiKey || "your_api_key",
+    api: "openai-completions",
+    models: [{ id: model, name: model.split("/").pop() || model }],
+  };
+  await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
+};
+
 // POST - Update 9Router settings (merge with existing settings)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model } = await request.json();
+    // agentModels: { [agentId]: modelId } for per-agent override
+    const { baseUrl, apiKey, model, agentModels = {} } = await request.json();
     
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
@@ -81,17 +134,14 @@ export async function POST(request) {
     const openclawDir = getOpenClawDir();
     const settingsPath = getOpenClawSettingsPath();
 
-    // Ensure directory exists
     await fs.mkdir(openclawDir, { recursive: true });
 
-    // Read existing settings or create new
     let settings = {};
     try {
       const existingSettings = await fs.readFile(settingsPath, "utf-8");
       settings = JSON.parse(existingSettings);
     } catch { /* No existing settings */ }
 
-    // Ensure structure exists
     if (!settings.agents) settings.agents = {};
     if (!settings.agents.defaults) settings.agents.defaults = {};
     if (!settings.agents.defaults.model) settings.agents.defaults.model = {};
@@ -99,32 +149,64 @@ export async function POST(request) {
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
-    // Normalize baseUrl to ensure /v1 suffix
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-
-    // Update agents.defaults.model.primary
     const fullModelId = `9router/${model}`;
+
+    // Remove all old 9router/* entries from agents.defaults.models
+    Object.keys(settings.agents.defaults.models)
+      .filter((k) => k.startsWith("9router/"))
+      .forEach((k) => { delete settings.agents.defaults.models[k]; });
+
+    // Update default model
     settings.agents.defaults.model.primary = fullModelId;
 
-    // IMPORTANT: Add to allowlist in agents.defaults.models
-    if (!settings.agents.defaults.models[fullModelId]) {
-      settings.agents.defaults.models[fullModelId] = {};
+    // Collect all unique models (default + per-agent)
+    const allModelIds = new Set([model]);
+    Object.values(agentModels).forEach((m) => { if (m) allModelIds.add(m); });
+
+    // Add fresh 9router models to allowlist
+    allModelIds.forEach((m) => {
+      settings.agents.defaults.models[`9router/${m}`] = {};
+    });
+
+    // Remove old 9router model from each agent in agents.list
+    if (settings.agents.list) {
+      settings.agents.list = settings.agents.list.map((agent) => {
+        if (agent.model?.startsWith("9router/")) {
+          const { model: _, ...rest } = agent;
+          return rest;
+        }
+        return agent;
+      });
     }
 
-    // Update models.providers.9router
+    // Update models.providers.9router with all models
     settings.models.providers["9router"] = {
       baseUrl: normalizedBaseUrl,
       apiKey: apiKey || "your_api_key",
       api: "openai-completions",
-      models: [
-        {
-          id: model,
-          name: model.split("/").pop() || model,
-        },
-      ],
+      models: [...allModelIds].map((m) => ({ id: m, name: m.split("/").pop() || m })),
     };
 
-    // Write settings
+    // Set per-agent model in agents.list and write models.json
+    if (settings.agents.list) {
+      settings.agents.list = settings.agents.list.map((agent) => {
+        const agentModel = agentModels[agent.id];
+        if (agentModel) return { ...agent, model: `9router/${agentModel}` };
+        return agent;
+      });
+
+      // Write per-agent models.json for agents with agentDir
+      await Promise.all(
+        settings.agents.list.map(async (agent) => {
+          if (!agent.agentDir) return;
+          const agentModel = agentModels[agent.id];
+          const modelToWrite = agentModel || model; // fallback to default
+          await writeAgentModels(agent.agentDir, modelToWrite, normalizedBaseUrl, apiKey);
+        })
+      );
+    }
+
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
 
     return NextResponse.json({
