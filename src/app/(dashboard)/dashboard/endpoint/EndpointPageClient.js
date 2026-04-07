@@ -483,13 +483,13 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
-        {/* Direct local endpoint */}
+        {/* Direct endpoint */}
         {/* <div className="flex items-center gap-2 mt-1">
           <span className="text-xs text-text-muted shrink-0">Direct</span>
           <span className="material-symbols-outlined text-text-muted text-[12px]">arrow_forward</span>
-          <code className="flex-1 text-xs text-text-muted font-mono truncate">{baseUrl}/chat/completions</code>
+          <code className="flex-1 text-xs text-text-muted font-mono truncate">{currentEndpoint}/chat/completions</code>
           <button
-            onClick={() => copy(`${baseUrl}/chat/completions`, "direct_url")}
+            onClick={() => copy(`${currentEndpoint}/chat/completions`, "direct_url")}
             className="p-1 text-text-muted hover:text-primary transition-colors shrink-0"
             title="Copy direct endpoint"
           >
