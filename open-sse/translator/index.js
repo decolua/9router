@@ -52,37 +52,30 @@ function ensureInitialized() {
   require("./response/ollama-to-openai.js");
 }
 
-// Strip multimodal content blocks (image/audio/video) from messages if model doesn't support them
-function stripUnsupportedMultimodal(body, multimodal = {}) {
-  if (!body.messages || !Array.isArray(body.messages)) return;
+// Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
+function stripContentTypes(body, stripList = []) {
+  if (!stripList.length || !body.messages || !Array.isArray(body.messages)) return;
+  const imageTypes = new Set(["image_url", "image"]);
+  const audioTypes = new Set(["audio_url", "input_audio"]);
+  const shouldStrip = (type) => {
+    if (imageTypes.has(type)) return stripList.includes("image");
+    if (audioTypes.has(type)) return stripList.includes("audio");
+    return false;
+  };
   for (const msg of body.messages) {
     if (!Array.isArray(msg.content)) continue;
-    msg.content = msg.content.filter(part => {
-      if (part.type === "image_url" || part.type === "image") return multimodal.image === true;
-      if (part.type === "audio_url" || part.type === "input_audio") return multimodal.audio === true;
-      return true; // keep text, tool_use, tool_result, etc.
-    });
-    // If content array becomes empty after filtering, replace with empty string to avoid API errors
+    msg.content = msg.content.filter(part => !shouldStrip(part.type));
     if (msg.content.length === 0) msg.content = "";
   }
 }
 
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, caps = null, connectionId = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null) {
   ensureInitialized();
   let result = body;
 
-  // Apply model capability guards before translation
-  if (caps) {
-    // Strip multimodal content if model doesn't support it
-    stripUnsupportedMultimodal(result, caps.multimodal || {});
-
-    // Strip thinking config if model doesn't support thinking
-    if (!caps.thinking) {
-      delete result.thinking;
-      delete result.reasoning_effort;
-    }
-  }
+  // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
+  stripContentTypes(result, stripList);
 
   // Normalize thinking config: remove if lastMessage is not user
   normalizeThinkingConfig(result);
