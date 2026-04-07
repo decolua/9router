@@ -216,17 +216,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    // Always exclude failed accounts from the retry pool to prevent infinite retry loops.
+    // markAccountUnavailable sets model locks/cooldowns so the account recovers after the
+    // appropriate backoff period (including 401/403/406 which would otherwise loop forever).
+    await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    excludeConnectionIds.add(credentials.connectionId);
+    lastError = result.error;
+    lastStatus = result.status;
 
-    if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
-      excludeConnectionIds.add(credentials.connectionId);
-      lastError = result.error;
-      lastStatus = result.status;
-      continue;
+    // Check if any accounts remain after excluding this one
+    const nextCredentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    if (!nextCredentials || nextCredentials.allRateLimited) {
+      // No more accounts — return the last error with retry-after if available
+      if (nextCredentials?.allRateLimited) {
+        const errMsg = lastError || nextCredentials.lastError || "Unavailable";
+        const st = lastStatus || Number(nextCredentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn("CHAT", `[${provider}/${model}] ${errMsg} (${nextCredentials.retryAfterHuman})`);
+        return unavailableResponse(st, `[${provider}/${model}] ${errMsg}`, nextCredentials.retryAfter, nextCredentials.retryAfterHuman);
+      }
+      log.warn("CHAT", "No more accounts available", { provider });
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    return result.response;
+    log.warn("AUTH", `Account ${credentials.connectionName} failed (${result.status}), trying fallback`);
+    continue;
   }
 }

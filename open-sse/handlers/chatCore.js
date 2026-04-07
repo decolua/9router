@@ -122,10 +122,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
   }
 
-  // Execute request
+  // Request timeout — prevents hangs when upstream never responds (e.g., all accounts exhausted)
+  const REQUEST_TIMEOUT_MS = 120_000; // 2 minutes
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      // Abort the in-flight request so the executor's fetch is cancelled
+      streamController.abort();
+      reject(new Error(`Request timeout after ${REQUEST_TIMEOUT_MS / 1000}s`));
+    }, REQUEST_TIMEOUT_MS);
+  });
+
+  // Execute request (race against timeout to fail fast on hung upstreams)
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await Promise.race([
+      executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions }),
+      timeoutPromise
+    ]);
+    clearTimeout(timeoutId);
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
