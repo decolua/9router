@@ -1,3 +1,8 @@
+# v0.3.83 (2026-04-08)
+
+## Fixes
+- Fix OpenRouter custom models not showing after being added
+
 # Unreleased
 
 ## Features
