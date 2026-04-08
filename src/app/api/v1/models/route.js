@@ -154,21 +154,25 @@ export async function GET() {
         const isCompatibleProvider =
           isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
-        // Default: if no explicit selection, all static models are active.
-        // For compatible providers with no explicit selection, fetch remote /models dynamically.
-        // If explicit selection exists, expose exactly those model IDs (including non-static IDs).
-        let rawModelIds = hasExplicitEnabledModels
-          ? Array.from(
-              new Set(
-                enabledModels.filter(
-                  (modelId) => typeof modelId === "string" && modelId.trim() !== "",
-                ),
-              ),
-            )
-          : providerModels.map((model) => model.id);
-
-        if (isCompatibleProvider && rawModelIds.length === 0) {
+        // For compatible providers (API Key Compatible providers), fetch remote models
+        // dynamically when no explicit model selection exists. This ensures models
+        // show up in /v1/models even without explicit enabledModels configured.
+        let rawModelIds;
+        if (isCompatibleProvider && !hasExplicitEnabledModels) {
           rawModelIds = await fetchCompatibleModelIds(conn);
+        }
+
+        // If still no models (or non-compatible provider), fall back to explicit selection or static models
+        if (!rawModelIds || rawModelIds.length === 0) {
+          rawModelIds = hasExplicitEnabledModels
+            ? Array.from(
+                new Set(
+                  enabledModels.filter(
+                    (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+                  ),
+                ),
+              )
+            : providerModels.map((model) => model.id);
         }
 
         const modelIds = rawModelIds
