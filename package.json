@@ -2,8 +2,17 @@
   "name": "9router-app",
   "version": "0.3.82",
   "description": "9Router web dashboard",
-  "private": true,
+  "bin": {
+    "9router": "bin/cli.cjs"
+  },
+  "files": [
+    ".next/standalone",
+    "bin",
+    "src/cli"
+  ],
   "scripts": {
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build",
     "dev": "next dev --webpack --port 20128",
     "build": "NODE_ENV=production next build --webpack",
     "start": "NODE_ENV=production next start",
