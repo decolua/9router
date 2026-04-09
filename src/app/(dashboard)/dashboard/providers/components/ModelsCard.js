@@ -6,6 +6,7 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import ScanModelsModal from "./ScanModelsModal";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
@@ -112,6 +113,7 @@ export default function ModelsCard({ providerId, kindFilter }) {
   const [testingModelId, setTestingModelId] = useState(null);
   const [testError, setTestError] = useState("");
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [showScanModels, setShowScanModels] = useState(false);
   const [connections, setConnections] = useState([]);
 
   const providerAlias = getProviderAlias(providerId);
@@ -245,6 +247,14 @@ export default function ModelsCard({ providerId, kindFilter }) {
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model
           </button>
+
+          <button
+            onClick={() => setShowScanModels(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">search</span>
+            Scan Models
+          </button>
         </div>
       </Card>
 
@@ -255,6 +265,16 @@ export default function ModelsCard({ providerId, kindFilter }) {
           setShowAddCustomModel(false);
         }}
         onClose={() => setShowAddCustomModel(false)}
+      />
+
+      <ScanModelsModal
+        isOpen={showScanModels}
+        providerId={providerId}
+        connectionId={connections[0]?.id}
+        onClose={async (didImport) => {
+          setShowScanModels(false);
+          if (didImport) await fetchData();
+        }}
       />
     </>
   );

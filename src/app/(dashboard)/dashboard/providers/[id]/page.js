@@ -10,6 +10,7 @@ import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS,
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import ScanModelsModal from "../components/ScanModelsModal";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -39,6 +40,7 @@ export default function ProviderDetailPage() {
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [showScanModels, setShowScanModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -624,6 +626,15 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
+        {/* Scan Models button — inline */}
+        <button
+          onClick={() => setShowScanModels(true)}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm">search</span>
+          Scan Models
+        </button>
+
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set(Object.values(modelAliases));
@@ -990,6 +1001,18 @@ export default function ProviderDetailPage() {
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
+        />
+      )}
+      {!isCompatible && (
+        <ScanModelsModal
+          isOpen={showScanModels}
+          providerId={providerId}
+          connectionId={connections[0]?.id}
+          providerName={providerInfo?.name}
+          onClose={async (didImport) => {
+            setShowScanModels(false);
+            if (didImport) fetchAliases();
+          }}
         />
       )}
     </div>
