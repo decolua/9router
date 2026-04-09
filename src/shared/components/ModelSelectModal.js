@@ -249,7 +249,7 @@ export default function ModelSelectModal({
       </div>
 
       {/* Models grouped by provider - compact */}
-      <div className="max-h-[300px] overflow-y-auto space-y-3">
+      <div className="max-h-[400px] overflow-y-auto space-y-3">
         {/* Combos section - always first */}
         {filteredCombos.length > 0 && (
           <div>

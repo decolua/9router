@@ -11,15 +11,17 @@ const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
 
-const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
+const CLOUDFLARED_VERSION = "2026.3.0";
+const GITHUB_BASE_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}`;
 
 const PLATFORM_MAPPINGS = {
   darwin: {
     x64: "cloudflared-darwin-amd64.tgz",
-    arm64: "cloudflared-darwin-amd64.tgz"
+    arm64: "cloudflared-darwin-arm64.tgz"
   },
   win32: {
-    x64: "cloudflared-windows-amd64.exe"
+    x64: "cloudflared-windows-amd64.exe",
+    x32: "cloudflared-windows-386.exe"
   },
   linux: {
     x64: "cloudflared-linux-amd64",

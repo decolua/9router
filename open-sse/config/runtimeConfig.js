@@ -68,9 +68,9 @@ export const RETRY_CONFIG = {
 
 // Default retry config by status code (number of retry attempts)
 export const DEFAULT_RETRY_CONFIG = {
-  429: 2,   // Rate limit - retry 2 times
-  503: 0,   // Service unavailable - no retry
-  502: 0    // Bad gateway - no retry
+  429: 0,   // Rate limit - no retry, use account fallback instead
+  503: 1,   // Service unavailable - retry 1 time (transient)
+  502: 1    // Bad gateway - retry 1 time (transient)
 };
 
 // Exponential backoff config for rate limits

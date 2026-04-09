@@ -448,7 +448,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
+              <div className="flex flex-col gap-1 max-h-[350px] overflow-y-auto">
                 {models.map((model, index) => (
                   <ModelItem
                     key={index}
@@ -472,7 +472,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
             {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
-              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-text-muted hover:text-primary hover:border-primary/30 transition-colors flex items-center justify-center gap-1"
+              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
