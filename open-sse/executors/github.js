@@ -13,6 +13,19 @@ export class GithubExecutor extends BaseExecutor {
   constructor() {
     super("github", PROVIDERS.github);
     this.knownCodexModels = new Set();
+    // Model aliasing for unsupported models
+    // GitHub Copilot doesn't support claude-sonnet-4.6 on either /chat/completions or /responses yet
+    this.modelAliases = {
+      "claude-sonnet-4.6": "claude-sonnet-4.5"
+    };
+  }
+
+  // Map unsupported models to supported alternatives
+  mapModel(model) {
+    if (this.modelAliases[model]) {
+      return this.modelAliases[model];
+    }
+    return model;
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -104,7 +117,15 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   async execute(options) {
-    const { model, log } = options;
+    let { model, log } = options;
+
+    // Map unsupported models to supported alternatives
+    const originalModel = model;
+    model = this.mapModel(model);
+    if (model !== originalModel) {
+      log?.info("GITHUB", `Mapping unsupported model ${originalModel} -> ${model}`);
+      options = { ...options, model, body: { ...options.body, model } };
+    }
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     if (this.knownCodexModels.has(model)) {
