@@ -233,6 +233,10 @@ export const PROVIDERS = {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     format: "openai"
   },
+  nous: {
+    baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions",
+    format: "openai"
+  },
   anthropic: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",

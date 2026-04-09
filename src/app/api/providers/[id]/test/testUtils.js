@@ -76,6 +76,12 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   codebuddy: { tokenExists: true },
+  nous: {
+    url: "https://inference-api.nousresearch.com/v1/models",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+  },
 };
 
 async function probeClineAccessToken(accessToken) {
