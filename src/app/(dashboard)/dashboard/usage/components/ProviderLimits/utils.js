@@ -130,10 +130,23 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "kiro":
-        if (data.quotas) {
+        if (data.message && !data.quotas) {
+          normalizedQuotas.push({
+            name: "error",
+            used: 0,
+            total: 0,
+            resetAt: null,
+            message: data.message,
+          });
+        } else if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            const displayName = quotaType
+              .replace(/_/g, " ")
+              .replace(/\bfreetrial\b/i, "Free Trial")
+              .replace(/\bagentic request\b/i, "Agentic Request");
             normalizedQuotas.push({
-              name: quotaType,
+              name: displayName,
+              modelKey: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,

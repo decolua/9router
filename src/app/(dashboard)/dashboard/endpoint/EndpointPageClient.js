@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { formatUsageLimitSummary } from "@/shared/utils/apiKeyLimits";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -29,13 +31,15 @@ export default function APIPageClient({ machineId }) {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState(null);
   const [limitForm, setLimitForm] = useState({
-    providers: "",
-    models: "",
+    providers: [],
+    models: [],
     usageEnabled: false,
     usageMetric: "tokens",
     usagePeriod: "daily",
     usageValue: "",
   });
+  const [availableProviders, setAvailableProviders] = useState([]);
+  const [availableModels, setAvailableModels] = useState([]);
   const [limitError, setLimitError] = useState("");
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
@@ -260,13 +264,114 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const buildAvailableProviderOptions = () => {
+    return Object.values(AI_PROVIDERS)
+      .filter((provider) => !provider.hidden)
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name || provider.id,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const buildAvailableModelOptions = async () => {
+    const modelMap = new Map();
+    const providerIdByAlias = Object.values(AI_PROVIDERS).reduce((acc, provider) => {
+      if (provider.alias) acc[provider.alias] = provider.id;
+      return acc;
+    }, {});
+
+    // 1) Static models from config
+    for (const provider of Object.values(AI_PROVIDERS)) {
+      const providerId = provider.id;
+      const staticModels = getModelsByProviderId(providerId) || [];
+      for (const model of staticModels) {
+        const modelId = String(model.id || "").trim();
+        if (!modelId) continue;
+        const value = `${providerId}/${modelId}`.toLowerCase();
+        modelMap.set(value, {
+          value,
+          label: `${provider.name || providerId} / ${modelId}`,
+          providerId,
+        });
+      }
+    }
+
+    // 2) Alias models (custom/imported)
+    try {
+      const aliasRes = await fetch("/api/models/alias");
+      if (aliasRes.ok) {
+        const aliasData = await aliasRes.json();
+        const aliases = aliasData.aliases || {};
+        for (const fullModel of Object.values(aliases)) {
+          const value = String(fullModel || "").trim().toLowerCase();
+          const slashIndex = value.indexOf("/");
+          if (!value || slashIndex <= 0) continue;
+          const rawProviderPrefix = value.slice(0, slashIndex);
+          const modelId = value.slice(slashIndex + 1);
+          const providerId = providerIdByAlias[rawProviderPrefix] || rawProviderPrefix;
+          const providerName = AI_PROVIDERS[providerId]?.name || providerId;
+          modelMap.set(`${providerId}/${modelId}`, {
+            value: `${providerId}/${modelId}`,
+            label: `${providerName} / ${modelId}`,
+            providerId,
+          });
+        }
+      }
+    } catch {}
+
+    // 3) Dynamic models from active provider connections
+    try {
+      const providersRes = await fetch("/api/providers");
+      if (providersRes.ok) {
+        const providersData = await providersRes.json();
+        const activeConnections = (providersData.connections || []).filter((conn) => conn.isActive !== false);
+        const dynamicResults = await Promise.all(
+          activeConnections.map(async (conn) => {
+            try {
+              const res = await fetch(`/api/providers/${conn.id}/models`);
+              if (!res.ok) return null;
+              const data = await res.json();
+              return { provider: conn.provider, models: data.models || [] };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        for (const item of dynamicResults) {
+          if (!item || !Array.isArray(item.models)) continue;
+          const providerId = item.provider;
+          const providerName = AI_PROVIDERS[providerId]?.name || providerId;
+          for (const model of item.models) {
+            const modelId = String(model?.id || model?.name || model?.model || "").trim().toLowerCase();
+            if (!modelId) continue;
+            const value = `${providerId}/${modelId}`;
+            modelMap.set(value, {
+              value,
+              label: `${providerName} / ${modelId}`,
+              providerId,
+            });
+          }
+        }
+      }
+    } catch {}
+
+    return Array.from(modelMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  };
+
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, models] = await Promise.all([
+        fetch("/api/keys"),
+        buildAvailableModelOptions(),
+      ]);
       const keysData = await keysRes.json();
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
       }
+      setAvailableProviders(buildAvailableProviderOptions());
+      setAvailableModels(models);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -400,8 +505,8 @@ export default function APIPageClient({ machineId }) {
   const openLimitModal = (key) => {
     setEditingKeyId(key.id);
     setLimitForm({
-      providers: Array.isArray(key.accessRules?.providers) ? key.accessRules.providers.join(", ") : "",
-      models: Array.isArray(key.accessRules?.models) ? key.accessRules.models.join(", ") : "",
+      providers: Array.isArray(key.accessRules?.providers) ? key.accessRules.providers : [],
+      models: Array.isArray(key.accessRules?.models) ? key.accessRules.models : [],
       usageEnabled: Boolean(key.usageLimit?.enabled),
       usageMetric: key.usageLimit?.metric === "cost" ? "cost" : "tokens",
       usagePeriod: key.usageLimit?.period || "daily",
@@ -413,13 +518,11 @@ export default function APIPageClient({ machineId }) {
 
   const handleSaveLimits = async () => {
     if (!editingKeyId) return;
-    const providers = limitForm.providers
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
+    const providers = (Array.isArray(limitForm.providers) ? limitForm.providers : [])
+      .map((item) => String(item).trim().toLowerCase())
       .filter(Boolean);
-    const models = limitForm.models
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
+    const models = (Array.isArray(limitForm.models) ? limitForm.models : [])
+      .map((item) => String(item).trim().toLowerCase())
       .filter(Boolean);
     const value = Number(limitForm.usageValue);
     const usageValue = Number.isFinite(value) && value > 0 ? value : null;
@@ -781,18 +884,48 @@ export default function APIPageClient({ machineId }) {
         }}
       >
         <div className="flex flex-col gap-3">
-          <Input
-            label="Allowed Providers (comma separated)"
-            placeholder="openai, anthropic"
-            value={limitForm.providers}
-            onChange={(e) => setLimitForm((prev) => ({ ...prev, providers: e.target.value }))}
-          />
-          <Input
-            label="Allowed Models (comma separated)"
-            placeholder="openai/gpt-4o-mini, anthropic/claude-3-5-sonnet"
-            value={limitForm.models}
-            onChange={(e) => setLimitForm((prev) => ({ ...prev, models: e.target.value }))}
-          />
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-main">Allowed Providers</label>
+            <select
+              multiple
+              value={limitForm.providers}
+              onChange={(e) =>
+                setLimitForm((prev) => ({
+                  ...prev,
+                  providers: Array.from(e.target.selectedOptions, (option) => option.value),
+                }))
+              }
+              className="min-h-[120px] px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+            >
+              {availableProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted">Hold Ctrl/Cmd to select multiple providers.</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-main">Allowed Models</label>
+            <select
+              multiple
+              value={limitForm.models}
+              onChange={(e) =>
+                setLimitForm((prev) => ({
+                  ...prev,
+                  models: Array.from(e.target.selectedOptions, (option) => option.value),
+                }))
+              }
+              className="min-h-[180px] px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+            >
+              {availableModels.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted">Model list includes static and auto-discovered models from active providers.</p>
+          </div>
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">Usage quota</p>
