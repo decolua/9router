@@ -502,6 +502,7 @@ export async function getApiKeyUsageForLimit(apiKeyValue, usageLimit = {}) {
   const cutoff = getLimitCutoff(usageLimit.period);
   const filtered = history.filter((entry) => {
     if (entry.apiKey !== apiKeyValue) return false;
+    // one_time = lifetime quota, so include all historical usage for this key
     if (usageLimit.period === "one_time") return true;
     const entryTime = new Date(entry.timestamp).getTime();
     return Number.isFinite(entryTime) && entryTime >= cutoff;

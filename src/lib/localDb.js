@@ -210,13 +210,11 @@ function ensureDbShape(data) {
           changed = true;
         }
         const normalizedLimits = normalizeApiKeyLimits(apiKey);
-        const currentLimits = apiKey?.accessRules || apiKey?.usageLimit
-          ? { accessRules: apiKey.accessRules, usageLimit: apiKey.usageLimit }
-          : null;
-        if (
-          !currentLimits
-          || JSON.stringify(currentLimits) !== JSON.stringify(normalizedLimits)
-        ) {
+        const currentLimits = normalizeApiKeyLimits({
+          accessRules: apiKey.accessRules,
+          usageLimit: apiKey.usageLimit,
+        });
+        if (JSON.stringify(currentLimits) !== JSON.stringify(normalizedLimits)) {
           apiKey.accessRules = normalizedLimits.accessRules;
           apiKey.usageLimit = normalizedLimits.usageLimit;
           changed = true;

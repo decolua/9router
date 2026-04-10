@@ -3,9 +3,9 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  getActiveApiKey,
-  isApiKeyAllowedForModel,
+  isApiKeyAllowedForModelOrNoKey,
   isApiKeyWithinUsageLimit,
+  resolveRequestApiKeyRecord,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -46,19 +46,10 @@ export async function handleEmbeddings(request) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  let apiKeyRecord = null;
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-  }
-  if (apiKey) {
-    apiKeyRecord = await getActiveApiKey(apiKey);
-  }
-  if (settings.requireApiKey && !apiKeyRecord) {
-    log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  const { apiKeyRecord, error: apiKeyError } = await resolveRequestApiKeyRecord(apiKey, { requireApiKey: settings.requireApiKey });
+  if (apiKeyError) {
+    log.warn("AUTH", `${apiKeyError} (requireApiKey=${settings.requireApiKey})`);
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, apiKeyError);
   }
 
   if (!modelStr) {
@@ -80,7 +71,7 @@ export async function handleEmbeddings(request) {
   const { provider, model } = modelInfo;
 
   if (apiKeyRecord) {
-    if (!isApiKeyAllowedForModel(apiKeyRecord, provider, model)) {
+    if (!isApiKeyAllowedForModelOrNoKey(apiKeyRecord, provider, model)) {
       return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not allowed to access this provider/model");
     }
     const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);

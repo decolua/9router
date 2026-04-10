@@ -281,7 +281,7 @@ export async function getActiveApiKey(apiKey) {
   return key;
 }
 
-export function isApiKeyAllowedForModel(apiKeyRecord, provider, model) {
+export function isApiKeyAllowedForModelOrNoKey(apiKeyRecord, provider, model) {
   if (!apiKeyRecord) return true;
   const allowedProviders = Array.isArray(apiKeyRecord.accessRules?.providers)
     ? apiKeyRecord.accessRules.providers
@@ -304,6 +304,20 @@ export function isApiKeyAllowedForModel(apiKeyRecord, provider, model) {
   }
 
   return true;
+}
+
+export async function resolveRequestApiKeyRecord(apiKey, { requireApiKey = false } = {}) {
+  if (requireApiKey && !apiKey) {
+    return { apiKeyRecord: null, error: "Missing API key" };
+  }
+  if (!apiKey) {
+    return { apiKeyRecord: null, error: null };
+  }
+  const apiKeyRecord = await getActiveApiKey(apiKey);
+  if (requireApiKey && !apiKeyRecord) {
+    return { apiKeyRecord: null, error: "Invalid API key" };
+  }
+  return { apiKeyRecord, error: null };
 }
 
 export async function isApiKeyWithinUsageLimit(apiKeyRecord) {

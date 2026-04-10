@@ -36,6 +36,7 @@ export default function APIPageClient({ machineId }) {
     usagePeriod: "daily",
     usageValue: "",
   });
+  const [limitError, setLimitError] = useState("");
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
@@ -406,6 +407,7 @@ export default function APIPageClient({ machineId }) {
       usagePeriod: key.usageLimit?.period || "daily",
       usageValue: key.usageLimit?.value ? String(key.usageLimit.value) : "",
     });
+    setLimitError("");
     setShowLimitModal(true);
   };
 
@@ -417,12 +419,13 @@ export default function APIPageClient({ machineId }) {
       .filter(Boolean);
     const models = limitForm.models
       .split(",")
-      .map((item) => item.trim())
+      .map((item) => item.trim().toLowerCase())
       .filter(Boolean);
     const value = Number(limitForm.usageValue);
     const usageValue = Number.isFinite(value) && value > 0 ? value : null;
 
     try {
+      setLimitError("");
       const res = await fetch(`/api/keys/${editingKeyId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -441,9 +444,13 @@ export default function APIPageClient({ machineId }) {
         setKeys((prev) => prev.map((key) => (key.id === editingKeyId ? data.key : key)));
         setShowLimitModal(false);
         setEditingKeyId(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setLimitError(data.error || "Failed to save limits");
       }
     } catch (error) {
       console.log("Error updating key limits:", error);
+      setLimitError("Failed to save limits");
     }
   };
 
@@ -770,6 +777,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowLimitModal(false);
           setEditingKeyId(null);
+          setLimitError("");
         }}
       >
         <div className="flex flex-col gap-3">
@@ -822,12 +830,16 @@ export default function APIPageClient({ machineId }) {
               />
             </div>
           )}
+          {limitError && (
+            <p className="text-sm text-red-500">{limitError}</p>
+          )}
           <div className="flex gap-2 pt-1">
             <Button onClick={handleSaveLimits} fullWidth>Save</Button>
             <Button
               onClick={() => {
                 setShowLimitModal(false);
                 setEditingKeyId(null);
+                setLimitError("");
               }}
               variant="ghost"
               fullWidth

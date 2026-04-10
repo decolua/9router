@@ -1,7 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
-import { extractApiKey, getActiveApiKey, isApiKeyAllowedForModel } from "@/sse/services/auth";
+import { extractApiKey, getActiveApiKey, isApiKeyAllowedForModelOrNoKey } from "@/sse/services/auth";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -418,7 +418,7 @@ export async function GET(request) {
           .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
         for (const modelId of modelIds) {
-          if (apiKeyRecord && !isApiKeyAllowedForModel(apiKeyRecord, providerId, modelId)) {
+          if (apiKeyRecord && !isApiKeyAllowedForModelOrNoKey(apiKeyRecord, providerId, modelId)) {
             continue;
           }
           models.push({
