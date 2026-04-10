@@ -24,12 +24,14 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [modelsDevCacheTtlMinutes, setModelsDevCacheTtlMinutes] = useState("60");
 
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
+        setModelsDevCacheTtlMinutes(String(data?.modelsDevCacheTtlMinutes ?? 60));
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -235,6 +237,28 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update require login:", err);
+    }
+  };
+
+  const updateModelsDevCacheTtl = async () => {
+    const parsed = Number.parseInt(modelsDevCacheTtlMinutes, 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 1440) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelsDevCacheTtlMinutes: parsed }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, modelsDevCacheTtlMinutes: data.modelsDevCacheTtlMinutes }));
+        setModelsDevCacheTtlMinutes(String(data.modelsDevCacheTtlMinutes));
+      }
+    } catch (err) {
+      console.error("Failed to update models.dev cache TTL:", err);
     }
   };
 
@@ -624,6 +648,26 @@ export default function ProfilePage() {
                 {proxyStatus.message}
               </p>
             )}
+
+            <div className="flex items-end justify-between pt-4 border-t border-border/50 gap-4">
+              <div className="flex-1">
+                <p className="font-medium">models.dev cache TTL (minutes)</p>
+                <p className="text-sm text-text-muted">Default 60 minutes. Applies to token metadata for `/v1/models` and model manager.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={modelsDevCacheTtlMinutes}
+                  onChange={(e) => setModelsDevCacheTtlMinutes(e.target.value)}
+                  className="w-24 text-center"
+                />
+                <Button variant="secondary" onClick={updateModelsDevCacheTtl}>
+                  Apply
+                </Button>
+              </div>
+            </div>
           </div>
         </Card>
 

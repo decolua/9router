@@ -11,6 +11,13 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
+const formatTokenSize = (tokenSize) => {
+  if (!Number.isFinite(tokenSize) || tokenSize <= 0) return null;
+  if (tokenSize >= 1_000_000) return `${(tokenSize / 1_000_000).toFixed(tokenSize % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (tokenSize >= 1_000) return `${(tokenSize / 1_000).toFixed(tokenSize % 1_000 === 0 ? 0 : 1)}k`;
+  return String(tokenSize);
+};
+
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -39,6 +46,7 @@ export default function ProviderDetailPage() {
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [tokenSizeByModelId, setTokenSizeByModelId] = useState({});
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -208,6 +216,47 @@ export default function ProviderDetailPage() {
     if (!fetcher) return;
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
+
+  useEffect(() => {
+    const prefix = `${providerStorageAlias}/`;
+    const customModelIds = Object.values(modelAliases)
+      .filter((fullModel) => typeof fullModel === "string" && fullModel.startsWith(prefix))
+      .map((fullModel) => fullModel.slice(prefix.length))
+      .filter(Boolean);
+    const modelIds = Array.from(
+      new Set([
+        ...models.map((m) => m.id).filter(Boolean),
+        ...kiloFreeModels.map((m) => m.id).filter(Boolean),
+        ...customModelIds,
+      ]),
+    );
+
+    if (modelIds.length === 0) {
+      setTokenSizeByModelId({});
+      return;
+    }
+
+    fetch("/api/models/metadata", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelIds }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        const metadata = data?.metadata && typeof data.metadata === "object" ? data.metadata : {};
+        const next = {};
+        for (const modelId of modelIds) {
+          const tokenSize = metadata?.[modelId]?.token_size;
+          if (Number.isFinite(tokenSize) && tokenSize > 0) {
+            next[modelId] = tokenSize;
+          }
+        }
+        setTokenSizeByModelId(next);
+      })
+      .catch(() => {
+        setTokenSizeByModelId({});
+      });
+  }, [providerStorageAlias, modelAliases, models, kiloFreeModels]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -545,6 +594,7 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          tokenSizeByModelId={tokenSizeByModelId}
         />
       );
     }
@@ -593,6 +643,7 @@ export default function ProviderDetailPage() {
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
+              tokenSize={tokenSizeByModelId[model.id]}
             />
           );
         })}
@@ -613,6 +664,7 @@ export default function ProviderDetailPage() {
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
+            tokenSize={tokenSizeByModelId[model.id]}
           />
         ))}
 
@@ -997,7 +1049,7 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, tokenSize }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -1020,6 +1072,11 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        {Number.isFinite(tokenSize) && tokenSize > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary whitespace-nowrap">
+            {formatTokenSize(tokenSize)} ctx
+          </span>
+        )}
         {onTest && (
           <div className="relative group/btn">
             <button
@@ -1074,6 +1131,7 @@ ModelRow.propTypes = {
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isCustom: PropTypes.bool,
   isFree: PropTypes.bool,
+  tokenSize: PropTypes.number,
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
@@ -1175,7 +1233,7 @@ PassthroughModelsSection.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
 };
 
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, tokenSize }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -1199,6 +1257,9 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
 
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
+        {Number.isFinite(tokenSize) && tokenSize > 0 && (
+          <p className="text-[11px] text-primary mt-0.5">{formatTokenSize(tokenSize)} ctx</p>
+        )}
 
         <div className="flex items-center gap-1 mt-1">
         <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
@@ -1255,9 +1316,10 @@ PassthroughModelRow.propTypes = {
   onTest: PropTypes.func,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isTesting: PropTypes.bool,
+  tokenSize: PropTypes.number,
 };
 
-function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic, tokenSizeByModelId }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -1413,6 +1475,7 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
               onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
               testStatus={modelTestResults[modelId]}
               isTesting={testingModelId === modelId}
+              tokenSize={tokenSizeByModelId?.[modelId]}
             />
           ))}
         </div>
@@ -1434,6 +1497,7 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  tokenSizeByModelId: PropTypes.object,
 };
 
 function CooldownTimer({ until }) {
@@ -2156,4 +2220,3 @@ AddCustomModelModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
