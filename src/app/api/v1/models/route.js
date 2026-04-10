@@ -13,9 +13,9 @@ const MODELS_DEV_URLS = (process.env.MODELS_DEV_URLS || "https://models.dev/api.
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
-const MODELS_DEV_CACHE_TTL_MS = Number.parseInt(process.env.MODELS_DEV_CACHE_TTL_MS || "", 10) || (6 * 60 * 60 * 1000);
-const MODELS_DEV_TIMEOUT_MS = Number.parseInt(process.env.MODELS_DEV_TIMEOUT_MS || "", 10) || 7000;
-const MODELS_DEV_MAX_PARSE_DEPTH = Number.parseInt(process.env.MODELS_DEV_MAX_PARSE_DEPTH || "", 10) || 6;
+const MODELS_DEV_CACHE_TTL_MS = Number.parseInt(process.env.MODELS_DEV_CACHE_TTL_MS, 10) || (6 * 60 * 60 * 1000);
+const MODELS_DEV_TIMEOUT_MS = Number.parseInt(process.env.MODELS_DEV_TIMEOUT_MS, 10) || 7000;
+const MODELS_DEV_MAX_PARSE_DEPTH = Number.parseInt(process.env.MODELS_DEV_MAX_PARSE_DEPTH, 10) || 6;
 
 let modelsDevCache = null;
 
@@ -45,7 +45,7 @@ const firstDefinedNumber = (...values) => {
 };
 
 const collectModelsDevRecords = (value, records, depth = 0) => {
-  if (depth > MODELS_DEV_MAX_PARSE_DEPTH || value == null) return;
+  if (depth >= MODELS_DEV_MAX_PARSE_DEPTH || value == null) return;
 
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -60,7 +60,7 @@ const collectModelsDevRecords = (value, records, depth = 0) => {
   if (hasModelLikeId) records.push(value);
 
   for (const nested of Object.values(value)) {
-    if (nested && (typeof nested === "object" || Array.isArray(nested))) {
+    if (nested && typeof nested === "object") {
       collectModelsDevRecords(nested, records, depth + 1);
     }
   }
@@ -214,7 +214,7 @@ const enrichModelsWithModelsDevMetadata = (models, modelsDevIndex) =>
     return {
       ...model,
       ...metadata,
-      token_size: metadata.context_window ?? metadata.max_input_tokens ?? metadata.max_output_tokens,
+      token_size: metadata.context_window ?? metadata.max_input_tokens,
     };
   });
 
