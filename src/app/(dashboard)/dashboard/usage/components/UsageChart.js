@@ -22,7 +22,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart({ period = "7d" }) {
+export default function UsageChart({ period = "7d", apiKey = "all" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -30,7 +30,7 @@ export default function UsageChart({ period = "7d" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const res = await fetch(`/api/usage/chart?period=${period}&apiKey=${encodeURIComponent(apiKey)}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -40,7 +40,7 @@ export default function UsageChart({ period = "7d" }) {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, apiKey]);
 
   useEffect(() => {
     fetchData();
@@ -138,4 +138,5 @@ export default function UsageChart({ period = "7d" }) {
 
 UsageChart.propTypes = {
   period: PropTypes.string,
+  apiKey: PropTypes.string,
 };

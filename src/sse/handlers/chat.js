@@ -5,7 +5,9 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  isApiKeyAllowedForModelOrNoKey,
+  isApiKeyWithinUsageLimit,
+  resolveRequestApiKeyRecord,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
@@ -18,6 +20,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { buildUsageLimitExceededMessage } from "@/shared/utils/apiKeyLimits";
 
 /**
  * Handle chat completion request
@@ -66,16 +69,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+  const { apiKeyRecord, error: apiKeyError } = await resolveRequestApiKeyRecord(apiKey, { requireApiKey: settings.requireApiKey });
+  if (apiKeyError) {
+    log.warn("AUTH", `${apiKeyError} (requireApiKey=${settings.requireApiKey})`);
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, apiKeyError);
   }
 
   if (!modelStr) {
@@ -95,7 +92,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
       log,
       comboName: modelStr,
       comboStrategy
@@ -103,13 +100,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, apiKeyRecord);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, apiKeyRecord = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -126,7 +123,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
         log,
         comboName: modelStr,
         comboStrategy
@@ -137,6 +134,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  if (apiKeyRecord) {
+    if (!isApiKeyAllowedForModelOrNoKey(apiKeyRecord, provider, model)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not allowed to access this provider/model");
+    }
+    const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
+    if (!usageCheck.allowed) {
+      return errorResponse(
+        HTTP_STATUS.TOO_MANY_REQUESTS,
+        buildUsageLimitExceededMessage(usageCheck),
+      );
+    }
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {

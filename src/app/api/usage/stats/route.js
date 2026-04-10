@@ -9,12 +9,13 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "7d";
+    const apiKeyId = searchParams.get("apiKey") || "all";
 
     if (!VALID_PERIODS.has(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 
-    const stats = await getUsageStats(period);
+    const stats = await getUsageStats(period, { apiKeyId });
     return NextResponse.json(stats);
   } catch (error) {
     console.error("[API] Failed to get usage stats:", error);

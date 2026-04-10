@@ -464,11 +464,67 @@ async function calculateCost(provider, model, tokens) {
 
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
+function getLimitCutoff(period) {
+  const now = new Date();
+  if (period === "daily") {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  }
+  if (period === "weekly") {
+    const day = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+    return start.getTime();
+  }
+  if (period === "monthly") {
+    return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  }
+  return 0;
+}
+
+function filterHistoryByKeySelector(history, apiKeyFilter, allApiKeys = []) {
+  if (!apiKeyFilter || apiKeyFilter === "all") return history;
+  if (apiKeyFilter === "local-no-key") {
+    return history.filter((entry) => !entry.apiKey);
+  }
+
+  const selectedKey = allApiKeys.find((key) => key.id === apiKeyFilter);
+  if (!selectedKey?.key) return [];
+  return history.filter((entry) => entry.apiKey === selectedKey.key);
+}
+
+export async function getApiKeyUsageForLimit(apiKeyValue, usageLimit = {}) {
+  if (!apiKeyValue || !usageLimit?.enabled || !usageLimit?.value) {
+    return { tokens: 0, cost: 0, requests: 0 };
+  }
+
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const cutoff = getLimitCutoff(usageLimit.period);
+  const filtered = history.filter((entry) => {
+    if (entry.apiKey !== apiKeyValue) return false;
+    // one_time = lifetime quota, so include all historical usage for this key
+    if (usageLimit.period === "one_time") return true;
+    const entryTime = new Date(entry.timestamp).getTime();
+    return Number.isFinite(entryTime) && entryTime >= cutoff;
+  });
+
+  let tokens = 0;
+  let cost = 0;
+  for (const entry of filtered) {
+    const promptTokens = entry.tokens?.prompt_tokens || 0;
+    const completionTokens = entry.tokens?.completion_tokens || 0;
+    tokens += promptTokens + completionTokens;
+    cost += entry.cost || 0;
+  }
+
+  return { tokens, cost, requests: filtered.length };
+}
+
 /**
  * Get aggregated usage stats
  * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
  */
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", options = {}) {
   const db = await getUsageDb();
   let history = db.data.history || [];
 
@@ -512,6 +568,8 @@ export async function getUsageStats(period = "all") {
   } catch (error) {
     console.warn("Could not fetch API keys for usage stats:", error.message);
   }
+
+  history = filterHistoryByKeySelector(history, options.apiKeyId, allApiKeys);
 
   // Create a map from API key to key info
   const apiKeyMap = {};
@@ -795,10 +853,20 @@ export async function getUsageStats(period = "all") {
  * @param {"24h"|"7d"|"30d"|"60d"} period
  * @returns {Promise<Array<{label: string, tokens: number, cost: number}>>}
  */
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", options = {}) {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
   const now = Date.now();
+
+  if (options.apiKeyId && options.apiKeyId !== "all") {
+    try {
+      const { getApiKeys } = await import("@/lib/localDb.js");
+      const allApiKeys = await getApiKeys();
+      history = filterHistoryByKeySelector(history, options.apiKeyId, allApiKeys);
+    } catch {
+      history = [];
+    }
+  }
 
   let bucketCount, bucketMs, labelFn;
   if (period === "24h") {

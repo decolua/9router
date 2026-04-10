@@ -195,6 +195,8 @@ export default function UsageStats() {
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [period, setPeriod] = useState("7d");
+  const [apiKeys, setApiKeys] = useState([]);
+  const [selectedApiKey, setSelectedApiKey] = useState("all");
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
@@ -216,13 +218,22 @@ export default function UsageStats() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    fetch("/api/keys")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        setApiKeys(d?.keys || []);
+      })
+      .catch(() => {});
+  }, []);
+
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (!stats) setLoading(true);
     else setFetching(true);
 
-    fetch(`/api/usage/stats?period=${period}`)
+    fetch(`/api/usage/stats?period=${period}&apiKey=${encodeURIComponent(selectedApiKey)}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) setStats((prev) => ({ ...prev, ...data }));
@@ -232,11 +243,11 @@ export default function UsageStats() {
         setLoading(false);
         setFetching(false);
       });
-  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, selectedApiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(`/api/usage/stream?apiKey=${encodeURIComponent(selectedApiKey)}`);
 
     es.onmessage = (e) => {
       try {
@@ -258,7 +269,7 @@ export default function UsageStats() {
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [selectedApiKey]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -400,6 +411,17 @@ export default function UsageStats() {
     <div className="flex flex-col gap-6">
       {/* Period selector */}
       <div className="flex items-center gap-2 self-end">
+        <select
+          value={selectedApiKey}
+          onChange={(e) => setSelectedApiKey(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border border-border bg-bg-subtle text-sm font-medium text-text focus:outline-none focus:ring-2 focus:ring-primary/50"
+        >
+          <option value="all">All API Keys</option>
+          <option value="local-no-key">Local (No API Key)</option>
+          {apiKeys.map((key) => (
+            <option key={key.id} value={key.id}>{key.name}</option>
+          ))}
+        </select>
         <div className="flex items-center gap-1 bg-bg-subtle rounded-lg p-1 border border-border">
           {PERIODS.map((p) => (
             <button
@@ -434,7 +456,7 @@ export default function UsageStats() {
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {loading ? spinner : <UsageChart period={period} apiKey={selectedApiKey} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">
