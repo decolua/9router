@@ -14,6 +14,8 @@ const MODELS_DEV_URLS = (process.env.MODELS_DEV_URLS || "https://models.dev/api.
   .map((url) => url.trim())
   .filter(Boolean);
 const MODELS_DEV_CACHE_TTL_MS = Number.parseInt(process.env.MODELS_DEV_CACHE_TTL_MS || "", 10) || (6 * 60 * 60 * 1000);
+const MODELS_DEV_TIMEOUT_MS = Number.parseInt(process.env.MODELS_DEV_TIMEOUT_MS || "", 10) || 7000;
+const MODELS_DEV_MAX_PARSE_DEPTH = Number.parseInt(process.env.MODELS_DEV_MAX_PARSE_DEPTH || "", 10) || 6;
 
 let modelsDevCache = null;
 
@@ -43,7 +45,7 @@ const firstDefinedNumber = (...values) => {
 };
 
 const collectModelsDevRecords = (value, records, depth = 0) => {
-  if (depth > 6 || value == null) return;
+  if (depth > MODELS_DEV_MAX_PARSE_DEPTH || value == null) return;
 
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -154,7 +156,7 @@ async function fetchModelsDevIndex() {
   for (const url of MODELS_DEV_URLS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const timeoutId = setTimeout(() => controller.abort(), MODELS_DEV_TIMEOUT_MS);
       const response = await fetch(url, {
         method: "GET",
         headers: { Accept: "application/json" },
@@ -174,7 +176,10 @@ async function fetchModelsDevIndex() {
         expiresAt: now + MODELS_DEV_CACHE_TTL_MS,
       };
       return index;
-    } catch {
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log(`[v1/models] models.dev fetch failed (${url}):`, error?.message || error);
+      }
       continue;
     }
   }
