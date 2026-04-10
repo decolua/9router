@@ -6,10 +6,8 @@ import {
   requestDeviceCode, 
   pollForToken 
 } from "@/lib/oauth/providers";
+import { AWS_REGION_PATTERN, AWS_SSO_HOST_PATTERN } from "@/lib/oauth/constants/awsValidation";
 import { createProviderConnection } from "@/models";
-
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
-const AWS_SSO_HOST_PATTERN = /^[a-z0-9-]+\.awsapps\.com$/i;
 
 /**
  * Dynamic OAuth API Route

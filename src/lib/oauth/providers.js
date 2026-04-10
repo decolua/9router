@@ -24,13 +24,12 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
+import { AWS_REGION_PATTERN, AWS_SSO_HOST_PATTERN } from "./constants/awsValidation";
 
 // Kiro auth service and AWS Builder ID defaults are anchored in us-east-1.
 const KIRO_DEFAULT_REGION = "us-east-1";
 const KIRO_AUTH_METHOD_BUILDER_ID = "builder-id";
 const KIRO_AUTH_METHOD_IDC = "idc";
-const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
-const AWS_SSO_HOST_PATTERN = /^[a-z0-9-]+\.awsapps\.com$/i;
 
 // Provider configurations
 const PROVIDERS = {
@@ -679,7 +678,10 @@ const PROVIDERS = {
           throw new Error("Invalid startUrl. Must be an AWS IAM Identity Center URL");
         }
       } catch (error) {
-        throw new Error(error?.message || "Invalid startUrl format");
+        if (error instanceof TypeError) {
+          throw new Error("Invalid startUrl format");
+        }
+        throw error;
       }
       const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
       const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
