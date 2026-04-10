@@ -1,6 +1,8 @@
 export function formatUsageLimitValue(metric, value) {
   if (metric === "cost") {
-    return `$${Number(value || 0).toFixed(4)}`;
+    const numericValue = Number(value || 0);
+    const decimals = numericValue >= 1 ? 2 : 4;
+    return `$${numericValue.toFixed(decimals)}`;
   }
   return `${Number(value || 0).toFixed(0)} tokens`;
 }

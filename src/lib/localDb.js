@@ -131,10 +131,22 @@ function normalizeApiKeyLimits(input = {}) {
   const usageLimit = input?.usageLimit && typeof input.usageLimit === "object" ? input.usageLimit : {};
 
   const providers = Array.isArray(accessRules.providers)
-    ? Array.from(new Set(accessRules.providers.filter((v) => typeof v === "string" && v.trim() !== "").map((v) => v.trim().toLowerCase())))
+    ? Array.from(
+        new Set(
+          accessRules.providers
+            .filter((v) => typeof v === "string" && v.trim() !== "")
+            .map((v) => v.trim().toLowerCase()),
+        ),
+      )
     : [];
   const models = Array.isArray(accessRules.models)
-    ? Array.from(new Set(accessRules.models.filter((v) => typeof v === "string" && v.trim() !== "").map((v) => v.trim().toLowerCase())))
+    ? Array.from(
+        new Set(
+          accessRules.models
+            .filter((v) => typeof v === "string" && v.trim() !== "")
+            .map((v) => v.trim().toLowerCase()),
+        ),
+      )
     : [];
 
   const metric = usageLimit.metric === "cost" ? "cost" : "tokens";
