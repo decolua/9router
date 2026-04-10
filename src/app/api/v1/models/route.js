@@ -13,6 +13,7 @@ const MODELS_DEV_URLS = (process.env.MODELS_DEV_URLS || "https://models.dev/api.
   .split(",")
   .map((url) => url.trim())
   .filter(Boolean);
+// Default cache TTL: 6 hours
 const MODELS_DEV_CACHE_TTL_MS = Number.parseInt(process.env.MODELS_DEV_CACHE_TTL_MS, 10) || (6 * 60 * 60 * 1000);
 const MODELS_DEV_TIMEOUT_MS = Number.parseInt(process.env.MODELS_DEV_TIMEOUT_MS, 10) || 7000;
 const MODELS_DEV_MAX_PARSE_DEPTH = Number.parseInt(process.env.MODELS_DEV_MAX_PARSE_DEPTH, 10) || 6;
@@ -43,6 +44,9 @@ const firstDefinedNumber = (...values) => {
   }
   return undefined;
 };
+
+const hasAnyTokenMetadata = ({ contextWindow, inputTokenLimit, outputTokenLimit }) =>
+  contextWindow !== undefined || inputTokenLimit !== undefined || outputTokenLimit !== undefined;
 
 const collectModelsDevRecords = (value, records, depth = 0) => {
   if (depth >= MODELS_DEV_MAX_PARSE_DEPTH || value == null) return;
@@ -119,7 +123,7 @@ const buildModelsDevIndex = (payload) => {
       tokenInfo?.maxCompletionTokens
     );
 
-    if (contextWindow === undefined && inputTokenLimit === undefined && outputTokenLimit === undefined) continue;
+    if (!hasAnyTokenMetadata({ contextWindow, inputTokenLimit, outputTokenLimit })) continue;
 
     const metadata = {
       source: "models.dev",
@@ -178,7 +182,7 @@ async function fetchModelsDevIndex() {
       return index;
     } catch (error) {
       if (process.env.NODE_ENV !== "production") {
-        console.log(`[v1/models] models.dev fetch failed (${url}):`, error?.message || error);
+        console.error(`[v1/models] models.dev fetch failed (${url}):`, error?.message || error);
       }
       continue;
     }
@@ -214,7 +218,7 @@ const enrichModelsWithModelsDevMetadata = (models, modelsDevIndex) =>
     return {
       ...model,
       ...metadata,
-      token_size: metadata.context_window ?? metadata.max_input_tokens,
+      ...(metadata.context_window !== undefined ? { token_size: metadata.context_window } : {}),
     };
   });
 
