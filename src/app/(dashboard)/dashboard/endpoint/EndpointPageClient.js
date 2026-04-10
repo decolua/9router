@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { formatUsageLimitSummary } from "@/shared/utils/apiKeyLimits";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -454,9 +455,7 @@ export default function APIPageClient({ machineId }) {
     if (providers.length > 0) parts.push(`Providers: ${providers.join(", ")}`);
     if (models.length > 0) parts.push(`Models: ${models.join(", ")}`);
     if (usage.enabled && usage.value) {
-      const metric = usage.metric === "cost" ? "$" : "";
-      const suffix = usage.metric === "tokens" ? " tokens" : "";
-      parts.push(`Quota: ${metric}${usage.value}${suffix} / ${usage.period}`);
+      parts.push(`Quota: ${formatUsageLimitSummary(usage)}`);
     }
     return parts.length > 0 ? parts.join(" • ") : "No limits";
   };

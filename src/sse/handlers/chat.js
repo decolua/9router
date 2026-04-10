@@ -5,7 +5,6 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
   getActiveApiKey,
   isApiKeyAllowedForModel,
   isApiKeyWithinUsageLimit,
@@ -21,6 +20,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { buildUsageLimitExceededMessage } from "@/shared/utils/apiKeyLimits";
 
 /**
  * Handle chat completion request
@@ -75,14 +75,13 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
   }
   if (apiKey) {
     apiKeyRecord = await getActiveApiKey(apiKey);
+  }
+  if (settings.requireApiKey && !apiKeyRecord) {
+    log.warn("AUTH", "Invalid API key (requireApiKey=true)");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
 
   if (!modelStr) {
@@ -151,10 +150,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
     const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
     if (!usageCheck.allowed) {
-      const metricLabel = usageCheck.metric === "cost" ? "cost" : "tokens";
       return errorResponse(
         HTTP_STATUS.TOO_MANY_REQUESTS,
-        `API key ${metricLabel} limit exceeded (${usageCheck.current.toFixed(usageCheck.metric === "cost" ? 4 : 0)}/${usageCheck.limit})`,
+        buildUsageLimitExceededMessage(usageCheck),
       );
     }
   }

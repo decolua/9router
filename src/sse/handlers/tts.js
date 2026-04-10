@@ -1,5 +1,5 @@
 import {
-  extractApiKey, isValidApiKey,
+  extractApiKey,
   getProviderCredentials, markAccountUnavailable,
   getActiveApiKey, isApiKeyAllowedForModel, isApiKeyWithinUsageLimit,
 } from "../services/auth.js";
@@ -9,6 +9,7 @@ import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
+import { buildUsageLimitExceededMessage } from "@/shared/utils/apiKeyLimits";
 
 // Providers that require stored credentials (not noAuth)
 const CREDENTIALED_PROVIDERS = new Set(["openai", "elevenlabs"]);
@@ -31,11 +32,12 @@ export async function handleTts(request) {
   let apiKeyRecord = null;
   if (settings.requireApiKey) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
   if (apiKey) {
     apiKeyRecord = await getActiveApiKey(apiKey);
+  }
+  if (settings.requireApiKey && !apiKeyRecord) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -53,10 +55,9 @@ export async function handleTts(request) {
     }
     const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
     if (!usageCheck.allowed) {
-      const metricLabel = usageCheck.metric === "cost" ? "cost" : "tokens";
       return errorResponse(
         HTTP_STATUS.TOO_MANY_REQUESTS,
-        `API key ${metricLabel} limit exceeded (${usageCheck.current.toFixed(usageCheck.metric === "cost" ? 4 : 0)}/${usageCheck.limit})`,
+        buildUsageLimitExceededMessage(usageCheck),
       );
     }
   }

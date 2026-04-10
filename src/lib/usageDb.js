@@ -481,7 +481,7 @@ function getLimitCutoff(period) {
   return 0;
 }
 
-function filterHistoryByApiKey(history, apiKeyFilter, allApiKeys = []) {
+function filterHistoryByKeySelector(history, apiKeyFilter, allApiKeys = []) {
   if (!apiKeyFilter || apiKeyFilter === "all") return history;
   if (apiKeyFilter === "local-no-key") {
     return history.filter((entry) => !entry.apiKey);
@@ -568,7 +568,7 @@ export async function getUsageStats(period = "all", options = {}) {
     console.warn("Could not fetch API keys for usage stats:", error.message);
   }
 
-  history = filterHistoryByApiKey(history, options.apiKeyId, allApiKeys);
+  history = filterHistoryByKeySelector(history, options.apiKeyId, allApiKeys);
 
   // Create a map from API key to key info
   const apiKeyMap = {};
@@ -861,7 +861,7 @@ export async function getChartData(period = "7d", options = {}) {
     try {
       const { getApiKeys } = await import("@/lib/localDb.js");
       const allApiKeys = await getApiKeys();
-      history = filterHistoryByApiKey(history, options.apiKeyId, allApiKeys);
+      history = filterHistoryByKeySelector(history, options.apiKeyId, allApiKeys);
     } catch {
       history = [];
     }
