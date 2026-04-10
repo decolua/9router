@@ -30,7 +30,7 @@ export default function UsageChart({ period = "7d", apiKey = "all" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-        const res = await fetch(`/api/usage/chart?period=${period}&apiKey=${encodeURIComponent(apiKey)}`);
+      const res = await fetch(`/api/usage/chart?period=${period}&apiKey=${encodeURIComponent(apiKey)}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
