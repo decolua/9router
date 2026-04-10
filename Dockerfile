@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
-FROM oven/bun:1-alpine AS base
+ARG BUN_IMAGE=oven/bun:1.3.2-alpine
+FROM ${BUN_IMAGE} AS base
 WORKDIR /app
 
 FROM base AS builder
 
-RUN apk add --no-cache nodejs npm python3 make g++ linux-headers
+RUN apk --no-cache upgrade && apk --no-cache add nodejs npm python3 make g++ linux-headers
 
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
@@ -14,7 +15,7 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM oven/bun:1-alpine AS runner
+FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="9router"
@@ -36,7 +37,7 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 RUN mkdir -p /app/data && chown -R bun:bun /app
 
 # Fix permissions at runtime (handles mounted volumes)
-RUN apk add --no-cache su-exec && \
+RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
   printf '#!/bin/sh\nchown -R bun:bun /app/data 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
