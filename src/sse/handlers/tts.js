@@ -1,6 +1,7 @@
 import {
-  extractApiKey, isValidApiKey,
+  extractApiKey,
   getProviderCredentials, markAccountUnavailable,
+  isApiKeyAllowedForModelOrNoKey, isApiKeyWithinUsageLimit, resolveRequestApiKeyRecord,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -8,6 +9,7 @@ import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
+import { buildUsageLimitExceededMessage } from "@/shared/utils/apiKeyLimits";
 
 // Providers that require stored credentials (not noAuth)
 const CREDENTIALED_PROVIDERS = new Set(["openai", "elevenlabs"]);
@@ -26,11 +28,10 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}`);
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  const apiKey = extractApiKey(request);
+  const { apiKeyRecord, error: apiKeyError } = await resolveRequestApiKeyRecord(apiKey, { requireApiKey: settings.requireApiKey });
+  if (apiKeyError) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, apiKeyError);
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -41,6 +42,19 @@ export async function handleTts(request) {
 
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
+
+  if (apiKeyRecord) {
+    if (!isApiKeyAllowedForModelOrNoKey(apiKeyRecord, provider, model)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not allowed to access this provider/model");
+    }
+    const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
+    if (!usageCheck.allowed) {
+      return errorResponse(
+        HTTP_STATUS.TOO_MANY_REQUESTS,
+        buildUsageLimitExceededMessage(usageCheck),
+      );
+    }
+  }
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {

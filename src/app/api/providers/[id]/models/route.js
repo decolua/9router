@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
+import { PROVIDERS as OPEN_SSE_PROVIDERS } from "open-sse/config/providers.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -43,6 +44,28 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+const stripKnownCompletionPath = (url) => {
+  if (!url || typeof url !== "string") return "";
+  return url
+    .replace(/\/$/, "")
+    .replace(/\/chat\/completions$/i, "")
+    .replace(/\/messages$/i, "")
+    .replace(/\/api\/chat$/i, "")
+    .replace(/\/chat$/i, "");
+};
+
+const buildGenericModelEndpoints = (baseUrl) => {
+  const normalized = stripKnownCompletionPath(baseUrl);
+  if (!normalized) return [];
+  const candidates = new Set([
+    `${normalized}/models`,
+  ]);
+  if (normalized.endsWith("/v1")) {
+    candidates.add(`${normalized.replace(/\/v1$/, "")}/v1/models`);
+  }
+  return Array.from(candidates);
+};
 
 const resolveQwenModelsUrl = (connection) => {
   const fallback = "https://portal.qwen.ai/v1/models";
@@ -380,16 +403,49 @@ export async function GET(request, { params }) {
       });
     }
 
+    // Get auth token
+    const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
+
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
+      const providerConfig = OPEN_SSE_PROVIDERS[connection.provider];
+      const genericBaseUrl = providerConfig?.baseUrl || connection.providerSpecificData?.baseUrl;
+      const endpoints = buildGenericModelEndpoints(genericBaseUrl);
+
+      if (!token) {
+        return NextResponse.json({ error: "No valid token found" }, { status: 401 });
+      }
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`,
+              "x-api-key": token,
+              "anthropic-version": "2023-06-01",
+            },
+          });
+          if (!response.ok) continue;
+          const data = await response.json();
+          const models = parseOpenAIStyleModels(data);
+          if (models.length > 0) {
+            return NextResponse.json({
+              provider: connection.provider,
+              connectionId: connection.id,
+              models,
+            });
+          }
+        } catch {}
+      }
+
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }
       );
     }
 
-    // Get auth token
-    const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
     if (!token) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }

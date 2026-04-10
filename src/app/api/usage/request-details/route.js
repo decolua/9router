@@ -3,7 +3,7 @@ import { getRequestDetails } from "@/lib/usageDb";
 
 /**
  * GET /api/usage/request-details
- * Query parameters: page, pageSize (1-100), provider, model, connectionId, status, startDate, endDate
+ * Query parameters: page, pageSize (1-100), provider, model, connectionId, apiKeyId, status, startDate, endDate
  */
 export async function GET(request) {
   try {
@@ -14,6 +14,7 @@ export async function GET(request) {
     const provider = searchParams.get("provider");
     const model = searchParams.get("model");
     const connectionId = searchParams.get("connectionId");
+    const apiKeyId = searchParams.get("apiKeyId");
     const status = searchParams.get("status");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
@@ -40,6 +41,7 @@ export async function GET(request) {
     if (provider) filter.provider = provider;
     if (model) filter.model = model;
     if (connectionId) filter.connectionId = connectionId;
+    if (apiKeyId) filter.apiKeyId = apiKeyId;
     if (status) filter.status = status;
     if (startDate) filter.startDate = startDate;
     if (endDate) filter.endDate = endDate;

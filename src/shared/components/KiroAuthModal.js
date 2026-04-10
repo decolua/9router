@@ -126,10 +126,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               </div>
             </button>
 
-            {/* AWS IAM Identity Center (IDC) - HIDDEN */}
+            {/* AWS IAM Identity Center (IDC) */}
             <button
               onClick={() => handleMethodSelect("idc")}
-              className="hidden w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
+              className="w-full p-4 text-left border border-border rounded-lg hover:bg-sidebar transition-colors"
             >
               <div className="flex items-start gap-3">
                 <span className="material-symbols-outlined text-primary mt-0.5">business</span>

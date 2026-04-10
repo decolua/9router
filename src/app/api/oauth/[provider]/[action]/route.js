@@ -6,6 +6,7 @@ import {
   requestDeviceCode, 
   pollForToken 
 } from "@/lib/oauth/providers";
+import { AWS_REGION_PATTERN, validateAwsSsoStartUrl } from "@/lib/oauth/constants/awsValidation";
 import { createProviderConnection } from "@/models";
 
 /**
@@ -37,15 +38,34 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
+      const startUrl = searchParams.get("startUrl");
+      const region = searchParams.get("region");
+      if (provider === "kiro") {
+        if (startUrl) {
+          const validation = validateAwsSsoStartUrl(startUrl);
+          if (!validation.valid) {
+            return NextResponse.json({ error: validation.error }, { status: 400 });
+          }
+        }
+        if (region && !AWS_REGION_PATTERN.test(region)) {
+          return NextResponse.json({ error: "Invalid AWS region format" }, { status: 400 });
+        }
+      }
+      const deviceCodeOptions = provider === "kiro"
+        ? {
+            startUrl: startUrl || undefined,
+            region: region || undefined,
+          }
+        : undefined;
       
       // Providers that don't use PKCE for device code
       const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider);
+        deviceData = await requestDeviceCode(provider, undefined, deviceCodeOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge);
+        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceCodeOptions);
       }
 
       return NextResponse.json({

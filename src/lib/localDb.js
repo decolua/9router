@@ -68,10 +68,26 @@ const defaultData = {
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
     outboundNoProxy: "",
+    modelsDevCacheTtlMinutes: 60,
     mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   },
   pricing: {} // NEW: pricing configuration
 };
+
+function createDefaultApiKeyLimits() {
+  return {
+    accessRules: {
+      providers: [],
+      models: [],
+    },
+    usageLimit: {
+      enabled: false,
+      metric: "tokens",
+      period: "daily",
+      value: null,
+    },
+  };
+}
 
 // Seed db.json with defaults on first run so proper-lockfile never hits ENOENT
 if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
@@ -104,9 +120,55 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      modelsDevCacheTtlMinutes: 60,
       mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
     },
     pricing: {},
+  };
+}
+
+function normalizeApiKeyLimits(input = {}) {
+  const defaults = createDefaultApiKeyLimits();
+  const accessRules = input?.accessRules && typeof input.accessRules === "object" ? input.accessRules : {};
+  const usageLimit = input?.usageLimit && typeof input.usageLimit === "object" ? input.usageLimit : {};
+
+  const providers = Array.isArray(accessRules.providers)
+    ? Array.from(
+        new Set(
+          accessRules.providers
+            .filter((v) => typeof v === "string" && v.trim() !== "")
+            .map((v) => v.trim().toLowerCase()),
+        ),
+      )
+    : [];
+  const models = Array.isArray(accessRules.models)
+    ? Array.from(
+        new Set(
+          accessRules.models
+            .filter((v) => typeof v === "string" && v.trim() !== "")
+            .map((v) => v.trim().toLowerCase()),
+        ),
+      )
+    : [];
+
+  const metric = usageLimit.metric === "cost" ? "cost" : "tokens";
+  const period = ["daily", "weekly", "monthly", "one_time"].includes(usageLimit.period) ? usageLimit.period : "daily";
+  const parsedValue = Number(usageLimit.value);
+  const value = Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : null;
+  const enabled = Boolean(usageLimit.enabled) && value !== null;
+
+  return {
+    ...defaults,
+    accessRules: {
+      providers,
+      models,
+    },
+    usageLimit: {
+      enabled,
+      metric,
+      period,
+      value,
+    },
   };
 }
 
@@ -159,6 +221,16 @@ function ensureDbShape(data) {
       for (const apiKey of next.apiKeys) {
         if (apiKey.isActive === undefined || apiKey.isActive === null) {
           apiKey.isActive = true;
+          changed = true;
+        }
+        const normalizedLimits = normalizeApiKeyLimits(apiKey);
+        const currentLimits = normalizeApiKeyLimits({
+          accessRules: apiKey.accessRules,
+          usageLimit: apiKey.usageLimit,
+        });
+        if (JSON.stringify(currentLimits) !== JSON.stringify(normalizedLimits)) {
+          apiKey.accessRules = normalizedLimits.accessRules;
+          apiKey.usageLimit = normalizedLimits.usageLimit;
           changed = true;
         }
       }
@@ -889,7 +961,7 @@ function generateShortKey() {
  * @param {string} name - Key name
  * @param {string} machineId - MachineId (required)
  */
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, limits = {}) {
   if (!machineId) {
     throw new Error("machineId is required");
   }
@@ -907,6 +979,7 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId: machineId,
     isActive: true,
+    ...normalizeApiKeyLimits(limits),
     createdAt: now,
   };
 
@@ -946,9 +1019,17 @@ export async function updateApiKey(id, data) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
-  db.data.apiKeys[index] = {
+  const merged = {
     ...db.data.apiKeys[index],
     ...data,
+  };
+  if (data.accessRules !== undefined || data.usageLimit !== undefined) {
+    const normalizedLimits = normalizeApiKeyLimits(merged);
+    merged.accessRules = normalizedLimits.accessRules;
+    merged.usageLimit = normalizedLimits.usageLimit;
+  }
+  db.data.apiKeys[index] = {
+    ...merged,
   };
   await safeWrite(db);
   return db.data.apiKeys[index];
@@ -961,6 +1042,15 @@ export async function validateApiKey(key) {
   const db = await getDb();
   const found = db.data.apiKeys.find(k => k.key === key);
   return found && found.isActive !== false;
+}
+
+/**
+ * Get API key by raw key value
+ */
+export async function getApiKeyByValue(key) {
+  if (!key) return null;
+  const db = await getDb();
+  return db.data.apiKeys.find((k) => k.key === key) || null;
 }
 
 // ============ Data Cleanup ============

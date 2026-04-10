@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { formatUsageLimitSummary } from "@/shared/utils/apiKeyLimits";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
 
 /* ========== CLOUD CODE — COMMENTED OUT (replaced by Tunnel) ==========
 const DEFAULT_CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL || "";
@@ -25,6 +28,19 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [editingKeyId, setEditingKeyId] = useState(null);
+  const [limitForm, setLimitForm] = useState({
+    providers: [],
+    models: [],
+    usageEnabled: false,
+    usageMetric: "tokens",
+    usagePeriod: "daily",
+    usageValue: "",
+  });
+  const [availableProviders, setAvailableProviders] = useState([]);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [limitError, setLimitError] = useState("");
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
@@ -248,13 +264,114 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const buildAvailableProviderOptions = () => {
+    return Object.values(AI_PROVIDERS)
+      .filter((provider) => !provider.hidden)
+      .map((provider) => ({
+        id: provider.id,
+        name: provider.name || provider.id,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  const buildAvailableModelOptions = async () => {
+    const modelMap = new Map();
+    const providerIdByAlias = Object.values(AI_PROVIDERS).reduce((acc, provider) => {
+      if (provider.alias) acc[provider.alias] = provider.id;
+      return acc;
+    }, {});
+
+    // 1) Static models from config
+    for (const provider of Object.values(AI_PROVIDERS)) {
+      const providerId = provider.id;
+      const staticModels = getModelsByProviderId(providerId) || [];
+      for (const model of staticModels) {
+        const modelId = String(model.id || "").trim();
+        if (!modelId) continue;
+        const value = `${providerId}/${modelId}`.toLowerCase();
+        modelMap.set(value, {
+          value,
+          label: `${provider.name || providerId} / ${modelId}`,
+          providerId,
+        });
+      }
+    }
+
+    // 2) Alias models (custom/imported)
+    try {
+      const aliasRes = await fetch("/api/models/alias");
+      if (aliasRes.ok) {
+        const aliasData = await aliasRes.json();
+        const aliases = aliasData.aliases || {};
+        for (const fullModel of Object.values(aliases)) {
+          const value = String(fullModel || "").trim().toLowerCase();
+          const slashIndex = value.indexOf("/");
+          if (!value || slashIndex <= 0) continue;
+          const rawProviderPrefix = value.slice(0, slashIndex);
+          const modelId = value.slice(slashIndex + 1);
+          const providerId = providerIdByAlias[rawProviderPrefix] || rawProviderPrefix;
+          const providerName = AI_PROVIDERS[providerId]?.name || providerId;
+          modelMap.set(`${providerId}/${modelId}`, {
+            value: `${providerId}/${modelId}`,
+            label: `${providerName} / ${modelId}`,
+            providerId,
+          });
+        }
+      }
+    } catch {}
+
+    // 3) Dynamic models from active provider connections
+    try {
+      const providersRes = await fetch("/api/providers");
+      if (providersRes.ok) {
+        const providersData = await providersRes.json();
+        const activeConnections = (providersData.connections || []).filter((conn) => conn.isActive !== false);
+        const dynamicResults = await Promise.all(
+          activeConnections.map(async (conn) => {
+            try {
+              const res = await fetch(`/api/providers/${conn.id}/models`);
+              if (!res.ok) return null;
+              const data = await res.json();
+              return { provider: conn.provider, models: data.models || [] };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        for (const item of dynamicResults) {
+          if (!item || !Array.isArray(item.models)) continue;
+          const providerId = item.provider;
+          const providerName = AI_PROVIDERS[providerId]?.name || providerId;
+          for (const model of item.models) {
+            const modelId = String(model?.id || model?.name || model?.model || "").trim().toLowerCase();
+            if (!modelId) continue;
+            const value = `${providerId}/${modelId}`;
+            modelMap.set(value, {
+              value,
+              label: `${providerName} / ${modelId}`,
+              providerId,
+            });
+          }
+        }
+      }
+    } catch {}
+
+    return Array.from(modelMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  };
+
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, models] = await Promise.all([
+        fetch("/api/keys"),
+        buildAvailableModelOptions(),
+      ]);
       const keysData = await keysRes.json();
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
       }
+      setAvailableProviders(buildAvailableProviderOptions());
+      setAvailableModels(models);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -383,6 +500,74 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const openLimitModal = (key) => {
+    setEditingKeyId(key.id);
+    setLimitForm({
+      providers: Array.isArray(key.accessRules?.providers) ? key.accessRules.providers : [],
+      models: Array.isArray(key.accessRules?.models) ? key.accessRules.models : [],
+      usageEnabled: Boolean(key.usageLimit?.enabled),
+      usageMetric: key.usageLimit?.metric === "cost" ? "cost" : "tokens",
+      usagePeriod: key.usageLimit?.period || "daily",
+      usageValue: key.usageLimit?.value ? String(key.usageLimit.value) : "",
+    });
+    setLimitError("");
+    setShowLimitModal(true);
+  };
+
+  const handleSaveLimits = async () => {
+    if (!editingKeyId) return;
+    const providers = (Array.isArray(limitForm.providers) ? limitForm.providers : [])
+      .map((item) => String(item).trim().toLowerCase())
+      .filter(Boolean);
+    const models = (Array.isArray(limitForm.models) ? limitForm.models : [])
+      .map((item) => String(item).trim().toLowerCase())
+      .filter(Boolean);
+    const value = Number(limitForm.usageValue);
+    const usageValue = Number.isFinite(value) && value > 0 ? value : null;
+
+    try {
+      setLimitError("");
+      const res = await fetch(`/api/keys/${editingKeyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accessRules: { providers, models },
+          usageLimit: {
+            enabled: Boolean(limitForm.usageEnabled && usageValue),
+            metric: limitForm.usageMetric,
+            period: limitForm.usagePeriod,
+            value: usageValue,
+          },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys((prev) => prev.map((key) => (key.id === editingKeyId ? data.key : key)));
+        setShowLimitModal(false);
+        setEditingKeyId(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setLimitError(data.error || "Failed to save limits");
+      }
+    } catch (error) {
+      console.log("Error updating key limits:", error);
+      setLimitError("Failed to save limits");
+    }
+  };
+
+  const getLimitSummary = (key) => {
+    const providers = key.accessRules?.providers || [];
+    const models = key.accessRules?.models || [];
+    const usage = key.usageLimit || {};
+    const parts = [];
+    if (providers.length > 0) parts.push(`Providers: ${providers.join(", ")}`);
+    if (models.length > 0) parts.push(`Models: ${models.join(", ")}`);
+    if (usage.enabled && usage.value) {
+      parts.push(`Quota: ${formatUsageLimitSummary(usage)}`);
+    }
+    return parts.length > 0 ? parts.join(" • ") : "No limits";
   };
 
   const maskKey = (fullKey) => {
@@ -579,8 +764,16 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  <p className="text-xs text-text-muted mt-1">{getLimitSummary(key)}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openLimitModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary"
+                    title="Set limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -678,6 +871,115 @@ export default function APIPageClient({ machineId }) {
           <Button onClick={() => setCreatedKey(null)} fullWidth>
             Done
           </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showLimitModal}
+        title="API Key Limits"
+        onClose={() => {
+          setShowLimitModal(false);
+          setEditingKeyId(null);
+          setLimitError("");
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-main">Allowed Providers</label>
+            <select
+              multiple
+              value={limitForm.providers}
+              onChange={(e) =>
+                setLimitForm((prev) => ({
+                  ...prev,
+                  providers: Array.from(e.target.selectedOptions, (option) => option.value),
+                }))
+              }
+              className="min-h-[120px] px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+            >
+              {availableProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted">Hold Ctrl/Cmd to select multiple providers.</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-text-main">Allowed Models</label>
+            <select
+              multiple
+              value={limitForm.models}
+              onChange={(e) =>
+                setLimitForm((prev) => ({
+                  ...prev,
+                  models: Array.from(e.target.selectedOptions, (option) => option.value),
+                }))
+              }
+              className="min-h-[180px] px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+            >
+              {availableModels.map((model) => (
+                <option key={model.value} value={model.value}>
+                  {model.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-muted">Model list includes static and auto-discovered models from active providers.</p>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Usage quota</p>
+              <p className="text-xs text-text-muted">Limit token or cost usage per period</p>
+            </div>
+            <Toggle
+              checked={limitForm.usageEnabled}
+              onChange={(checked) => setLimitForm((prev) => ({ ...prev, usageEnabled: checked }))}
+            />
+          </div>
+          {limitForm.usageEnabled && (
+            <div className="grid grid-cols-3 gap-2">
+              <select
+                value={limitForm.usageMetric}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usageMetric: e.target.value }))}
+                className="px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+              >
+                <option value="tokens">Tokens</option>
+                <option value="cost">Cost (USD)</option>
+              </select>
+              <select
+                value={limitForm.usagePeriod}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usagePeriod: e.target.value }))}
+                className="px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="one_time">One-time</option>
+              </select>
+              <Input
+                placeholder={limitForm.usageMetric === "cost" ? "10" : "1000000"}
+                value={limitForm.usageValue}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usageValue: e.target.value }))}
+              />
+            </div>
+          )}
+          {limitError && (
+            <p className="text-sm text-red-500">{limitError}</p>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button onClick={handleSaveLimits} fullWidth>Save</Button>
+            <Button
+              onClick={() => {
+                setShowLimitModal(false);
+                setEditingKeyId(null);
+                setLimitError("");
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       </Modal>
 

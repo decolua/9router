@@ -1,4 +1,5 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getApiKeyByValue } from "@/lib/localDb";
+import { getApiKeyUsageForLimit } from "@/lib/usageDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
@@ -271,4 +272,70 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+export async function getActiveApiKey(apiKey) {
+  if (!apiKey) return null;
+  const key = await getApiKeyByValue(apiKey);
+  if (!key || key.isActive === false) return null;
+  return key;
+}
+
+export function isApiKeyAllowedForModelOrNoKey(apiKeyRecord, provider, model) {
+  if (!apiKeyRecord) return true;
+  const allowedProviders = Array.isArray(apiKeyRecord.accessRules?.providers)
+    ? apiKeyRecord.accessRules.providers
+    : [];
+  const allowedModels = Array.isArray(apiKeyRecord.accessRules?.models)
+    ? apiKeyRecord.accessRules.models
+    : [];
+
+  if (allowedProviders.length > 0 && !allowedProviders.includes(String(provider || "").toLowerCase())) {
+    return false;
+  }
+
+  if (allowedModels.length > 0) {
+    const normalizedAllowedModels = allowedModels.map((item) => item.toLowerCase());
+    const modelId = `${provider}/${model}`.toLowerCase();
+    const shortModel = String(model || "").toLowerCase();
+    if (!normalizedAllowedModels.includes(modelId) && !normalizedAllowedModels.includes(shortModel)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export async function resolveRequestApiKeyRecord(apiKey, { requireApiKey = false } = {}) {
+  if (requireApiKey && !apiKey) {
+    return { apiKeyRecord: null, error: "Missing API key" };
+  }
+  if (!apiKey) {
+    return { apiKeyRecord: null, error: null };
+  }
+  const apiKeyRecord = await getActiveApiKey(apiKey);
+  if (requireApiKey && !apiKeyRecord) {
+    return { apiKeyRecord: null, error: "Invalid API key" };
+  }
+  return { apiKeyRecord, error: null };
+}
+
+export async function isApiKeyWithinUsageLimit(apiKeyRecord) {
+  if (!apiKeyRecord?.usageLimit?.enabled) {
+    return { allowed: true };
+  }
+
+  const usage = await getApiKeyUsageForLimit(apiKeyRecord.key, apiKeyRecord.usageLimit);
+  const metric = apiKeyRecord.usageLimit.metric === "cost" ? "cost" : "tokens";
+  const current = metric === "cost" ? usage.cost : usage.tokens;
+  const limit = Number(apiKeyRecord.usageLimit.value);
+  const allowed = Number.isFinite(limit) ? current < limit : true;
+
+  return {
+    allowed,
+    metric,
+    current,
+    limit,
+    period: apiKeyRecord.usageLimit.period || "daily",
+  };
 }

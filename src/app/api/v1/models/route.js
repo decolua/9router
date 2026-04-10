@@ -1,6 +1,8 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { extractApiKey, getActiveApiKey, isApiKeyAllowedForModelOrNoKey } from "@/sse/services/auth";
+import { enrichModelsWithModelsDevMetadata, fetchModelsDevIndex } from "@/lib/modelsDevMetadata";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -84,8 +86,18 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list
  * Returns models from all active providers and combos in OpenAI format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const modelsDevIndex = await fetchModelsDevIndex();
+    const apiKey = extractApiKey(request);
+    const apiKeyRecord = apiKey ? await getActiveApiKey(apiKey) : null;
+    const hasAccessRestrictions = Boolean(
+      apiKeyRecord && (
+        (apiKeyRecord.accessRules?.providers || []).length > 0
+        || (apiKeyRecord.accessRules?.models || []).length > 0
+      )
+    );
+
     // Get active provider connections
     let connections = [];
     try {
@@ -119,6 +131,7 @@ export async function GET() {
 
     // Add combos first (they appear at the top)
     for (const combo of combos) {
+      if (hasAccessRestrictions) continue;
       models.push({
         id: combo.name,
         object: "model",
@@ -194,6 +207,9 @@ export async function GET() {
           .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
         for (const modelId of modelIds) {
+          if (apiKeyRecord && !isApiKeyAllowedForModelOrNoKey(apiKeyRecord, providerId, modelId)) {
+            continue;
+          }
           models.push({
             id: `${outputAlias}/${modelId}`,
             object: "model",
@@ -209,7 +225,7 @@ export async function GET() {
 
     return Response.json({
       object: "list",
-      data: models,
+      data: enrichModelsWithModelsDevMetadata(models, modelsDevIndex),
     }, {
       headers: {
         "Access-Control-Allow-Origin": "*",
