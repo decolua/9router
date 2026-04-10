@@ -9,6 +9,7 @@ const MODELS_DEV_TIMEOUT_MS = Number.parseInt(process.env.MODELS_DEV_TIMEOUT_MS,
 const MODELS_DEV_MAX_PARSE_DEPTH = Number.parseInt(process.env.MODELS_DEV_MAX_PARSE_DEPTH, 10) || 6;
 const DEFAULT_MODELS_DEV_CACHE_TTL_MS = 60 * 60 * 1000;
 const MODELS_DEV_CACHE_TTL_MINUTES_SETTING_KEY = "modelsDevCacheTtlMinutes";
+const MODELS_DEV_CONTAINER_KEYS = ["data", "models", "model", "items", "results", "providers", "list", "entries", "metadata", "tokens"];
 
 let modelsDevCache = null;
 
@@ -40,7 +41,7 @@ const hasAnyTokenMetadata = ({ contextWindow, inputTokenLimit, outputTokenLimit 
 const looksLikeContainerKey = (key) => {
   if (typeof key !== "string") return true;
   const normalized = key.trim().toLowerCase();
-  return normalized === "" || ["data", "models", "model", "items", "results", "providers", "list", "entries", "metadata", "tokens"].includes(normalized);
+  return normalized === "" || MODELS_DEV_CONTAINER_KEYS.includes(normalized);
 };
 
 const looksLikeTokenMetadataRecord = (value) => {

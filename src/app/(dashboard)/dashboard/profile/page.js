@@ -652,7 +652,7 @@ export default function ProfilePage() {
             <div className="flex items-end justify-between pt-4 border-t border-border/50 gap-4">
               <div className="flex-1">
                 <p className="font-medium">models.dev cache TTL (minutes)</p>
-                <p className="text-sm text-text-muted">Default 60 minutes. Applies to token metadata for `/v1/models` and provider model management UI.</p>
+                <p className="text-sm text-text-muted">Default 60 minutes (valid range: 1-1440). Applies to token metadata for `/v1/models` and provider model management UI.</p>
               </div>
               <div className="flex items-center gap-2">
                 <Input

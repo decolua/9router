@@ -35,6 +35,7 @@ export async function POST(request) {
 
     return NextResponse.json({ metadata });
   } catch (error) {
+    console.error("[api/models/metadata] Failed to fetch model metadata:", error);
     return NextResponse.json({ error: error.message || "Failed to fetch model metadata" }, { status: 500 });
   }
 }

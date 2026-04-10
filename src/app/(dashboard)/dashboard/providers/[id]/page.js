@@ -11,10 +11,13 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
+const ONE_THOUSAND = 1_000;
+const ONE_MILLION = 1_000_000;
+
 const formatTokenSize = (tokenSize) => {
   if (!Number.isFinite(tokenSize) || tokenSize <= 0) return null;
-  if (tokenSize >= 1_000_000) return `${(tokenSize / 1_000_000).toFixed(tokenSize % 1_000_000 === 0 ? 0 : 1)}M`;
-  if (tokenSize >= 1_000) return `${(tokenSize / 1_000).toFixed(tokenSize % 1_000 === 0 ? 0 : 1)}k`;
+  if (tokenSize >= ONE_MILLION) return `${(tokenSize / ONE_MILLION).toFixed(tokenSize % ONE_MILLION === 0 ? 0 : 1)}M`;
+  if (tokenSize >= ONE_THOUSAND) return `${(tokenSize / ONE_THOUSAND).toFixed(tokenSize % ONE_THOUSAND === 0 ? 0 : 1)}k`;
   return String(tokenSize);
 };
 
