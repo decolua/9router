@@ -409,7 +409,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
               )}
 
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0 || !selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.has9Router} loading={restoring}>
