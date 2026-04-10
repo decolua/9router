@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN bun run build:bun
+RUN npm run build
 
 FROM oven/bun:1-alpine AS runner
 WORKDIR /app
