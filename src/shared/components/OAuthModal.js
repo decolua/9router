@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -138,7 +138,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const res = await fetch(`/api/oauth/${provider}/device-code`);
+        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        if (provider === "kiro" && idcConfig?.startUrl) {
+          deviceCodeUrl.searchParams.set("startUrl", idcConfig.startUrl);
+          if (idcConfig?.region) {
+            deviceCodeUrl.searchParams.set("region", idcConfig.region);
+          }
+        }
+        const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
@@ -149,7 +156,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (verifyUrl) window.open(verifyUrl, "_blank");
 
         // Pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        const extraData = provider === "kiro"
+          ? {
+              _clientId: data._clientId,
+              _clientSecret: data._clientSecret,
+              _region: data._region,
+              _authMethod: data._authMethod,
+            }
+          : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
@@ -195,7 +209,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling]);
+  }, [provider, isLocalhost, startPolling, idcConfig]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -474,4 +488,9 @@ OAuthModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   /** Extra metadata passed to /authorize and /exchange (e.g. gitlab clientId/baseUrl) */
   oauthMeta: PropTypes.object,
+  /** Kiro IAM Identity Center settings */
+  idcConfig: PropTypes.shape({
+    startUrl: PropTypes.string,
+    region: PropTypes.string,
+  }),
 };

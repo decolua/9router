@@ -652,9 +652,15 @@ const PROVIDERS = {
     config: KIRO_CONFIG,
     flowType: "device_code",
     // Kiro uses AWS SSO OIDC - requires client registration first
-    requestDeviceCode: async (config) => {
+    requestDeviceCode: async (config, _codeChallenge, options = {}) => {
+      const region = options?.region || "us-east-1";
+      const startUrl = options?.startUrl || config.startUrl;
+      const isEnterpriseIDC = !!options?.startUrl;
+      const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
+      const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
+
       // Step 1: Register client with AWS SSO OIDC
-      const registerRes = await fetch(config.registerClientUrl, {
+      const registerRes = await fetch(registerClientUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -677,7 +683,7 @@ const PROVIDERS = {
       const clientInfo = await registerRes.json();
 
       // Step 2: Request device authorization
-      const deviceRes = await fetch(config.deviceAuthUrl, {
+      const deviceRes = await fetch(deviceAuthUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -686,7 +692,7 @@ const PROVIDERS = {
         body: JSON.stringify({
           clientId: clientInfo.clientId,
           clientSecret: clientInfo.clientSecret,
-          startUrl: config.startUrl,
+          startUrl,
         }),
       });
 
@@ -708,10 +714,15 @@ const PROVIDERS = {
         // Store client credentials for token exchange
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
+        _region: region,
+        _authMethod: isEnterpriseIDC ? "idc" : "builder-id",
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
-      const response = await fetch(config.tokenUrl, {
+      const tokenUrl = extraData?._region
+        ? `https://oidc.${extraData._region}.amazonaws.com/token`
+        : config.tokenUrl;
+      const response = await fetch(tokenUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -745,6 +756,8 @@ const PROVIDERS = {
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
+            _region: extraData?._region,
+            _authMethod: extraData?._authMethod,
           },
         };
       }
@@ -766,6 +779,8 @@ const PROVIDERS = {
           profileArn: tokens?.profile_arn || null,
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
+          region: tokens._region,
+          authMethod: tokens._authMethod || "builder-id",
         },
       };
       return mapped;
@@ -1158,12 +1173,12 @@ export async function exchangeTokens(providerName, code, redirectUri, codeVerifi
 /**
  * Request device code (for device_code flow)
  */
-export async function requestDeviceCode(providerName, codeChallenge) {
+export async function requestDeviceCode(providerName, codeChallenge, options) {
   const provider = getProvider(providerName);
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  return await provider.requestDeviceCode(provider.config, codeChallenge);
+  return await provider.requestDeviceCode(provider.config, codeChallenge, options);
 }
 
 /**
@@ -1213,4 +1228,3 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
 
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
-

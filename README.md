@@ -808,7 +808,7 @@ Models:
 
 ```bash
 Dashboard → Connect Kiro
-→ AWS Builder ID or Google/GitHub
+→ AWS Builder ID or AWS IAM Identity Center (Enterprise SSO) or Google/GitHub
 → Unlimited usage
 
 Models:

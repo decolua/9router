@@ -37,15 +37,23 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
+      const startUrl = searchParams.get("startUrl");
+      const region = searchParams.get("region");
+      const deviceCodeOptions = provider === "kiro"
+        ? {
+            startUrl: startUrl || undefined,
+            region: region || undefined,
+          }
+        : undefined;
       
       // Providers that don't use PKCE for device code
       const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider);
+        deviceData = await requestDeviceCode(provider, undefined, deviceCodeOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge);
+        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceCodeOptions);
       }
 
       return NextResponse.json({
