@@ -6,7 +6,7 @@ import {
   requestDeviceCode, 
   pollForToken 
 } from "@/lib/oauth/providers";
-import { AWS_REGION_PATTERN, AWS_SSO_HOST_PATTERN } from "@/lib/oauth/constants/awsValidation";
+import { AWS_REGION_PATTERN, validateAwsSsoStartUrl } from "@/lib/oauth/constants/awsValidation";
 import { createProviderConnection } from "@/models";
 
 /**
@@ -42,16 +42,9 @@ export async function GET(request, { params }) {
       const region = searchParams.get("region");
       if (provider === "kiro") {
         if (startUrl) {
-          if (!startUrl.startsWith("https://")) {
-            return NextResponse.json({ error: "Invalid startUrl. Must start with https://" }, { status: 400 });
-          }
-          try {
-            const parsed = new URL(startUrl);
-            if (!AWS_SSO_HOST_PATTERN.test(parsed.hostname)) {
-              return NextResponse.json({ error: "Invalid startUrl. Must be an AWS IAM Identity Center URL" }, { status: 400 });
-            }
-          } catch {
-            return NextResponse.json({ error: "Invalid startUrl format" }, { status: 400 });
+          const validation = validateAwsSsoStartUrl(startUrl);
+          if (!validation.valid) {
+            return NextResponse.json({ error: validation.error }, { status: 400 });
           }
         }
         if (region && !AWS_REGION_PATTERN.test(region)) {

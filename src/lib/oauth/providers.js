@@ -24,7 +24,7 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
-import { AWS_REGION_PATTERN, AWS_SSO_HOST_PATTERN } from "./constants/awsValidation";
+import { AWS_REGION_PATTERN, validateAwsSsoStartUrl } from "./constants/awsValidation";
 
 // Kiro auth service and AWS Builder ID defaults are anchored in us-east-1.
 const KIRO_DEFAULT_REGION = "us-east-1";
@@ -663,25 +663,14 @@ const PROVIDERS = {
       const startUrl = options?.startUrl || config.startUrl;
       const hasCustomStartUrl =
         typeof options?.startUrl === "string" &&
-        options.startUrl.length > 0 &&
-        options.startUrl !== config.startUrl;
+        options.startUrl.length > 0;
       const isEnterpriseIDC = hasCustomStartUrl;
       if (!AWS_REGION_PATTERN.test(region)) {
         throw new Error("Invalid AWS region format");
       }
-      if (!startUrl?.startsWith("https://")) {
-        throw new Error("Invalid startUrl. Must start with https://");
-      }
-      try {
-        const parsed = new URL(startUrl);
-        if (!AWS_SSO_HOST_PATTERN.test(parsed.hostname)) {
-          throw new Error("Invalid startUrl. Must be an AWS IAM Identity Center URL");
-        }
-      } catch (error) {
-        if (error instanceof TypeError) {
-          throw new Error("Invalid startUrl format");
-        }
-        throw error;
+      const startUrlValidation = validateAwsSsoStartUrl(startUrl);
+      if (!startUrlValidation.valid) {
+        throw new Error(startUrlValidation.error);
       }
       const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
       const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
