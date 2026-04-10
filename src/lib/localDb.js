@@ -59,6 +59,8 @@ const defaultData = {
     providerStrategies: {},
     comboStrategy: "fallback",
     comboStrategies: {},
+    ccFilterNaming: false,
+    bypassAgentToolCalls: false,
     requireLogin: true,
     observabilityEnabled: true,
     observabilityMaxRecords: 1000,

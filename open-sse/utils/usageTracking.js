@@ -302,12 +302,24 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
 
   // Add cache info if present (unified from different formats)
   const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens;
-  if (cacheRead) msg += ` | cache_read=${cacheRead}`;
-
   const cacheCreation = usage.cache_creation_input_tokens;
-  if (cacheCreation) msg += ` | cache_create=${cacheCreation}`;
-
   const reasoning = usage.reasoning_tokens;
+  
+  // Calculate cache efficiency metrics
+  // Efficiency = cached tokens / total prompt tokens (which already includes cached + creation tokens)
+  // inTokens already represents the full prompt_tokens value (input + cache_read + cache_creation combined)
+  const cacheEfficiency = inTokens > 0 ? ((cacheRead || 0) / inTokens * 100).toFixed(1) : 0;
+  
+  if (cacheRead) {
+    msg += ` | cache_read=${cacheRead}`;
+    // Show efficiency percentage and estimated savings
+    msg += ` | eff=${cacheEfficiency}%`;
+    // Estimate cost savings (cached tokens typically cost ~10% of normal input)
+    const estimatedSavings = Math.round((cacheRead || 0) * 0.9);
+    msg += ` | saved≈${estimatedSavings}`;
+  }
+  
+  if (cacheCreation) msg += ` | cache_create=${cacheCreation}`;
   if (reasoning) msg += ` | reasoning=${reasoning}`;
 
   console.log(msg);

@@ -199,6 +199,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       userAgent,
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
+      bypassAgentToolCalls: !!chatSettings.bypassAgentToolCalls,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
