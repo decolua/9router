@@ -10,6 +10,8 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
+const VISIBLE_MEDIA_KINDS = ["embedding", "tts"];
+
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
@@ -134,49 +136,49 @@ export default function Sidebar({ onClose }) {
             </Link>
           ))}
 
-          {/* Media Providers accordion */}
-          {/* <button
-            onClick={() => setMediaOpen((v) => !v)}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-              pathname.startsWith("/dashboard/media-providers")
-                ? "bg-primary/10 text-primary"
-                : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-            )}
-          >
-            <span className="material-symbols-outlined text-[18px]">perm_media</span>
-            <span className="text-sm font-medium flex-1 text-left">Media Providers</span>
-            <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-              expand_more
-            </span>
-          </button> */}
-          {mediaOpen && (
-            <div className="pl-4">
-              {MEDIA_PROVIDER_KINDS.map((kind) => (
-                <Link
-                  key={kind.id}
-                  href={`/dashboard/media-providers/${kind.id}`}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1.5 rounded-lg transition-all group",
-                    pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                  <span className="text-sm">{kind.label}</span>
-                </Link>
-              ))}
-            </div>
-          )}
-
-
           {/* System section */}
           <div className="pt-4 mt-2">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
               System
             </p>
+
+            {/* Media Providers accordion */}
+            <button
+              onClick={() => setMediaOpen((v) => !v)}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                pathname.startsWith("/dashboard/media-providers")
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+              )}
+            >
+              <span className="material-symbols-outlined text-[18px]">perm_media</span>
+              <span className="text-sm font-medium flex-1 text-left">Media Providers</span>
+              <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                expand_more
+              </span>
+            </button>
+            {mediaOpen && (
+              <div className="pl-4">
+                {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
+                  <Link
+                    key={kind.id}
+                    href={`/dashboard/media-providers/${kind.id}`}
+                    onClick={onClose}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-1.5 rounded-lg transition-all group",
+                      pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
+                        ? "bg-primary/10 text-primary"
+                        : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
+                    <span className="text-sm">{kind.label}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+
             {systemItems.map((item) => (
               <Link
                 key={item.href}

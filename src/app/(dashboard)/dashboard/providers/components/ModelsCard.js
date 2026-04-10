@@ -157,7 +157,7 @@ export default function ModelsCard({ providerId, kindFilter }) {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${modelId}` }),
+        body: JSON.stringify({ model: `${providerAlias}/${modelId}`, kind: kindFilter }),
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));

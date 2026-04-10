@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
 
-// POST /api/models/test - Ping a single model via internal completions
+// POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
   try {
-    const { model } = await request.json();
+    const { model, kind } = await request.json();
     if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
 
     const baseUrl = process.env.BASE_URL ||
@@ -21,6 +21,32 @@ export async function POST(request) {
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
     const start = Date.now();
+
+    // Route to appropriate endpoint based on kind
+    if (kind === "embedding") {
+      const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model, input: "test" }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const latencyMs = Date.now() - start;
+      const rawText = await res.text().catch(() => "");
+      let parsed = null;
+      try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+      if (!res.ok) {
+        const detail = parsed?.error?.message || parsed?.error || rawText;
+        return NextResponse.json({ ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status });
+      }
+      const hasEmbedding = Array.isArray(parsed?.data) && parsed.data.length > 0 && Array.isArray(parsed.data[0]?.embedding);
+      if (!hasEmbedding) {
+        return NextResponse.json({ ok: false, latencyMs, status: res.status, error: "Provider returned no embedding data" });
+      }
+      return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
+    }
+
+    // Default: chat completions
     const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
       method: "POST",
       headers,

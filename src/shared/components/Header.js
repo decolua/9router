@@ -8,10 +8,42 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import { ThemeToggle, LanguageSwitcher } from "@/shared/components";
 import NineRemoteButton from "@/shared/components/NineRemoteButton";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
+import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
 
 const getPageInfo = (pathname) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
+
+  // Media provider detail: /dashboard/media-providers/[kind]/[id]
+  const mediaDetailMatch = pathname.match(/\/media-providers\/([^/]+)\/([^/]+)$/);
+  if (mediaDetailMatch) {
+    const kindId = mediaDetailMatch[1];
+    const providerId = mediaDetailMatch[2];
+    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
+    const provider = AI_PROVIDERS[providerId];
+    return {
+      title: provider?.name || providerId,
+      description: "",
+      breadcrumbs: [
+        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
+        { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
+        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+      ],
+    };
+  }
+
+  // Media provider kind: /dashboard/media-providers/[kind]
+  const mediaKindMatch = pathname.match(/\/media-providers\/([^/]+)$/);
+  if (mediaKindMatch) {
+    const kindId = mediaKindMatch[1];
+    const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
+    return {
+      title: kindConfig?.label || kindId,
+      description: `Manage your ${kindConfig?.label || kindId} providers`,
+      icon: kindConfig?.icon || "perm_media",
+      breadcrumbs: [],
+    };
+  }
 
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
@@ -34,7 +66,7 @@ const getPageInfo = (pathname) => {
     }
   }
 
-  if (pathname.includes("/providers"))
+  if (pathname.includes("/providers") && !pathname.includes("/media-providers"))
     return {
       title: "Providers",
       description: "Manage your AI provider connections",

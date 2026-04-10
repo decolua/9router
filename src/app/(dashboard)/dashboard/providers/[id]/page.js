@@ -549,10 +549,11 @@ export default function ProviderDetailPage() {
       );
     }
     // Combine hardcoded models with Kilo free models (deduplicated)
+    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
     const displayModels = [
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ];
+    ].filter((m) => !m.type || m.type === "llm");
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
@@ -1579,7 +1580,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   };
 
   return (
-    <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
+    <div className={`group flex items-center justify-between p-2 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         {/* Priority arrows */}
         <div className="flex flex-col">

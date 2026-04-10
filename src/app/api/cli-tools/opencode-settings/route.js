@@ -77,7 +77,7 @@ export async function GET() {
 // POST - Apply 9Router as openai-compatible provider
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model } = await request.json();
+    const { baseUrl, apiKey, model, subagentModel } = await request.json();
 
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
@@ -97,6 +97,7 @@ export async function POST(request) {
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const keyToUse = apiKey || "sk_9router";
+    const effectiveSubagentModel = subagentModel || model;
 
     // Merge 9router provider
     if (!config.provider) config.provider = {};
@@ -108,11 +109,20 @@ export async function POST(request) {
       },
       models: {
         [model]: { name: model },
+        [effectiveSubagentModel]: { name: effectiveSubagentModel },
       },
     };
 
     // Set as active model
     config.model = `9router/${model}`;
+
+    // Add subagent configuration
+    if (!config.agent) config.agent = {};
+    config.agent.explorer = {
+      description: "Fast explorer subagent for codebase exploration",
+      mode: "subagent",
+      model: `9router/${effectiveSubagentModel}`,
+    };
 
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
@@ -148,6 +158,13 @@ export async function DELETE() {
 
     // Reset model if it was pointing to 9router
     if (config.model?.startsWith("9router/")) delete config.model;
+
+    // Remove subagent configuration
+    if (config.agent?.explorer?.model?.startsWith("9router/")) {
+      delete config.agent.explorer;
+      // Clean up empty agent object
+      if (Object.keys(config.agent).length === 0) delete config.agent;
+    }
 
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 

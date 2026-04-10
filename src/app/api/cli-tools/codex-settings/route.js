@@ -109,7 +109,7 @@ export async function GET() {
 // POST - Update 9Router settings (merge with existing config)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model } = await request.json();
+    const { baseUrl, apiKey, model, subagentModel } = await request.json();
     
     if (!baseUrl || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
@@ -139,6 +139,12 @@ export async function POST(request) {
       name: "9Router",
       base_url: normalizedBaseUrl,
       wire_api: "responses",
+    });
+
+    // Add subagent configuration
+    const effectiveSubagentModel = subagentModel || model;
+    setNestedSection(parsed, "agents.subagent", {
+      model: effectiveSubagentModel,
     });
 
     // Write merged config
@@ -195,6 +201,9 @@ export async function DELETE() {
 
     // Remove 9router provider section
     deleteNestedSection(parsed, "model_providers.9router");
+
+    // Remove subagent configuration
+    deleteNestedSection(parsed, "agents.subagent");
 
     // Write updated config
     const configContent = stringifyTOML(parsed);

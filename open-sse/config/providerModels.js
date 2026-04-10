@@ -212,6 +212,8 @@ export const PROVIDER_MODELS = {
     // Gemini 2.0 series (retiring June 1, 2026)
     { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
     { id: "gemini-2.0-flash-lite", name: "Gemini 2.0 Flash Lite" },
+    { id: "gemma-4-31b-it", name: "Gemma 4 31B IT" },
+
     // Embedding models
     { id: "gemini-embedding-2-preview", name: "Gemini Embedding 2 Preview", type: "embedding" },
     { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
@@ -363,6 +365,63 @@ export const PROVIDER_MODELS = {
     { id: "qwen/qwen3-next-80b-a3b-thinking-maas", name: "Qwen3 Next 80B Thinking (Vertex)" },
     { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B Instruct (Vertex)" },
     { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
+  ],
+
+  // Free/noAuth TTS providers
+  "local-device": [
+    { id: "default", name: "System Default Voice", type: "tts" },
+  ],
+  "google-tts": [
+    { id: "en", name: "English", type: "tts" },
+    { id: "vi", name: "Vietnamese", type: "tts" },
+    { id: "zh-CN", name: "Chinese (Simplified)", type: "tts" },
+    { id: "fr", name: "French", type: "tts" },
+    { id: "de", name: "German", type: "tts" },
+    { id: "ja", name: "Japanese", type: "tts" },
+    { id: "ko", name: "Korean", type: "tts" },
+  ],
+  // OpenAI TTS voices (hardcoded — no public API to list them)
+  // Used by ttsCore.js when provider = openai
+  "openai-tts-voices": [
+    { id: "alloy",   name: "Alloy",   type: "tts" },
+    { id: "ash",     name: "Ash",     type: "tts" },
+    { id: "ballad",  name: "Ballad",  type: "tts" },
+    { id: "cedar",   name: "Cedar",   type: "tts" },
+    { id: "coral",   name: "Coral",   type: "tts" },
+    { id: "echo",    name: "Echo",    type: "tts" },
+    { id: "fable",   name: "Fable",   type: "tts" },
+    { id: "marin",   name: "Marin",   type: "tts" },
+    { id: "nova",    name: "Nova",    type: "tts" },
+    { id: "onyx",    name: "Onyx",    type: "tts" },
+    { id: "sage",    name: "Sage",    type: "tts" },
+    { id: "shimmer", name: "Shimmer", type: "tts" },
+    { id: "verse",   name: "Verse",   type: "tts" },
+  ],
+  // OpenAI TTS models
+  "openai-tts-models": [
+    { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
+    { id: "tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
+    { id: "tts-1",           name: "TTS-1",           type: "tts" },
+  ],
+  // ElevenLabs TTS models
+  "elevenlabs-tts-models": [
+    { id: "eleven_flash_v2_5",       name: "Flash v2.5 (Fastest)",     type: "tts" },
+    { id: "eleven_turbo_v2_5",       name: "Turbo v2.5 (Fast)",        type: "tts" },
+    { id: "eleven_multilingual_v2",  name: "Multilingual v2 (Quality)", type: "tts" },
+    { id: "eleven_monolingual_v1",   name: "Monolingual v1 (English)", type: "tts" },
+  ],
+  "edge-tts": [
+    { id: "en-US-AriaNeural", name: "Aria (en-US)", type: "tts" },
+    { id: "en-US-GuyNeural", name: "Guy (en-US)", type: "tts" },
+    { id: "en-GB-SoniaNeural", name: "Sonia (en-GB)", type: "tts" },
+    { id: "vi-VN-HoaiMyNeural", name: "Hoai My (vi-VN)", type: "tts" },
+    { id: "vi-VN-NamMinhNeural", name: "Nam Minh (vi-VN)", type: "tts" },
+    { id: "zh-CN-XiaoxiaoNeural", name: "Xiaoxiao (zh-CN)", type: "tts" },
+    { id: "zh-CN-YunxiNeural", name: "Yunxi (zh-CN)", type: "tts" },
+    { id: "fr-FR-DeniseNeural", name: "Denise (fr-FR)", type: "tts" },
+    { id: "de-DE-KatjaNeural", name: "Katja (de-DE)", type: "tts" },
+    { id: "ja-JP-NanamiNeural", name: "Nanami (ja-JP)", type: "tts" },
+    { id: "ko-KR-SunHiNeural", name: "SunHi (ko-KR)", type: "tts" },
   ],
 };
 

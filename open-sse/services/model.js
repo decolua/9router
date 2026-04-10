@@ -13,6 +13,8 @@ const ALIAS_TO_PROVIDER_ID = {
   kmc: "kimi-coding",
   cl: "cline",
   oc: "opencode",
+  // TTS providers
+  el: "elevenlabs",
   // API Key providers
   openai: "openai",
   anthropic: "anthropic",
