@@ -141,9 +141,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("startUrl", idcConfig.startUrl);
-          if (idcConfig?.region) {
-            deviceCodeUrl.searchParams.set("region", idcConfig.region);
-          }
+          deviceCodeUrl.searchParams.set("region", idcConfig?.region || "us-east-1");
         }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();

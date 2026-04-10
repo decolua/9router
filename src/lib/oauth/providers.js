@@ -25,6 +25,12 @@ import {
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
 
+// Kiro auth service and AWS Builder ID defaults are anchored in us-east-1.
+const KIRO_DEFAULT_REGION = "us-east-1";
+const KIRO_AUTH_METHOD_BUILDER_ID = "builder-id";
+const KIRO_AUTH_METHOD_IDC = "idc";
+const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
+
 // Provider configurations
 const PROVIDERS = {
   claude: {
@@ -653,9 +659,15 @@ const PROVIDERS = {
     flowType: "device_code",
     // Kiro uses AWS SSO OIDC - requires client registration first
     requestDeviceCode: async (config, _codeChallenge, options = {}) => {
-      const region = options?.region || "us-east-1";
+      const region = options?.region || KIRO_DEFAULT_REGION;
       const startUrl = options?.startUrl || config.startUrl;
       const isEnterpriseIDC = !!options?.startUrl;
+      if (!AWS_REGION_PATTERN.test(region)) {
+        throw new Error("Invalid AWS region format");
+      }
+      if (!startUrl?.startsWith("https://")) {
+        throw new Error("Invalid startUrl. Must start with https://");
+      }
       const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
       const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
 
@@ -715,7 +727,7 @@ const PROVIDERS = {
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
         _region: region,
-        _authMethod: isEnterpriseIDC ? "idc" : "builder-id",
+        _authMethod: isEnterpriseIDC ? KIRO_AUTH_METHOD_IDC : KIRO_AUTH_METHOD_BUILDER_ID,
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
@@ -780,7 +792,7 @@ const PROVIDERS = {
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
           region: tokens._region,
-          authMethod: tokens._authMethod || "builder-id",
+          authMethod: tokens._authMethod || KIRO_AUTH_METHOD_BUILDER_ID,
         },
       };
       return mapped;

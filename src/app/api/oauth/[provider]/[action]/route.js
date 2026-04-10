@@ -8,6 +8,8 @@ import {
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
 
+const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
+
 /**
  * Dynamic OAuth API Route
  * Handles: authorize, exchange, device-code, poll
@@ -39,6 +41,24 @@ export async function GET(request, { params }) {
       const authData = generateAuthData(provider, null);
       const startUrl = searchParams.get("startUrl");
       const region = searchParams.get("region");
+      if (provider === "kiro") {
+        if (startUrl) {
+          if (!startUrl.startsWith("https://")) {
+            return NextResponse.json({ error: "Invalid startUrl. Must start with https://" }, { status: 400 });
+          }
+          try {
+            const parsed = new URL(startUrl);
+            if (!parsed.hostname.endsWith(".awsapps.com")) {
+              return NextResponse.json({ error: "Invalid startUrl. Must be an AWS IAM Identity Center URL" }, { status: 400 });
+            }
+          } catch {
+            return NextResponse.json({ error: "Invalid startUrl format" }, { status: 400 });
+          }
+        }
+        if (region && !AWS_REGION_PATTERN.test(region)) {
+          return NextResponse.json({ error: "Invalid AWS region format" }, { status: 400 });
+        }
+      }
       const deviceCodeOptions = provider === "kiro"
         ? {
             startUrl: startUrl || undefined,
