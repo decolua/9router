@@ -30,6 +30,7 @@ const KIRO_DEFAULT_REGION = "us-east-1";
 const KIRO_AUTH_METHOD_BUILDER_ID = "builder-id";
 const KIRO_AUTH_METHOD_IDC = "idc";
 const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
+const AWS_SSO_HOST_PATTERN = /^[a-z0-9-]+\.awsapps\.com$/i;
 
 // Provider configurations
 const PROVIDERS = {
@@ -661,12 +662,24 @@ const PROVIDERS = {
     requestDeviceCode: async (config, _codeChallenge, options = {}) => {
       const region = options?.region || KIRO_DEFAULT_REGION;
       const startUrl = options?.startUrl || config.startUrl;
-      const isEnterpriseIDC = !!options?.startUrl;
+      const hasCustomStartUrl =
+        typeof options?.startUrl === "string" &&
+        options.startUrl.length > 0 &&
+        options.startUrl !== config.startUrl;
+      const isEnterpriseIDC = hasCustomStartUrl;
       if (!AWS_REGION_PATTERN.test(region)) {
         throw new Error("Invalid AWS region format");
       }
       if (!startUrl?.startsWith("https://")) {
         throw new Error("Invalid startUrl. Must start with https://");
+      }
+      try {
+        const parsed = new URL(startUrl);
+        if (!AWS_SSO_HOST_PATTERN.test(parsed.hostname)) {
+          throw new Error("Invalid startUrl. Must be an AWS IAM Identity Center URL");
+        }
+      } catch (error) {
+        throw new Error(error?.message || "Invalid startUrl format");
       }
       const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
       const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;

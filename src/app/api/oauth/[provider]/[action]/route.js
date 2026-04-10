@@ -9,6 +9,7 @@ import {
 import { createProviderConnection } from "@/models";
 
 const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
+const AWS_SSO_HOST_PATTERN = /^[a-z0-9-]+\.awsapps\.com$/i;
 
 /**
  * Dynamic OAuth API Route
@@ -48,7 +49,7 @@ export async function GET(request, { params }) {
           }
           try {
             const parsed = new URL(startUrl);
-            if (!parsed.hostname.endsWith(".awsapps.com")) {
+            if (!AWS_SSO_HOST_PATTERN.test(parsed.hostname)) {
               return NextResponse.json({ error: "Invalid startUrl. Must be an AWS IAM Identity Center URL" }, { status: 400 });
             }
           } catch {
