@@ -7,6 +7,9 @@ const parseOpenAIStyleModels = (data) => {
   return data?.data || data?.models || data?.results || [];
 };
 
+// Matches provider IDs that are upstream/cross-instance connections (contain a UUID suffix)
+const UPSTREAM_CONNECTION_RE = /[-_][0-9a-f]{8,}$/i;
+
 async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
 
@@ -37,11 +40,15 @@ async function fetchCompatibleModelIds(connection) {
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       method: "GET",
       headers,
       cache: "no-store",
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) return [];
 
@@ -167,7 +174,7 @@ export async function GET() {
             )
           : providerModels.map((model) => model.id);
 
-        if (isCompatibleProvider && rawModelIds.length === 0) {
+        if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
           rawModelIds = await fetchCompatibleModelIds(conn);
         }
 
