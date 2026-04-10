@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { KIRO_DEFAULT_REGION } from "@/lib/oauth/constants/awsValidation";
 
 /**
  * OAuth Modal Component
@@ -141,7 +142,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("startUrl", idcConfig.startUrl);
-          deviceCodeUrl.searchParams.set("region", idcConfig?.region || "us-east-1");
+          deviceCodeUrl.searchParams.set("region", idcConfig?.region || KIRO_DEFAULT_REGION);
         }
         const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();

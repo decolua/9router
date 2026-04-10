@@ -24,10 +24,12 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
-import { AWS_REGION_PATTERN, validateAwsSsoStartUrl } from "./constants/awsValidation";
+import {
+  AWS_REGION_PATTERN,
+  KIRO_DEFAULT_REGION,
+  validateAwsSsoStartUrl,
+} from "./constants/awsValidation";
 
-// Kiro auth service and AWS Builder ID defaults are anchored in us-east-1.
-const KIRO_DEFAULT_REGION = "us-east-1";
 const KIRO_AUTH_METHOD_BUILDER_ID = "builder-id";
 const KIRO_AUTH_METHOD_IDC = "idc";
 
@@ -664,7 +666,6 @@ const PROVIDERS = {
       const hasCustomStartUrl =
         typeof options?.startUrl === "string" &&
         options.startUrl.length > 0;
-      const isEnterpriseIDC = hasCustomStartUrl;
       if (!AWS_REGION_PATTERN.test(region)) {
         throw new Error("Invalid AWS region format");
       }
@@ -731,7 +732,7 @@ const PROVIDERS = {
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
         _region: region,
-        _authMethod: isEnterpriseIDC ? KIRO_AUTH_METHOD_IDC : KIRO_AUTH_METHOD_BUILDER_ID,
+        _authMethod: hasCustomStartUrl ? KIRO_AUTH_METHOD_IDC : KIRO_AUTH_METHOD_BUILDER_ID,
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {

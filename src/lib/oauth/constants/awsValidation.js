@@ -1,5 +1,6 @@
-export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z0-9-]+-\d+$/;
+export const AWS_REGION_PATTERN = /^(us(-gov)?|ap|ca|cn|eu|sa|me|af|il)-(central|(north|south)?(east|west)?)-\d+$/;
 export const AWS_SSO_HOST_PATTERN = /^[a-z0-9-]+\.awsapps\.com$/i;
+export const KIRO_DEFAULT_REGION = "us-east-1";
 
 export function validateAwsSsoStartUrl(startUrl) {
   try {
