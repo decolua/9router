@@ -16,8 +16,14 @@ const ONE_MILLION = 1_000_000;
 
 const formatTokenSize = (tokenSize) => {
   if (!Number.isFinite(tokenSize) || tokenSize <= 0) return null;
-  if (tokenSize >= ONE_MILLION) return `${(tokenSize / ONE_MILLION).toFixed(tokenSize % ONE_MILLION === 0 ? 0 : 1)}M`;
-  if (tokenSize >= ONE_THOUSAND) return `${(tokenSize / ONE_THOUSAND).toFixed(tokenSize % ONE_THOUSAND === 0 ? 0 : 1)}k`;
+  if (tokenSize >= ONE_MILLION) {
+    const scaled = tokenSize / ONE_MILLION;
+    return `${scaled.toFixed(scaled % 1 === 0 ? 0 : 1)}M`;
+  }
+  if (tokenSize >= ONE_THOUSAND) {
+    const scaled = tokenSize / ONE_THOUSAND;
+    return `${scaled.toFixed(scaled % 1 === 0 ? 0 : 1)}k`;
+  }
   return String(tokenSize);
 };
 
