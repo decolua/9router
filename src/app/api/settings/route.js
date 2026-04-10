@@ -31,7 +31,7 @@ export async function PATCH(request) {
       const ttlMinutes = Number.parseInt(body.modelsDevCacheTtlMinutes, 10);
       if (!Number.isFinite(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 1440) {
         return NextResponse.json(
-          { error: "modelsDevCacheTtlMinutes must be an integer between 1 and 1440" },
+          { error: "modelsDevCacheTtlMinutes must be an integer between 1 and 1440 (24 hours)" },
           { status: 400 },
         );
       }
