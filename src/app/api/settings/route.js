@@ -27,6 +27,17 @@ export async function PATCH(request) {
   try {
     const body = await request.json();
 
+    if (Object.prototype.hasOwnProperty.call(body, "modelsDevCacheTtlMinutes")) {
+      const ttlMinutes = Number.parseInt(body.modelsDevCacheTtlMinutes, 10);
+      if (!Number.isFinite(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > 1440) {
+        return NextResponse.json(
+          { error: "modelsDevCacheTtlMinutes must be an integer between 1 and 1440 (24 hours)" },
+          { status: 400 },
+        );
+      }
+      body.modelsDevCacheTtlMinutes = ttlMinutes;
+    }
+
     // If updating password, hash it
     if (body.newPassword) {
       const settings = await getSettings();

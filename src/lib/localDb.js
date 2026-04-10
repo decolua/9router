@@ -68,6 +68,7 @@ const defaultData = {
     outboundProxyEnabled: false,
     outboundProxyUrl: "",
     outboundNoProxy: "",
+    modelsDevCacheTtlMinutes: 60,
     mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   },
   pricing: {} // NEW: pricing configuration
@@ -119,6 +120,7 @@ function cloneDefaultData() {
       outboundProxyEnabled: false,
       outboundProxyUrl: "",
       outboundNoProxy: "",
+      modelsDevCacheTtlMinutes: 60,
       mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
     },
     pricing: {},
