@@ -74,7 +74,21 @@ export class QwenExecutor extends DefaultExecutor {
     if (stream && next?.messages && !next.stream_options) {
       next.stream_options = { include_usage: true };
     }
-    return ensureQwenSystemMessage(next);
+    const result = ensureQwenSystemMessage(next);
+
+    // Qwen API does not support tool_choice "required" or object values when
+    // thinking/reasoning mode is active. This catches all code paths regardless
+    // of source format (Anthropic, OpenAI, Gemini, etc.).
+    // See: InternalError.Algo.InvalidParameter
+    const hasThinkingMode = !!result.reasoning_effort || result.thinking?.type === "enabled";
+    if (hasThinkingMode && result.tool_choice) {
+      const tc = result.tool_choice;
+      if (tc === "required" || typeof tc === "object") {
+        result.tool_choice = "auto";
+      }
+    }
+
+    return result;
   }
 }
 
