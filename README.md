@@ -1163,6 +1163,7 @@ GET http://localhost:20128/v1/models
 Authorization: Bearer your-api-key
 
 → Returns all models + combos in OpenAI format
+→ Includes extra metadata (when available from models.dev): `token_size`, `context_window`, `max_input_tokens`, `max_output_tokens`
 ```
 
 ## 📧 Support
@@ -1208,4 +1209,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
-
