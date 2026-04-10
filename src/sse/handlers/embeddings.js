@@ -4,6 +4,9 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getActiveApiKey,
+  isApiKeyAllowedForModel,
+  isApiKeyWithinUsageLimit,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -43,6 +46,7 @@ export async function handleEmbeddings(request) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  let apiKeyRecord = null;
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -53,6 +57,9 @@ export async function handleEmbeddings(request) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+  if (apiKey) {
+    apiKeyRecord = await getActiveApiKey(apiKey);
   }
 
   if (!modelStr) {
@@ -72,6 +79,20 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+
+  if (apiKeyRecord) {
+    if (!isApiKeyAllowedForModel(apiKeyRecord, provider, model)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not allowed to access this provider/model");
+    }
+    const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
+    if (!usageCheck.allowed) {
+      const metricLabel = usageCheck.metric === "cost" ? "cost" : "tokens";
+      return errorResponse(
+        HTTP_STATUS.TOO_MANY_REQUESTS,
+        `API key ${metricLabel} limit exceeded (${usageCheck.current.toFixed(usageCheck.metric === "cost" ? 4 : 0)}/${usageCheck.limit})`,
+      );
+    }
+  }
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);

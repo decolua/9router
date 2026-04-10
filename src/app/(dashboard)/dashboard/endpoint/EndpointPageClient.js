@@ -25,6 +25,16 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [editingKeyId, setEditingKeyId] = useState(null);
+  const [limitForm, setLimitForm] = useState({
+    providers: "",
+    models: "",
+    usageEnabled: false,
+    usageMetric: "tokens",
+    usagePeriod: "daily",
+    usageValue: "",
+  });
 
   /* ========== CLOUD STATE — COMMENTED OUT (replaced by Tunnel) ==========
   const [cloudEnabled, setCloudEnabled] = useState(false);
@@ -385,6 +395,72 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const openLimitModal = (key) => {
+    setEditingKeyId(key.id);
+    setLimitForm({
+      providers: Array.isArray(key.accessRules?.providers) ? key.accessRules.providers.join(", ") : "",
+      models: Array.isArray(key.accessRules?.models) ? key.accessRules.models.join(", ") : "",
+      usageEnabled: Boolean(key.usageLimit?.enabled),
+      usageMetric: key.usageLimit?.metric === "cost" ? "cost" : "tokens",
+      usagePeriod: key.usageLimit?.period || "daily",
+      usageValue: key.usageLimit?.value ? String(key.usageLimit.value) : "",
+    });
+    setShowLimitModal(true);
+  };
+
+  const handleSaveLimits = async () => {
+    if (!editingKeyId) return;
+    const providers = limitForm.providers
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    const models = limitForm.models
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const value = Number(limitForm.usageValue);
+    const usageValue = Number.isFinite(value) && value > 0 ? value : null;
+
+    try {
+      const res = await fetch(`/api/keys/${editingKeyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accessRules: { providers, models },
+          usageLimit: {
+            enabled: Boolean(limitForm.usageEnabled && usageValue),
+            metric: limitForm.usageMetric,
+            period: limitForm.usagePeriod,
+            value: usageValue,
+          },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys((prev) => prev.map((key) => (key.id === editingKeyId ? data.key : key)));
+        setShowLimitModal(false);
+        setEditingKeyId(null);
+      }
+    } catch (error) {
+      console.log("Error updating key limits:", error);
+    }
+  };
+
+  const getLimitSummary = (key) => {
+    const providers = key.accessRules?.providers || [];
+    const models = key.accessRules?.models || [];
+    const usage = key.usageLimit || {};
+    const parts = [];
+    if (providers.length > 0) parts.push(`Providers: ${providers.join(", ")}`);
+    if (models.length > 0) parts.push(`Models: ${models.join(", ")}`);
+    if (usage.enabled && usage.value) {
+      const metric = usage.metric === "cost" ? "$" : "";
+      const suffix = usage.metric === "tokens" ? " tokens" : "";
+      parts.push(`Quota: ${metric}${usage.value}${suffix} / ${usage.period}`);
+    }
+    return parts.length > 0 ? parts.join(" • ") : "No limits";
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey) return "";
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
@@ -579,8 +655,16 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  <p className="text-xs text-text-muted mt-1">{getLimitSummary(key)}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openLimitModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary"
+                    title="Set limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -678,6 +762,80 @@ export default function APIPageClient({ machineId }) {
           <Button onClick={() => setCreatedKey(null)} fullWidth>
             Done
           </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showLimitModal}
+        title="API Key Limits"
+        onClose={() => {
+          setShowLimitModal(false);
+          setEditingKeyId(null);
+        }}
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            label="Allowed Providers (comma separated)"
+            placeholder="openai, anthropic"
+            value={limitForm.providers}
+            onChange={(e) => setLimitForm((prev) => ({ ...prev, providers: e.target.value }))}
+          />
+          <Input
+            label="Allowed Models (comma separated)"
+            placeholder="openai/gpt-4o-mini, anthropic/claude-3-5-sonnet"
+            value={limitForm.models}
+            onChange={(e) => setLimitForm((prev) => ({ ...prev, models: e.target.value }))}
+          />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Usage quota</p>
+              <p className="text-xs text-text-muted">Limit token or cost usage per period</p>
+            </div>
+            <Toggle
+              checked={limitForm.usageEnabled}
+              onChange={(checked) => setLimitForm((prev) => ({ ...prev, usageEnabled: checked }))}
+            />
+          </div>
+          {limitForm.usageEnabled && (
+            <div className="grid grid-cols-3 gap-2">
+              <select
+                value={limitForm.usageMetric}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usageMetric: e.target.value }))}
+                className="px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+              >
+                <option value="tokens">Tokens</option>
+                <option value="cost">Cost (USD)</option>
+              </select>
+              <select
+                value={limitForm.usagePeriod}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usagePeriod: e.target.value }))}
+                className="px-3 py-2 rounded-lg border border-border bg-bg-subtle text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="one_time">One-time</option>
+              </select>
+              <Input
+                placeholder={limitForm.usageMetric === "cost" ? "10" : "1000000"}
+                value={limitForm.usageValue}
+                onChange={(e) => setLimitForm((prev) => ({ ...prev, usageValue: e.target.value }))}
+              />
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button onClick={handleSaveLimits} fullWidth>Save</Button>
+            <Button
+              onClick={() => {
+                setShowLimitModal(false);
+                setEditingKeyId(null);
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
       </Modal>
 

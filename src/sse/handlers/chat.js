@@ -6,6 +6,9 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getActiveApiKey,
+  isApiKeyAllowedForModel,
+  isApiKeyWithinUsageLimit,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
@@ -66,6 +69,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  let apiKeyRecord = null;
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -76,6 +80,9 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+  }
+  if (apiKey) {
+    apiKeyRecord = await getActiveApiKey(apiKey);
   }
 
   if (!modelStr) {
@@ -95,7 +102,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
       log,
       comboName: modelStr,
       comboStrategy
@@ -103,13 +110,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, apiKeyRecord);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, apiKeyRecord = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -126,7 +133,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
         log,
         comboName: modelStr,
         comboStrategy
@@ -137,6 +144,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  if (apiKeyRecord) {
+    if (!isApiKeyAllowedForModel(apiKeyRecord, provider, model)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not allowed to access this provider/model");
+    }
+    const usageCheck = await isApiKeyWithinUsageLimit(apiKeyRecord);
+    if (!usageCheck.allowed) {
+      const metricLabel = usageCheck.metric === "cost" ? "cost" : "tokens";
+      return errorResponse(
+        HTTP_STATUS.TOO_MANY_REQUESTS,
+        `API key ${metricLabel} limit exceeded (${usageCheck.current.toFixed(usageCheck.metric === "cost" ? 4 : 0)}/${usageCheck.limit})`,
+      );
+    }
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {

@@ -2,7 +2,9 @@ import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const apiKeyId = searchParams.get("apiKey") || "all";
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
 
@@ -13,13 +15,13 @@ export async function GET() {
         if (state.closed) return;
         try {
           // Push lightweight update immediately so UI reflects changes fast
-          if (state.cachedStats) {
+          if (state.cachedStats && apiKeyId === "all") {
             const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
             const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
           }
           // Then do full recalc and update cache
-          const stats = await getUsageStats();
+          const stats = await getUsageStats("all", { apiKeyId });
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
@@ -34,6 +36,12 @@ export async function GET() {
       state.sendPending = async () => {
         if (state.closed || !state.cachedStats) return;
         try {
+          if (apiKeyId !== "all") {
+            const stats = await getUsageStats("all", { apiKeyId });
+            state.cachedStats = stats;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
+            return;
+          }
           const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
           const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
