@@ -148,6 +148,8 @@ async function flushToDatabase() {
         provider: item.provider || null,
         model: item.model || null,
         connectionId: item.connectionId || null,
+        apiKeyId: item.apiKeyId || null,
+        apiKeyName: item.apiKeyName || null,
         timestamp: item.timestamp,
         status: item.status || null,
         latency: item.latency || {},
@@ -228,6 +230,7 @@ export async function getRequestDetails(filter = {}) {
   if (filter.provider) records = records.filter(r => r.provider === filter.provider);
   if (filter.model) records = records.filter(r => r.model === filter.model);
   if (filter.connectionId) records = records.filter(r => r.connectionId === filter.connectionId);
+  if (filter.apiKeyId) records = records.filter(r => r.apiKeyId === filter.apiKeyId);
   if (filter.status) records = records.filter(r => r.status === filter.status);
   if (filter.startDate) records = records.filter(r => new Date(r.timestamp) >= new Date(filter.startDate));
   if (filter.endDate) records = records.filter(r => new Date(r.timestamp) <= new Date(filter.endDate));
