@@ -106,6 +106,7 @@ export async function POST(request, { params }) {
 }
 
 function getBaseUrl(request) {
+  if (process.env.BASE_URL) return process.env.BASE_URL;
   const url = new URL(request.url);
   return `${url.protocol}//${url.host}`;
 }

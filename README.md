@@ -1032,10 +1032,14 @@ docker stop 9router && docker rm 9router
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `IP_ALLOWLIST_ENABLED` | `false` | Enable global IP allowlist middleware for app routes and APIs |
+| `IP_ALLOWLIST` | empty | Comma- or newline-separated allowed client IPs or CIDR ranges |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
 
 Notes:
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
+- IP allowlist relies on proxy-forwarded client IP headers such as `X-Forwarded-For`; only enable it when 9Router is behind a trusted reverse proxy.
+- When IP allowlist is enabled, set `BASE_URL` to the local app address (for example `http://127.0.0.1:20128`) so internal server self-calls do not loop back through the public proxy.
 - `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
 - On Windows, `APPDATA` can be used for local storage path resolution.
 - `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.

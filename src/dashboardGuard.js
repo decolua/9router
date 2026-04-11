@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { evaluateIpAllowlist, getForwardedClientHeaders } from "@/lib/ipAllowlist";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
@@ -39,9 +40,11 @@ async function hasValidToken(request) {
 async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
   // Allow if requireLogin is disabled
-  const origin = request.nextUrl.origin;
+  const origin = process.env.BASE_URL || request.nextUrl.origin;
   try {
-    const res = await fetch(`${origin}/api/settings/require-login`);
+    const res = await fetch(`${origin}/api/settings/require-login`, {
+      headers: getForwardedClientHeaders(request),
+    });
     const data = await res.json();
     if (data.requireLogin === false) return true;
   } catch {
@@ -52,6 +55,21 @@ async function isAuthenticated(request) {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+  try {
+    const ipCheck = evaluateIpAllowlist(request);
+    if (!ipCheck.allowed) {
+      if (pathname.startsWith("/api/") || pathname.startsWith("/v1") || pathname.startsWith("/v1beta")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+  } catch (error) {
+    console.error("IP allowlist configuration error:", error);
+    if (pathname.startsWith("/api/") || pathname.startsWith("/v1") || pathname.startsWith("/v1beta")) {
+      return NextResponse.json({ error: "IP allowlist misconfigured" }, { status: 500 });
+    }
+    return new NextResponse("IP allowlist misconfigured", { status: 500 });
+  }
 
   // Always protected - allow localhost or valid JWT only
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
@@ -82,9 +100,11 @@ export async function proxy(request) {
       }
     }
 
-    const origin = request.nextUrl.origin;
+    const origin = process.env.BASE_URL || request.nextUrl.origin;
     try {
-      const res = await fetch(`${origin}/api/settings/require-login`);
+      const res = await fetch(`${origin}/api/settings/require-login`, {
+        headers: getForwardedClientHeaders(request),
+      });
       const data = await res.json();
       if (data.requireLogin === false) {
         return NextResponse.next();
@@ -102,7 +122,3 @@ export async function proxy(request) {
 
   return NextResponse.next();
 }
-
-export const config = {
-  matcher: ["/", "/dashboard/:path*"],
-};
