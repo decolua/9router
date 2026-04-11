@@ -142,6 +142,23 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
+  if (
+    result.tool_choice &&
+    result.tool_choice !== "auto" &&
+    (provider === "qw" || provider === "alicode" || provider === "alicode-intl")
+  ) {
+    const hasThinkingMode =
+      !!result.reasoning_effort ||
+      !!result.thinking?.budget_tokens ||
+      !!result.thinking?.max_tokens ||
+      result.thinking?.type === "enabled" ||
+      (result.reasoning?.effort && result.reasoning.effort !== "none") ||
+      !!result.enable_thinking;
+    if (hasThinkingMode) {
+      result.tool_choice = "auto";
+    }
+  }
+
   return result;
 }
 
