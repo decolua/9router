@@ -179,6 +179,23 @@ Respond ONLY with the JSON object, no other text.`);
     };
   }
 
+  // Qwen API does not support tool_choice "any" or object values when
+  // thinking/reasoning mode is active. Neutralize to "auto" regardless
+  // of source format (OpenAI, Claude, etc.).
+  // See: InternalError.Algo.InvalidParameter
+  // Check both result (for thinking) and body (for fields not forwarded).
+  const hasThinkingMode =
+    !!body.reasoning_effort ||
+    !!result.thinking?.budget_tokens ||
+    !!result.thinking?.max_tokens ||
+    result.thinking?.type === "enabled" ||
+    (body.reasoning?.effort && body.reasoning.effort !== "none") ||
+    !!body.enable_thinking;
+
+  if (result.tool_choice && hasThinkingMode) {
+    result.tool_choice = { type: "auto" };
+  }
+
   // Attach toolNameMap to result for response translation
   if (toolNameMap.size > 0) {
     result._toolNameMap = toolNameMap;

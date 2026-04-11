@@ -80,12 +80,16 @@ export class QwenExecutor extends DefaultExecutor {
     // thinking/reasoning mode is active. This catches all code paths regardless
     // of source format (Anthropic, OpenAI, Gemini, etc.).
     // See: InternalError.Algo.InvalidParameter
-    const hasThinkingMode = !!result.reasoning_effort || result.thinking?.type === "enabled";
-    if (hasThinkingMode && result.tool_choice) {
-      const tc = result.tool_choice;
-      if (tc === "required" || typeof tc === "object") {
-        result.tool_choice = "auto";
-      }
+    const hasThinkingMode =
+      !!result.reasoning_effort ||
+      !!result.thinking?.budget_tokens ||
+      !!result.thinking?.max_tokens ||
+      result.thinking?.type === "enabled" ||
+      (result.reasoning?.effort && result.reasoning.effort !== "none") ||
+      !!result.enable_thinking;
+
+    if (result.tool_choice && hasThinkingMode) {
+      result.tool_choice = "auto";
     }
 
     return result;

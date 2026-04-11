@@ -130,6 +130,14 @@ export function normalizeUsage(usage) {
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
 
+  // Preserve nested details objects for OpenAI format forwarding
+  if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
+    normalized.prompt_tokens_details = usage.prompt_tokens_details;
+  }
+  if (usage?.completion_tokens_details && typeof usage.completion_tokens_details === "object") {
+    normalized.completion_tokens_details = usage.completion_tokens_details;
+  }
+
   if (Object.keys(normalized).length === 0) return null;
   return normalized;
 }
@@ -177,21 +185,25 @@ export function extractUsage(chunk) {
   // OpenAI Responses API format (response.completed or response.done)
   if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
     const usage = chunk.response.usage;
+    const cachedTokens = usage.input_tokens_details?.cached_tokens;
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
-      cached_tokens: usage.input_tokens_details?.cached_tokens,
-      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens
+      cached_tokens: cachedTokens,
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
   }
 
-  // OpenAI format
+  // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
   if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
-      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens
+      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
+      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
+      prompt_tokens_details: chunk.usage.prompt_tokens_details,
+      completion_tokens_details: chunk.usage.completion_tokens_details
     });
   }
 
@@ -301,7 +313,7 @@ export function logUsage(provider, usage, model = null, connectionId = null, api
   }
 
   // Add cache info if present (unified from different formats)
-  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens;
+  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens;
   if (cacheRead) msg += ` | cache_read=${cacheRead}`;
 
   const cacheCreation = usage.cache_creation_input_tokens;

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getTunnelStatus } from "@/lib/tunnel/tunnelManager";
+import { getTunnelStatus, getTailscaleStatus } from "@/lib/tunnel/tunnelManager";
 
 export async function GET() {
   try {
-    const status = await getTunnelStatus();
-    return NextResponse.json(status);
+    const [tunnel, tailscale] = await Promise.all([getTunnelStatus(), getTailscaleStatus()]);
+    return NextResponse.json({ tunnel, tailscale });
   } catch (error) {
     console.error("Tunnel status error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

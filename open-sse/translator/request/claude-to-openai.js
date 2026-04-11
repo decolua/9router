@@ -70,6 +70,23 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.tool_choice = convertToolChoice(body.tool_choice);
   }
 
+  // Qwen API does not support tool_choice "required" or object values when
+  // thinking/reasoning mode is active. Neutralize to "auto" regardless
+  // of source format.
+  // See: InternalError.Algo.InvalidParameter
+  // Check original body since claude-to-openai doesn't forward thinking config.
+  const hasThinkingMode =
+    !!body.reasoning_effort ||
+    !!body.thinking?.budget_tokens ||
+    !!body.thinking?.max_tokens ||
+    body.thinking?.type === "enabled" ||
+    (body.reasoning?.effort && body.reasoning.effort !== "none") ||
+    !!body.enable_thinking;
+
+  if (result.tool_choice && hasThinkingMode) {
+    result.tool_choice = "auto";
+  }
+
   return result;
 }
 
