@@ -131,6 +131,97 @@ export class GithubExecutor extends BaseExecutor {
       }
     }
 
+    // Fix up the stream for Github Copilot's non-standard OpenAI SSE formatting
+    if (options.stream && result.response.ok && result.response.body) {
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let seenDone = false;
+      let firstChunkFixed = false;
+      let fallbackId = "chatcmpl-" + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10));
+
+      const transformStream = new TransformStream({
+        transform(chunk, controller) {
+          buffer += decoder.decode(chunk, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed === "data: [DONE]") {
+              seenDone = true;
+              continue;
+            }
+
+            const parsed = parseSSELine(trimmed);
+            if (!parsed) {
+              controller.enqueue(new TextEncoder().encode(trimmed + "\n\n"));
+              continue;
+            }
+
+            if (parsed.done) {
+              seenDone = true;
+              continue;
+            }
+
+            if (!parsed.id) {
+              parsed.id = fallbackId;
+            } else {
+              fallbackId = parsed.id;
+            }
+
+            if (!firstChunkFixed && Array.isArray(parsed.choices) && parsed.choices.length === 0) {
+              parsed.choices = [{
+                index: 0,
+                delta: { role: "assistant", content: "" },
+                logprobs: null,
+                finish_reason: null
+              }];
+            }
+            if (Array.isArray(parsed.choices) && parsed.choices.length > 0) {
+              firstChunkFixed = true;
+            }
+
+            if (Array.isArray(parsed.choices)) {
+              for (let i = 0; i < parsed.choices.length; i++) {
+                const choice = parsed.choices[i];
+                if (choice?.delta?.content === null) {
+                  delete choice.delta.content;
+                }
+              }
+            }
+
+            const sseString = formatSSE(parsed, "openai");
+            controller.enqueue(new TextEncoder().encode(sseString));
+          }
+        },
+        flush(controller) {
+          if (buffer.trim()) {
+            if (buffer.trim() === "data: [DONE]") {
+              seenDone = true;
+            } else {
+               const parsed = parseSSELine(buffer.trim());
+               if (parsed) {
+                 if (!parsed.done) {
+                   const sseString = formatSSE(parsed, "openai");
+                   controller.enqueue(new TextEncoder().encode(sseString));
+                 }
+               } else {
+                 controller.enqueue(new TextEncoder().encode(buffer.trim() + "\n\n"));
+               }
+            }
+          }
+        }
+      });
+
+      result.response = new Response(result.response.body.pipeThrough(transformStream), {
+        status: result.response.status,
+        statusText: result.response.statusText,
+        headers: result.response.headers
+      });
+    }
+
     return result;
   }
 
