@@ -174,24 +174,64 @@ async function bingTts(text, voiceId) {
   return Buffer.from(buf).toString("base64"); // base64 MP3
 }
 
-// ── Local Device TTS (macOS `say` + ffmpeg) ───────────────────
+// ── Local Device TTS (macOS `say` + Windows SAPI + ffmpeg) ──────
 let _localVoicesCache = null;
+
+async function fetchLocalDeviceVoicesMac() {
+  const { stdout } = await execFileAsync("say", ["-v", "?"]);
+  const voices = [];
+  for (const line of stdout.split("\n")) {
+    // Format: "Name   locale   # sample"
+    const m = line.match(/^([^\s].*?)\s{2,}([a-z]{2}_[A-Z]{2})/);
+    if (!m) continue;
+    const name    = m[1].trim();
+    const locale  = m[2].trim(); // e.g. en_US
+    const lang    = locale.split("_")[0];
+    const country = locale.split("_")[1];
+    voices.push({ id: name, name, locale, lang, country, gender: "" });
+  }
+  return voices;
+}
+
+async function fetchLocalDeviceVoicesWin() {
+  // Use -WindowStyle Hidden to suppress PowerShell popup window
+  const script = [
+    "Add-Type -AssemblyName System.Speech;",
+    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;",
+    "$s.GetInstalledVoices() | ForEach-Object { $v = $_.VoiceInfo;",
+    "[PSCustomObject]@{ Name=$v.Name; Culture=$v.Culture.Name; Gender=$v.Gender } }",
+    "| ConvertTo-Json -Compress",
+  ].join(" ");
+  const { stdout } = await execFileAsync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
+    { windowsHide: true }
+  );
+  const raw = JSON.parse(stdout.trim() || "[]");
+  // Normalize: single object → array
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.map((v) => {
+    const culture = v.Culture || "en-US";
+    const [lang, country = ""] = culture.split("-");
+    // Gender: 0=NotSet, 1=Male, 2=Female (SAPI enum)
+    const genderMap = { 1: "Male", 2: "Female", Male: "Male", Female: "Female" };
+    return {
+      id:      v.Name,
+      name:    v.Name,
+      locale:  culture.replace("-", "_"),
+      lang,
+      country,
+      gender:  genderMap[v.Gender] || "",
+    };
+  });
+}
 
 export async function fetchLocalDeviceVoices() {
   if (_localVoicesCache) return _localVoicesCache;
   try {
-    const { stdout } = await execFileAsync("say", ["-v", "?"]);
-    const voices = [];
-    for (const line of stdout.split("\n")) {
-      // Format: "Name   locale   # sample"
-      const m = line.match(/^([^\s].*?)\s{2,}([a-z]{2}_[A-Z]{2})/);
-      if (!m) continue;
-      const name   = m[1].trim();
-      const locale = m[2].trim(); // e.g. en_US
-      const lang   = locale.split("_")[0];
-      const country = locale.split("_")[1];
-      voices.push({ id: name, name, locale, lang, country, gender: "" });
-    }
+    const voices = process.platform === "win32"
+      ? await fetchLocalDeviceVoicesWin()
+      : await fetchLocalDeviceVoicesMac();
     _localVoicesCache = voices;
     return voices;
   } catch {

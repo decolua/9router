@@ -22,6 +22,13 @@ function Row({ label, children }) {
   );
 }
 
+const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
+// Example JSON response (response_format=json):
+{
+  "format": "mp3",
+  "audio": "//NExAANaAIIAUAAANNNNNNNN..." // base64 encoded MP3
+}`;
+
 const DEFAULT_RESPONSE_EXAMPLE = `{
   "object": "list",
   "data": [{
@@ -296,12 +303,15 @@ function TtsExampleCard({ providerId }) {
       const voiceKey = config.voiceKey || providerId;
       const voices = getModelsByProviderId(voiceKey).filter((m) => m.type === "tts");
       if (voices.length) {
-        if (config.hasLanguageDropdown) {
-          // Google TTS: just set voice
-          setSelectedVoice(voices[0].id);
-          setSelectedVoiceName(voices[0].name || voices[0].id);
+        if (config.hasBrowseButton) {
+          // Google TTS: pre-select "en" (English) as default, show as single voice chip
+          const defaultVoice = voices.find((v) => v.id === "en") || voices[0];
+          setSelectedLang(defaultVoice.id);
+          setSelectedVoice(defaultVoice.id);
+          setSelectedVoiceName(defaultVoice.name);
+          setCountryVoices([{ id: defaultVoice.id, name: defaultVoice.name }]);
         } else {
-          // OpenAI: set voice chips
+          // OpenAI: set voice chips directly (no language picker)
           setCountryVoices(voices);
           setSelectedVoice(voices[0].id);
           setSelectedVoiceName(voices[0].name || voices[0].id);
@@ -319,15 +329,27 @@ function TtsExampleCard({ providerId }) {
     if (languages.length) return; // already loaded
     setModalLoading(true);
     try {
-      // Use provider-specific apiEndpoint if available, else default to edge-tts voices API
-      const url = config.apiEndpoint
-        ? config.apiEndpoint
-        : `/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`;
-      const r = await fetch(url);
-      const d = await r.json();
-      if (d.error) { setModalError(d.error); return; }
-      setLanguages(d.languages || []);
-      setByLang(d.byLang || {});
+      if (config.voiceSource === "hardcoded") {
+        // Build languages/byLang from static providerModels data
+        const voiceKey = config.voiceKey || providerId;
+        const voices = getModelsByProviderId(voiceKey).filter((m) => m.type === "tts");
+        const byLangMap = {};
+        for (const v of voices) {
+          if (!byLangMap[v.id]) byLangMap[v.id] = { code: v.id, name: v.name, voices: [{ id: v.id, name: v.name }] };
+        }
+        setByLang(byLangMap);
+        setLanguages(Object.values(byLangMap).sort((a, b) => a.name.localeCompare(b.name)));
+      } else {
+        // Use provider-specific apiEndpoint if available, else default to edge-tts voices API
+        const url = config.apiEndpoint
+          ? config.apiEndpoint
+          : `/api/media-providers/tts/voices?provider=${providerId === "local-device" ? "local-device" : "edge-tts"}`;
+        const r = await fetch(url);
+        const d = await r.json();
+        if (d.error) { setModalError(d.error); return; }
+        setLanguages(d.languages || []);
+        setByLang(d.byLang || {});
+      }
     } catch (e) {
       setModalError(e.message);
     } finally {
@@ -472,7 +494,7 @@ function TtsExampleCard({ providerId }) {
                   className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors shrink-0"
                 >
                   <span className="material-symbols-outlined text-[14px]">language</span>
-                  Browse
+                  Select language
                 </button>
               </div>
             </Row>
@@ -647,7 +669,10 @@ function TtsExampleCard({ providerId }) {
               )}
             </div>
           ) : (
-            <p className="text-xs text-text-muted opacity-60">Audio will appear here after running.</p>
+            <div>
+            <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Response</span>
+            <pre className="mt-1.5 bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre opacity-50">{DEFAULT_TTS_RESPONSE_EXAMPLE}</pre>
+          </div>
           )}
         </div>
       </Card>

@@ -69,29 +69,41 @@ export async function proxy(request) {
   }
 
 
+
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
-    const token = request.cookies.get("auth_token")?.value;
+    const origin = request.nextUrl.origin;
+    let requireLogin = true;
+    let tunnelDashboardAccess = false;
 
+    try {
+      const res = await fetch(`${origin}/api/settings/require-login`);
+      const data = await res.json();
+      requireLogin = data.requireLogin !== false;
+      tunnelDashboardAccess = data.tunnelDashboardAccess === true;
+    } catch {
+      // On error, keep defaults (require login, block tunnel)
+    }
+
+    // Block tunnel access if disabled (checked before token to enforce the setting)
+    if (!isLocalRequest(request) && !tunnelDashboardAccess) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    // If login not required, allow through
+    if (!requireLogin) return NextResponse.next();
+
+    // Verify JWT token
+    const token = request.cookies.get("auth_token")?.value;
     if (token) {
       try {
         await jwtVerify(token, SECRET);
         return NextResponse.next();
-      } catch (err) {
+      } catch {
         return NextResponse.redirect(new URL("/login", request.url));
       }
     }
 
-    const origin = request.nextUrl.origin;
-    try {
-      const res = await fetch(`${origin}/api/settings/require-login`);
-      const data = await res.json();
-      if (data.requireLogin === false) {
-        return NextResponse.next();
-      }
-    } catch (err) {
-      // On error, require login
-    }
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

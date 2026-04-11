@@ -4,10 +4,10 @@
  */
 export const TTS_PROVIDER_CONFIG = {
   "google-tts": {
-    hasLanguageDropdown: true,
+    hasLanguageDropdown: false,
     hasModelSelector: false,
-    hasBrowseButton: false,
-    voiceSource: "hardcoded", // from providerModels
+    hasBrowseButton: true,
+    voiceSource: "hardcoded", // languages built from providerModels at runtime
   },
   "openai": {
     hasLanguageDropdown: false,

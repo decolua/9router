@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { execSync, spawn } from "child_process";
-import { execWithPassword, executeElevatedPowerShell } from "@/mitm/dns/dnsConfig";
+import { execWithPassword } from "@/mitm/dns/dnsConfig";
 import { saveTailscalePid, loadTailscalePid, clearTailscalePid } from "./state.js";
 
 const BIN_DIR = path.join(os.homedir(), ".9router", "bin");
@@ -86,8 +86,11 @@ export function getTailscaleFunnelUrl(port) {
  */
 export async function installTailscale(sudoPassword, hostname, onProgress) {
   const log = onProgress || (() => {});
-  if (IS_WINDOWS) await installTailscaleWindows(log);
-  else if (IS_MAC) await installTailscaleMac(sudoPassword, log);
+  if (IS_WINDOWS) {
+    await installTailscaleWindows(log);
+    return { success: true };
+  }
+  if (IS_MAC) await installTailscaleMac(sudoPassword, log);
   else await installTailscaleLinux(sudoPassword, log);
 
   log("Starting daemon...");
@@ -215,18 +218,36 @@ async function installTailscaleLinux(sudoPassword, log) {
 async function installTailscaleWindows(log) {
   const msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi";
   const msiPath = path.join(os.tmpdir(), "tailscale-setup.msi");
-  const psScriptPath = path.join(os.tmpdir(), `tailscale-install-${Date.now()}.ps1`);
 
+  // Download MSI via PowerShell with streaming output
   log("Downloading Tailscale installer...");
-  const psScript = [
-    `Invoke-WebRequest -Uri '${msiUrl}' -OutFile '${msiPath}'`,
-    `Start-Process msiexec.exe -ArgumentList '/i','${msiPath}','/quiet','/norestart' -Wait`,
-    `Remove-Item '${msiPath}' -Force -ErrorAction SilentlyContinue`,
-  ].join("\n");
+  await new Promise((resolve, reject) => {
+    const child = spawn("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `Invoke-WebRequest -Uri '${msiUrl}' -OutFile '${msiPath}'`
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    child.on("close", (c) => c === 0 ? resolve() : reject(new Error("Download failed")));
+    child.on("error", reject);
+  });
 
-  fs.writeFileSync(psScriptPath, psScript, "utf8");
-  log("Installing (UAC prompt may appear)...");
-  await executeElevatedPowerShell(psScriptPath, 120000);
+  // Install MSI silently — Windows Installer handles UAC elevation automatically
+  log("Installing Tailscale (UAC prompt may appear)...");
+  await new Promise((resolve, reject) => {
+    const child = spawn("msiexec", ["/i", msiPath, "/quiet", "/norestart"], {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    child.stdout.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    child.on("close", (c) => {
+      try { fs.unlinkSync(msiPath); } catch { /* ignore */ }
+      c === 0 ? resolve() : reject(new Error(`msiexec failed (code ${c})`));
+    });
+    child.on("error", reject);
+  });
+
+  log("Installation complete.");
 }
 
 /** Start tailscaled with sudo (TUN mode required for Funnel) */
