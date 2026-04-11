@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
+const { execSync } = require("child_process");
 const { log, err } = require("./logger");
 const { TARGET_HOSTS, URL_PATTERNS, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
@@ -217,6 +218,34 @@ const server = https.createServer(sslOptions, async (req, res) => {
     res.end(JSON.stringify({ error: { message: e.message, type: "mitm_error" } }));
   }
 });
+
+// Kill any process occupying LOCAL_PORT before binding
+function killPort(port) {
+  try {
+    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf-8" }).trim();
+    if (!pids) return;
+    const pidList = pids.split("\n");
+    pidList.forEach(pid => {
+      try {
+        process.kill(Number(pid), "SIGKILL");
+      } catch (e) {
+        err(`Failed to kill PID ${pid}: ${e.message}`);
+        throw e;
+      }
+    });
+    log(`Killed ${pidList.length} process(es) on port ${port}`);
+  } catch (e) {
+    // lsof exits with status 1 when no process found — that's fine
+    if (e.status !== 1) throw e;
+  }
+}
+
+try {
+  killPort(LOCAL_PORT);
+} catch (e) {
+  err(`Cannot kill process on port ${LOCAL_PORT}: ${e.message}`);
+  process.exit(1);
+}
 
 server.listen(LOCAL_PORT, () => log(`🚀 Server ready on :${LOCAL_PORT}`));
 
