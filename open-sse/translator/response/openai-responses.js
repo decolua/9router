@@ -496,27 +496,21 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     if (responseUsage && typeof responseUsage === "object") {
       const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
       const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
-      const cacheReadTokens = responseUsage.cache_read_input_tokens || 0;
-      const cacheCreationTokens = responseUsage.cache_creation_input_tokens || 0;
-      
-      // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
-      const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+      // OpenAI Responses API: input_tokens already includes cached_tokens
+      // Cache info is in input_tokens_details.cached_tokens
+      const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
       
       state.usage = {
-        prompt_tokens: promptTokens,
+        prompt_tokens: inputTokens,
         completion_tokens: outputTokens,
-        total_tokens: promptTokens + outputTokens
+        total_tokens: inputTokens + outputTokens
       };
       
       // Add prompt_tokens_details if cache tokens exist
-      if (cacheReadTokens > 0 || cacheCreationTokens > 0) {
-        state.usage.prompt_tokens_details = {};
-        if (cacheReadTokens > 0) {
-          state.usage.prompt_tokens_details.cached_tokens = cacheReadTokens;
-        }
-        if (cacheCreationTokens > 0) {
-          state.usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
-        }
+      if (cacheReadTokens > 0) {
+        state.usage.prompt_tokens_details = {
+          cached_tokens: cacheReadTokens
+        };
       }
     }
     
