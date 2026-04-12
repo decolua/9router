@@ -1,0 +1,22 @@
+diff --git a/open-sse/services/accountFallback.js b/open-sse/services/accountFallback.js
+index 957655c..fba0c1c 100644
+--- a/open-sse/services/accountFallback.js
++++ b/open-sse/services/accountFallback.js
+@@ -18,12 +18,16 @@ export function getQuotaCooldown(backoffLevel = 0) {
+  * @param {number} backoffLevel - Current backoff level for exponential backoff
+  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
+  */
+-export function checkFallbackError(status, errorText, backoffLevel = 0) {
++export function checkFallbackError(status, errorText, backoffLevel = 0, options = {}) {
+   // Check error message FIRST - specific patterns take priority over status codes
+   if (errorText) {
+     const errorStr = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
+     const lowerError = errorStr.toLowerCase();
+ 
++    if (lowerError.includes("ttft_timeout")) {
++      return { shouldFallback: true, cooldownMs: options?.ttftCooldownMs ?? 15000 };
++    }
++
+     if (lowerError.includes("no credentials")) {
+       return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
+     }
