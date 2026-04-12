@@ -1,0 +1,42 @@
+diff --git a/src/sse/handlers/chat.js b/src/sse/handlers/chat.js
+index bd45748..0b2c0bd 100644
+--- a/src/sse/handlers/chat.js
++++ b/src/sse/handlers/chat.js
+@@ -201,6 +201,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+       ccFilterNaming: !!chatSettings.ccFilterNaming,
+       // Detect source format by endpoint + body
+       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
++      ttftTimeoutMs: chatSettings.ttftTimeoutMs || 0,
++      ttftCooldownMs: chatSettings.ttftCooldownMs || 15000,
+       onCredentialsRefreshed: async (newCreds) => {
+         await updateProviderCredentials(credentials.connectionId, {
+           accessToken: newCreds.accessToken,
+@@ -217,7 +219,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
+     if (result.success) return result.response;
+ 
+     // Mark account unavailable (auto-calculates cooldown with exponential backoff)
+-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
++    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, { ttftCooldownMs: chatSettings.ttftCooldownMs || 15000 });
+ 
+     if (shouldFallback) {
+       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+diff --git a/src/sse/services/auth.js b/src/sse/services/auth.js
+index 3f426c1..1246886 100644
+--- a/src/sse/services/auth.js
++++ b/src/sse/services/auth.js
+@@ -168,13 +168,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
+  * @param {string|null} model - The specific model that triggered the error
+  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
+  */
+-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null) {
++export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, options = {}) {
+   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+   const connections = await getProviderConnections({ provider });
+   const conn = connections.find(c => c.id === connectionId);
+   const backoffLevel = conn?.backoffLevel || 0;
+ 
+-  const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
++  const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, options);
+   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+ 
+   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
