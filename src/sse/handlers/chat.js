@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnections } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -137,6 +137,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  // Guard: reject disabled models before routing (provider-wide, covers aliases)
+  const activeConnections = await getProviderConnections({ provider, isActive: true });
+  if (activeConnections.length > 0) {
+    const disabledModels = activeConnections[0].providerSpecificData?.disabledModels;
+    if (Array.isArray(disabledModels) && disabledModels.includes(model)) {
+      log.warn("CHAT", `Model ${model} is disabled for provider: ${provider}`);
+      return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+    }
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
