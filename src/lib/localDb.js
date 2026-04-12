@@ -742,6 +742,40 @@ export async function reorderProviderConnections(providerId) {
   await safeWrite(db);
 }
 
+/**
+ * Update provider-wide disabled models list.
+ * Writes disabledModels (array of bare model IDs) into providerSpecificData
+ * for ALL active connections belonging to the given provider, then does a
+ * single safeWrite.
+ *
+ * @param {string} providerId  - provider identifier (e.g. "gemini", "openai")
+ * @param {string[]} disabledModels - bare model IDs to disable, e.g. ["gemini-2.0-flash"]
+ * @returns {Promise<number>} number of connections that were updated
+ */
+export async function updateProviderDisabledModels(providerId, disabledModels) {
+  const db = await getDb();
+  const now = new Date().toISOString();
+  let updatedCount = 0;
+
+  db.data.providerConnections.forEach((c, index) => {
+    if (c.provider !== providerId) return;
+    if (c.isActive === false) return;
+
+    db.data.providerConnections[index] = {
+      ...c,
+      providerSpecificData: {
+        ...(c.providerSpecificData || {}),
+        disabledModels: Array.isArray(disabledModels) ? [...disabledModels] : [],
+      },
+      updatedAt: now,
+    };
+    updatedCount++;
+  });
+
+  await safeWrite(db);
+  return updatedCount;
+}
+
 // ============ Model Aliases ============
 
 /**
