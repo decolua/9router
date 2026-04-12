@@ -192,5 +192,14 @@
   "Sudo Password Required": "Требуется пароль Sudo",
   "Enter your sudo password to start/stop MITM server": "Введите пароль sudo для запуска/остановки сервера MITM",
   "Sudo Password": "Пароль sudo",
-  "Confirm": "Подтвердить"
+  "Confirm": "Подтвердить",
+  "Quota Management": "Управление квотами",
+  "Minimum Reserve": "Минимальный остаток",
+  "Block account when quota drops below threshold": "Блокировать аккаунт при достижении порога квоты",
+  "Cooldown on Reset": "Остужение после сброса",
+  "Rest account after quota resets": "Отдых аккаунта после сброса квоты",
+  "Reserve limit": "Лимит резерва",
+  "Cooldown": "Остужение",
+  "Account is cooling down after quota reset": "Аккаунт остывает после сброса квоты",
+  "Quota below minimum reserve threshold": "Квота ниже минимального порога резерва"
 }

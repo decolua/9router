@@ -98,7 +98,11 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
-      providerSpecificData
+      providerSpecificData,
+      minReserveEnabled,
+      minReservePercent,
+      cooldownEnabled,
+      cooldownMinutes,
     } = body;
 
     const existing = await getProviderConnectionById(id);
@@ -126,6 +130,12 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+
+    // Quota reserve & cooldown settings
+    if (minReserveEnabled !== undefined) updateData.minReserveEnabled = !!minReserveEnabled;
+    if (minReservePercent !== undefined) updateData.minReservePercent = Math.max(1, Math.min(50, Number(minReservePercent) || 15));
+    if (cooldownEnabled !== undefined) updateData.cooldownEnabled = !!cooldownEnabled;
+    if (cooldownMinutes !== undefined) updateData.cooldownMinutes = Math.max(1, Math.min(120, Number(cooldownMinutes) || 30));
 
     if (
       shouldMergeProviderSpecificData(
