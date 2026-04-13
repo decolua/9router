@@ -38,6 +38,22 @@ function ensureQwenSystemMessage(body) {
   return next;
 }
 
+function neutralizeToolChoiceForThinking(result, originalBody) {
+  const body = originalBody && typeof originalBody === "object" ? originalBody : {};
+  const hasThinkingMode =
+    !!result.reasoning_effort || !!body.reasoning_effort ||
+    !!result.thinking?.budget_tokens || !!body.thinking?.budget_tokens ||
+    !!result.thinking?.max_tokens || !!body.thinking?.max_tokens ||
+    result.thinking?.type === "enabled" || body.thinking?.type === "enabled" ||
+    (result.reasoning?.effort && result.reasoning.effort !== "none") ||
+    (body.reasoning?.effort && body.reasoning.effort !== "none") ||
+    !!result.enable_thinking || !!body.enable_thinking;
+  if (result.tool_choice && result.tool_choice !== "auto" && hasThinkingMode) {
+    result.tool_choice = "auto";
+  }
+  return result;
+}
+
 function buildQwenUpstreamHeaders(credentials, stream = true) {
   const token = credentials?.apiKey || credentials?.accessToken || "";
   const ua = qwenUserAgent();
@@ -74,7 +90,8 @@ export class QwenExecutor extends DefaultExecutor {
     if (stream && next?.messages && !next.stream_options) {
       next.stream_options = { include_usage: true };
     }
-    return ensureQwenSystemMessage(next);
+    const result = ensureQwenSystemMessage(next);
+    return neutralizeToolChoiceForThinking(result, body);
   }
 }
 
