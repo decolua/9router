@@ -1,3 +1,8 @@
+# v0.3.87 (2026-04-13)
+
+## Fixes
+- Fix codex cache session id
+
 # v0.3.86 (2026-04-13)
 
 ## Features
