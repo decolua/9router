@@ -626,10 +626,19 @@ export default function APIPageClient({ machineId }) {
                 </button>
               </>
             ) : tunnelLoading ? (
-              <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                {tunnelProgress || "Creating tunnel..."}
-              </div>
+              <>
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  {tunnelProgress || "Creating tunnel..."}
+                </div>
+                <button
+                  onClick={() => setShowDisableTunnelModal(true)}
+                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  title="Disable Tunnel"
+                >
+                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                </button>
+              </>
             ) : tunnelStatus?.type === "error" ? (
               <>
                 <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">
@@ -639,10 +648,19 @@ export default function APIPageClient({ machineId }) {
                 <Button size="sm" icon="cloud_upload" onClick={() => setShowEnableTunnelModal(true)}>Enable</Button>
               </>
             ) : tunnelChecking ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                Checking...
-              </div>
+              <>
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  Checking...
+                </div>
+                <button
+                  onClick={() => setShowDisableTunnelModal(true)}
+                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  title="Disable Tunnel"
+                >
+                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                </button>
+              </>
             ) : (
               <Button
                 size="sm"
@@ -683,10 +701,19 @@ export default function APIPageClient({ machineId }) {
                 </button>
               </>
             ) : (tsLoading || tsConnecting) ? (
-              <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
-                <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
-                {tsProgress || "Connecting..."}
-              </div>
+              <>
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-border bg-input text-sm text-text-muted">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  {tsProgress || "Connecting..."}
+                </div>
+                <button
+                  onClick={() => setShowDisableTsModal(true)}
+                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  title="Disable Tailscale"
+                >
+                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                </button>
+              </>
             ) : tsStatus?.type === "error" ? (
               <>
                 <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-red-300 dark:border-red-800 bg-red-500/5 text-sm text-red-600 dark:text-red-400">

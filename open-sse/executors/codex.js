@@ -3,10 +3,15 @@ import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
+import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 
-// In-memory map: hash(first assistant content) → { sessionId, lastUsed }
+// In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
 const assistantSessionMap = new Map();
+
+// Cache machine ID at module level (resolved once)
+let cachedMachineId = null;
+getConsistentMachineId().then(id => { cachedMachineId = id; });
 
 function hashContent(text) {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -26,17 +31,22 @@ function extractItemText(item) {
   return "";
 }
 
-// Resolve session_id from first assistant message in conversation history
-function resolveConversationSessionId(input) {
-  if (!Array.isArray(input) || input.length === 0) return generateSessionId();
+// Resolve session_id from first assistant message + machineId to avoid cross-user collision
+function resolveConversationSessionId(input, machineId) {
+  const machineSessionId = machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
+  if (!Array.isArray(input) || input.length === 0) return machineSessionId;
 
-  const firstAssistant = input.find(item => item.role === "assistant");
-  if (!firstAssistant) return generateSessionId(); // Turn 1: no assistant yet
+  // Find first assistant message that has actual text content
+  let text = "";
+  for (const item of input) {
+    if (item.role === "assistant") {
+      text = extractItemText(item);
+      if (text) break;
+    }
+  }
+  if (!text) return machineSessionId;
 
-  const text = extractItemText(firstAssistant);
-  if (!text) return generateSessionId();
-
-  const hash = hashContent(text);
+  const hash = hashContent((machineId || "") + text);
   const entry = assistantSessionMap.get(hash);
   if (entry) {
     entry.lastUsed = Date.now();
@@ -81,8 +91,8 @@ export class CodexExecutor extends BaseExecutor {
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
-    // Resolve conversation-stable session_id from input history
-    this._currentSessionId = resolveConversationSessionId(body.input);
+    // Resolve conversation-stable session_id from input history + machineId
+    this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
