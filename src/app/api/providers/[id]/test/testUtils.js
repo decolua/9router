@@ -314,6 +314,14 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 }
 
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
+  // Vercel relay: forward via relay URL
+  if (effectiveProxy?.vercelRelayUrl) {
+    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
+    return proxyAwareFetch(url, options, {
+      vercelRelayUrl: effectiveProxy.vercelRelayUrl,
+    });
+  }
+
   if (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl) {
     return fetch(url, options);
   }
@@ -524,7 +532,7 @@ export async function testSingleConnection(id) {
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
-  if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl) {
+  if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;

@@ -1,6 +1,37 @@
 import { NextResponse } from "next/server";
 import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";
+import { fetch as undiciFetch } from "undici";
+
+async function testVercelRelay(relayUrl, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await undiciFetch(relayUrl, {
+      method: "GET",
+      headers: {
+        "x-relay-target": "https://httpbin.org",
+        "x-relay-path": "/get",
+      },
+      signal: controller.signal,
+    });
+    return {
+      ok: res.ok,
+      status: res.status,
+      statusText: res.statusText,
+      elapsedMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      error: err?.name === "AbortError" ? "Relay test timed out" : (err?.message || String(err)),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // POST /api/proxy-pools/[id]/test - Test proxy pool entry
 export async function POST(request, { params }) {
@@ -12,7 +43,9 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    const result = await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
+    const result = proxyPool.type === "vercel"
+      ? await testVercelRelay(proxyPool.proxyUrl)
+      : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();
 
     await updateProxyPool(id, {

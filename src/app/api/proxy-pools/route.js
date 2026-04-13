@@ -7,12 +7,15 @@ function toBoolean(value) {
   return undefined;
 }
 
+const VALID_PROXY_TYPES = ["http", "vercel"];
+
 function normalizeProxyPoolInput(body = {}) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const proxyUrl = typeof body?.proxyUrl === "string" ? body.proxyUrl.trim() : "";
   const noProxy = typeof body?.noProxy === "string" ? body.noProxy.trim() : "";
   const isActive = body?.isActive === undefined ? true : body.isActive === true;
   const strictProxy = body?.strictProxy === true;
+  const type = VALID_PROXY_TYPES.includes(body?.type) ? body.type : "http";
 
   if (!name) {
     return { error: "Name is required" };
@@ -22,7 +25,7 @@ function normalizeProxyPoolInput(body = {}) {
     return { error: "Proxy URL is required" };
   }
 
-  return { name, proxyUrl, noProxy, isActive, strictProxy };
+  return { name, proxyUrl, noProxy, isActive, strictProxy, type };
 }
 
 function buildUsageMap(connections = []) {

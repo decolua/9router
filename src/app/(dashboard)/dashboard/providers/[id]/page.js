@@ -1019,7 +1019,10 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
         >
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        <div className="flex flex-col gap-1">
+          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+        </div>
         {onTest && (
           <div className="relative group/btn">
             <button

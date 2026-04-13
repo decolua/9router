@@ -215,7 +215,7 @@ export class CursorExecutor extends BaseExecutor {
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     try {
-      const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true;
+      const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
       const response = (http2 && !shouldForceFetch)
         ? await this.makeHttp2Request(url, headers, transformedBody, signal)
         : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);

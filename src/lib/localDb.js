@@ -496,6 +496,7 @@ export async function createProxyPool(data) {
     name: data.name,
     proxyUrl: data.proxyUrl,
     noProxy: data.noProxy || "",
+    type: data.type || "http",
     isActive: data.isActive !== undefined ? data.isActive : true,
     strictProxy: data.strictProxy === true,
     testStatus: data.testStatus || "unknown",
