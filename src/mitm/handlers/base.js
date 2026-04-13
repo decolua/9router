@@ -6,13 +6,26 @@ const ROUTER_BASE = String(process.env.MITM_ROUTER_BASE || DEFAULT_LOCAL_ROUTER)
   .replace(/\/+$/, "") || DEFAULT_LOCAL_ROUTER;
 const API_KEY = process.env.ROUTER_API_KEY;
 
+// Headers that must not be forwarded to 9Router
+const STRIP_HEADERS = new Set([
+  "host", "content-length", "connection", "transfer-encoding",
+  "content-type", "authorization"
+]);
+
 /**
- * Send body to 9Router at the given path and return the fetch Response object
+ * Send body to 9Router at the given path and return the fetch Response object.
+ * Optionally forwards client headers (stripped of hop-by-hop / overridden keys).
  */
-async function fetchRouter(openaiBody, path = "/v1/chat/completions") {
+async function fetchRouter(openaiBody, path = "/v1/chat/completions", clientHeaders = {}) {
+  const forwarded = {};
+  for (const [k, v] of Object.entries(clientHeaders)) {
+    if (!STRIP_HEADERS.has(k.toLowerCase())) forwarded[k] = v;
+  }
+
   const response = await fetch(`${ROUTER_BASE}${path}`, {
     method: "POST",
     headers: {
+      ...forwarded,
       "Content-Type": "application/json",
       ...(API_KEY && { "Authorization": `Bearer ${API_KEY}` })
     },

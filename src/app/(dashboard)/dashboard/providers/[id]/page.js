@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
@@ -37,6 +37,7 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
@@ -60,6 +61,7 @@ export default function ProviderDetailPage() {
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
+  const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
   
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
@@ -111,6 +113,9 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      // Load per-provider thinking config
+      const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
+      setThinkingMode(thinkingCfg.mode || "auto");
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -195,6 +200,32 @@ export default function ProviderDetailPage() {
   const handleStickyLimitChange = (value) => {
     setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
+  };
+
+  const saveThinkingConfig = async (mode) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerThinking || {};
+      const updated = { ...current };
+      if (!mode || mode === "auto") {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = { mode };
+      }
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerThinking: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving thinking config:", error);
+    }
+  };
+
+  const handleThinkingModeChange = (mode) => {
+    setThinkingMode(mode);
+    saveThinkingConfig(mode);
   };
 
   useEffect(() => {
@@ -731,22 +762,22 @@ export default function ProviderDetailPage() {
       </div>
 
       {providerInfo.deprecated && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
-          <span className="material-symbols-outlined text-[16px] text-text-muted mt-0.5 shrink-0">info</span>
-          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.deprecationNotice}</p>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
+          <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
         </div>
       )}
 
       {providerInfo.notice && !providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
-          <span className="material-symbols-outlined text-[16px] text-text-muted shrink-0">info</span>
-          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.notice.text}</p>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
+          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
+          <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline shrink-0"
+              className="text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-2 py-0.5 rounded shrink-0 transition-colors"
             >
               Get API Key →
             </a>
@@ -826,26 +857,43 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Connections</h2>
-            {/* Round Robin toggle */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-text-muted font-medium">Round Robin</span>
-              <Toggle
-                checked={providerStrategy === "round-robin"}
-                onChange={handleRoundRobinToggle}
-              />
-              {providerStrategy === "round-robin" && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-text-muted">Sticky:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    value={providerStickyLimit}
-                    onChange={(e) => handleStickyLimitChange(e.target.value)}
-                    placeholder="1"
-                    className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  />
+            <div className="flex items-center gap-4">
+              {/* Thinking config */}
+              {/* {thinkingConfig && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted font-medium">Thinking</span>
+                  <select
+                    value={thinkingMode}
+                    onChange={(e) => handleThinkingModeChange(e.target.value)}
+                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  >
+                    {thinkingConfig.options.map((opt) => (
+                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+                    ))}
+                  </select>
                 </div>
-              )}
+              )} */}
+              {/* Round Robin toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted font-medium">Round Robin</span>
+                <Toggle
+                  checked={providerStrategy === "round-robin"}
+                  onChange={handleRoundRobinToggle}
+                />
+                {providerStrategy === "round-robin" && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-text-muted">Sticky:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={providerStickyLimit}
+                      onChange={(e) => handleStickyLimitChange(e.target.value)}
+                      placeholder="1"
+                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

@@ -221,7 +221,16 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
   ],
-  openrouter: [],
+  openrouter: [
+    // Embedding models
+    { id: "openai/text-embedding-3-large", name: "OpenAI Text Embedding 3 Large", type: "embedding" },
+    { id: "openai/text-embedding-3-small", name: "OpenAI Text Embedding 3 Small", type: "embedding" },
+    { id: "openai/text-embedding-ada-002", name: "OpenAI Text Embedding Ada 002", type: "embedding" },
+    { id: "qwen/qwen3-embedding-8b", name: "Qwen3 Embedding 8B", type: "embedding" },
+    { id: "perplexity/pplx-embed-v1-4b", name: "Perplexity Embed V1 4B", type: "embedding" },
+    { id: "perplexity/pplx-embed-v1-0.6b", name: "Perplexity Embed V1 0.6B", type: "embedding" },
+    { id: "nvidia/llama-nemotron-embed-vl-1b-v2:free", name: "NVIDIA Nemotron Embed VL 1B V2 (Free)", type: "embedding" },
+  ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },

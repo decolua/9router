@@ -24,7 +24,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, sourceFormatOverride }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -38,6 +38,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
   const stripList = getModelStrip(alias, model);
+
+  // Inject provider-level thinking config override (only if client hasn't set)
+  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
+  if (providerThinking?.mode && providerThinking.mode !== "auto") {
+    const mode = providerThinking.mode;
+    if (mode === "on" && !body.thinking) {
+      console.log("Injecting provider-level thinking config override: on");
+      body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
+    } else if (mode === "off" && !body.thinking) {
+      body = { ...body, thinking: { type: "disabled" } };
+    } else if (!body.reasoning_effort) {
+      body = { ...body, reasoning_effort: mode };
+    }
+  }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = provider === "openai" || provider === "codex";
