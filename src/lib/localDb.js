@@ -745,7 +745,7 @@ export async function reorderProviderConnections(providerId) {
 /**
  * Update provider-wide disabled models list.
  * Writes disabledModels (array of bare model IDs) into providerSpecificData
- * for ALL active connections belonging to the given provider, then does a
+ * for ALL connections belonging to the given provider (active and inactive), then does a
  * single safeWrite.
  *
  * @param {string} providerId  - provider identifier (e.g. "gemini", "openai")
@@ -759,7 +759,6 @@ export async function updateProviderDisabledModels(providerId, disabledModels) {
 
   db.data.providerConnections.forEach((c, index) => {
     if (c.provider !== providerId) return;
-    if (c.isActive === false) return;
 
     db.data.providerConnections[index] = {
       ...c,

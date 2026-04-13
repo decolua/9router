@@ -588,8 +588,8 @@ export default function ProviderDetailPage() {
       });
       if (!res.ok) {
         console.log("Error disabling model:", res.status);
-        await fetchConnections();
       }
+      await fetchConnections();
     } catch (error) {
       console.log("Error disabling model:", error);
       await fetchConnections();
@@ -618,8 +618,8 @@ export default function ProviderDetailPage() {
       });
       if (!res.ok) {
         console.log("Error enabling model:", res.status);
-        await fetchConnections();
       }
+      await fetchConnections();
     } catch (error) {
       console.log("Error enabling model:", error);
       await fetchConnections();
