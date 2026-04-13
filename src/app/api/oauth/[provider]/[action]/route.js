@@ -39,7 +39,7 @@ export async function GET(request, { params }) {
       const authData = generateAuthData(provider, null);
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy", "nous"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider);

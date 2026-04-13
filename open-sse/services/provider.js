@@ -203,6 +203,9 @@ export function buildProviderUrl(provider, model, stream = true, options = {}) {
       // Claude-compatible providers
       return `${config.baseUrl}?beta=true`;
 
+    case "nous":
+      return config.baseUrl;
+
     default:
       return config.baseUrl;
   }
@@ -285,6 +288,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       case "qwen":
       case "openai":
       case "openrouter":
+      case "nous":
         headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         break;
 

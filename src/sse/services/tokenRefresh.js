@@ -20,7 +20,8 @@ import {
   refreshTokenByProvider as _refreshTokenByProvider,
   formatProviderCredentials as _formatProviderCredentials,
   getAllAccessTokens as _getAllAccessTokens,
-  refreshKiroToken as _refreshKiroToken
+  refreshKiroToken as _refreshKiroToken,
+  refreshNousToken as _refreshNousToken
 } from "open-sse/services/tokenRefresh.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
@@ -53,6 +54,9 @@ export const refreshCopilotToken = (githubAccessToken) =>
 
 export const refreshKiroToken = (refreshToken, providerSpecificData) =>
   _refreshKiroToken(refreshToken, providerSpecificData, log);
+
+export const refreshNousToken = (refreshToken) =>
+  _refreshNousToken(refreshToken, log);
 
 export const getAccessToken = (provider, credentials) =>
   _getAccessToken(provider, credentials, log);

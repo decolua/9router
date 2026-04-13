@@ -460,6 +460,70 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 }
 
 /**
+ * Refresh Nous OAuth token using refresh token
+ * Flow: refresh token → new access token → mint new agent key
+ */
+export async function refreshNousToken(refreshToken, log) {
+  try {
+    // Step 1: Refresh access token
+    const tokenResponse = await fetch("https://portal.nousresearch.com/api/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: "hermes-cli",
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const error = await tokenResponse.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Nous token", { error });
+      return null;
+    }
+
+    const tokenData = await tokenResponse.json();
+
+    // Step 2: Mint new agent key with new access token
+    const agentKeyResponse = await fetch("https://portal.nousresearch.com/api/oauth/agent-key", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${tokenData.access_token}`,
+      },
+      body: JSON.stringify({
+        min_ttl_seconds: 7200,
+      }),
+    });
+
+    let agentKey = null;
+    if (agentKeyResponse.ok) {
+      const agentKeyData = await agentKeyResponse.json();
+      agentKey = agentKeyData.api_key;
+      log?.info?.("TOKEN_REFRESH", "Nous agent key minted successfully");
+    } else {
+      const error = await agentKeyResponse.text();
+      log?.warn?.("TOKEN_REFRESH", "Failed to mint Nous agent key", { error });
+    }
+
+    return {
+      accessToken: tokenData.access_token,
+      refreshToken: tokenData.refresh_token || refreshToken,
+      expiresIn: tokenData.expires_in,
+      apiKey: agentKey || tokenData.access_token,
+      agentKey: agentKey,
+    };
+  } catch (error) {
+    log?.error?.("TOKEN_REFRESH", `Error refreshing Nous token: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Get access token for a specific provider
  */
 export async function getAccessToken(provider, credentials, log) {
@@ -500,6 +564,9 @@ export async function getAccessToken(provider, credentials, log) {
         credentials.providerSpecificData,
         log
       );
+
+    case "nous":
+      return await refreshNousToken(credentials.refreshToken, log);
 
     case "vertex":
     case "vertex-partner": {
@@ -545,6 +612,8 @@ export async function refreshTokenByProvider(provider, credentials, log) {
         credentials.providerSpecificData,
         log
       );
+    case "nous":
+      return refreshNousToken(credentials.refreshToken, log);
     case "vertex":
     case "vertex-partner": {
       const saJson = parseVertexSaJson(credentials.apiKey);
