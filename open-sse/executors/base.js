@@ -94,7 +94,46 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  /**
+   * Build headers for passthrough mode: forward client's original headers,
+   * only swapping auth and ensuring required beta flags.
+   */
+  buildPassthroughHeaders(clientHeaders, credentials, stream) {
+    const headers = { ...clientHeaders };
+
+    // Remove hop-by-hop and transport headers that should not be forwarded
+    for (const h of ["host", "content-length", "connection", "transfer-encoding", "accept-encoding"]) {
+      delete headers[h];
+    }
+
+    // Swap auth: remove client auth (authenticated to 9router), add upstream auth
+    delete headers["authorization"];
+    delete headers["x-api-key"];
+
+    if (credentials.apiKey) {
+      headers["x-api-key"] = credentials.apiKey;
+    } else if (credentials.accessToken) {
+      headers["authorization"] = `Bearer ${credentials.accessToken}`;
+    }
+
+    // Ensure oauth beta flag when using OAuth access token
+    if (credentials.accessToken) {
+      const existing = headers["anthropic-beta"] || "";
+      if (!existing.includes("oauth-2025-04-20")) {
+        headers["anthropic-beta"] = existing
+          ? `${existing},oauth-2025-04-20`
+          : "oauth-2025-04-20";
+      }
+    }
+
+    if (stream) {
+      headers["accept"] = "text/event-stream";
+    }
+
+    return headers;
+  }
+
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, passthrough = false, clientHeaders = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -106,7 +145,9 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const headers = this.buildHeaders(credentials, stream);
+      const headers = (passthrough && clientHeaders)
+        ? this.buildPassthroughHeaders(clientHeaders, credentials, stream)
+        : this.buildHeaders(credentials, stream);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
