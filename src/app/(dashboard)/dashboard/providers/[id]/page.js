@@ -40,6 +40,7 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [togglingModelId, setTogglingModelId] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -563,6 +564,70 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // All connections for a provider carry identical disabledModels (Task 1 invariant), so first is representative.
+  const disabledModels = connections[0]?.providerSpecificData?.disabledModels || [];
+  const disabledModelsSet = new Set(disabledModels);
+
+  const handleDisableModel = async (modelId) => {
+    if (togglingModelId) return;
+    const connectionId = connections.find((c) => c.isActive !== false)?.id || connections[0]?.id;
+    if (!connectionId) return;
+    setTogglingModelId(modelId);
+    const next = [...new Set([...disabledModels, modelId])];
+    setConnections((prev) =>
+      prev.map((c) => ({
+        ...c,
+        providerSpecificData: { ...(c.providerSpecificData || {}), disabledModels: next },
+      }))
+    );
+    try {
+      const res = await fetch(`/api/providers/${connectionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disableModel: modelId }),
+      });
+      if (!res.ok) {
+        console.log("Error disabling model:", res.status);
+        await fetchConnections();
+      }
+    } catch (error) {
+      console.log("Error disabling model:", error);
+      await fetchConnections();
+    } finally {
+      setTogglingModelId(null);
+    }
+  };
+
+  const handleEnableModel = async (modelId) => {
+    if (togglingModelId) return;
+    const connectionId = connections.find((c) => c.isActive !== false)?.id || connections[0]?.id;
+    if (!connectionId) return;
+    setTogglingModelId(modelId);
+    const next = disabledModels.filter((m) => m !== modelId);
+    setConnections((prev) =>
+      prev.map((c) => ({
+        ...c,
+        providerSpecificData: { ...(c.providerSpecificData || {}), disabledModels: next },
+      }))
+    );
+    try {
+      const res = await fetch(`/api/providers/${connectionId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enableModel: modelId }),
+      });
+      if (!res.ok) {
+        console.log("Error enabling model:", res.status);
+        await fetchConnections();
+      }
+    } catch (error) {
+      console.log("Error enabling model:", error);
+      await fetchConnections();
+    } finally {
+      setTogglingModelId(null);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -576,6 +641,10 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          disabledModels={disabledModels}
+          onDisableModel={connections.length > 0 ? handleDisableModel : undefined}
+          onEnableModel={connections.length > 0 ? handleEnableModel : undefined}
+          togglingModelId={togglingModelId}
         />
       );
     }
@@ -624,6 +693,10 @@ export default function ProviderDetailPage() {
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
+              isDisabled={disabledModelsSet.has(model.id)}
+              onDisable={connections.length > 0 ? () => handleDisableModel(model.id) : undefined}
+              onEnable={connections.length > 0 ? () => handleEnableModel(model.id) : undefined}
+              isToggling={togglingModelId === model.id}
             />
           );
         })}
@@ -644,6 +717,10 @@ export default function ProviderDetailPage() {
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
+            isDisabled={disabledModelsSet.has(model.id)}
+            onDisable={connections.length > 0 ? () => handleDisableModel(model.id) : undefined}
+            onEnable={connections.length > 0 ? () => handleEnableModel(model.id) : undefined}
+            isToggling={togglingModelId === model.id}
           />
         ))}
 
@@ -1045,33 +1122,39 @@ export default function ProviderDetailPage() {
   );
 }
 
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
-  const borderColor = testStatus === "ok"
+function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, isDisabled, onDisable, onEnable, isToggling }) {
+  const borderColor = isDisabled
+    ? "border-black/[0.06] dark:border-white/[0.06]"
+    : testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
     : "border-border";
 
-  const iconColor = testStatus === "ok"
+  const iconColor = isDisabled
+    ? undefined
+    : testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
     ? "#ef4444"
     : undefined;
 
   return (
-    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50 ${isDisabled ? "opacity-50" : ""}`}>
       <div className="flex items-center gap-2">
         <span
-          className="material-symbols-outlined text-base"
+          className={`material-symbols-outlined text-base ${isDisabled ? "text-text-muted" : ""}`}
           style={iconColor ? { color: iconColor } : undefined}
         >
-          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+          {isDisabled ? "block" : testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-        <div className="flex flex-col gap-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
-        </div>
-        {onTest && (
+        <code className={`text-xs font-mono bg-sidebar px-1.5 py-0.5 rounded ${isDisabled ? "text-text-muted line-through" : "text-text-muted"}`}>{fullModel}</code>
+        {isDisabled && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/5 dark:bg-white/10 text-text-muted">
+            disabled
+          </span>
+        )}
+        {!isDisabled && onTest && (
           <div className="relative group/btn">
             <button
               onClick={onTest}
@@ -1090,7 +1173,7 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
         <div className="relative group/btn">
           <button
             onClick={() => onCopy(fullModel, `model-${model.id}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <span className="material-symbols-outlined text-sm">
               {copied === `model-${model.id}` ? "check" : "content_copy"}
@@ -1100,10 +1183,27 @@ function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCusto
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
-        {isCustom && (
+        {(onDisable || onEnable) && (
+          <div className="relative group/btn ml-auto">
+            <button
+              onClick={isDisabled ? onEnable : onDisable}
+              disabled={isToggling}
+              className={`p-0.5 rounded transition-opacity ${isToggling ? "opacity-50 cursor-not-allowed" : "opacity-0 group-hover:opacity-100"} ${isDisabled ? "hover:bg-green-500/10 text-text-muted hover:text-green-600" : "hover:bg-orange-500/10 text-text-muted hover:text-orange-600"}`}
+              title={isDisabled ? "Enable model" : "Disable model"}
+            >
+              <span className="material-symbols-outlined text-sm">
+                {isToggling ? "progress_activity" : isDisabled ? "check_circle" : "block"}
+              </span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 right-0 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              {isDisabled ? "Enable" : "Disable"}
+            </span>
+          </div>
+        )}
+        {isCustom && !isDisabled && (
           <button
             onClick={onDeleteAlias}
-            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
             title="Remove custom model"
           >
             <span className="material-symbols-outlined text-sm">close</span>
@@ -1128,6 +1228,10 @@ ModelRow.propTypes = {
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
+  isDisabled: PropTypes.bool,
+  onDisable: PropTypes.func,
+  onEnable: PropTypes.func,
+  isToggling: PropTypes.bool,
 };
 
 function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
@@ -1226,33 +1330,42 @@ PassthroughModelsSection.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
 };
 
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
-  const borderColor = testStatus === "ok"
+function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, isDisabled, onDisable, onEnable, isToggling }) {
+  const borderColor = isDisabled
+    ? "border-black/[0.06] dark:border-white/[0.06]"
+    : testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
     : "border-border";
 
-  const iconColor = testStatus === "ok"
+  const iconColor = isDisabled
+    ? undefined
+    : testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
     ? "#ef4444"
     : undefined;
 
   return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50 ${isDisabled ? "opacity-50" : ""}`}>
       <span
-        className="material-symbols-outlined text-base text-text-muted"
+        className={`material-symbols-outlined text-base ${isDisabled ? "text-text-muted" : "text-text-muted"}`}
         style={iconColor ? { color: iconColor } : undefined}
       >
-        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+        {isDisabled ? "block" : testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
       </span>
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{modelId}</p>
+        <p className={`text-sm font-medium truncate ${isDisabled ? "line-through text-text-muted" : ""}`}>{modelId}</p>
 
-        <div className="flex items-center gap-1 mt-1">
-        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+        <div className="flex items-center gap-1 mt-1 flex-wrap">
+          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          {isDisabled && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-black/5 dark:bg-white/10 text-text-muted">
+              disabled
+            </span>
+          )}
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
@@ -1266,7 +1379,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
               {copied === `model-${modelId}` ? "Copied!" : "Copy"}
             </span>
           </div>
-          {onTest && (
+          {!isDisabled && onTest && (
             <div className="relative group/btn">
               <button
                 onClick={onTest}
@@ -1285,10 +1398,27 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
         </div>
       </div>
 
-      {/* Delete button */}
+      {(onDisable || onEnable) && (
+        <div className="relative group/btn">
+          <button
+            onClick={isDisabled ? onEnable : onDisable}
+            disabled={isToggling}
+            className={`p-1 rounded transition-opacity ${isToggling ? "opacity-50 cursor-not-allowed" : "opacity-0 group-hover:opacity-100"} ${isDisabled ? "hover:bg-green-500/10 text-text-muted hover:text-green-600" : "hover:bg-orange-500/10 text-text-muted hover:text-orange-600"}`}
+            title={isDisabled ? "Enable model" : "Disable model"}
+          >
+            <span className="material-symbols-outlined text-sm">
+              {isToggling ? "progress_activity" : isDisabled ? "check_circle" : "block"}
+            </span>
+          </button>
+          <span className="pointer-events-none absolute top-7 right-0 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            {isDisabled ? "Enable" : "Disable"}
+          </span>
+        </div>
+      )}
+
       <button
         onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
+        className="p-1 hover:bg-red-50 dark:hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
         title="Remove model"
       >
         <span className="material-symbols-outlined text-sm">delete</span>
@@ -1306,9 +1436,13 @@ PassthroughModelRow.propTypes = {
   onTest: PropTypes.func,
   testStatus: PropTypes.oneOf(["ok", "error"]),
   isTesting: PropTypes.bool,
+  isDisabled: PropTypes.bool,
+  onDisable: PropTypes.func,
+  onEnable: PropTypes.func,
+  isToggling: PropTypes.bool,
 };
 
-function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic, disabledModels, onDisableModel, onEnableModel, togglingModelId }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -1464,6 +1598,10 @@ function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, m
               onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
               testStatus={modelTestResults[modelId]}
               isTesting={testingModelId === modelId}
+              isDisabled={(disabledModels || []).includes(modelId)}
+              onDisable={onDisableModel ? () => onDisableModel(modelId) : undefined}
+              onEnable={onEnableModel ? () => onEnableModel(modelId) : undefined}
+              isToggling={togglingModelId === modelId}
             />
           ))}
         </div>
@@ -1485,6 +1623,10 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  disabledModels: PropTypes.arrayOf(PropTypes.string),
+  onDisableModel: PropTypes.func,
+  onEnableModel: PropTypes.func,
+  togglingModelId: PropTypes.string,
 };
 
 function CooldownTimer({ until }) {
@@ -2207,4 +2349,3 @@ AddCustomModelModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
