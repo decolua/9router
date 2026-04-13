@@ -632,9 +632,9 @@ export default function APIPageClient({ machineId }) {
                   {tunnelProgress || "Creating tunnel..."}
                 </div>
                 <button
-                  onClick={() => setShowDisableTunnelModal(true)}
+                  onClick={() => { setTunnelLoading(false); setTunnelProgress(""); }}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
-                  title="Disable Tunnel"
+                  title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
                 </button>
@@ -654,9 +654,9 @@ export default function APIPageClient({ machineId }) {
                   Checking...
                 </div>
                 <button
-                  onClick={() => setShowDisableTunnelModal(true)}
+                  onClick={() => setTunnelChecking(false)}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
-                  title="Disable Tunnel"
+                  title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
                 </button>
@@ -707,9 +707,9 @@ export default function APIPageClient({ machineId }) {
                   {tsProgress || "Connecting..."}
                 </div>
                 <button
-                  onClick={() => setShowDisableTsModal(true)}
+                  onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); }}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
-                  title="Disable Tailscale"
+                  title="Stop"
                 >
                   <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
                 </button>
