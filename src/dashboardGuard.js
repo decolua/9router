@@ -81,13 +81,18 @@ export async function proxy(request) {
       const data = await res.json();
       requireLogin = data.requireLogin !== false;
       tunnelDashboardAccess = data.tunnelDashboardAccess === true;
+
+      // Block tunnel/tailscale access if disabled (redirect to login)
+      if (!tunnelDashboardAccess) {
+        const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
+        const tunnelHost = data.tunnelUrl ? new URL(data.tunnelUrl).hostname.toLowerCase() : "";
+        const tailscaleHost = data.tailscaleUrl ? new URL(data.tailscaleUrl).hostname.toLowerCase() : "";
+        if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+          return NextResponse.redirect(new URL("/login", request.url));
+        }
+      }
     } catch {
       // On error, keep defaults (require login, block tunnel)
-    }
-
-    // Block tunnel access if disabled (checked before token to enforce the setting)
-    if (!isLocalRequest(request) && !tunnelDashboardAccess) {
-      return NextResponse.redirect(new URL("/login", request.url));
     }
 
     // If login not required, allow through

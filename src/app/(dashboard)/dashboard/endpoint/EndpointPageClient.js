@@ -121,8 +121,8 @@ export default function APIPageClient({ machineId }) {
           // Ping once to verify reachable
           const healthUrl = `${tPublicUrl || tUrl}/api/health`;
           try {
-            const ping = await fetch(healthUrl, { mode: "no-cors", cache: "no-store" });
-            if (ping.ok || ping.type === "opaque") {
+            const ping = await fetch(healthUrl, { cache: "no-store" });
+            if (ping.ok) {
               setTunnelEnabled(true);
             } else {
               pingTunnelHealth(tPublicUrl || tUrl);
@@ -769,7 +769,7 @@ export default function APIPageClient({ machineId }) {
             />
             <div className="flex items-center gap-1.5">
               <p className="font-medium text-sm">Allow dashboard access via tunnel</p>
-              <Tooltip text="When enabled, the dashboard can be accessed through your tunnel or Tailscale URL without requiring login. Only enable if you trust everyone who can reach your tunnel URL." />
+              <Tooltip text="When enabled, the dashboard can be accessed through your tunnel or Tailscale URL (login still required). When disabled, dashboard access via tunnel/Tailscale is completely blocked." />
             </div>
           </div>
         )}

@@ -6,7 +6,9 @@ export async function GET() {
     const settings = await getSettings();
     const requireLogin = settings.requireLogin !== false;
     const tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
-    return NextResponse.json({ requireLogin, tunnelDashboardAccess });
+    const tunnelUrl = settings.tunnelUrl || "";
+    const tailscaleUrl = settings.tailscaleUrl || "";
+    return NextResponse.json({ requireLogin, tunnelDashboardAccess, tunnelUrl, tailscaleUrl });
   } catch (error) {
     return NextResponse.json({ requireLogin: true }, { status: 200 });
   }
