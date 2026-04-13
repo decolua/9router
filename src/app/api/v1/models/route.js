@@ -156,6 +156,11 @@ export async function GET() {
         ).trim();
         const providerModels = PROVIDER_MODELS[staticAlias] || [];
         const enabledModels = conn?.providerSpecificData?.enabledModels;
+        const disabledModelsSet = new Set(
+          Array.isArray(conn?.providerSpecificData?.disabledModels)
+            ? conn.providerSpecificData.disabledModels
+            : [],
+        );
         const hasExplicitEnabledModels =
           Array.isArray(enabledModels) && enabledModels.length > 0;
         const isCompatibleProvider =
@@ -191,7 +196,8 @@ export async function GET() {
             }
             return modelId;
           })
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
+          .filter((modelId) => !disabledModelsSet.has(modelId));
 
         for (const modelId of modelIds) {
           models.push({

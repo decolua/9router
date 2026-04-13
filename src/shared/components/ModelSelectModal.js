@@ -88,6 +88,12 @@ export default function ModelSelectModal({
       const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+      const connection = activeProviders.find(p => p.provider === providerId);
+      const disabledModels = new Set(
+        Array.isArray(connection?.providerSpecificData?.disabledModels)
+          ? connection.providerSpecificData.disabledModels
+          : []
+      );
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
@@ -96,7 +102,8 @@ export default function ModelSelectModal({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
             value: fullModel,
-          }));
+          }))
+          .filter((model) => !disabledModels.has(model.id));
 
         if (aliasModels.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
@@ -112,7 +119,6 @@ export default function ModelSelectModal({
         }
       } else if (isCustomProvider) {
         // Find connection object to get prefix synchronously without waiting for providerNodes fetch
-        const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = connection?.name || matchedNode?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
@@ -125,7 +131,8 @@ export default function ModelSelectModal({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
-          }));
+          }))
+          .filter((model) => !disabledModels.has(model.id));
 
         // Always show compatible providers that are connected, even with no aliases.
         // When no aliases exist, show a placeholder so users know it's available.
@@ -160,10 +167,13 @@ export default function ModelSelectModal({
           .map(([aliasName, fullModel]) => {
             const modelId = fullModel.replace(`${alias}/`, "");
             return { id: modelId, name: aliasName, value: fullModel, isCustom: true };
-          });
+          })
+          .filter((model) => !disabledModels.has(model.id));
 
         const allModels = [
-          ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
+          ...hardcodedModels
+            .filter((model) => !disabledModels.has(model.id))
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
           ...customModels,
         ];
 
@@ -361,4 +371,3 @@ ModelSelectModal.propTypes = {
   title: PropTypes.string,
   modelAliases: PropTypes.object,
 };
-
