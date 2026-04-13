@@ -4,6 +4,7 @@ import {
   getProxyPoolById,
   updateProviderConnection,
   deleteProviderConnection,
+  updateProviderDisabledModels,
 } from "@/models";
 
 function normalizeProxyConfig(body = {}) {
@@ -185,5 +186,99 @@ export async function DELETE(request, { params }) {
   } catch (error) {
     console.log("Error deleting connection:", error);
     return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
+  }
+}
+
+// PATCH /api/providers/[id] - Provider-wide model disable mutations
+// Body (exactly one variant):
+//   { disabledModels: string[] }  — replace the full provider-wide disabled list
+//   { disableModel: string }       — idempotent add of a single bare model ID
+//   { enableModel: string }        — remove a single bare model ID from the disabled list
+export async function PATCH(request, { params }) {
+  try {
+    const { id } = await params;
+    const body = await request.json();
+
+    const connection = await getProviderConnectionById(id);
+    if (!connection) {
+      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    const providerId = connection.provider;
+    if (!providerId) {
+      return NextResponse.json({ error: "Connection has no provider" }, { status: 400 });
+    }
+
+    // Detect which variant(s) the caller provided
+    const hasDisabledModels = Object.prototype.hasOwnProperty.call(body, "disabledModels");
+    const hasDisableModel = Object.prototype.hasOwnProperty.call(body, "disableModel");
+    const hasEnableModel = Object.prototype.hasOwnProperty.call(body, "enableModel");
+    const variantCount = [hasDisabledModels, hasDisableModel, hasEnableModel].filter(Boolean).length;
+
+    if (variantCount === 0) {
+      return NextResponse.json(
+        { error: "Body must contain exactly one of: disabledModels (array), disableModel (string), enableModel (string)" },
+        { status: 400 }
+      );
+    }
+    if (variantCount > 1) {
+      return NextResponse.json(
+        { error: "Body must contain exactly one of: disabledModels, disableModel, enableModel — not multiple" },
+        { status: 400 }
+      );
+    }
+
+    // Current provider-wide disabled list (any one connection is representative per Task 1 invariant)
+    const currentDisabled = Array.isArray(connection.providerSpecificData?.disabledModels)
+      ? [...connection.providerSpecificData.disabledModels]
+      : [];
+
+    let nextDisabled;
+
+    if (hasDisabledModels) {
+      if (!Array.isArray(body.disabledModels)) {
+        return NextResponse.json({ error: "disabledModels must be an array" }, { status: 400 });
+      }
+      // Trim, reject blanks, deduplicate
+      nextDisabled = [...new Set(
+        body.disabledModels
+          .filter((m) => typeof m === "string")
+          .map((m) => m.trim())
+          .filter((m) => m)
+      )];
+    } else if (hasDisableModel) {
+      if (typeof body.disableModel !== "string") {
+        return NextResponse.json({ error: "disableModel must be a string" }, { status: 400 });
+      }
+      const modelId = body.disableModel.trim();
+      if (!modelId) {
+        return NextResponse.json({ error: "disableModel must not be blank" }, { status: 400 });
+      }
+      // Idempotent add
+      nextDisabled = currentDisabled.includes(modelId)
+        ? currentDisabled
+        : [...currentDisabled, modelId];
+    } else {
+      // hasEnableModel
+      if (typeof body.enableModel !== "string") {
+        return NextResponse.json({ error: "enableModel must be a string" }, { status: 400 });
+      }
+      const modelId = body.enableModel.trim();
+      if (!modelId) {
+        return NextResponse.json({ error: "enableModel must not be blank" }, { status: 400 });
+      }
+      nextDisabled = currentDisabled.filter((m) => m !== modelId);
+    }
+
+    const updatedCount = await updateProviderDisabledModels(providerId, nextDisabled);
+
+    return NextResponse.json({
+      providerId,
+      disabledModels: nextDisabled,
+      updatedConnections: updatedCount,
+    });
+  } catch (error) {
+    console.log("Error updating provider disabled models:", error);
+    return NextResponse.json({ error: "Failed to update provider disabled models" }, { status: 500 });
   }
 }
