@@ -78,8 +78,8 @@ function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
     const useSudo = isSudoAvailable();
     const child = useSudo
-      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"] })
-      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"] });
+      ? spawn("sudo", ["-S", "/bin/sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"] })
+      : spawn("/bin/sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"] });
 
     let stdout = "";
     let stderr = "";

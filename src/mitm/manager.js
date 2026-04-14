@@ -489,7 +489,7 @@ async function startServer(apiKey, sudoPassword) {
       shellQuoteSingle(SERVER_PATH),
     ].join(" ");
     serverProcess = spawn(
-      "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
+      "sudo", ["-S", "-E", "/bin/sh", "-c", inlineCmd],
       { detached: false, stdio: ["pipe", "pipe", "pipe"] }
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
