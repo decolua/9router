@@ -1,0 +1,53 @@
+name: Sync with Upstream & Deploy
+
+on:
+  schedule:
+    # كل 12 ساعة
+    - cron: '0 */12 * * *'
+  
+  workflow_dispatch:
+    # تشغيل يدوي من GitHub UI
+
+jobs:
+  sync-and-clean:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      
+      - name: Add Upstream Remote
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git || true
+          git fetch upstream
+      
+      - name: Merge Upstream Changes
+        run: |
+          git merge upstream/main --no-edit || {
+            echo "Merge conflict, trying to continue..."
+            git merge --abort || true
+          }
+      
+      - name: Remove Private Submodule
+        run: |
+          # حذف الـ submodule لو رجع
+          git rm -rf src/mitm/dev 2>/dev/null || true
+          rm -rf .git/modules/src/mitm/dev 2>/dev/null || true
+          
+          # تفريغ .gitmodules
+          echo "" > .gitmodules || true
+          
+          git add .gitmodules || true
+          git commit -m "Auto: Clean submodule after sync" || true
+      
+      - name: Push Changes
+        run: |
+          git push origin main --force-with-lease || true
