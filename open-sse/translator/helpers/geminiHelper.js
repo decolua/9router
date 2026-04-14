@@ -1,7 +1,6 @@
 // Gemini helper functions for translator
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
-// Reference: CLIProxyAPI/internal/util/gemini_schema.go (removeUnsupportedKeywords)
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Basic constraints (not supported by Gemini API)
   "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum",
@@ -270,7 +269,6 @@ function flattenTypeArrays(obj) {
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
-// Reference: CLIProxyAPI/internal/util/gemini_schema.go
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
 

@@ -155,14 +155,23 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
+      const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
       let redirectUri;
+      let codexProxyActive = false;
+
       if (provider === "codex") {
-        // Codex requires fixed port 1455
+        // Try to start proxy on fixed port 1455 → redirect callback to app port
+        try {
+          const proxyRes = await fetch(`/api/oauth/codex/start-proxy?app_port=${appPort}`);
+          const proxyData = await proxyRes.json();
+          codexProxyActive = proxyData.success;
+        } catch {
+          codexProxyActive = false;
+        }
+        // Always use fixed port 1455 as redirect_uri (Codex requirement)
         redirectUri = "http://localhost:1455/auth/callback";
       } else {
-        // Use app's current port for OAuth callback
-        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-        redirectUri = `http://localhost:${port}/callback`;
+        redirectUri = `http://localhost:${appPort}/callback`;
       }
 
       // Build authorize URL, optionally passing provider-specific metadata (e.g. gitlab clientId)
@@ -177,16 +186,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       setAuthData({ ...data, redirectUri });
 
-      // For Codex or non-localhost: use manual input mode
-      if (provider === "codex" || !isLocalhost) {
+      if (provider === "codex" && codexProxyActive) {
+        // Proxy active: callback will redirect to app port automatically
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (!isLocalhost || provider === "codex") {
+        // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
         // Localhost (non-Codex): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
-
-        // Check if popup was blocked
         if (!popupRef.current) {
           setStep("input");
         }
@@ -209,8 +223,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       pollingAbortRef.current = false;
       startOAuthFlow();
     } else if (!isOpen) {
-      // Abort polling when modal closes
+      // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
+      if (provider === "codex") {
+        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
@@ -319,10 +336,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
-  // Clear session on modal close
+  // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
+    if (provider === "codex") {
+      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, provider]);
 
   if (!provider || !providerInfo) return null;
 

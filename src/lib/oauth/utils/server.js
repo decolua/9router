@@ -114,3 +114,71 @@ export function waitForCallback(timeoutMs = 300000) {
   });
 }
 
+// Singleton proxy server for Codex OAuth callback on fixed port
+let codexProxyServer = null;
+let codexProxyTimeout = null;
+
+const CODEX_PROXY_TIMEOUT_MS = 300000; // 5 minutes
+
+/**
+ * Start a proxy server on Codex fixed port (1455) that redirects callback to the app port.
+ * Returns { success: true } if started, or { success: false } if port is busy.
+ */
+export function startCodexProxy(appPort) {
+  return new Promise((resolve) => {
+    // Already running
+    if (codexProxyServer) {
+      resolve({ success: true });
+      return;
+    }
+
+    const CODEX_PORT = 1455;
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, "http://localhost");
+
+      if (url.pathname === "/callback" || url.pathname === "/auth/callback") {
+        // Redirect to app port with all query params preserved
+        const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+        res.writeHead(302, { Location: redirectUrl });
+        res.end();
+
+        // Auto-close after redirect
+        stopCodexProxy();
+        return;
+      }
+
+      res.writeHead(404);
+      res.end("Not found");
+    });
+
+    server.listen(CODEX_PORT, "127.0.0.1", () => {
+      codexProxyServer = server;
+      // Auto-cleanup after timeout
+      codexProxyTimeout = setTimeout(() => stopCodexProxy(), CODEX_PROXY_TIMEOUT_MS);
+      resolve({ success: true });
+    });
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        resolve({ success: false, reason: "port_busy" });
+      } else {
+        resolve({ success: false, reason: err.message });
+      }
+    });
+  });
+}
+
+/**
+ * Stop the Codex proxy server and cleanup
+ */
+export function stopCodexProxy() {
+  if (codexProxyTimeout) {
+    clearTimeout(codexProxyTimeout);
+    codexProxyTimeout = null;
+  }
+  if (codexProxyServer) {
+    codexProxyServer.close();
+    codexProxyServer = null;
+  }
+}
+

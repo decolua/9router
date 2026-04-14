@@ -1,7 +1,7 @@
 import { platform, arch } from "os";
 import { DefaultExecutor } from "./default.js";
 
-/** portal.qwen.ai — aligned with CLIProxyAPI qwen_executor */
+/** portal.qwen.ai */
 const qwenCodeVersion = "0.13.2";
 const qwenStainless = {
   runtimeVersion: "v22.17.0",

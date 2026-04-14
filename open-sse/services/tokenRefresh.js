@@ -1,8 +1,13 @@
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
 
-// Token expiry buffer (refresh if expires within 5 minutes)
+// Default token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+// Get provider-specific refresh lead time, falls back to default buffer
+export function getRefreshLeadMs(provider) {
+  return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
+}
 
 /**
  * Refresh OAuth access token using refresh token
