@@ -335,6 +335,7 @@ export const PROVIDERS = {
   opencode: {
     baseUrl: "https://opencode.ai",
     format: "openai",
-    headers: { "x-opencode-client": "desktop" }
+    headers: { "x-opencode-client": "desktop" },
+    noAuth: true
   },
 };

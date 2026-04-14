@@ -1,3 +1,8 @@
+# v0.3.89 (2026-04-13)
+
+## Improvements
+- Improved dashboard access control by blocking tunnel/Tailscale access when disabled
+
 # v0.3.87 (2026-04-13)
 
 ## Fixes
