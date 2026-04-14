@@ -24,6 +24,15 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [webhookForm, setWebhookForm] = useState({
+    webhookEnabled: false,
+    webhookUrls: "",
+    webhookThrottleMs: 5,
+    webhookErrorCodes: [401, 403, 429, 500, 502, 503],
+  });
+  const [webhookStatus, setWebhookStatus] = useState({ type: "", message: "" });
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookTestLoading, setWebhookTestLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -34,6 +43,12 @@ export default function ProfilePage() {
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
+        });
+        setWebhookForm({
+          webhookEnabled: data?.webhookEnabled === true,
+          webhookUrls: (data?.webhookUrls || []).join("\n"),
+          webhookThrottleMs: Math.round((data?.webhookThrottleMs || 300000) / 60000),
+          webhookErrorCodes: data?.webhookErrorCodes || [401, 403, 429, 500, 502, 503],
         });
         setLoading(false);
       })
@@ -138,6 +153,96 @@ export default function ProfilePage() {
     } finally {
       setProxyLoading(false);
     }
+  };
+
+  const updateWebhookEnabled = async (enabled) => {
+    setWebhookLoading(true);
+    setWebhookStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookEnabled: enabled }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setWebhookForm((prev) => ({ ...prev, webhookEnabled: enabled }));
+        setWebhookStatus({ type: "success", message: enabled ? "Webhook enabled" : "Webhook disabled" });
+      } else {
+        setWebhookStatus({ type: "error", message: data.error || "Failed to update" });
+      }
+    } catch {
+      setWebhookStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setWebhookLoading(false);
+    }
+  };
+
+  const saveWebhookSettings = async (e) => {
+    e.preventDefault();
+    setWebhookLoading(true);
+    setWebhookStatus({ type: "", message: "" });
+    try {
+      const urls = webhookForm.webhookUrls.split("\n").map(u => u.trim()).filter(Boolean);
+      const throttleMs = Math.max(1, webhookForm.webhookThrottleMs) * 60000;
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrls: urls,
+          webhookThrottleMs: throttleMs,
+          webhookErrorCodes: webhookForm.webhookErrorCodes,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setWebhookStatus({ type: "success", message: "Webhook settings saved" });
+      } else {
+        setWebhookStatus({ type: "error", message: data.error || "Failed to save" });
+      }
+    } catch {
+      setWebhookStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setWebhookLoading(false);
+    }
+  };
+
+  const testWebhook = async () => {
+    const urls = webhookForm.webhookUrls.split("\n").map(u => u.trim()).filter(Boolean);
+    if (urls.length === 0) {
+      setWebhookStatus({ type: "error", message: "Please enter at least one webhook URL" });
+      return;
+    }
+    setWebhookTestLoading(true);
+    setWebhookStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/webhook-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookStatus({ type: "success", message: "Test notification sent successfully" });
+      } else {
+        setWebhookStatus({ type: "error", message: data.error || "Test failed" });
+      }
+    } catch {
+      setWebhookStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setWebhookTestLoading(false);
+    }
+  };
+
+  const toggleErrorCode = (code) => {
+    setWebhookForm((prev) => {
+      const codes = prev.webhookErrorCodes.includes(code)
+        ? prev.webhookErrorCodes.filter(c => c !== code)
+        : [...prev.webhookErrorCodes, code];
+      return { ...prev, webhookErrorCodes: codes };
+    });
   };
 
   const handlePasswordChange = async (e) => {
@@ -647,6 +752,108 @@ export default function ProfilePage() {
               onChange={updateObservabilityEnabled}
               disabled={loading}
             />
+          </div>
+        </Card>
+
+        {/* Webhook Notifications */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-pink-500/10 text-pink-500">
+              <span className="material-symbols-outlined text-[20px]">notifications</span>
+            </div>
+            <h3 className="text-lg font-semibold">Notifications</h3>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Webhook Notifications</p>
+                <p className="text-sm text-text-muted">
+                  Send alerts via webhook when provider errors occur (401, 429, etc.)
+                </p>
+              </div>
+              <Toggle
+                checked={webhookForm.webhookEnabled}
+                onChange={() => updateWebhookEnabled(!webhookForm.webhookEnabled)}
+                disabled={loading || webhookLoading}
+              />
+            </div>
+
+            {webhookForm.webhookEnabled && (
+              <form onSubmit={saveWebhookSettings} className="flex flex-col gap-4 pt-2 border-t border-border/50">
+                <div className="flex flex-col gap-2">
+                  <label className="font-medium">Webhook URLs</label>
+                  <textarea
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-bg text-text-main text-sm font-mono min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder={"generic+https://example.com/webhook\nslack://hook:TOKEN@webhook\ndiscord://TOKEN@WEBHOOK_ID"}
+                    value={webhookForm.webhookUrls}
+                    onChange={(e) => setWebhookForm((prev) => ({ ...prev, webhookUrls: e.target.value }))}
+                    disabled={loading || webhookLoading}
+                  />
+                  <p className="text-sm text-text-muted">
+                    One URL per line. Supports: Slack, Discord, Telegram, Webhook, Ntfy (powered by ahha)
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                  <label className="font-medium">Throttle (minutes)</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={webhookForm.webhookThrottleMs}
+                    onChange={(e) => setWebhookForm((prev) => ({ ...prev, webhookThrottleMs: parseInt(e.target.value) || 5 }))}
+                    disabled={loading || webhookLoading}
+                    className="w-24"
+                  />
+                  <p className="text-sm text-text-muted">
+                    Same error won&apos;t send duplicate notifications within this window
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                  <label className="font-medium">Error Codes to Notify</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[401, 403, 429, 500, 502, 503].map((code) => (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => toggleErrorCode(code)}
+                        className={cn(
+                          "px-3 py-1 rounded-md text-sm font-mono border transition-colors",
+                          webhookForm.webhookErrorCodes.includes(code)
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-bg border-border text-text-muted hover:border-primary/30"
+                        )}
+                      >
+                        {code}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-border/50 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    loading={webhookTestLoading}
+                    disabled={loading || webhookLoading}
+                    onClick={testWebhook}
+                  >
+                    Test Webhook
+                  </Button>
+                  <Button type="submit" variant="primary" loading={webhookLoading}>
+                    Save
+                  </Button>
+                </div>
+              </form>
+            )}
+
+            {webhookStatus.message && (
+              <p className={`text-sm ${webhookStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
+                {webhookStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 

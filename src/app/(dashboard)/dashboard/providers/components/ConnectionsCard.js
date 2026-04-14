@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal } from "@/shared/components";
+import ErrorHistoryModal from "./ErrorHistoryModal";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -29,7 +30,7 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onShowErrorHistory }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
@@ -159,6 +160,10 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               )}
             </div>
           )}
+          <button onClick={onShowErrorHistory} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-orange-500" title="Error History">
+            <span className="material-symbols-outlined text-[18px]">error_outline</span>
+            <span className="text-[10px] leading-tight">Errors</span>
+          </button>
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -195,6 +200,7 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onShowErrorHistory: PropTypes.func.isRequired,
 };
 
 // ── AddApiKeyModal ─────────────────────────────────────────────
@@ -306,6 +312,8 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const [showErrorHistoryModal, setShowErrorHistoryModal] = useState(false);
+  const [errorHistoryConnection, setErrorHistoryConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
 
@@ -446,6 +454,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
+                  onShowErrorHistory={() => { setErrorHistoryConnection(conn); setShowErrorHistoryModal(true); }}
                 />
               ))}
             </div>
@@ -469,6 +478,12 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         proxyPools={proxyPools}
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
+      />
+      <ErrorHistoryModal
+        isOpen={showErrorHistoryModal}
+        connectionId={errorHistoryConnection?.id}
+        connectionName={errorHistoryConnection?.displayName || errorHistoryConnection?.name || errorHistoryConnection?.email || errorHistoryConnection?.id}
+        onClose={() => setShowErrorHistoryModal(false)}
       />
     </>
   );
