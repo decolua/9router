@@ -17,6 +17,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
   const [modalError, setModalError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [mitmRouterBaseUrl, setMitmRouterBaseUrl] = useState(DEFAULT_MITM_ROUTER_BASE);
 
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
@@ -49,6 +50,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   };
 
   const handleAction = (action) => {
+    setActionError(null);
     if (isWindows || status?.hasCachedPassword) {
       doAction(action, "");
     } else {
@@ -60,9 +62,11 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
   const doAction = async (action, password) => {
     setLoading(true);
+    setActionError(null);
     try {
+      let res;
       if (action === "trust-cert") {
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "trust-cert", sudoPassword: password }),
@@ -71,7 +75,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         const keyToUse = selectedApiKey?.trim()
           || (apiKeys?.length > 0 ? apiKeys[0].key : null)
           || (!cloudEnabled ? "sk_9router" : null);
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -81,16 +85,23 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           }),
         });
       } else {
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sudoPassword: password }),
         });
       }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || `Failed to ${action} MITM server`);
+        return;
+      }
       setShowPasswordModal(false);
       setSudoPassword("");
       await fetchStatus();
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setActionError(e.message || "Network error");
+    } finally {
       setLoading(false);
       setPendingAction(null);
     }
@@ -221,6 +232,14 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <p className="text-xs text-text-muted">Enable DNS per tool below to activate interception</p>
             )}
           </div>
+
+          {/* Action error */}
+          {actionError && (
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">error</span>
+              <span>{actionError}</span>
+            </div>
+          )}
 
           {/* Windows admin warning */}
           {isWindows && !isAdmin && (

@@ -219,12 +219,13 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 });
 
-// Kill any process occupying LOCAL_PORT before binding
+// Kill only processes LISTENING on LOCAL_PORT (not outbound connections)
 function killPort(port) {
   try {
-    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf-8", windowsHide: true }).trim();
+    const pids = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
     if (!pids) return;
-    const pidList = pids.split("\n");
+    const pidList = pids.split("\n").filter(p => p && Number(p) !== process.pid);
+    if (pidList.length === 0) return;
     pidList.forEach(pid => {
       try {
         process.kill(Number(pid), "SIGKILL");
@@ -235,7 +236,6 @@ function killPort(port) {
     });
     log(`Killed ${pidList.length} process(es) on port ${port}`);
   } catch (e) {
-    // lsof exits with status 1 when no process found — that's fine
     if (e.status !== 1) throw e;
   }
 }

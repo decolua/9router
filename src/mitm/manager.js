@@ -205,7 +205,7 @@ function getPort443Owner(sudoPassword) {
     if (IS_WIN) {
       const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
         `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
-        `if ($c) { $c.OwningProcess } else { 0 }"`;
+        `if ($c) { $c.OwningProcess } else { 0 }"`;    
       exec(psCmd, { windowsHide: true }, (err, stdout) => {
         if (err) return resolve(null);
         const pid = parseInt(stdout.trim(), 10);
@@ -216,14 +216,14 @@ function getPort443Owner(sudoPassword) {
         });
       });
     } else {
-      exec(`ps aux | grep "[s]erver.js"`, { windowsHide: true }, (err, stdout) => {
-        if (!stdout?.trim()) return resolve(null);
-        for (const line of stdout.split("\n")) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parseInt(parts[1], 10);
-          if (!isNaN(pid)) return resolve({ pid, name: "node" });
-        }
-        resolve(null);
+      // Only find process actually LISTENING on TCP port 443
+      exec("lsof -nP -iTCP:443 -sTCP:LISTEN -t", { windowsHide: true }, (err, stdout) => {
+        if (err || !stdout?.trim()) return resolve(null);
+        const pid = parseInt(stdout.trim().split("\n")[0], 10);
+        if (!pid || isNaN(pid)) return resolve(null);
+        exec(`ps -p ${pid} -o comm=`, { windowsHide: true }, (e2, out2) => {
+          resolve({ pid, name: (out2?.trim() || "unknown") });
+        });
       });
     }
   });
@@ -391,8 +391,9 @@ async function startServer(apiKey, sudoPassword) {
     const portStatus = await checkPort443Free();
     if (portStatus === "in-use" || portStatus === "no-permission") {
       const owner = await getPort443Owner(sudoPassword);
-      if (owner && owner.name === "node") {
-        log(`Killing orphan node process on port 443 (PID ${owner.pid})...`);
+      const ownerIsNode = owner && (owner.name === "node" || owner.name.includes("node"));
+      if (ownerIsNode) {
+        log(`Killing orphan node process on port 443 (PID ${owner.pid}, name=${owner.name})...`);
         try {
           const { execWithPassword } = require("./dns/dnsConfig");
           await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
