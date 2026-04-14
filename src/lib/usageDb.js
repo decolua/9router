@@ -64,6 +64,9 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
   }
 }
 
+// Configurable history cap via env (default 10 000)
+const MAX_HISTORY = Math.max(1000, parseInt(process.env.MAX_USAGE_HISTORY, 10) || 10000);
+
 // Default data structure
 const defaultData = {
   history: [],
@@ -243,6 +246,12 @@ export async function getUsageDb() {
       dbInstance.data = defaultData;
       await dbInstance.write();
     }
+
+    // Backfill totalRequestsLifetime for legacy DBs that don't have it
+    if (typeof dbInstance.data.totalRequestsLifetime !== "number") {
+      dbInstance.data.totalRequestsLifetime = (dbInstance.data.history || []).length;
+      await dbInstance.write();
+    }
   }
   return dbInstance;
 }
@@ -276,7 +285,6 @@ export async function saveRequestUsage(entry) {
     db.data.totalRequestsLifetime += 1;
 
     // Cap history to prevent unbounded memory/disk growth
-    const MAX_HISTORY = 10000;
     if (db.data.history.length > MAX_HISTORY) {
       db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
     }
@@ -554,9 +562,13 @@ export async function getUsageStats(period = "all") {
   const lifetimeTotalRequests = typeof db.data.totalRequestsLifetime === "number"
     ? db.data.totalRequestsLifetime
     : history.length;
+  const totalHistoryRetained = (db.data.history || []).length;
 
   const stats = {
     totalRequests: lifetimeTotalRequests,
+    periodRequests: history.length,
+    historyRetained: totalHistoryRetained,
+    maxHistory: MAX_HISTORY,
     totalPromptTokens: 0,
     totalCompletionTokens: 0,
     totalCost: 0,
