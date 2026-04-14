@@ -16,13 +16,17 @@ const TAILSCALE_DIR = path.join(os.homedir(), ".9router", "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
-// Prefer system tailscale, fallback to local bin
+// Well-known Windows install path
+const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
+
+// Prefer system tailscale, fallback to local bin, then Windows default path
 function getTailscaleBin() {
   try {
     const systemPath = execSync("which tailscale 2>/dev/null || where tailscale 2>nul", { encoding: "utf8", windowsHide: true }).trim();
     if (systemPath) return systemPath;
   } catch (e) { /* not in PATH */ }
   if (fs.existsSync(TAILSCALE_BIN)) return TAILSCALE_BIN;
+  if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) return WINDOWS_TAILSCALE_BIN;
   return null;
 }
 
@@ -224,27 +228,35 @@ async function installTailscaleWindows(log) {
   const msiUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi";
   const msiPath = path.join(os.tmpdir(), "tailscale-setup.msi");
 
-  // Download MSI via PowerShell with streaming output
+  // Download MSI via curl.exe (built-in on Win10+) — no PowerShell window, streams progress
   log("Downloading Tailscale installer...");
   await new Promise((resolve, reject) => {
-    const child = spawn("powershell", [
-      "-NoProfile", "-NonInteractive", "-Command",
-      `Invoke-WebRequest -Uri '${msiUrl}' -OutFile '${msiPath}'`
-    ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    child.stdout.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
-    child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    const child = spawn("curl.exe", ["-L", "-#", "-o", msiPath, msiUrl], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    });
+    // curl outputs progress to stderr with -# flag
+    let lastPct = "";
+    child.stderr.on("data", (d) => {
+      const text = d.toString();
+      const match = text.match(/(\d+\.\d)%/);
+      if (match && match[1] !== lastPct) {
+        lastPct = match[1];
+        log(`Downloading... ${lastPct}%`);
+      }
+    });
     child.on("close", (c) => c === 0 ? resolve() : reject(new Error("Download failed")));
     child.on("error", reject);
   });
 
-  // Install MSI silently — Windows Installer handles UAC elevation automatically
+  // Install MSI with UAC elevation via PowerShell Start-Process -Verb RunAs
   log("Installing Tailscale (UAC prompt may appear)...");
   await new Promise((resolve, reject) => {
-    const child = spawn("msiexec", ["/i", msiPath, "/quiet", "/norestart"], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true
-    });
-    child.stdout.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
+    const args = `'/i','${msiPath}','TS_NOLAUNCH=true','/quiet','/norestart'`;
+    const child = spawn("powershell", [
+      "-NoProfile", "-NonInteractive", "-Command",
+      `Start-Process msiexec -ArgumentList ${args} -Verb RunAs -Wait`
+    ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
     child.on("close", (c) => {
       try { fs.unlinkSync(msiPath); } catch { /* ignore */ }
@@ -253,7 +265,18 @@ async function installTailscaleWindows(log) {
     child.on("error", reject);
   });
 
-  log("Installation complete.");
+  // Verify tailscale.exe exists after install
+  log("Verifying installation...");
+  const maxWait = 10000;
+  const start = Date.now();
+  while (Date.now() - start < maxWait) {
+    if (fs.existsSync(WINDOWS_TAILSCALE_BIN)) {
+      log("Installation complete.");
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error("Installation finished but tailscale.exe not found");
 }
 
 /** Start tailscaled with sudo (TUN mode required for Funnel) */
