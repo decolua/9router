@@ -228,12 +228,13 @@ export async function handleEmbeddingsCore({
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
-  // Handle 401/403 — try token refresh
+  // Handle 401/403 — try token refresh (skip for noAuth providers)
+  const executor = getExecutor(provider);
   if (
-    providerResponse.status === HTTP_STATUS.UNAUTHORIZED ||
-    providerResponse.status === HTTP_STATUS.FORBIDDEN
+    !executor.noAuth &&
+    (providerResponse.status === HTTP_STATUS.UNAUTHORIZED ||
+    providerResponse.status === HTTP_STATUS.FORBIDDEN)
   ) {
-    const executor = getExecutor(provider);
     const newCredentials = await refreshWithRetry(
       () => executor.refreshCredentials(credentials, log),
       3,

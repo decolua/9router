@@ -8,6 +8,7 @@ export class BaseExecutor {
   constructor(provider, config) {
     this.provider = provider;
     this.config = config;
+    this.noAuth = config?.noAuth || false;
   }
 
   getProvider() {

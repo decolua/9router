@@ -74,7 +74,7 @@ export async function proxy(request) {
   if (pathname.startsWith("/dashboard")) {
     const origin = request.nextUrl.origin;
     let requireLogin = true;
-    let tunnelDashboardAccess = false;
+    let tunnelDashboardAccess = true;
 
     try {
       const res = await fetch(`${origin}/api/settings/require-login`);

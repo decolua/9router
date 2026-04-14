@@ -87,10 +87,17 @@ export class CodexExecutor extends BaseExecutor {
     return headers;
   }
 
+  buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    const base = super.buildUrl(model, stream, urlIndex, credentials);
+    return this._isCompact ? `${base}/compact` : base;
+  }
+
   /**
    * Transform request before sending - inject default instructions if missing
    */
   transformRequest(model, body, stream, credentials) {
+    this._isCompact = !!body._compact;
+    delete body._compact;
     // Resolve conversation-stable session_id from input history + machineId
     this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)

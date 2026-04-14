@@ -40,8 +40,8 @@ const MITM_PORT = 443;
 const MITM_WIN_NODE_PORT = 8443;
 const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
 
-const MITM_MAX_RESTARTS = 5;
-const MITM_RESTART_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
+const MITM_MAX_RESTARTS = 2;
+const MITM_RESTART_DELAYS_MS = [5000, 10000];
 const MITM_RESTART_RESET_MS = 60000;
 
 let mitmRestartCount = 0;
@@ -323,7 +323,8 @@ async function scheduleMitmRestart(apiKey) {
   if (aliveMs >= MITM_RESTART_RESET_MS) mitmRestartCount = 0;
 
   if (mitmRestartCount >= MITM_MAX_RESTARTS) {
-    err("Max restart attempts reached. Giving up.");
+    err("Max restart attempts reached. Auto-disabling MITM.");
+    await saveMitmSettings(false, null);
     return;
   }
 
