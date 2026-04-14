@@ -291,6 +291,11 @@ export default function RequestDetailsTab() {
                       <div className="flex flex-col gap-0.5">
                         <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
                         <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
+                        {detail.response?.error === "ttft_timeout" && (
+                          <div className="text-[11px] text-amber-600 dark:text-amber-400">
+                            Timed out before first token; fell back to next account.
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="p-4 text-center">
@@ -403,6 +408,11 @@ export default function RequestDetailsTab() {
               )}
               
               <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
+                {selectedDetail.response?.error === "ttft_timeout" && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    Timed out before first token; fell back to the next account.
+                  </div>
+                )}
                 {selectedDetail.response?.thinking && (
                   <div className="mb-4">
                     <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">

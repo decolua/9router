@@ -223,6 +223,36 @@ export default function ProfilePage() {
     }
   };
 
+  const updateTtftTimeout = async (val) => {
+    const num = parseInt(val);
+    if (isNaN(num) || num < 0) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ttftTimeoutMs: num }),
+      });
+      if (res.ok) setSettings(prev => ({ ...prev, ttftTimeoutMs: num }));
+    } catch (err) {
+      console.error("Failed to update TTFT timeout:", err);
+    }
+  };
+
+  const updateTtftCooldown = async (val) => {
+    const num = parseInt(val);
+    if (isNaN(num) || num < 1000) return;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ttftCooldownMs: num }),
+      });
+      if (res.ok) setSettings(prev => ({ ...prev, ttftCooldownMs: num }));
+    } catch (err) {
+      console.error("Failed to update TTFT cooldown:", err);
+    }
+  };
+
   const updateRequireLogin = async (requireLogin) => {
     try {
       const res = await fetch("/api/settings", {
@@ -545,6 +575,44 @@ export default function ProfilePage() {
                 checked={settings.comboStrategy === "round-robin"}
                 onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
                 disabled={loading}
+              />
+            </div>
+
+            {/* TTFT Timeout */}
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <p className="font-medium">TTFT Timeout (ms)</p>
+                <p className="text-sm text-text-muted">
+                  Maximum time to wait for first token (0 = disabled)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="0"
+                step="500"
+                value={settings.ttftTimeoutMs ?? 0}
+                onChange={(e) => updateTtftTimeout(e.target.value)}
+                disabled={loading}
+                className="w-24 text-center"
+              />
+            </div>
+
+            {/* TTFT Cooldown */}
+            <div className="flex items-center justify-between pt-2 border-t border-border/50">
+              <div>
+                <p className="font-medium">TTFT Cooldown (ms)</p>
+                <p className="text-sm text-text-muted">
+                  How long to lock slow providers after a timeout
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1000"
+                step="1000"
+                value={settings.ttftCooldownMs ?? 15000}
+                onChange={(e) => updateTtftCooldown(e.target.value)}
+                disabled={loading}
+                className="w-24 text-center"
               />
             </div>
 
