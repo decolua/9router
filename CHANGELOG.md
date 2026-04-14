@@ -1,3 +1,17 @@
+# v0.3.90 (2026-04-14)
+
+## Features
+- Add proactive token refresh lead times for providers and Codex proxy management
+- Enhance CodexExecutor with compact URL support
+
+## Improvements
+- Enhance Windows Tailscale installation with curl support and fallback to well-known Windows path
+- Refactor execSync and spawn calls with windowsHide option for better Windows compatibility
+
+## Fixes
+- Fix noAuth support for providers and adjusted MITM restart settings
+- Bug fixes
+
 # v0.3.89 (2026-04-13)
 
 ## Improvements
