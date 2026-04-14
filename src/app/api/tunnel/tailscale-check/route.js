@@ -6,7 +6,7 @@ import { isTailscaleInstalled, isTailscaleLoggedIn, TAILSCALE_SOCKET } from "@/l
 const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
 
 function hasBrew() {
-  try { execSync("which brew", { stdio: "ignore", env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
+  try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
 }
 
 function isDaemonRunning() {
@@ -14,6 +14,7 @@ function isDaemonRunning() {
     // Use custom socket + --json; exit 0 even when not logged in
     execSync(`tailscale --socket ${TAILSCALE_SOCKET} status --json`, {
       stdio: "ignore",
+      windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
       timeout: 3000
     });
@@ -21,7 +22,7 @@ function isDaemonRunning() {
   } catch {
     // Fallback: check if tailscaled process is alive
     try {
-      execSync("pgrep -x tailscaled", { stdio: "ignore", timeout: 2000 });
+      execSync("pgrep -x tailscaled", { stdio: "ignore", windowsHide: true, timeout: 2000 });
       return true;
     } catch { return false; }
   }

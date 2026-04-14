@@ -865,7 +865,7 @@ export default function ProviderDetailPage() {
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex items-center gap-4">
               {/* Thinking config */}
-              {thinkingConfig && (
+              {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-text-muted font-medium">Thinking</span>
                   <select
@@ -878,7 +878,7 @@ export default function ProviderDetailPage() {
                     ))}
                   </select>
                 </div>
-              )}
+              )} */}
               {/* Round Robin toggle */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>

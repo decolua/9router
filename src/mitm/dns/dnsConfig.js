@@ -63,7 +63,7 @@ function executeElevatedPowerShell(psScriptPath, timeoutMs = 30000) {
 function isSudoAvailable() {
   if (IS_WIN) return false;
   try {
-    execSync("command -v sudo", { stdio: "ignore" });
+    execSync("command -v sudo", { stdio: "ignore", windowsHide: true });
     return true;
   } catch {
     return false;
@@ -78,8 +78,8 @@ function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
     const useSudo = isSudoAvailable();
     const child = useSudo
-      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"] })
-      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"] });
+      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
+      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
     let stdout = "";
     let stderr = "";

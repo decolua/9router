@@ -103,7 +103,7 @@ export async function ensureCloudflared() {
   await downloadFile(url, downloadDest);
 
   if (isArchive) {
-    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: "pipe" });
+    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: "pipe", windowsHide: true });
     fs.unlinkSync(downloadDest);
   }
 
@@ -312,7 +312,7 @@ export function killCloudflared() {
 
   // Kill any remaining cloudflared processes
   try {
-    execSync("pkill -f cloudflared 2>/dev/null || true", { stdio: "ignore" });
+    execSync("pkill -f cloudflared 2>/dev/null || true", { stdio: "ignore", windowsHide: true });
   } catch (e) { /* ignore */ }
 }
 

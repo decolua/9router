@@ -1,7 +1,6 @@
 /**
  * Project ID Service - Fetch and cache real Project IDs from Google Cloud Code API
  *
- * Reference: CLIProxyAPI internal/auth/antigravity/auth.go (FetchProjectID + OnboardUser)
  *
  * Instead of generating random project IDs (e.g. "useful-spark-a1b2c"),
  * this service fetches the real Project ID bound to the authenticated user's account.

@@ -146,6 +146,16 @@ export const LOAD_CODE_ASSIST_METADATA = {
 export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
 
+// Proactive token refresh lead times per provider (ms)
+export const REFRESH_LEAD_MS = {
+  codex:       5 * 24 * 60 * 60 * 1000, // 5 days
+  claude:       4 * 60 * 60 * 1000,     // 4 hours
+  iflow:       24 * 60 * 60 * 1000,     // 24 hours
+  qwen:        20 * 60 * 1000,          // 20 minutes
+  "kimi-coding": 5 * 60 * 1000,         // 5 minutes
+  antigravity:  5 * 60 * 1000,          // 5 minutes
+};
+
 // OAuth endpoints
 export const OAUTH_ENDPOINTS = {
   google: {

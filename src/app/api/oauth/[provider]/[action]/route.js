@@ -7,6 +7,7 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { startCodexProxy, stopCodexProxy } from "@/lib/oauth/utils/server";
 
 /**
  * Dynamic OAuth API Route
@@ -28,6 +29,26 @@ export async function GET(request, { params }) {
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
       const authData = generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
+    }
+
+    if (action === "start-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      const appPort = searchParams.get("app_port");
+      if (!appPort) {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const result = await startCodexProxy(Number(appPort));
+      return NextResponse.json(result);
+    }
+
+    if (action === "stop-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      stopCodexProxy();
+      return NextResponse.json({ success: true });
     }
 
     if (action === "device-code") {
