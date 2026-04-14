@@ -222,7 +222,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
 // Kill any process occupying LOCAL_PORT before binding
 function killPort(port) {
   try {
-    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf-8" }).trim();
+    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf-8", windowsHide: true }).trim();
     if (!pids) return;
     const pidList = pids.split("\n");
     pidList.forEach(pid => {

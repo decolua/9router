@@ -76,7 +76,7 @@ function getProcessUsingPort443() {
         if (processMatch) return processMatch[1].replace(".exe", "");
       }
     } else {
-      const result = execSync("lsof -i :443", { encoding: "utf8" });
+      const result = execSync("lsof -i :443", { encoding: "utf8", windowsHide: true });
       const lines = result.trim().split("\n");
       if (lines.length > 1) return lines[1].split(/\s+/)[0];
     }
@@ -110,9 +110,9 @@ function killProcess(pid, force = false, sudoPassword = null) {
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
     if (sudoPassword) {
       const { execWithPassword } = require("./dns/dnsConfig");
-      execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, () => { }));
+      execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, { windowsHide: true }, () => { }));
     } else {
-      exec(cmd, () => { });
+      exec(cmd, { windowsHide: true }, () => { });
     }
   }
 }
@@ -216,7 +216,7 @@ function getPort443Owner(sudoPassword) {
         });
       });
     } else {
-      exec(`ps aux | grep "[s]erver.js"`, (err, stdout) => {
+      exec(`ps aux | grep "[s]erver.js"`, { windowsHide: true }, (err, stdout) => {
         if (!stdout?.trim()) return resolve(null);
         for (const line of stdout.split("\n")) {
           const parts = line.trim().split(/\s+/);
@@ -252,7 +252,7 @@ async function killLeftoverMitm(sudoPassword) {
         const { execWithPassword } = require("./dns/dnsConfig");
         await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
       } else {
-        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, () => { });
+        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
       }
       await new Promise(r => setTimeout(r, 500));
     } catch { /* ignore */ }
@@ -489,7 +489,7 @@ async function startServer(apiKey, sudoPassword) {
     ].join(" ");
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
-      { detached: false, stdio: ["pipe", "pipe", "pipe"] }
+      { detached: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
     serverProcess.stdin.end();
@@ -497,6 +497,7 @@ async function startServer(apiKey, sudoPassword) {
     // Docker/minimal images: no sudo — same as Windows-style direct spawn
     serverProcess = spawn(process.execPath, [SERVER_PATH], {
       detached: false,
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
