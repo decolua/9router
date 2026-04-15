@@ -197,7 +197,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
-    provider, model, connectionId,
+    provider, model, connectionId, apiKey,
     latency: { ttft: totalLatency, total: totalLatency },
     tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),

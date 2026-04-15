@@ -6,6 +6,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  authorizeApiKeyRequest,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
@@ -144,6 +145,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   const { provider, model } = modelInfo;
 
+  let apiKeyAuthz = null;
+  if (apiKey) {
+    apiKeyAuthz = await authorizeApiKeyRequest(apiKey, {
+      provider,
+      model,
+      originalModel: modelStr,
+    });
+    if (!apiKeyAuthz.ok) {
+      return errorResponse(apiKeyAuthz.status || HTTP_STATUS.FORBIDDEN, apiKeyAuthz.error || "API key authorization failed");
+    }
+  }
+
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -160,7 +173,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      allowedConnectionIds: apiKeyAuthz?.policy?.restrictions?.connectionIds || [],
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

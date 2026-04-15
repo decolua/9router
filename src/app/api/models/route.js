@@ -6,8 +6,7 @@ import { AI_MODELS } from "@/shared/constants/config";
 export async function GET() {
   try {
     const modelAliases = await getModelAliases();
-    
-    const models = AI_MODELS.map((m) => {
+    const baseModels = AI_MODELS.map((m) => {
       const fullModel = `${m.provider}/${m.model}`;
       return {
         ...m,
@@ -15,6 +14,27 @@ export async function GET() {
         alias: modelAliases[fullModel] || m.model,
       };
     });
+
+    const existingFullModels = new Set(baseModels.map((m) => m.fullModel));
+    const customModels = Object.entries(modelAliases)
+      .map(([aliasName, mappedModel]) => {
+        if (typeof mappedModel !== "string" || !mappedModel.includes("/")) return null;
+        if (existingFullModels.has(mappedModel)) return null;
+        const [provider, ...modelParts] = mappedModel.split("/");
+        const model = modelParts.join("/");
+        if (!provider || !model) return null;
+        return {
+          provider,
+          model,
+          name: aliasName || model,
+          fullModel: mappedModel,
+          alias: aliasName || model,
+          isCustom: true,
+        };
+      })
+      .filter(Boolean);
+
+    const models = [...baseModels, ...customModels];
 
     return NextResponse.json({ models });
   } catch (error) {

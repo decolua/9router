@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getProviderConnections, getApiKeyByKey, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
@@ -14,7 +14,7 @@ let selectionMutex = Promise.resolve();
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
-export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null) {
+export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
@@ -36,6 +36,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const allowedConnectionIds = Array.isArray(options.allowedConnectionIds) ? new Set(options.allowedConnectionIds) : null;
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -47,6 +48,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (allowedConnectionIds && allowedConnectionIds.size > 0 && !allowedConnectionIds.has(c.id)) return false;
       return true;
     });
 
@@ -245,6 +247,116 @@ export async function clearAccountError(connectionId, currentConnection, model =
   await updateProviderConnection(connectionId, clearObj);
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.info("AUTH", `Account ${connName} cleared lock for model=${model || "__all"}`);
+}
+
+const PERIOD_MS = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+  // Monthly quota uses a rolling 30-day window.
+  monthly: 30 * 24 * 60 * 60 * 1000,
+};
+
+function getQuotaCutoff(period) {
+  return new Date(Date.now() - PERIOD_MS[period]).toISOString();
+}
+
+function getApiKeyPolicy(apiKeyData) {
+  const policy = apiKeyData?.policy || {};
+  const quota = policy?.quota || {};
+  const restrictions = policy?.restrictions || {};
+  return {
+    quota: {
+      metric: quota.metric === "cost" || quota.metric === "tokens" ? quota.metric : null,
+      period: ["daily", "weekly", "monthly"].includes(quota.period) ? quota.period : "daily",
+      limit: Number.isFinite(Number(quota.limit)) && Number(quota.limit) > 0 ? Number(quota.limit) : null,
+    },
+    restrictions: {
+      providers: Array.isArray(restrictions.providers) ? restrictions.providers : [],
+      connectionIds: Array.isArray(restrictions.connectionIds) ? restrictions.connectionIds : [],
+      models: Array.isArray(restrictions.models) ? restrictions.models : [],
+    },
+  };
+}
+
+async function checkApiKeyQuota(keyRecord, rawApiKey) {
+  const policy = getApiKeyPolicy(keyRecord);
+  const { metric, period, limit } = policy.quota;
+  if (!metric || !limit || !period) {
+    return { ok: true };
+  }
+
+  const { getUsageHistory } = await import("@/lib/usageDb.js");
+  const cutoff = getQuotaCutoff(period);
+  const history = await getUsageHistory({ startDate: cutoff });
+
+  let used = 0;
+  for (const entry of history) {
+    if (entry.apiKey !== rawApiKey) continue;
+    if (metric === "cost") {
+      used += Number(entry.cost) || 0;
+      continue;
+    }
+    const promptTokens = Number(entry.tokens?.prompt_tokens) || 0;
+    const completionTokens = Number(entry.tokens?.completion_tokens) || 0;
+    used += promptTokens + completionTokens;
+  }
+
+  if (used >= limit) {
+    const unit = metric === "cost" ? "USD" : "tokens";
+    return {
+      ok: false,
+      status: 429,
+      error: `API key quota exceeded (${period}, ${limit} ${unit})`,
+    };
+  }
+  return { ok: true };
+}
+
+export async function authorizeApiKeyRequest(rawApiKey, context = {}) {
+  if (!rawApiKey) {
+    return { ok: true, keyRecord: null, policy: null };
+  }
+
+  const keyRecord = await getApiKeyByKey(rawApiKey);
+  if (!keyRecord || keyRecord.isActive === false) {
+    return { ok: false, status: 401, error: "Invalid API key" };
+  }
+
+  const quotaResult = await checkApiKeyQuota(keyRecord, rawApiKey);
+  if (!quotaResult.ok) return quotaResult;
+
+  const policy = getApiKeyPolicy(keyRecord);
+  const restrictions = policy.restrictions;
+  const provider = context.provider || null;
+  const model = context.model || null;
+  const originalModel = context.originalModel || null;
+
+  if (provider && restrictions.providers.length > 0 && !restrictions.providers.includes(provider)) {
+    return { ok: false, status: 403, error: "API key is not allowed for this provider" };
+  }
+
+  if (restrictions.models.length > 0) {
+    const modelCandidates = [
+      originalModel,
+      model,
+      provider && model ? `${provider}/${model}` : null,
+    ].filter(Boolean);
+    const isModelAllowed = restrictions.models.some((allowed) => modelCandidates.includes(allowed));
+    if (!isModelAllowed) {
+      return { ok: false, status: 403, error: "API key is not allowed for this model" };
+    }
+  }
+
+  const allowedConnectionIds = restrictions.connectionIds;
+  if (provider && allowedConnectionIds.length > 0) {
+    const providerConnections = await getProviderConnections({ provider, isActive: true });
+    const allowedInProvider = providerConnections.some((conn) => allowedConnectionIds.includes(conn.id));
+    if (!allowedInProvider) {
+      return { ok: false, status: 403, error: "API key is not allowed for any accounts of this provider" };
+    }
+  }
+
+  return { ok: true, keyRecord, policy };
 }
 
 /**

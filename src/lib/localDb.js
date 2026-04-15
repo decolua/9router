@@ -119,6 +119,26 @@ function ensureDbShape(data) {
           apiKey.isActive = true;
           changed = true;
         }
+        if (!apiKey.policy || typeof apiKey.policy !== "object" || Array.isArray(apiKey.policy)) {
+          apiKey.policy = {};
+          changed = true;
+        }
+        if (!apiKey.policy.quota || typeof apiKey.policy.quota !== "object" || Array.isArray(apiKey.policy.quota)) {
+          apiKey.policy.quota = {
+            metric: null,
+            period: "daily",
+            limit: null,
+          };
+          changed = true;
+        }
+        if (!apiKey.policy.restrictions || typeof apiKey.policy.restrictions !== "object" || Array.isArray(apiKey.policy.restrictions)) {
+          apiKey.policy.restrictions = {
+            providers: [],
+            connectionIds: [],
+            models: [],
+          };
+          changed = true;
+        }
       }
     }
   }
@@ -625,8 +645,45 @@ function generateShortKey() {
   return result;
 }
 
-export async function createApiKey(name, machineId) {
-  if (!machineId) throw new Error("machineId is required");
+function sanitizeApiKeyPolicy(policy = {}) {
+  const rawQuota = policy?.quota && typeof policy.quota === "object" && !Array.isArray(policy.quota)
+    ? policy.quota
+    : {};
+  const metric = rawQuota.metric === "cost" || rawQuota.metric === "tokens" ? rawQuota.metric : null;
+  const period = ["daily", "weekly", "monthly"].includes(rawQuota.period) ? rawQuota.period : "daily";
+  const limitNum = Number(rawQuota.limit);
+  const limit = Number.isFinite(limitNum) && limitNum > 0 ? limitNum : null;
+
+  const rawRestrictions = policy?.restrictions && typeof policy.restrictions === "object" && !Array.isArray(policy.restrictions)
+    ? policy.restrictions
+    : {};
+  const normalizeStringArray = (value) => Array.isArray(value)
+    ? [...new Set(value.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean))]
+    : [];
+
+  return {
+    quota: {
+      metric,
+      period,
+      limit,
+    },
+    restrictions: {
+      providers: normalizeStringArray(rawRestrictions.providers),
+      connectionIds: normalizeStringArray(rawRestrictions.connectionIds),
+      models: normalizeStringArray(rawRestrictions.models),
+    },
+  };
+}
+
+/**
+ * Create API key
+ * @param {string} name - Key name
+ * @param {string} machineId - MachineId (required)
+ */
+export async function createApiKey(name, machineId, policy = {}) {
+  if (!machineId) {
+    throw new Error("machineId is required");
+  }
 
   const db = await getDb();
   const now = new Date().toISOString();
@@ -640,6 +697,7 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId: machineId,
     isActive: true,
+    policy: sanitizeApiKeyPolicy(policy),
     createdAt: now,
   };
 
@@ -663,18 +721,35 @@ export async function getApiKeyById(id) {
   return db.data.apiKeys.find(k => k.id === id) || null;
 }
 
+/**
+ * Get API key by raw key value
+ */
+export async function getApiKeyByKey(key) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.key === key) || null;
+}
+
+/**
+ * Update API key
+ */
 export async function updateApiKey(id, data) {
   const db = await getDb();
   const index = db.data.apiKeys.findIndex(k => k.id === id);
   if (index === -1) return null;
-  db.data.apiKeys[index] = { ...db.data.apiKeys[index], ...data };
+  const nextData = { ...data };
+  if (Object.prototype.hasOwnProperty.call(nextData, "policy")) {
+    nextData.policy = sanitizeApiKeyPolicy(nextData.policy);
+  }
+  db.data.apiKeys[index] = {
+    ...db.data.apiKeys[index],
+    ...nextData,
+  };
   await safeWrite(db);
   return db.data.apiKeys[index];
 }
 
 export async function validateApiKey(key) {
-  const db = await getDb();
-  const found = db.data.apiKeys.find(k => k.key === key);
+  const found = await getApiKeyByKey(key);
   return found && found.isActive !== false;
 }
 

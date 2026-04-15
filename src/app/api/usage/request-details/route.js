@@ -17,6 +17,7 @@ export async function GET(request) {
     const status = searchParams.get("status");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const apiKeyName = searchParams.get("apiKeyName");
     
     if (page < 1) {
       return NextResponse.json(
@@ -43,6 +44,7 @@ export async function GET(request) {
     if (status) filter.status = status;
     if (startDate) filter.startDate = startDate;
     if (endDate) filter.endDate = endDate;
+    if (apiKeyName) filter.apiKeyName = apiKeyName;
     
     const result = await getRequestDetails(filter);
     

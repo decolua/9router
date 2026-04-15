@@ -5,6 +5,7 @@ import path from "path";
 import os from "os";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { LOCAL_NO_API_KEY_LABEL, UNKNOWN_API_KEY_LABEL } from "@/shared/constants/apiKeys.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 
@@ -539,10 +540,11 @@ const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 
 /**
  * Get aggregated usage stats
  * @param {"24h"|"7d"|"30d"|"60d"|"all"} period - Time period to filter
+ * @param {object} options - Extra filters
  */
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", options = {}) {
   const db = await getUsageDb();
-  const history = db.data.history || [];
+  let history = db.data.history || [];
   const dailySummary = db.data.dailySummary || {};
 
   const { getProviderConnections, getApiKeys, getProviderNodes } = await import("@/lib/localDb.js");
@@ -567,6 +569,17 @@ export async function getUsageStats(period = "all") {
   const apiKeyMap = {};
   for (const key of allApiKeys) {
     apiKeyMap[key.key] = { name: key.name, id: key.id, createdAt: key.createdAt };
+  }
+
+  if (options.apiKeyName) {
+    history = history.filter((entry) => {
+      if (!entry.apiKey) return options.apiKeyName === LOCAL_NO_API_KEY_LABEL;
+      const keyInfo = apiKeyMap[entry.apiKey];
+      if (options.apiKeyName === UNKNOWN_API_KEY_LABEL) {
+        return !keyInfo;
+      }
+      return (keyInfo?.name || UNKNOWN_API_KEY_LABEL) === options.apiKeyName;
+    });
   }
 
   // Recent requests (always from live history)

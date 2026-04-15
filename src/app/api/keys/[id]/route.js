@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, name, policy } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,12 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (name !== undefined) updateData.name = String(name).trim();
+    if (policy !== undefined) updateData.policy = policy;
+
+    if (Object.prototype.hasOwnProperty.call(updateData, "name") && !updateData.name) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
 
     const updated = await updateApiKey(id, updateData);
 
