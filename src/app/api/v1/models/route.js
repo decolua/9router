@@ -1,6 +1,64 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias } from "@/shared/constants/providers";
+import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+
+const parseOpenAIStyleModels = (data) => {
+  if (Array.isArray(data)) return data;
+  return data?.data || data?.models || data?.results || [];
+};
+
+async function fetchCompatibleModelIds(connection) {
+  if (!connection?.apiKey) return [];
+
+  const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
+    ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
+    : "";
+
+  if (!baseUrl) return [];
+
+  let url = `${baseUrl}/models`;
+  const headers = {
+    "Content-Type": "application/json",
+  };
+
+  if (isOpenAICompatibleProvider(connection.provider)) {
+    headers.Authorization = `Bearer ${connection.apiKey}`;
+  } else if (isAnthropicCompatibleProvider(connection.provider)) {
+    if (url.endsWith("/messages/models")) {
+      url = url.slice(0, -9);
+    } else if (url.endsWith("/messages")) {
+      url = `${url.slice(0, -9)}/models`;
+    }
+    headers["x-api-key"] = connection.apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+    headers.Authorization = `Bearer ${connection.apiKey}`;
+  } else {
+    return [];
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    });
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    const rawModels = parseOpenAIStyleModels(data);
+
+    return Array.from(
+      new Set(
+        rawModels
+          .map((model) => model?.id || model?.name || model?.model)
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
+      )
+    );
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Handle CORS preflight
@@ -84,23 +142,34 @@ export async function GET() {
     } else {
       for (const [providerId, conn] of activeConnectionByProvider.entries()) {
         const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
-        const outputAlias = getProviderAlias(providerId) || staticAlias;
+        const outputAlias = (
+          conn?.providerSpecificData?.prefix
+          || getProviderAlias(providerId)
+          || staticAlias
+        ).trim();
         const providerModels = PROVIDER_MODELS[staticAlias] || [];
         const enabledModels = conn?.providerSpecificData?.enabledModels;
         const hasExplicitEnabledModels =
           Array.isArray(enabledModels) && enabledModels.length > 0;
+        const isCompatibleProvider =
+          isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
         // Default: if no explicit selection, all static models are active.
+        // For compatible providers with no explicit selection, fetch remote /models dynamically.
         // If explicit selection exists, expose exactly those model IDs (including non-static IDs).
-        const rawModelIds = hasExplicitEnabledModels
+        let rawModelIds = hasExplicitEnabledModels
           ? Array.from(
-            new Set(
-              enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+              new Set(
+                enabledModels.filter(
+                  (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+                ),
               ),
-            ),
-          )
+            )
           : providerModels.map((model) => model.id);
+
+        if (isCompatibleProvider && rawModelIds.length === 0) {
+          rawModelIds = await fetchCompatibleModelIds(conn);
+        }
 
         const modelIds = rawModelIds
           .map((modelId) => {

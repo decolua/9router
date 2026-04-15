@@ -20,8 +20,8 @@ function convertMessages(messages, tools, model) {
   let pendingImages = [];
   let currentRole = null;
 
-  // Only Claude models support images in Kiro
-  const supportsImages = model && model.toLowerCase().includes("claude");
+  // Image support is pre-filtered by caps in translateRequest before reaching here
+  const supportsImages = true;
 
   const flushPending = () => {
     if (currentRole === "user") {
@@ -254,6 +254,20 @@ function convertMessages(messages, tools, model) {
     }
   });
 
+  // Merge consecutive user messages (Kiro requires alternating user/assistant)
+  const mergedHistory = [];
+  for (let i = 0; i < history.length; i++) {
+    const current = history[i];
+    if (current.userInputMessage &&
+        mergedHistory.length > 0 &&
+        mergedHistory[mergedHistory.length - 1].userInputMessage) {
+      const prev = mergedHistory[mergedHistory.length - 1];
+      prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+    } else {
+      mergedHistory.push(current);
+    }
+  }
+
   // Inject tools into currentMessage AFTER cleanup
   if (firstHistoryTools && currentMessage?.userInputMessage &&
       !currentMessage.userInputMessage.userInputMessageContext?.tools) {
@@ -263,7 +277,7 @@ function convertMessages(messages, tools, model) {
     currentMessage.userInputMessage.userInputMessageContext.tools = firstHistoryTools;
   }
 
-  return { history, currentMessage };
+  return { history: mergedHistory, currentMessage };
 }
 
 /**

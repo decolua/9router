@@ -255,6 +255,7 @@ export async function checkAndRefreshToken(provider, credentials) {
         });
 
         creds.providerSpecificData = updatedSpecific;
+        creds.copilotToken = copilotToken.token;
       }
     }
   }

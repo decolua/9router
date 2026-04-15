@@ -41,15 +41,23 @@ const deleteNestedSection = (obj, dottedKey) => {
   delete cur[keys[keys.length - 1]];
 };
 
-// Check if codex CLI is installed
+// Check if codex CLI is installed (via which/where or config file exists)
 const checkCodexInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where codex" : "command -v codex";
-    await execAsync(command, { windowsHide: true });
+    const command = isWindows ? "where codex" : "which codex";
+    const env = isWindows
+      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      : process.env;
+    await execAsync(command, { windowsHide: true, env });
     return true;
   } catch {
-    return false;
+    try {
+      await fs.access(getCodexConfigPath());
+      return true;
+    } catch {
+      return false;
+    }
   }
 };
 

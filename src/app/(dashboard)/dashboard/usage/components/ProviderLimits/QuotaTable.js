@@ -70,14 +70,19 @@ function getColorClasses(remainingPercentage) {
 /**
  * Quota Table Component - Table-based display for quota data
  */
-export default function QuotaTable({ quotas = [] }) {
+export default function QuotaTable({ quotas = [], compact = false }) {
   if (!quotas || quotas.length === 0) {
     return null;
   }
 
+  const cellPad = compact ? "py-1.5 px-2" : "py-2 px-3";
+  const nameText = compact ? "text-xs" : "text-sm";
+  const resetPrimary = compact ? "text-xs" : "text-sm";
+  const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full table-fixed">
+      <table className="w-full table-fixed text-left">
         <colgroup>
           <col className="w-[30%]" /> {/* Model Name */}
           <col className="w-[45%]" /> {/* Limit Progress */}
@@ -99,18 +104,20 @@ export default function QuotaTable({ quotas = [] }) {
                 className="border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
               >
                 {/* Model Name with Status Emoji */}
-                <td className="py-2 px-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs">{colors.emoji}</span>
-                    <span className="text-sm font-medium text-text-primary">{quota.name}</span>
+                <td className={cellPad}>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[10px] shrink-0">{colors.emoji}</span>
+                    <span className={`${nameText} font-medium text-text-primary truncate`}>
+                      {quota.name}
+                    </span>
                   </div>
                 </td>
 
                 {/* Limit (Progress + Numbers) */}
-                <td className="py-2 px-3">
-                  <div className="space-y-1.5">
+                <td className={cellPad}>
+                  <div className={compact ? "space-y-1" : "space-y-1.5"}>
                     {/* Progress bar - always show with border for visibility */}
-                    <div className={`h-1.5 rounded-full overflow-hidden border ${colors.bgLight} ${
+                    <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                       remaining === 0 ? 'border-black/10 dark:border-white/10' : 'border-transparent'
                     }`}>
                       <div
@@ -120,7 +127,7 @@ export default function QuotaTable({ quotas = [] }) {
                     </div>
                     
                     {/* Numbers */}
-                    <div className="flex items-center justify-between text-xs">
+                    <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
                       <span className="text-text-muted">
                         {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
                       </span>
@@ -132,22 +139,22 @@ export default function QuotaTable({ quotas = [] }) {
                 </td>
 
                 {/* Reset Time */}
-                <td className="py-2 px-3">
+                <td className={cellPad}>
                   {countdown !== "-" || resetDisplay ? (
                     <div className="space-y-0.5">
                       {countdown !== "-" && (
-                        <div className="text-sm text-text-primary font-medium">
+                        <div className={`${resetPrimary} text-text-primary font-medium`}>
                           in {countdown}
                         </div>
                       )}
                       {resetDisplay && (
-                        <div className="text-xs text-text-muted">
+                        <div className={`${resetSecondary} text-text-muted`}>
                           {resetDisplay}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="text-sm text-text-muted italic">N/A</div>
+                    <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
                   )}
                 </td>
               </tr>

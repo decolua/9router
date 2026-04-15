@@ -210,6 +210,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       status: "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
+    // Strip reasoning_content — breaks JSON parsers in some clients (e.g. Firecrawl AI SDK)
+    if (parsed?.choices) {
+      for (const choice of parsed.choices) {
+        if (choice?.message) delete choice.message.reasoning_content;
+      }
+    }
+
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);

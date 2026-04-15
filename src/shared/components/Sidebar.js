@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
@@ -22,15 +23,16 @@ const navItems = [
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
 const systemItems = [
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
-  { href: "/dashboard/profile", label: "Settings", icon: "settings" },
 ];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
+  const [mediaOpen, setMediaOpen] = useState(false);
   const [showShutdownModal, setShowShutdownModal] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
@@ -132,52 +134,43 @@ export default function Sidebar({ onClose }) {
             </Link>
           ))}
 
-          {/* Debug section */}
-          <div className="pt-4 mt-2">
-              <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-                Debug
-              </p>
-              {enableTranslator && (
+          {/* Media Providers accordion */}
+          {/* <button
+            onClick={() => setMediaOpen((v) => !v)}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+              pathname.startsWith("/dashboard/media-providers")
+                ? "bg-primary/10 text-primary"
+                : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+            )}
+          >
+            <span className="material-symbols-outlined text-[18px]">perm_media</span>
+            <span className="text-sm font-medium flex-1 text-left">Media Providers</span>
+            <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+              expand_more
+            </span>
+          </button> */}
+          {mediaOpen && (
+            <div className="pl-4">
+              {MEDIA_PROVIDER_KINDS.map((kind) => (
                 <Link
-                  href="/dashboard/translator"
+                  key={kind.id}
+                  href={`/dashboard/media-providers/${kind.id}`}
                   onClick={onClose}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                    isActive("/dashboard/translator")
+                    "flex items-center gap-3 px-4 py-1.5 rounded-lg transition-all group",
+                    pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
                       ? "bg-primary/10 text-primary"
                       : "text-text-muted hover:bg-surface/50 hover:text-text-main"
                   )}
                 >
-                  <span className={cn("material-symbols-outlined text-[18px]", isActive("/dashboard/translator") ? "fill-1" : "group-hover:text-primary transition-colors")}>
-                    translate
-                  </span>
-                  <span className="text-sm font-medium">Translator</span>
-                </Link>
-              )}
-              {debugItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
+                  <span className="text-sm">{kind.label}</span>
                 </Link>
               ))}
             </div>
+          )}
+
 
           {/* System section */}
           <div className="pt-4 mt-2">
@@ -207,23 +200,61 @@ export default function Sidebar({ onClose }) {
                 <span className="text-sm font-medium">{item.label}</span>
               </Link>
             ))}
+
+            {/* Debug items (inside System section, before Settings) */}
+            {debugItems.map((item) => {
+              const show = item.href !== "/dashboard/translator" || enableTranslator;
+              return show ? (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onClose}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                    isActive(item.href)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "material-symbols-outlined text-[18px]",
+                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    )}
+                  >
+                    {item.icon}
+                  </span>
+                  <span className="text-sm font-medium">{item.label}</span>
+                </Link>
+              ) : null;
+            })}
+
+            {/* Settings */}
+            <Link
+              href="/dashboard/profile"
+              onClick={onClose}
+              className={cn(
+                "flex items-center gap-3 px-4 py-2 rounded-lg transition-all group",
+                isActive("/dashboard/profile")
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+              )}
+            >
+              <span
+                className={cn(
+                  "material-symbols-outlined text-[18px]",
+                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                )}
+              >
+                settings
+              </span>
+              <span className="text-sm font-medium">Settings</span>
+            </Link>
           </div>
         </nav>
 
         {/* Footer section */}
         <div className="p-3 border-t border-black/5 dark:border-white/5">
-          {/* Info message */}
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-surface/50 mb-2">
-            <div className="flex items-center justify-center size-6 rounded-md bg-blue-500/10 text-blue-500 shrink-0 mt-0.5">
-              <span className="material-symbols-outlined text-[14px]">info</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-text-main leading-relaxed">
-                Service is running in terminal. You can close this web page. Shutdown will stop the service.
-              </span>
-            </div>
-          </div>
-
           {/* Shutdown button */}
           <Button
             variant="outline"

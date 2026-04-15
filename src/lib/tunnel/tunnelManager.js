@@ -122,7 +122,10 @@ async function scheduleReconnect(attempt) {
     isReconnecting = false;
     const nextAttempt = attempt + 1;
     if (nextAttempt < MAX_RECONNECT_ATTEMPTS) scheduleReconnect(nextAttempt);
-    else console.log("[Tunnel] All reconnect attempts exhausted");
+    else {
+      console.log("[Tunnel] All reconnect attempts exhausted, disabling tunnel");
+      await updateSettings({ tunnelEnabled: false });
+    }
   }
 }
 

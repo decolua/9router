@@ -15,6 +15,27 @@ const { isCertExpired } = require("./cert/rootCA");
 const { MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+
+function shellQuoteSingle(str) {
+  if (str == null || str === "") return "''";
+  return `'${String(str).replace(/'/g, "'\\''")}'`;
+}
+
+async function resolveMitmRouterBaseUrl() {
+  if (!_getSettings) return DEFAULT_MITM_ROUTER_BASE;
+  try {
+    const s = await _getSettings();
+    const raw = s && s.mitmRouterBaseUrl != null ? String(s.mitmRouterBaseUrl).trim() : "";
+    if (!raw) return DEFAULT_MITM_ROUTER_BASE;
+    const u = new URL(raw);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return DEFAULT_MITM_ROUTER_BASE;
+    return raw.replace(/\/+$/, "");
+  } catch {
+    return DEFAULT_MITM_ROUTER_BASE;
+  }
+}
+
 const MITM_PORT = 443;
 const MITM_WIN_NODE_PORT = 8443;
 const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
@@ -427,7 +448,8 @@ async function startServer(apiKey, sudoPassword) {
   }
 
   // Step 2: Spawn server (Root CA already installed in Step 1.5)
-  log("🚀 Starting server...");
+  const mitmRouterBase = await resolveMitmRouterBaseUrl();
+  log(`🚀 Starting server... (router: ${mitmRouterBase})`);
   if (IS_WIN) {
     // Kill any process using port 443 before spawning
     try {
@@ -444,13 +466,27 @@ async function startServer(apiKey, sudoPassword) {
         detached: false,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, ROUTER_API_KEY: apiKey, NODE_ENV: "production" },
+        env: {
+          ...process.env,
+          ROUTER_API_KEY: apiKey,
+          NODE_ENV: "production",
+          MITM_ROUTER_BASE: mitmRouterBase,
+        },
       }
     );
 
     if (_updateSettings) await _updateSettings({ mitmCertInstalled: true }).catch(() => { });
   } else if (isSudoAvailable()) {
-    const inlineCmd = `ROUTER_API_KEY='${apiKey}' NODE_ENV='production' '${process.execPath}' '${SERVER_PATH}'`;
+    // Pass HOME explicitly so os.homedir() resolves to the unprivileged user's home
+    // instead of /root when sudo resets the environment.
+    const inlineCmd = [
+      `HOME=${shellQuoteSingle(os.homedir())}`,
+      `ROUTER_API_KEY=${shellQuoteSingle(apiKey)}`,
+      `MITM_ROUTER_BASE=${shellQuoteSingle(mitmRouterBase)}`,
+      "NODE_ENV=production",
+      shellQuoteSingle(process.execPath),
+      shellQuoteSingle(SERVER_PATH),
+    ].join(" ");
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
       { detached: false, stdio: ["pipe", "pipe", "pipe"] }
@@ -462,7 +498,12 @@ async function startServer(apiKey, sudoPassword) {
     serverProcess = spawn(process.execPath, [SERVER_PATH], {
       detached: false,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, ROUTER_API_KEY: apiKey, NODE_ENV: "production" },
+      env: {
+        ...process.env,
+        ROUTER_API_KEY: apiKey,
+        NODE_ENV: "production",
+        MITM_ROUTER_BASE: mitmRouterBase,
+      },
     });
   }
 

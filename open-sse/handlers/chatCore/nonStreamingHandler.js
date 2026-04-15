@@ -185,6 +185,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
   }
 
+  // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
+  // break on this non-standard field, even though OpenAI allows it in extensions.
+  if (translatedResponse?.choices) {
+    for (const choice of translatedResponse.choices) {
+      if (choice?.message) delete choice.message.reasoning_content;
+    }
+  }
+
   reqLogger.logConvertedResponse(translatedResponse);
 
   const totalLatency = Date.now() - requestStartTime;
