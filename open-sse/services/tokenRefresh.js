@@ -4,8 +4,12 @@ import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appC
 // Default token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
-// Get provider-specific refresh lead time, falls back to default buffer
-export function getRefreshLeadMs(provider) {
+// Get provider-specific refresh lead time, falls back to default buffer.
+// Accepts optional per-connection override from providerSpecificData.refreshLeadMs.
+export function getRefreshLeadMs(provider, providerSpecificData) {
+  if (providerSpecificData?.refreshLeadMs != null) {
+    return providerSpecificData.refreshLeadMs;
+  }
   return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
 }
 
