@@ -808,7 +808,7 @@ Models:
 
 ```bash
 Dashboard → Connect Kiro
-→ AWS Builder ID or Google/GitHub
+→ AWS Builder ID, AWS IAM Identity Center, Google, GitHub
 → Unlimited usage
 
 Models:
@@ -1208,4 +1208,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
-

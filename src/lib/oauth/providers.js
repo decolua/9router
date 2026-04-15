@@ -25,6 +25,28 @@ import {
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
 
+const BASE64_BLOCK_SIZE = 4;
+
+/**
+ * Decode JWT access token and extract a stable account identifier for display/upsert.
+ * @param {string} accessToken
+ * @returns {string|undefined}
+ */
+function extractEmailFromAccessToken(accessToken) {
+  try {
+    if (!accessToken || typeof accessToken !== "string") return undefined;
+    const parts = accessToken.split(".");
+    if (parts.length !== 3) return undefined;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
+    const padded = base64 + "=".repeat(missingPadding);
+    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    return payload.email || payload.preferred_username || payload.sub || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Provider configurations
 const PROVIDERS = {
   claude: {
@@ -652,9 +674,17 @@ const PROVIDERS = {
     config: KIRO_CONFIG,
     flowType: "device_code",
     // Kiro uses AWS SSO OIDC - requires client registration first
-    requestDeviceCode: async (config) => {
+    requestDeviceCode: async (config, codeChallenge, options = {}) => {
+      const trimmedRegion = typeof options.region === "string" ? options.region.trim() : "";
+      const region = trimmedRegion || "us-east-1";
+      const trimmedStartUrl = typeof options.startUrl === "string" ? options.startUrl.trim() : "";
+      const startUrl = trimmedStartUrl || config.startUrl;
+      const authMethod = options.authMethod === "idc" ? "idc" : "builder-id";
+      const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
+      const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
+
       // Step 1: Register client with AWS SSO OIDC
-      const registerRes = await fetch(config.registerClientUrl, {
+      const registerRes = await fetch(registerClientUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -677,7 +707,7 @@ const PROVIDERS = {
       const clientInfo = await registerRes.json();
 
       // Step 2: Request device authorization
-      const deviceRes = await fetch(config.deviceAuthUrl, {
+      const deviceRes = await fetch(deviceAuthUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -686,7 +716,7 @@ const PROVIDERS = {
         body: JSON.stringify({
           clientId: clientInfo.clientId,
           clientSecret: clientInfo.clientSecret,
-          startUrl: config.startUrl,
+          startUrl,
         }),
       });
 
@@ -708,10 +738,15 @@ const PROVIDERS = {
         // Store client credentials for token exchange
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
+        _region: region,
+        _authMethod: authMethod,
+        _startUrl: startUrl,
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
-      const response = await fetch(config.tokenUrl, {
+      const region = extraData?._region || "us-east-1";
+      const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
+      const response = await fetch(tokenUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -745,6 +780,9 @@ const PROVIDERS = {
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
+            _region: extraData?._region,
+            _authMethod: extraData?._authMethod,
+            _startUrl: extraData?._startUrl,
           },
         };
       }
@@ -758,14 +796,19 @@ const PROVIDERS = {
       };
     },
     mapTokens: (tokens) => {
+      const email = extractEmailFromAccessToken(tokens.access_token);
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
+        email,
         providerSpecificData: {
           profileArn: tokens?.profile_arn || null,
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
+          region: tokens._region || "us-east-1",
+          authMethod: tokens._authMethod || "builder-id",
+          startUrl: tokens._startUrl || KIRO_CONFIG.startUrl,
         },
       };
       return mapped;
@@ -1158,12 +1201,12 @@ export async function exchangeTokens(providerName, code, redirectUri, codeVerifi
 /**
  * Request device code (for device_code flow)
  */
-export async function requestDeviceCode(providerName, codeChallenge) {
+export async function requestDeviceCode(providerName, codeChallenge, options) {
   const provider = getProvider(providerName);
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  return await provider.requestDeviceCode(provider.config, codeChallenge);
+  return await provider.requestDeviceCode(provider.config, codeChallenge, options || {});
 }
 
 /**
@@ -1213,4 +1256,3 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
 
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
-
