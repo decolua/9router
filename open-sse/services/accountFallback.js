@@ -1,4 +1,4 @@
-import { COOLDOWN_MS, BACKOFF_CONFIG, HTTP_STATUS } from "../config/runtimeConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -13,82 +13,39 @@ export function getQuotaCooldown(backoffLevel = 0) {
 
 /**
  * Check if error should trigger account fallback (switch to next account)
+ * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
-  // Check error message FIRST - specific patterns take priority over status codes
-  if (errorText) {
-    const errorStr = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
-    const lowerError = errorStr.toLowerCase();
+  const lowerError = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
 
-    if (lowerError.includes("no credentials")) {
-      return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
+  for (const rule of ERROR_RULES) {
+    // Text-based rule: match substring in error message
+    if (rule.text && lowerError && lowerError.includes(rule.text)) {
+      if (rule.backoff) {
+        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(backoffLevel), newBackoffLevel: newLevel };
+      }
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
 
-    if (lowerError.includes("request not allowed")) {
-      return { shouldFallback: true, cooldownMs: COOLDOWN_MS.requestNotAllowed };
-    }
-
-    // Kiro: "improperly formed request" = model not available on this account tier
-    // Treat as paymentRequired (long cooldown) so the model is locked and fallback occurs
-    if (lowerError.includes("improperly formed request")) {
-      return { shouldFallback: true, cooldownMs: COOLDOWN_MS.paymentRequired };
-    }
-
-    // Rate limit keywords - exponential backoff
-    if (
-      lowerError.includes("rate limit") ||
-      lowerError.includes("too many requests") ||
-      lowerError.includes("quota exceeded") ||
-      lowerError.includes("capacity") ||
-      lowerError.includes("overloaded")
-    ) {
-      const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-      return {
-        shouldFallback: true,
-        cooldownMs: getQuotaCooldown(backoffLevel),
-        newBackoffLevel: newLevel
-      };
+    // Status-based rule: match HTTP status code
+    if (rule.status && rule.status === status) {
+      if (rule.backoff) {
+        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(backoffLevel), newBackoffLevel: newLevel };
+      }
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
   }
 
-  if (status === HTTP_STATUS.UNAUTHORIZED) {
-    return { shouldFallback: true, cooldownMs: COOLDOWN_MS.unauthorized };
-  }
-
-  if (status === HTTP_STATUS.PAYMENT_REQUIRED || status === HTTP_STATUS.FORBIDDEN) {
-    return { shouldFallback: true, cooldownMs: COOLDOWN_MS.paymentRequired };
-  }
-
-  if (status === HTTP_STATUS.NOT_FOUND) {
-    return { shouldFallback: true, cooldownMs: COOLDOWN_MS.notFound };
-  }
-
-  // 429 - Rate limit with exponential backoff
-  if (status === HTTP_STATUS.RATE_LIMITED) {
-    const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-    return {
-      shouldFallback: true,
-      cooldownMs: getQuotaCooldown(backoffLevel),
-      newBackoffLevel: newLevel
-    };
-  }
-
-  // Transient errors
-  const transientStatuses = [
-    HTTP_STATUS.NOT_ACCEPTABLE, HTTP_STATUS.REQUEST_TIMEOUT,
-    HTTP_STATUS.SERVER_ERROR, HTTP_STATUS.BAD_GATEWAY,
-    HTTP_STATUS.SERVICE_UNAVAILABLE, HTTP_STATUS.GATEWAY_TIMEOUT
-  ];
-  if (transientStatuses.includes(status)) {
-    return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
-  }
-
-  // All other errors - fallback with transient cooldown
-  return { shouldFallback: true, cooldownMs: COOLDOWN_MS.transient };
+  // Default: transient cooldown for any unmatched error
+  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
 /**

@@ -490,7 +490,7 @@ async function getCodexUsage(accessToken) {
     });
 
     if (!response.ok) {
-      throw new Error(`Codex API error: ${response.status}`);
+      return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
     }
 
     const data = await response.json();

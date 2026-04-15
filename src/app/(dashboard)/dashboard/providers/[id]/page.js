@@ -665,8 +665,9 @@ export default function ProviderDetailPage() {
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set(Object.values(modelAliases));
+          const hardcodedIds = new Set(models.map((m) => m.id));
           const notAdded = suggestedModels.filter(
-            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`)
+            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
           );
           if (notAdded.length === 0) return null;
           return (

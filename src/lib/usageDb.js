@@ -64,11 +64,73 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
   }
 }
 
-// Default data structure
 const defaultData = {
   history: [],
-  totalRequestsLifetime: 0
+  totalRequestsLifetime: 0,
+  dailySummary: {},
 };
+
+function getLocalDateKey(timestamp) {
+  const d = timestamp ? new Date(timestamp) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function addToCounter(target, key, values) {
+  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+  target[key].requests += values.requests || 1;
+  target[key].promptTokens += values.promptTokens || 0;
+  target[key].completionTokens += values.completionTokens || 0;
+  target[key].cost += values.cost || 0;
+  if (values.meta) Object.assign(target[key], values.meta);
+}
+
+function aggregateEntryToDailySummary(dailySummary, entry) {
+  const dateKey = getLocalDateKey(entry.timestamp);
+  if (!dailySummary[dateKey]) {
+    dailySummary[dateKey] = {
+      requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
+      byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+    };
+  }
+  const day = dailySummary[dateKey];
+  const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
+  const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
+  const cost = entry.cost || 0;
+  const vals = { promptTokens, completionTokens, cost };
+
+  day.requests += 1;
+  day.promptTokens += promptTokens;
+  day.completionTokens += completionTokens;
+  day.cost += cost;
+
+  if (entry.provider) addToCounter(day.byProvider, entry.provider, vals);
+
+  const modelKey = entry.provider ? `${entry.model}|${entry.provider}` : entry.model;
+  addToCounter(day.byModel, modelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
+
+  if (entry.connectionId) {
+    addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
+  }
+
+  const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
+  const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}`;
+  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null } });
+
+  const endpoint = entry.endpoint || "Unknown";
+  const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
+  addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
+}
+
+function migrateHistoryToDailySummary(db) {
+  const history = db.data.history || [];
+  if (!history.length) return false;
+  db.data.dailySummary = {};
+  for (const entry of history) {
+    aggregateEntryToDailySummary(db.data.dailySummary, entry);
+  }
+  console.log(`[usageDb] Migrated ${history.length} history entries to dailySummary (${Object.keys(db.data.dailySummary).length} days)`);
+  return true;
+}
 
 // Singleton instance
 let dbInstance = null;
@@ -238,10 +300,18 @@ export async function getUsageDb() {
       }
     }
 
-    // Initialize with default data if empty
     if (!dbInstance.data) {
-      dbInstance.data = defaultData;
+      dbInstance.data = { ...defaultData };
       await dbInstance.write();
+    }
+
+    // Migration: build dailySummary from existing history (one-time)
+    if (!dbInstance.data.dailySummary) {
+      if (migrateHistoryToDailySummary(dbInstance)) {
+        await dbInstance.write();
+      } else {
+        dbInstance.data.dailySummary = {};
+      }
     }
   }
   return dbInstance;
@@ -275,7 +345,9 @@ export async function saveRequestUsage(entry) {
     db.data.history.push(entry);
     db.data.totalRequestsLifetime += 1;
 
-    // Cap history to prevent unbounded memory/disk growth
+    if (!db.data.dailySummary) db.data.dailySummary = {};
+    aggregateEntryToDailySummary(db.data.dailySummary, entry);
+
     const MAX_HISTORY = 10000;
     if (db.data.history.length > MAX_HISTORY) {
       db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
@@ -470,33 +542,18 @@ const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 
  */
 export async function getUsageStats(period = "all") {
   const db = await getUsageDb();
-  let history = db.data.history || [];
+  const history = db.data.history || [];
+  const dailySummary = db.data.dailySummary || {};
 
-  // Filter history by period
-  if (period && PERIOD_MS[period]) {
-    const cutoff = Date.now() - PERIOD_MS[period];
-    history = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
-  }
-
-  // Import localDb to get provider connection names and API keys
   const { getProviderConnections, getApiKeys, getProviderNodes } = await import("@/lib/localDb.js");
 
-  // Fetch all provider connections to get account names
   let allConnections = [];
-  try {
-    allConnections = await getProviderConnections();
-  } catch (error) {
-    // If localDb is not available (e.g., in some environments), continue without account names
-    console.warn("Could not fetch provider connections for usage stats:", error.message);
-  }
-
-  // Create a map from connectionId to account name
+  try { allConnections = await getProviderConnections(); } catch {}
   const connectionMap = {};
   for (const conn of allConnections) {
     connectionMap[conn.id] = conn.name || conn.email || conn.id;
   }
 
-  // Build map from compatible provider ID → friendly name (from providerNodes)
   const providerNodeNameMap = {};
   try {
     const nodes = await getProviderNodes();
@@ -505,44 +562,28 @@ export async function getUsageStats(period = "all") {
     }
   } catch {}
 
-  // Fetch all API keys to get key names
   let allApiKeys = [];
-  try {
-    allApiKeys = await getApiKeys();
-  } catch (error) {
-    console.warn("Could not fetch API keys for usage stats:", error.message);
-  }
-
-  // Create a map from API key to key info
+  try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
   for (const key of allApiKeys) {
-    apiKeyMap[key.key] = {
-      name: key.name,
-      id: key.id,
-      createdAt: key.createdAt
-    };
+    apiKeyMap[key.key] = { name: key.name, id: key.id, createdAt: key.createdAt };
   }
 
-  // 20 most recent requests from history (always in sync with SSE emit)
+  // Recent requests (always from live history)
   const seen = new Set();
   const recentRequests = [...history]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
-      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
-      const completionTokens = t.completion_tokens || t.output_tokens || 0;
       return {
-        timestamp: e.timestamp,
-        model: e.model,
-        provider: e.provider || "",
-        promptTokens,
-        completionTokens,
+        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
+        promptTokens: t.prompt_tokens || t.input_tokens || 0,
+        completionTokens: t.completion_tokens || t.output_tokens || 0,
         status: e.status || "ok",
       };
     })
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      // Deduplicate: same model+provider+tokens within same minute
       const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
       const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
       if (seen.has(key)) return false;
@@ -557,14 +598,8 @@ export async function getUsageStats(period = "all") {
 
   const stats = {
     totalRequests: lifetimeTotalRequests,
-    totalPromptTokens: 0,
-    totalCompletionTokens: 0,
-    totalCost: 0,
-    byProvider: {},
-    byModel: {},
-    byAccount: {},
-    byApiKey: {},
-    byEndpoint: {},
+    totalPromptTokens: 0, totalCompletionTokens: 0, totalCost: 0,
+    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -572,218 +607,221 @@ export async function getUsageStats(period = "all") {
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
-  // Build active requests list from pending counts
+  // Active requests from pending
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
     for (const [modelKey, count] of Object.entries(models)) {
       if (count > 0) {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        // modelKey is "model (provider)"
         const match = modelKey.match(/^(.*) \((.*)\)$/);
-        const modelName = match ? match[1] : modelKey;
-        const providerName = match ? match[2] : "unknown";
-
         stats.activeRequests.push({
-          model: modelName,
-          provider: providerName,
-          account: accountName,
-          count
+          model: match ? match[1] : modelKey,
+          provider: match ? match[2] : "unknown",
+          account: accountName, count,
         });
       }
     }
   }
 
-  // Initialize 10-minute buckets using stable minute boundaries
+  // last10Minutes — always from live history
   const now = new Date();
-  // Floor to the start of the current minute
   const currentMinuteStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
   const tenMinutesAgo = new Date(currentMinuteStart.getTime() - 9 * 60 * 1000);
-
-  // Create buckets keyed by minute timestamp for stable lookups
   const bucketMap = {};
   for (let i = 0; i < 10; i++) {
-    const bucketTime = new Date(currentMinuteStart.getTime() - (9 - i) * 60 * 1000);
-    const bucketKey = bucketTime.getTime();
-    bucketMap[bucketKey] = {
-      requests: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      cost: 0
-    };
+    const bucketKey = currentMinuteStart.getTime() - (9 - i) * 60 * 1000;
+    bucketMap[bucketKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
     stats.last10Minutes.push(bucketMap[bucketKey]);
   }
-
   for (const entry of history) {
-    const promptTokens = entry.tokens?.prompt_tokens || 0;
-    const completionTokens = entry.tokens?.completion_tokens || 0;
     const entryTime = new Date(entry.timestamp);
-
-    // Use pre-stored cost (saved at request time), avoid recalculating
-    const entryCost = entry.cost || 0;
-
-    stats.totalPromptTokens += promptTokens;
-    stats.totalCompletionTokens += completionTokens;
-    stats.totalCost += entryCost;
-
-    // Last 10 minutes aggregation - floor entry time to its minute
     if (entryTime >= tenMinutesAgo && entryTime <= now) {
       const entryMinuteStart = Math.floor(entryTime.getTime() / 60000) * 60000;
       if (bucketMap[entryMinuteStart]) {
+        const pt = entry.tokens?.prompt_tokens || 0;
+        const ct = entry.tokens?.completion_tokens || 0;
         bucketMap[entryMinuteStart].requests++;
-        bucketMap[entryMinuteStart].promptTokens += promptTokens;
-        bucketMap[entryMinuteStart].completionTokens += completionTokens;
-        bucketMap[entryMinuteStart].cost += entryCost;
+        bucketMap[entryMinuteStart].promptTokens += pt;
+        bucketMap[entryMinuteStart].completionTokens += ct;
+        bucketMap[entryMinuteStart].cost += entry.cost || 0;
       }
     }
+  }
 
-    // By Provider
-    if (!stats.byProvider[entry.provider]) {
-      stats.byProvider[entry.provider] = {
-        requests: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0
-      };
-    }
-    stats.byProvider[entry.provider].requests++;
-    stats.byProvider[entry.provider].promptTokens += promptTokens;
-    stats.byProvider[entry.provider].completionTokens += completionTokens;
-    stats.byProvider[entry.provider].cost += entryCost;
+  // Determine if we use dailySummary (7d/30d/60d/all) or live history (24h)
+  const useDailySummary = period !== "24h";
 
-    // By Model
-    // Format: "modelName (provider)" if provider is known
-    const modelKey = entry.provider ? `${entry.model} (${entry.provider})` : entry.model;
-    // Resolve friendly name for compatible providers
-    const providerDisplayName = providerNodeNameMap[entry.provider] || entry.provider;
+  if (useDailySummary) {
+    // Collect relevant date keys
+    const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
+    const maxDays = periodDays[period] || null; // null = all
+    const today = new Date();
+    const dateKeys = Object.keys(dailySummary).filter((dateKey) => {
+      if (!maxDays) return true;
+      const parts = dateKey.split("-");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const diffDays = Math.floor((today.getTime() - d.getTime()) / 86400000);
+      return diffDays < maxDays;
+    });
 
-    if (!stats.byModel[modelKey]) {
-      stats.byModel[modelKey] = {
-        requests: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0,
-        rawModel: entry.model,
-        provider: providerDisplayName,
-        lastUsed: entry.timestamp
-      };
-    }
-    stats.byModel[modelKey].requests++;
-    stats.byModel[modelKey].promptTokens += promptTokens;
-    stats.byModel[modelKey].completionTokens += completionTokens;
-    stats.byModel[modelKey].cost += entryCost;
-    if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) {
-      stats.byModel[modelKey].lastUsed = entry.timestamp;
-    }
+    for (const dateKey of dateKeys) {
+      const day = dailySummary[dateKey];
+      stats.totalPromptTokens += day.promptTokens || 0;
+      stats.totalCompletionTokens += day.completionTokens || 0;
+      stats.totalCost += day.cost || 0;
 
-    // By Account (model + oauth account)
-    // Use connectionId if available, otherwise fallback to provider name
-    if (entry.connectionId) {
-      const accountName = connectionMap[entry.connectionId] || `Account ${entry.connectionId.slice(0, 8)}...`;
-      const accountKey = `${entry.model} (${entry.provider} - ${accountName})`;
-
-      if (!stats.byAccount[accountKey]) {
-        stats.byAccount[accountKey] = {
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cost: 0,
-          rawModel: entry.model,
-          provider: providerDisplayName,
-          connectionId: entry.connectionId,
-          accountName: accountName,
-          lastUsed: entry.timestamp
-        };
+      // Merge byProvider
+      for (const [prov, pData] of Object.entries(day.byProvider || {})) {
+        if (!stats.byProvider[prov]) stats.byProvider[prov] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+        stats.byProvider[prov].requests += pData.requests || 0;
+        stats.byProvider[prov].promptTokens += pData.promptTokens || 0;
+        stats.byProvider[prov].completionTokens += pData.completionTokens || 0;
+        stats.byProvider[prov].cost += pData.cost || 0;
       }
-      stats.byAccount[accountKey].requests++;
-      stats.byAccount[accountKey].promptTokens += promptTokens;
-      stats.byAccount[accountKey].completionTokens += completionTokens;
-      stats.byAccount[accountKey].cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) {
-        stats.byAccount[accountKey].lastUsed = entry.timestamp;
-      }
-    }
 
-    // Handle requests with API key
-    if (entry.apiKey && typeof entry.apiKey === "string") {
-      const keyInfo = apiKeyMap[entry.apiKey];
-      const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
-      // Use full API key to avoid collisions (keys with same prefix)
-      const apiKeyKey = entry.apiKey;
-      // Group by API Key + Model + Provider combination to track different models used with the same key
-      const apiKeyModelKey = `${apiKeyKey}|${entry.model}|${entry.provider || 'unknown'}`;
+      // Merge byModel (dailySummary key: "model|provider" → stats key: "model (provider)")
+      for (const [mk, mData] of Object.entries(day.byModel || {})) {
+        const rawModel = mData.rawModel || mk.split("|")[0];
+        const provider = mData.provider || mk.split("|")[1] || "";
+        const statsKey = provider ? `${rawModel} (${provider})` : rawModel;
+        const providerDisplayName = providerNodeNameMap[provider] || provider;
+        if (!stats.byModel[statsKey]) {
+          stats.byModel[statsKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, lastUsed: dateKey };
+        }
+        stats.byModel[statsKey].requests += mData.requests || 0;
+        stats.byModel[statsKey].promptTokens += mData.promptTokens || 0;
+        stats.byModel[statsKey].completionTokens += mData.completionTokens || 0;
+        stats.byModel[statsKey].cost += mData.cost || 0;
+        if (dateKey > (stats.byModel[statsKey].lastUsed || "")) stats.byModel[statsKey].lastUsed = dateKey;
+      }
 
-      if (!stats.byApiKey[apiKeyModelKey]) {
-        stats.byApiKey[apiKeyModelKey] = {
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cost: 0,
-          rawModel: entry.model,
-          provider: providerDisplayName,
-          apiKey: entry.apiKey,
-          keyName: keyName,
-          apiKeyKey: apiKeyKey,
-          lastUsed: entry.timestamp
-        };
+      // Merge byAccount
+      for (const [connId, aData] of Object.entries(day.byAccount || {})) {
+        const accountName = connectionMap[connId] || `Account ${connId.slice(0, 8)}...`;
+        const rawModel = aData.rawModel || "";
+        const provider = aData.provider || "";
+        const providerDisplayName = providerNodeNameMap[provider] || provider;
+        const accountKey = `${rawModel} (${provider} - ${accountName})`;
+        if (!stats.byAccount[accountKey]) {
+          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, connectionId: connId, accountName, lastUsed: dateKey };
+        }
+        stats.byAccount[accountKey].requests += aData.requests || 0;
+        stats.byAccount[accountKey].promptTokens += aData.promptTokens || 0;
+        stats.byAccount[accountKey].completionTokens += aData.completionTokens || 0;
+        stats.byAccount[accountKey].cost += aData.cost || 0;
+        if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
-      const apiKeyEntry = stats.byApiKey[apiKeyModelKey];
-      apiKeyEntry.requests++;
-      apiKeyEntry.promptTokens += promptTokens;
-      apiKeyEntry.completionTokens += completionTokens;
-      apiKeyEntry.cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
-        apiKeyEntry.lastUsed = entry.timestamp;
-      }
-    } else {
-      const apiKeyKey = "local-no-key";
-      const keyName = "Local (No API Key)";
 
-      if (!stats.byApiKey[apiKeyKey]) {
-        stats.byApiKey[apiKeyKey] = {
-          requests: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cost: 0,
-          rawModel: entry.model,
-          provider: providerDisplayName,
-          apiKey: null,
-          keyName: keyName,
-          apiKeyKey: apiKeyKey,
-          lastUsed: entry.timestamp
-        };
+      // Merge byApiKey
+      for (const [akKey, akData] of Object.entries(day.byApiKey || {})) {
+        const rawModel = akData.rawModel || "";
+        const provider = akData.provider || "";
+        const providerDisplayName = providerNodeNameMap[provider] || provider;
+        const apiKeyVal = akData.apiKey;
+        const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
+        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
+        const apiKeyKey = apiKeyVal || "local-no-key";
+        if (!stats.byApiKey[akKey]) {
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKey: apiKeyVal, keyName, apiKeyKey, lastUsed: dateKey };
+        }
+        stats.byApiKey[akKey].requests += akData.requests || 0;
+        stats.byApiKey[akKey].promptTokens += akData.promptTokens || 0;
+        stats.byApiKey[akKey].completionTokens += akData.completionTokens || 0;
+        stats.byApiKey[akKey].cost += akData.cost || 0;
+        if (dateKey > (stats.byApiKey[akKey].lastUsed || "")) stats.byApiKey[akKey].lastUsed = dateKey;
       }
-      const apiKeyEntry = stats.byApiKey[apiKeyKey];
-      apiKeyEntry.requests++;
-      apiKeyEntry.promptTokens += promptTokens;
-      apiKeyEntry.completionTokens += completionTokens;
-      apiKeyEntry.cost += entryCost;
-      if (new Date(entry.timestamp) > new Date(apiKeyEntry.lastUsed)) {
-        apiKeyEntry.lastUsed = entry.timestamp;
+
+      // Merge byEndpoint
+      for (const [epKey, epData] of Object.entries(day.byEndpoint || {})) {
+        const endpoint = epData.endpoint || epKey.split("|")[0] || "Unknown";
+        const rawModel = epData.rawModel || "";
+        const provider = epData.provider || "";
+        const providerDisplayName = providerNodeNameMap[provider] || provider;
+        if (!stats.byEndpoint[epKey]) {
+          stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, endpoint, rawModel, provider: providerDisplayName, lastUsed: dateKey };
+        }
+        stats.byEndpoint[epKey].requests += epData.requests || 0;
+        stats.byEndpoint[epKey].promptTokens += epData.promptTokens || 0;
+        stats.byEndpoint[epKey].completionTokens += epData.completionTokens || 0;
+        stats.byEndpoint[epKey].cost += epData.cost || 0;
+        if (dateKey > (stats.byEndpoint[epKey].lastUsed || "")) stats.byEndpoint[epKey].lastUsed = dateKey;
       }
     }
+  } else {
+    // 24h: use live history (original logic)
+    const cutoff = Date.now() - PERIOD_MS["24h"];
+    const filtered = history.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
 
-    // By Endpoint (endpoint + model + provider combination)
-    const endpoint = entry.endpoint || "Unknown";
-    const endpointModelKey = `${endpoint}|${entry.model}|${entry.provider || 'unknown'}`;
+    for (const entry of filtered) {
+      const promptTokens = entry.tokens?.prompt_tokens || 0;
+      const completionTokens = entry.tokens?.completion_tokens || 0;
+      const entryCost = entry.cost || 0;
+      const providerDisplayName = providerNodeNameMap[entry.provider] || entry.provider;
 
-    if (!stats.byEndpoint[endpointModelKey]) {
-      stats.byEndpoint[endpointModelKey] = {
-        requests: 0,
-        promptTokens: 0,
-        completionTokens: 0,
-        cost: 0,
-        endpoint: endpoint,
-        rawModel: entry.model,
-        provider: providerDisplayName,
-        lastUsed: entry.timestamp
-      };
-    }
-    const endpointEntry = stats.byEndpoint[endpointModelKey];
-    endpointEntry.requests++;
-    endpointEntry.promptTokens += promptTokens;
-    endpointEntry.completionTokens += completionTokens;
-    endpointEntry.cost += entryCost;
-    if (new Date(entry.timestamp) > new Date(endpointEntry.lastUsed)) {
-      endpointEntry.lastUsed = entry.timestamp;
+      stats.totalPromptTokens += promptTokens;
+      stats.totalCompletionTokens += completionTokens;
+      stats.totalCost += entryCost;
+
+      // byProvider
+      if (!stats.byProvider[entry.provider]) stats.byProvider[entry.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+      stats.byProvider[entry.provider].requests++;
+      stats.byProvider[entry.provider].promptTokens += promptTokens;
+      stats.byProvider[entry.provider].completionTokens += completionTokens;
+      stats.byProvider[entry.provider].cost += entryCost;
+
+      // byModel
+      const modelKey = entry.provider ? `${entry.model} (${entry.provider})` : entry.model;
+      if (!stats.byModel[modelKey]) {
+        stats.byModel[modelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: entry.model, provider: providerDisplayName, lastUsed: entry.timestamp };
+      }
+      stats.byModel[modelKey].requests++;
+      stats.byModel[modelKey].promptTokens += promptTokens;
+      stats.byModel[modelKey].completionTokens += completionTokens;
+      stats.byModel[modelKey].cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(stats.byModel[modelKey].lastUsed)) stats.byModel[modelKey].lastUsed = entry.timestamp;
+
+      // byAccount
+      if (entry.connectionId) {
+        const accountName = connectionMap[entry.connectionId] || `Account ${entry.connectionId.slice(0, 8)}...`;
+        const accountKey = `${entry.model} (${entry.provider} - ${accountName})`;
+        if (!stats.byAccount[accountKey]) {
+          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: entry.model, provider: providerDisplayName, connectionId: entry.connectionId, accountName, lastUsed: entry.timestamp };
+        }
+        stats.byAccount[accountKey].requests++;
+        stats.byAccount[accountKey].promptTokens += promptTokens;
+        stats.byAccount[accountKey].completionTokens += completionTokens;
+        stats.byAccount[accountKey].cost += entryCost;
+        if (new Date(entry.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = entry.timestamp;
+      }
+
+      // byApiKey
+      if (entry.apiKey && typeof entry.apiKey === "string") {
+        const keyInfo = apiKeyMap[entry.apiKey];
+        const keyName = keyInfo?.name || entry.apiKey.slice(0, 8) + "...";
+        const apiKeyModelKey = `${entry.apiKey}|${entry.model}|${entry.provider || "unknown"}`;
+        if (!stats.byApiKey[apiKeyModelKey]) {
+          stats.byApiKey[apiKeyModelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: entry.model, provider: providerDisplayName, apiKey: entry.apiKey, keyName, apiKeyKey: entry.apiKey, lastUsed: entry.timestamp };
+        }
+        const ake = stats.byApiKey[apiKeyModelKey];
+        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;
+        if (new Date(entry.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = entry.timestamp;
+      } else {
+        if (!stats.byApiKey["local-no-key"]) {
+          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, rawModel: entry.model, provider: providerDisplayName, apiKey: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: entry.timestamp };
+        }
+        const ake = stats.byApiKey["local-no-key"];
+        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cost += entryCost;
+        if (new Date(entry.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = entry.timestamp;
+      }
+
+      // byEndpoint
+      const endpoint = entry.endpoint || "Unknown";
+      const endpointModelKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
+      if (!stats.byEndpoint[endpointModelKey]) {
+        stats.byEndpoint[endpointModelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0, endpoint, rawModel: entry.model, provider: providerDisplayName, lastUsed: entry.timestamp };
+      }
+      const epe = stats.byEndpoint[endpointModelKey];
+      epe.requests++; epe.promptTokens += promptTokens; epe.completionTokens += completionTokens; epe.cost += entryCost;
+      if (new Date(entry.timestamp) > new Date(epe.lastUsed)) epe.lastUsed = entry.timestamp;
     }
   }
 
@@ -798,45 +836,48 @@ export async function getUsageStats(period = "all") {
 export async function getChartData(period = "7d") {
   const db = await getUsageDb();
   const history = db.data.history || [];
+  const dailySummary = db.data.dailySummary || {};
   const now = Date.now();
 
-  let bucketCount, bucketMs, labelFn;
+  // 24h: bucket by hour from live history
   if (period === "24h") {
-    bucketCount = 24;
-    bucketMs = 3600000; // 1 hour
-    labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-  } else if (period === "7d") {
-    bucketCount = 7;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } else if (period === "30d") {
-    bucketCount = 30;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  } else {
-    bucketCount = 60;
-    bucketMs = 86400000;
-    labelFn = (ts) => new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const bucketCount = 24;
+    const bucketMs = 3600000;
+    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+    const startTime = now - bucketCount * bucketMs;
+    const buckets = Array.from({ length: bucketCount }, (_, i) => {
+      const ts = startTime + i * bucketMs;
+      return { label: labelFn(ts), tokens: 0, cost: 0 };
+    });
+
+    for (const entry of history) {
+      const entryTime = new Date(entry.timestamp).getTime();
+      if (entryTime < startTime || entryTime > now) continue;
+      const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
+      buckets[idx].tokens += (entry.tokens?.prompt_tokens || 0) + (entry.tokens?.completion_tokens || 0);
+      buckets[idx].cost += entry.cost || 0;
+    }
+    return buckets;
   }
 
-  const startTime = now - bucketCount * bucketMs;
+  // 7d/30d/60d: bucket by day from dailySummary (local dates)
+  const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+  const today = new Date();
+  const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
   const buckets = Array.from({ length: bucketCount }, (_, i) => {
-    const ts = startTime + i * bucketMs;
-    return { label: labelFn(ts), tokens: 0, cost: 0, _ts: ts };
+    const d = new Date(today);
+    d.setDate(d.getDate() - (bucketCount - 1 - i));
+    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayData = dailySummary[dateKey];
+    return {
+      label: labelFn(d),
+      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
+      cost: dayData ? (dayData.cost || 0) : 0,
+    };
   });
 
-  for (const entry of history) {
-    const entryTime = new Date(entry.timestamp).getTime();
-    if (entryTime < startTime || entryTime > now) continue;
-    const idx = Math.min(Math.floor((entryTime - startTime) / bucketMs), bucketCount - 1);
-    const promptTokens = entry.tokens?.prompt_tokens || 0;
-    const completionTokens = entry.tokens?.completion_tokens || 0;
-    buckets[idx].tokens += promptTokens + completionTokens;
-    // Use pre-stored cost if available, else 0
-    buckets[idx].cost += entry.cost || 0;
-  }
-
-  return buckets.map(({ label, tokens, cost }) => ({ label, tokens, cost }));
+  return buckets;
 }
 
 // Re-export request details functions from new SQLite-based module

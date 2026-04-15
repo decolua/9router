@@ -14,33 +14,8 @@ export const HTTP_STATUS = {
   GATEWAY_TIMEOUT: 504
 };
 
-// OpenAI-compatible error types mapping
-export const ERROR_TYPES = {
-  [HTTP_STATUS.BAD_REQUEST]: { type: "invalid_request_error", code: "bad_request" },
-  [HTTP_STATUS.UNAUTHORIZED]: { type: "authentication_error", code: "invalid_api_key" },
-  [HTTP_STATUS.FORBIDDEN]: { type: "permission_error", code: "insufficient_quota" },
-  [HTTP_STATUS.NOT_FOUND]: { type: "invalid_request_error", code: "model_not_found" },
-  [HTTP_STATUS.NOT_ACCEPTABLE]: { type: "invalid_request_error", code: "model_not_supported" },
-  [HTTP_STATUS.RATE_LIMITED]: { type: "rate_limit_error", code: "rate_limit_exceeded" },
-  [HTTP_STATUS.SERVER_ERROR]: { type: "server_error", code: "internal_server_error" },
-  [HTTP_STATUS.BAD_GATEWAY]: { type: "server_error", code: "bad_gateway" },
-  [HTTP_STATUS.SERVICE_UNAVAILABLE]: { type: "server_error", code: "service_unavailable" },
-  [HTTP_STATUS.GATEWAY_TIMEOUT]: { type: "server_error", code: "gateway_timeout" }
-};
-
-// Default error messages per status code
-export const DEFAULT_ERROR_MESSAGES = {
-  [HTTP_STATUS.BAD_REQUEST]: "Bad request",
-  [HTTP_STATUS.UNAUTHORIZED]: "Invalid API key provided",
-  [HTTP_STATUS.FORBIDDEN]: "You exceeded your current quota",
-  [HTTP_STATUS.NOT_FOUND]: "Model not found",
-  [HTTP_STATUS.NOT_ACCEPTABLE]: "Model not supported",
-  [HTTP_STATUS.RATE_LIMITED]: "Rate limit exceeded",
-  [HTTP_STATUS.SERVER_ERROR]: "Internal server error",
-  [HTTP_STATUS.BAD_GATEWAY]: "Bad gateway - upstream provider error",
-  [HTTP_STATUS.SERVICE_UNAVAILABLE]: "Service temporarily unavailable",
-  [HTTP_STATUS.GATEWAY_TIMEOUT]: "Gateway timeout"
-};
+// Re-export error config (backward compat)
+export { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, BACKOFF_CONFIG, COOLDOWN_MS } from "./errorConfig.js";
 
 // Cache TTLs (seconds)
 export const CACHE_TTL = {
@@ -71,26 +46,6 @@ export const DEFAULT_RETRY_CONFIG = {
   429: 0,   // Rate limit - no retry, use account fallback instead
   503: 1,   // Service unavailable - retry 1 time (transient)
   502: 1    // Bad gateway - retry 1 time (transient)
-};
-
-// Exponential backoff config for rate limits
-export const BACKOFF_CONFIG = {
-  base: 1000,
-  max: 2 * 60 * 1000,
-  maxLevel: 15
-};
-
-// Error-based cooldown times
-export const COOLDOWN_MS = {
-  unauthorized: 2 * 60 * 1000,
-  paymentRequired: 2 * 60 * 1000,
-  notFound: 2 * 60 * 1000,
-  transient: 30 * 1000,
-  requestNotAllowed: 5 * 1000,
-  // Legacy aliases
-  rateLimit: 2 * 60 * 1000,
-  serviceUnavailable: 2 * 1000,
-  authExpired: 2 * 60 * 1000
 };
 
 // Requests containing these texts will bypass provider
