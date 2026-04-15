@@ -147,6 +147,22 @@ export class DefaultExecutor extends BaseExecutor {
     return headers;
   }
 
+  transformRequest(model, body, stream, credentials) {
+    // GPT-5+ and o1/o3/o4 models require max_completion_tokens instead of max_tokens
+    // Also handle temperature validation (some models only accept default 1)
+    if (this.provider === "openai" || this.provider === "openai-compatible-default") {
+      if (/gpt-5|o[134]-/i.test(model)) {
+        if (body.max_tokens !== undefined) {
+          const transformed = { ...body };
+          transformed.max_completion_tokens = transformed.max_tokens;
+          delete transformed.max_tokens;
+          return transformed;
+        }
+      }
+    }
+    return body;
+  }
+
   async refreshCredentials(credentials, log) {
     if (!credentials.refreshToken) return null;
 
