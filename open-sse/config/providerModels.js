@@ -1,5 +1,5 @@
 import { PROVIDERS } from "./providers.js";
-import { GOOGLE_TTS_LANGUAGES } from "./googleTtsLanguages.js";
+import { buildTtsProviderModels } from "./ttsModels.js";
 
 // Provider models - Single source of truth
 // Key = alias (cc, cx, gc, qw, if, ag, gh for OAuth; id for API Key)
@@ -144,10 +144,10 @@ export const PROVIDER_MODELS = {
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
   oc: [  // OpenCode
-    { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
+    // { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
     // { id: "qwen3.6-plus-free", name: "Qwen 3.6 Plus" },
     // { id: "big-pickle", name: "Big Pickle", targetFormat: "claude" },
-    { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
+    // { id: "minimax-m2.5-free", name: "MiniMax M2.5", targetFormat: "claude" },
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
 
@@ -230,6 +230,10 @@ export const PROVIDER_MODELS = {
     { id: "perplexity/pplx-embed-v1-4b", name: "Perplexity Embed V1 4B", type: "embedding" },
     { id: "perplexity/pplx-embed-v1-0.6b", name: "Perplexity Embed V1 0.6B", type: "embedding" },
     { id: "nvidia/llama-nemotron-embed-vl-1b-v2:free", name: "NVIDIA Nemotron Embed VL 1B V2 (Free)", type: "embedding" },
+    // TTS models
+    { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
+    { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
+    { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -377,54 +381,8 @@ export const PROVIDER_MODELS = {
     { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
   ],
 
-  // Free/noAuth TTS providers
-  "local-device": [
-    { id: "default", name: "System Default Voice", type: "tts" },
-  ],
-  "google-tts": GOOGLE_TTS_LANGUAGES,
-  // OpenAI TTS voices (hardcoded — no public API to list them)
-  // Used by ttsCore.js when provider = openai
-  "openai-tts-voices": [
-    { id: "alloy",   name: "Alloy",   type: "tts" },
-    { id: "ash",     name: "Ash",     type: "tts" },
-    { id: "ballad",  name: "Ballad",  type: "tts" },
-    { id: "cedar",   name: "Cedar",   type: "tts" },
-    { id: "coral",   name: "Coral",   type: "tts" },
-    { id: "echo",    name: "Echo",    type: "tts" },
-    { id: "fable",   name: "Fable",   type: "tts" },
-    { id: "marin",   name: "Marin",   type: "tts" },
-    { id: "nova",    name: "Nova",    type: "tts" },
-    { id: "onyx",    name: "Onyx",    type: "tts" },
-    { id: "sage",    name: "Sage",    type: "tts" },
-    { id: "shimmer", name: "Shimmer", type: "tts" },
-    { id: "verse",   name: "Verse",   type: "tts" },
-  ],
-  // OpenAI TTS models
-  "openai-tts-models": [
-    { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
-    { id: "tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
-    { id: "tts-1",           name: "TTS-1",           type: "tts" },
-  ],
-  // ElevenLabs TTS models
-  "elevenlabs-tts-models": [
-    { id: "eleven_flash_v2_5",       name: "Flash v2.5 (Fastest)",     type: "tts" },
-    { id: "eleven_turbo_v2_5",       name: "Turbo v2.5 (Fast)",        type: "tts" },
-    { id: "eleven_multilingual_v2",  name: "Multilingual v2 (Quality)", type: "tts" },
-    { id: "eleven_monolingual_v1",   name: "Monolingual v1 (English)", type: "tts" },
-  ],
-  "edge-tts": [
-    { id: "en-US-AriaNeural", name: "Aria (en-US)", type: "tts" },
-    { id: "en-US-GuyNeural", name: "Guy (en-US)", type: "tts" },
-    { id: "en-GB-SoniaNeural", name: "Sonia (en-GB)", type: "tts" },
-    { id: "vi-VN-HoaiMyNeural", name: "Hoai My (vi-VN)", type: "tts" },
-    { id: "vi-VN-NamMinhNeural", name: "Nam Minh (vi-VN)", type: "tts" },
-    { id: "zh-CN-XiaoxiaoNeural", name: "Xiaoxiao (zh-CN)", type: "tts" },
-    { id: "zh-CN-YunxiNeural", name: "Yunxi (zh-CN)", type: "tts" },
-    { id: "fr-FR-DeniseNeural", name: "Denise (fr-FR)", type: "tts" },
-    { id: "de-DE-KatjaNeural", name: "Katja (de-DE)", type: "tts" },
-    { id: "ja-JP-NanamiNeural", name: "Nanami (ja-JP)", type: "tts" },
-    { id: "ko-KR-SunHiNeural", name: "SunHi (ko-KR)", type: "tts" },
-  ],
+  // TTS entries are loaded from ttsModels.js via buildTtsProviderModels()
+  ...buildTtsProviderModels(),
 };
 
 // Helper functions
