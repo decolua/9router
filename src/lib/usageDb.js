@@ -47,20 +47,56 @@ function getUserDataDir() {
   }
 }
 
-// Data file path - stored in user home directory
-const DATA_DIR = getUserDataDir();
-const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
-const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
+// Data file path - stored in user home directory by default, but can be moved to DATA_DIR for persistence
+// Check if USE_USAGE_IN_DATA_DIR is set (recommended for persistence across app updates)
+function getUsageDataDir() {
+  if (isCloud) return "/tmp";
+  
+  // If explicitly configured to use DATA_DIR for usage data, put it there for persistence
+  if (process.env.USE_USAGE_IN_DATA_DIR === "true" || process.env.USE_USAGE_IN_DATA_DIR === "1") {
+    if (process.env.DATA_DIR) {
+      return process.env.DATA_DIR;
+    }
+  }
+  
+  // Default: use ~/.9router (but this gets lost on app reinstall)
+  return getUserDataDir();
+}
+
+// Legacy path for migration detection
+function getLegacyUsageDir() {
+  return getUserDataDir();
+}
+
+const usageDataDir = getUsageDataDir();
+const DB_FILE = isCloud ? null : path.join(usageDataDir, "usage.json");
+const LOG_FILE = isCloud ? null : path.join(usageDataDir, "log.txt");
 
 // Ensure data directory exists
+// Also check legacy location for migration
 if (!isCloud && fs && typeof fs.existsSync === "function") {
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      console.log(`[usageDb] Created data directory: ${DATA_DIR}`);
+    if (!fs.existsSync(usageDataDir)) {
+      fs.mkdirSync(usageDataDir, { recursive: true });
+      console.log(`[usageDb] Created usage data directory: ${usageDataDir}`);
+    }
+    
+    // Migration: check if usage data exists in legacy ~/.9router location
+    const legacyDir = getLegacyUsageDir();
+    if (legacyDir !== usageDataDir) {
+      const legacyDbFile = path.join(legacyDir, "usage.json");
+      if (fs.existsSync(legacyDbFile) && !fs.existsSync(DB_FILE)) {
+        try {
+          const legacyData = JSON.parse(fs.readFileSync(legacyDbFile, "utf-8"));
+          fs.writeFileSync(DB_FILE, JSON.stringify(legacyData, null, 2));
+          console.log(`[usageDb] Migrated usage data from legacy location: ${legacyDbFile}`);
+        } catch (migrateError) {
+          console.warn("[usageDb] Failed to migrate legacy usage data:", migrateError.message);
+        }
+      }
     }
   } catch (error) {
-    console.error("[usageDb] Failed to create data directory:", error.message);
+    console.error("[usageDb] Failed to create usage data directory:", error.message);
   }
 }
 
