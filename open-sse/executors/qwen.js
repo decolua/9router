@@ -71,9 +71,14 @@ export class QwenExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const next = body && typeof body === "object" ? { ...body } : body;
-    if (stream && next?.messages && !next.stream_options) {
+
+    // Only inject stream_options when streaming is enabled and Claude Code is not the client
+    // Claude Code sends non-streaming requests with stream_options which Qwen rejects with 400
+    const isClaudeCodeRequest = credentials?.providerSpecificData?.isClaudeCode;
+    if (stream && next?.messages && !next.stream_options && !isClaudeCodeRequest) {
       next.stream_options = { include_usage: true };
     }
+
     return ensureQwenSystemMessage(next);
   }
 }
