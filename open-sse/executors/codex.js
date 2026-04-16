@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
+import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
@@ -110,17 +111,36 @@ export class CodexExecutor extends BaseExecutor {
     }
 
     // Normalize image content: image_url → input_image (Responses API format)
+    // Remote HTTP(S) URLs must be converted to base64 data URIs since Codex backend cannot fetch them.
     if (Array.isArray(body.input)) {
       for (const item of body.input) {
-        if (Array.isArray(item.content)) {
-          item.content = item.content.map(c => {
-            if (c.type === "image_url") {
-              const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+        if (!Array.isArray(item.content)) continue;
+        // Collect all resolved image blocks; keep non-image blocks synchronous
+        const asyncBlocks = [];
+        const syncBlocks = [];
+        for (const c of item.content) {
+          if (c.type !== "image_url") { syncBlocks.push(c); continue; }
+          const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
+          if (!url) { syncBlocks.push(c); continue; }
+          // Already a data URI — pass through synchronously
+          if (url.startsWith("data:")) {
+            syncBlocks.push({ type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" });
+            continue;
+          }
+          // Remote URL — queue async fetch-and-convert
+          asyncBlocks.push(
+            fetchImageAsBase64(url, { timeoutMs: 15000 }).then(result => {
+              if (result?.url) {
+                return { type: "input_image", image_url: result.url, detail: c.image_url?.detail || "auto" };
+              }
+              // Fallback: keep original URL if fetch failed
               return { type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" };
-            }
-            return c;
-          });
+            })
+          );
         }
+        // Resolve all pending image fetches in parallel, then interleave with sync blocks
+        const resolved = asyncBlocks.length > 0 ? await Promise.all(asyncBlocks) : [];
+        item.content = [...syncBlocks, ...resolved];
       }
     }
 
