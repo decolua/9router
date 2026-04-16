@@ -111,6 +111,8 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
     { id: "deepseek-3.1", name: "DeepSeek 3.1", strip: ["image", "audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
   ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
