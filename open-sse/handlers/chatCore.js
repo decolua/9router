@@ -76,6 +76,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
+  // Mark credentials so executors can apply Claude Code workarounds (e.g. Qwen stream_options fix)
+  if (clientTool === "claude" && credentials?.providerSpecificData) {
+    credentials.providerSpecificData = { ...credentials.providerSpecificData, isClaudeCode: true };
+  }
+
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
