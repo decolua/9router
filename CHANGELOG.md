@@ -1,3 +1,18 @@
+# v0.3.91 (2026-04-15)
+
+## Features
+- Add Kiro AWS Identity Center device flow for provider OAuth
+- Add TTS (Text-to-Speech) core handler and TTS models config
+- Add media providers dashboard page
+- Add suggested models API endpoint
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb and usageDb for cleaner structure
+
+## Fixes
+- Fix usage tracking bug
+
 # v0.3.90 (2026-04-14)
 
 ## Features

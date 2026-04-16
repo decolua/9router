@@ -1,8 +1,8 @@
 import fs from "fs";
 import path from "path";
-import os from "os";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
-const TUNNEL_DIR = path.join(os.homedir(), ".9router", "tunnel");
+const TUNNEL_DIR = path.join(DATA_DIR, "tunnel");
 const STATE_FILE = path.join(TUNNEL_DIR, "state.json");
 const CLOUDFLARED_PID_FILE = path.join(TUNNEL_DIR, "cloudflared.pid");
 const TAILSCALE_PID_FILE = path.join(TUNNEL_DIR, "tailscale.pid");

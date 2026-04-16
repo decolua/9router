@@ -217,7 +217,7 @@ export default function ClaudeToolCard({
     return [
       {
         filename: "~/.claude/settings.json",
-        content: JSON.stringify({ env }, null, 2),
+        content: JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2),
       },
     ];
   };
