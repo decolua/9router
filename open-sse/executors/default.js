@@ -9,6 +9,30 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
+  // Check if model requires max_completion_tokens instead of max_tokens
+  requiresMaxCompletionTokens(model) {
+    return /gpt-5|o[134]-/i.test(model);
+  }
+
+  // Check if model doesn't support temperature parameter
+  supportsTemperature(model) {
+    return !/gpt-5\.4/i.test(model);
+  }
+
+  transformRequest(model, body, stream, credentials) {
+    const transformed = { ...body };
+    // Translate max_tokens to max_completion_tokens for newer OpenAI models
+    if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+      transformed.max_completion_tokens = transformed.max_tokens;
+      delete transformed.max_tokens;
+    }
+    // Strip temperature for gpt-5.4 which doesn't support it
+    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+      delete transformed.temperature;
+    }
+    return transformed;
+  }
+
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
