@@ -40,6 +40,8 @@ export default function Sidebar({ onClose }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateCopied, setUpdateCopied] = useState(false);
+  const { copy } = useCopyToClipboard(2000);
   const [enableTranslator, setEnableTranslator] = useState(false);
 
   useEffect(() => {
@@ -100,12 +102,16 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-0.5">
+            <div
+              className="flex flex-col gap-0.5 cursor-pointer select-none"
+              onClick={() => { copy("npm install -g 9router@latest", "update"); setUpdateCopied(true); setTimeout(() => setUpdateCopied(false), 2000); }}
+              title="Click to copy install command"
+            >
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                {updateCopied ? "✓ Copied!" : "npm install -g 9router@latest"}
               </code>
             </div>
           )}

@@ -108,8 +108,21 @@ export class GithubExecutor extends BaseExecutor {
     return /gpt-5|o[134]-/i.test(model);
   }
 
+  // GitHub Copilot /chat/completions doesn't support thinking/reasoning_effort
+  // OpenClaw sends thinking: { type: "enabled" } for Claude models which causes 400
+  supportsThinking(model) {
+    return false; // /chat/completions endpoint doesn't support extended thinking
+  }
+
   transformRequest(model, body, stream, credentials) {
     const transformed = { ...body };
+    // Delete thinking/reasoning_effort - GitHub Copilot endpoint doesn't support these
+    if (transformed.thinking !== undefined) {
+      delete transformed.thinking;
+    }
+    if (transformed.reasoning_effort !== undefined) {
+      delete transformed.reasoning_effort;
+    }
     if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
       transformed.max_completion_tokens = transformed.max_tokens;
       delete transformed.max_tokens;
