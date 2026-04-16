@@ -257,8 +257,14 @@ export default function OpenClawToolCard({
             <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500">warning</span>
               <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Open Claw CLI to use this feature.</p>
+                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not detected locally</p>
+                <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
+                  <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                  Manual Config
+                </Button>
               </div>
             </div>
           )}
