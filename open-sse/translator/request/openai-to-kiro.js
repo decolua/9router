@@ -298,6 +298,11 @@ export function buildKiroPayload(model, body, stream, credentials) {
   const timestamp = new Date().toISOString();
   finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
   
+  // Forward client's origin if present (e.g. Claude Code sends "CODEWHISPERER")
+  // Otherwise default to "AI_EDITOR" for other clients
+  const clientOrigin = body._clientOrigin || body.origin;
+  const origin = clientOrigin || "AI_EDITOR";
+
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
@@ -306,7 +311,7 @@ export function buildKiroPayload(model, body, stream, credentials) {
         userInputMessage: {
           content: finalContent,
           modelId: model,
-          origin: "AI_EDITOR",
+          origin,
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
             userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
           })

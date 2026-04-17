@@ -76,6 +76,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
+  // Forward Claude Code origin to Kiro provider via _clientOrigin
+  // Kiro's origin must match what the client sends (e.g. "CODEWHISPERER" for Claude Code)
+  if (!passthrough && clientTool === "claude") {
+    const originHeader = clientRawRequest?.headers?.origin;
+    if (originHeader) body._clientOrigin = originHeader;
+  }
+
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
