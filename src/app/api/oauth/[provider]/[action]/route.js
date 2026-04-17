@@ -52,16 +52,18 @@ export async function GET(request, { params }) {
     }
 
     if (action === "device-code") {
-      const providerData = getProvider(provider);
+      // qwen-code is an alias for qwen's OAuth flow (same client_id, same device code URL)
+      const effectiveProvider = provider === "qwen-code" ? "qwen" : provider;
+      const providerData = getProvider(effectiveProvider);
       if (providerData.flowType !== "device_code") {
         return NextResponse.json({ error: "Provider does not support device code flow" }, { status: 400 });
       }
 
-      const authData = generateAuthData(provider, null);
+      const authData = generateAuthData(effectiveProvider, null);
       const startUrl = searchParams.get("start_url");
       const region = searchParams.get("region");
       const authMethod = searchParams.get("auth_method");
-      const deviceOptions = provider === "kiro"
+      const deviceOptions = effectiveProvider === "kiro"
         ? {
             ...(startUrl ? { startUrl } : {}),
             ...(region ? { region } : {}),
@@ -72,11 +74,11 @@ export async function GET(request, { params }) {
       // Providers that don't use PKCE for device code
       const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
-      if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
+      if (noPkceDeviceProviders.includes(effectiveProvider)) {
+        deviceData = await requestDeviceCode(effectiveProvider, undefined, deviceOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
+        deviceData = await requestDeviceCode(effectiveProvider, authData.codeChallenge, deviceOptions);
       }
 
       return NextResponse.json({
@@ -105,20 +107,22 @@ export async function POST(request, { params }) {
     }
 
     if (action === "exchange") {
+      // qwen-code is an alias for qwen's OAuth flow
+      const effectiveProvider = provider === "qwen-code" ? "qwen" : provider;
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
       // Cline uses authorization_code without PKCE
       const noPkceExchangeProviders = ["cline"];
-      if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
+      if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(effectiveProvider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      const tokenData = await exchangeTokens(effectiveProvider, code, redirectUri, codeVerifier, state, meta);
 
       // Save to database
       const connection = await createProviderConnection({
-        provider,
+        provider: effectiveProvider,
         authType: "oauth",
         ...tokenData,
         expiresAt: tokenData.expiresIn 
@@ -139,6 +143,8 @@ export async function POST(request, { params }) {
     }
 
     if (action === "poll") {
+      // qwen-code is an alias for qwen's OAuth flow
+      const effectiveProvider = provider === "qwen-code" ? "qwen" : provider;
       const { deviceCode, codeVerifier, extraData } = body;
 
       if (!deviceCode) {
@@ -148,23 +154,23 @@ export async function POST(request, { params }) {
       // Providers that don't use PKCE for device code
       const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy"];
       let result;
-      if (noPkceProviders.includes(provider)) {
-        result = await pollForToken(provider, deviceCode);
-      } else if (provider === "kiro") {
+      if (noPkceProviders.includes(effectiveProvider)) {
+        result = await pollForToken(effectiveProvider, deviceCode);
+      } else if (effectiveProvider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
-        result = await pollForToken(provider, deviceCode, null, extraData);
+        result = await pollForToken(effectiveProvider, deviceCode, null, extraData);
       } else {
         // Qwen and other PKCE providers
         if (!codeVerifier) {
           return NextResponse.json({ error: "Missing code verifier" }, { status: 400 });
         }
-        result = await pollForToken(provider, deviceCode, codeVerifier);
+        result = await pollForToken(effectiveProvider, deviceCode, codeVerifier);
       }
 
       if (result.success) {
         // Save to database
         const connection = await createProviderConnection({
-          provider,
+          provider: effectiveProvider,
           authType: "oauth",
           ...result.tokens,
           expiresAt: result.tokens.expiresIn 
