@@ -67,7 +67,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
-    : connection.name;
+    : connection.name || connection.nodeName || "API Key";
+  const showNodeName = connection.nodeName && connection.name !== connection.nodeName;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -133,6 +134,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {showNodeName && (
+            <Badge variant="secondary" size="sm" className="mt-1">
+              {connection.nodeName}
+            </Badge>
+          )}
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}

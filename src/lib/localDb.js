@@ -486,6 +486,29 @@ export async function updateProviderConnection(id, data) {
   return db.data.providerConnections[index];
 }
 
+// Batch update multiple connections in a single read-modify-write cycle.
+// Returns { succeeded, failed } counts.
+export async function batchUpdateProviderConnections(ids, data) {
+  const db = await getDb();
+  const idSet = new Set(ids);
+  let succeeded = 0;
+  let failed = 0;
+
+  db.data.providerConnections.forEach((conn) => {
+    if (idSet.has(conn.id)) {
+      Object.assign(conn, data, { updatedAt: new Date().toISOString() });
+      succeeded++;
+    }
+  });
+
+  if (succeeded < ids.length) {
+    failed = ids.length - succeeded;
+  }
+
+  await safeWrite(db);
+  return { succeeded, failed };
+}
+
 export async function deleteProviderConnection(id) {
   const db = await getDb();
   const index = db.data.providerConnections.findIndex(c => c.id === id);

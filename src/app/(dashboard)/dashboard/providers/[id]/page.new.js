@@ -612,7 +612,6 @@ export default function ProviderDetailPage() {
                 size="sm"
                 icon="add"
                 onClick={() => setShowAddApiKeyModal(true)}
-                disabled={connections.length > 0}
               >
                 Add
               </Button>
@@ -646,7 +645,7 @@ export default function ProviderDetailPage() {
           </div>
           {connections.length > 0 && (
             <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
+              Multiple connections supported — add more API keys to this node for fallback or load balancing.
             </p>
           )}
         </Card>

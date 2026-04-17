@@ -99,7 +99,8 @@ RouterNode.propTypes = {
 const nodeTypes = { provider: ProviderNode, router: RouterNode };
 
 // Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
+// nodeNameMap maps provider ID -> node display name (for compatible endpoint providers)
+function buildLayout(providers, activeSet, lastSet, errorSet, nodeNameMap = {}) {
   const nodeW = 180;
   const nodeH = 30;
   const routerW = 120;
@@ -143,8 +144,10 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const last = !active && lastSet.has(p.provider?.toLowerCase());
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
+    // Priority: AI_PROVIDERS display name > nodeName (from provider node) > connection name > raw provider ID
+    const displayName = nodeNameMap[p.provider] || (config.name !== p.provider ? config.name : null) || p.name || p.provider;
     const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.name || p.provider,
+      label: displayName,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
@@ -191,6 +194,17 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 }
 
 export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
+  // Build nodeNameMap from providers that have nodeName (compatible endpoint providers)
+  const nodeNameMap = useMemo(() => {
+    const map = {};
+    providers.forEach((p) => {
+      if (p.nodeName) {
+        map[p.provider] = p.nodeName;
+      }
+    });
+    return map;
+  }, [providers]);
+
   // Serialize to stable string keys so useMemo only re-runs when values actually change
   const activeKey = useMemo(
     () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
@@ -204,8 +218,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeKey, lastKey, errorKey]
+    () => buildLayout(providers, activeSet, lastSet, errorSet, nodeNameMap),
+    [providers, activeKey, lastKey, errorKey, nodeNameMap]
   );
 
   // Stable key — only remount when provider list changes

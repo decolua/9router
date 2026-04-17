@@ -219,13 +219,17 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 export async function getActiveRequests() {
   const activeRequests = [];
 
-  // Build active requests from pending state
+  // Build maps for display names
   let connectionMap = {};
+  let apiKeyNameMap = {};
   try {
-    const { getProviderConnections } = await import("@/lib/localDb.js");
-    const allConnections = await getProviderConnections();
+    const { getProviderConnections, getApiKeys } = await import("@/lib/localDb.js");
+    const [allConnections, apiKeys] = await Promise.all([getProviderConnections(), getApiKeys()]);
     for (const conn of allConnections) {
       connectionMap[conn.id] = conn.name || conn.email || conn.id;
+    }
+    for (const k of apiKeys) {
+      if (k.key && k.name) apiKeyNameMap[k.key] = k.name;
     }
   } catch {}
 
@@ -252,7 +256,9 @@ export async function getActiveRequests() {
       const t = e.tokens || {};
       const promptTokens = t.prompt_tokens || t.input_tokens || 0;
       const completionTokens = t.completion_tokens || t.output_tokens || 0;
-      return { timestamp: e.timestamp, model: e.model, provider: e.provider || "", promptTokens, completionTokens, status: e.status || "ok" };
+      // Resolve API key name for endpoint key authentication
+      const apiKeyName = e.apiKey ? (apiKeyNameMap[e.apiKey] || null) : null;
+      return { timestamp: e.timestamp, model: e.model, provider: e.provider || "", promptTokens, completionTokens, status: e.status || "ok", apiKeyName };
     })
     .filter((e) => {
       if (e.promptTokens === 0 && e.completionTokens === 0) return false;
@@ -575,11 +581,15 @@ export async function getUsageStats(period = "all") {
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
       const t = e.tokens || {};
+      const apiKeyName = e.apiKey ? (apiKeyMap[e.apiKey]?.name || null) : null;
+      // Map provider ID to node name for compatible providers
+      const providerDisplayName = providerNodeNameMap[e.provider] || e.provider || "";
       return {
-        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
+        timestamp: e.timestamp, model: e.model, provider: providerDisplayName,
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         status: e.status || "ok",
+        apiKeyName,
       };
     })
     .filter((e) => {

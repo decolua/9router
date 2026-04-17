@@ -101,6 +101,7 @@ export default function ProvidersPage() {
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [showConfiguredOnly, setShowConfiguredOnly] = useState(false);
   const notify = useNotificationStore();
 
   useEffect(() => {
@@ -179,15 +180,19 @@ export default function ProvidersPage() {
           : c,
       ),
     );
-    await Promise.allSettled(
-      providerConns.map((c) =>
-        fetch(`/api/providers/${c.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isActive: newActive }),
+    // Use batch endpoint for faster, atomic update
+    try {
+      await fetch("/api/providers/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionIds: providerConns.map(c => c.id),
+          isActive: newActive
         }),
-      ),
-    );
+      });
+    } catch (error) {
+      console.error("Failed to batch toggle provider:", error);
+    }
   };
 
   const handleBatchTest = async (mode, providerId = null) => {
@@ -213,6 +218,10 @@ export default function ProvidersPage() {
     } finally {
       setTestingMode(null);
     }
+  };
+
+  const hasConnections = (providerId, authType) => {
+    return connections.some(c => c.provider === providerId && c.authType === authType);
   };
 
   const compatibleProviders = providerNodes
@@ -252,6 +261,14 @@ export default function ProvidersPage() {
             OAuth Providers
           </h2>
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <Toggle
+                size="sm"
+                checked={showConfiguredOnly}
+                onChange={setShowConfiguredOnly}
+              />
+              <span className="text-xs text-text-secondary">Configured only</span>
+            </div>
             <ModelAvailabilityBadge />
             <button
               onClick={() => handleBatchTest("oauth")}
@@ -274,16 +291,18 @@ export default function ProvidersPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(OAUTH_PROVIDERS).map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
+          {Object.entries(OAUTH_PROVIDERS)
+            .filter(([key]) => !showConfiguredOnly || hasConnections(key, "oauth"))
+            .map(([key, info]) => (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "oauth")}
+                authType="oauth"
+                onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              />
+            ))}
         </div>
       </div>
 
@@ -313,26 +332,30 @@ export default function ProvidersPage() {
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(FREE_PROVIDERS).map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="free"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
-          {Object.entries(FREE_TIER_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
+          {Object.entries(FREE_PROVIDERS)
+            .filter(([key]) => !showConfiguredOnly || hasConnections(key, "oauth"))
+            .map(([key, info]) => (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "oauth")}
+                authType="free"
+                onToggle={(active) => handleToggleProvider(key, "oauth", active)}
+              />
+            ))}
+          {Object.entries(FREE_TIER_PROVIDERS)
+            .filter(([key]) => !showConfiguredOnly || hasConnections(key, "apikey"))
+            .map(([key, info]) => (
+              <ApiKeyProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, "apikey")}
+                authType="apikey"
+                onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+              />
+            ))}
         </div>
       </div>
 
@@ -364,6 +387,7 @@ export default function ProvidersPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.entries(APIKEY_PROVIDERS)
             .filter(([, info]) => (info.serviceKinds ?? ["llm"]).includes("llm"))
+            .filter(([key]) => !showConfiguredOnly || hasConnections(key, "apikey"))
             .map(([key, info]) => (
               <ApiKeyProviderCard
                 key={key}
@@ -434,8 +458,9 @@ export default function ProvidersPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {[...compatibleProviders, ...anthropicCompatibleProviders].map(
-              (info) => (
+            {[...compatibleProviders, ...anthropicCompatibleProviders]
+              .filter((info) => !showConfiguredOnly || hasConnections(info.id, "apikey"))
+              .map((info) => (
                 <ApiKeyProviderCard
                   key={info.id}
                   providerId={info.id}
@@ -446,8 +471,7 @@ export default function ProvidersPage() {
                     handleToggleProvider(info.id, "apikey", active)
                   }
                 />
-              ),
-            )}
+              ))}
           </div>
         )}
       </div>

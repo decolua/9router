@@ -59,15 +59,16 @@ export async function GET() {
       }
     } catch { }
 
-    // Hide sensitive fields, enrich name for compatible providers
+    // Hide sensitive fields, preserve connection names for compatible providers
     const safeConnections = connections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
-      const name = isCompatible
-        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
-        : c.name;
+      const nodeName = isCompatible
+        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || null)
+        : null;
       return {
         ...c,
-        name,
+        // Keep the connection's own name - add nodeName as display info if different from connection name
+        nodeName: nodeName && nodeName !== c.name ? nodeName : undefined,
         apiKey: undefined,
         accessToken: undefined,
         refreshToken: undefined,
@@ -122,11 +123,6 @@ export async function POST(request) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
 
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this OpenAI Compatible node" }, { status: 400 });
-      }
-
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
@@ -137,11 +133,6 @@ export async function POST(request) {
       const node = await getProviderNodeById(provider);
       if (!node) {
         return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
-      }
-
-      const existingConnections = await getProviderConnections({ provider });
-      if (existingConnections.length > 0) {
-        return NextResponse.json({ error: "Only one connection is allowed for this Anthropic Compatible node" }, { status: 400 });
       }
 
       providerSpecificData = {
