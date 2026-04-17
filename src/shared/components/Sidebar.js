@@ -40,6 +40,7 @@ export default function Sidebar({ onClose }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [copiedInstall, setCopiedInstall] = useState(false);
   const [enableTranslator, setEnableTranslator] = useState(false);
 
   useEffect(() => {
@@ -56,6 +57,14 @@ export default function Sidebar({ onClose }) {
       .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
       .catch(() => {});
   }, []);
+
+  const copyInstallCommand = async (version) => {
+    try {
+      await navigator.clipboard.writeText(`npm install -g 9router@${version}`);
+      setCopiedInstall(true);
+      setTimeout(() => setCopiedInstall(false), 2000);
+    } catch {}
+  };
 
   const isActive = (href) => {
     if (href === "/dashboard/endpoint") {
@@ -100,14 +109,17 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-0.5">
+            <button
+              onClick={() => copyInstallCommand(updateInfo.latestVersion)}
+              className="flex flex-col gap-0.5 cursor-pointer text-left hover:opacity-80 transition-opacity"
+            >
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
-                ↑ New version available: v{updateInfo.latestVersion}
+                ↑ New version available: v{updateInfo.latestVersion}{copiedInstall ? " ✓" : ""}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                {copiedInstall ? "Copied!" : "npm install -g 9router@latest"}
               </code>
-            </div>
+            </button>
           )}
         </div>
 
