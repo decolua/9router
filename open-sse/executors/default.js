@@ -32,6 +32,10 @@ export class DefaultExecutor extends BaseExecutor {
         return `${this.config.baseUrl}?beta=true`;
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
+      case "ollama-local":
+        // Support custom host URL for remote Ollama instances
+        const ollamaBaseUrl = credentials?.providerSpecificData?.baseUrl || this.config.baseUrl;
+        return `${ollamaBaseUrl.replace(/\/$/, "")}/api/chat`;
       default:
         return this.config.baseUrl;
     }
