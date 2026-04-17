@@ -108,11 +108,21 @@ export class GithubExecutor extends BaseExecutor {
     return /gpt-5|o[134]-/i.test(model);
   }
 
+  // Some models (like gpt-5.4) don't support the temperature parameter
+  supportsTemperature(model) {
+    // gpt-5.4 and similar newer models don't support temperature
+    return !/gpt-5\.4/i.test(model);
+  }
+
   transformRequest(model, body, stream, credentials) {
     const transformed = { ...body };
     if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
       transformed.max_completion_tokens = transformed.max_tokens;
       delete transformed.max_tokens;
+    }
+    // Strip temperature for models that don't support it
+    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+      delete transformed.temperature;
     }
     return transformed;
   }
