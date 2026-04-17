@@ -109,8 +109,9 @@ export default function LanguageSwitcher({ className = "" }) {
         title="Language"
         data-i18n-skip="true"
       >
-        <span className="text-xl">{getLocaleInfo(locale).flag}</span>
-        <span className="text-xs font-medium uppercase">{locale.split("-")[0]}</span>
+        <span className="material-symbols-outlined text-[20px]">language</span>
+        <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
+        <span className="text-lg">{getLocaleInfo(locale).flag}</span>
       </button>
 
       {/* Portal modal - renders at document.body to avoid parent layout constraints */}
