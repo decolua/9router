@@ -40,14 +40,14 @@ export function info(tag, message, data) {
 export function warn(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.WARN) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    // console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
+    console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
   }
 }
 
 export function error(tag, message, data) {
   if (LEVEL <= LOG_LEVELS.ERROR) {
     const dataStr = data ? ` ${formatData(data)}` : "";
-    console.log(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
+    console.error(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
   }
 }
 

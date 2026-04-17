@@ -8,7 +8,7 @@ const LOG_LEVEL_COLORS = {
   LOG: "text-green-400",
   INFO: "text-blue-400",
   WARN: "text-yellow-400",
-  ERROR: "text-red-400",
+  ERROR: "text-red-500 font-semibold",
   DEBUG: "text-purple-400",
 };
 
@@ -19,15 +19,18 @@ function colorLine(line) {
   return <span className={color}>{line}</span>;
 }
 
+function isErrorLine(line) {
+  return /\bERROR\b|\[ERROR\]|\bERROR:\b/i.test(line) || line.startsWith("❌");
+}
+
 export default function ConsoleLogClient() {
   const [logs, setLogs] = useState([]);
-  const [connected, setConnected] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const logRef = useRef(null);
 
   const handleClear = async () => {
     try {
       await fetch("/api/translator/console-logs", { method: "DELETE" });
-      // UI cleared via SSE "clear" event
     } catch (err) {
       console.error("Failed to clear console logs:", err);
     }
@@ -35,8 +38,6 @@ export default function ConsoleLogClient() {
 
   useEffect(() => {
     const es = new EventSource("/api/translator/console-logs/stream");
-
-    es.onopen = () => setConnected(true);
 
     es.onmessage = (e) => {
       const msg = JSON.parse(e.data);
@@ -52,21 +53,28 @@ export default function ConsoleLogClient() {
       }
     };
 
-    es.onerror = () => setConnected(false);
-
     return () => es.close();
   }, []);
 
-  // Auto-scroll to bottom on new logs
+  // Auto-scroll to bottom on new logs (only when enabled)
   useEffect(() => {
-    if (!logRef.current) return;
+    if (!autoScroll || !logRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [logs]);
+  }, [logs, autoScroll]);
 
   return (
     <div className="">
       <Card>
-        <div className="flex items-center justify-end px-4 pt-3 pb-2">
+        <div className="flex items-center justify-end px-4 pt-3 pb-2 gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+              className="w-3.5 h-3.5 rounded accent-text-primary"
+            />
+            Auto-scroll
+          </label>
           <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
             Clear
           </Button>
@@ -80,7 +88,12 @@ export default function ConsoleLogClient() {
           ) : (
             <div className="space-y-0.5">
               {logs.map((line, i) => (
-                <div key={i}>{colorLine(line)}</div>
+                <div
+                  key={i}
+                  className={isErrorLine(line) ? "text-red-400" : ""}
+                >
+                  {colorLine(line)}
+                </div>
               ))}
             </div>
           )}
