@@ -231,6 +231,18 @@ export async function getProviderNodeById(id) {
   return db.data.providerNodes.find((node) => node.id === id) || null;
 }
 
+const _providerDisplayNameCache = new Map();
+const COMPATIBLE_PROVIDER_PREFIXES = ["openai-compatible-", "anthropic-compatible-"];
+
+export async function getProviderDisplayName(providerId) {
+  if (!COMPATIBLE_PROVIDER_PREFIXES.some(p => providerId.startsWith(p))) return providerId;
+  if (_providerDisplayNameCache.has(providerId)) return _providerDisplayNameCache.get(providerId);
+  const node = await getProviderNodeById(providerId);
+  const displayName = node?.name || providerId;
+  _providerDisplayNameCache.set(providerId, displayName);
+  return displayName;
+}
+
 export async function createProviderNode(data) {
   const db = await getDb();
   if (!db.data.providerNodes) db.data.providerNodes = [];

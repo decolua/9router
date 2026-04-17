@@ -230,16 +230,15 @@ export default function ProviderLimits() {
     try {
       const conns = await fetchConnections();
 
-      // Filter only supported OAuth providers
-      const oauthConnections = conns.filter(
+      // Filter only supported providers
+      const supportedConnections = conns.filter(
         (conn) =>
-          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-          conn.authType === "oauth",
+          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
       );
 
-      // Fetch quota for supported OAuth connections only
+      // Fetch quota for supported connections
       await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
       );
 
       setLastUpdated(new Date());
@@ -257,21 +256,20 @@ export default function ProviderLimits() {
       const conns = await fetchConnections();
       setConnectionsLoading(false);
 
-      const oauthConnections = conns.filter(
+      const supportedConnections = conns.filter(
         (conn) =>
-          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-          conn.authType === "oauth",
+          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
       );
 
       // Mark all as loading before fetching
       const loadingState = {};
-      oauthConnections.forEach((conn) => {
+      supportedConnections.forEach((conn) => {
         loadingState[conn.id] = true;
       });
       setLoading(loadingState);
 
       await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        supportedConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
       );
       setLastUpdated(new Date());
     };
@@ -358,8 +356,7 @@ export default function ProviderLimits() {
   // Filter only supported providers
   const filteredConnections = connections.filter(
     (conn) =>
-      USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-      conn.authType === "oauth",
+      USAGE_SUPPORTED_PROVIDERS.includes(conn.provider),
   );
 
   // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically

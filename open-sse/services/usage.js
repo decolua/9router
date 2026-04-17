@@ -39,7 +39,7 @@ const CLAUDE_CONFIG = {
  * @returns {Object} Usage data with quotas
  */
 export async function getUsageForProvider(connection) {
-  const { provider, accessToken, providerSpecificData } = connection;
+  const { provider, accessToken, providerSpecificData, apiKey } = connection;
 
   switch (provider) {
     case "github":
@@ -58,6 +58,8 @@ export async function getUsageForProvider(connection) {
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
       return await getIflowUsage(accessToken);
+    case "minimax":
+      return await getMinimaxUsage(apiKey);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -717,5 +719,64 @@ async function getIflowUsage(accessToken) {
     return { message: "iFlow connected. Usage tracked per request." };
   } catch (error) {
     return { message: "Unable to fetch iFlow usage." };
+  }
+}
+
+/**
+ * Minimax Usage - fetches token_plan/remains and normalizes to { quotas: [...] }
+ */
+async function getMinimaxUsage(apiKey) {
+  if (!apiKey) {
+    return { message: "No API key available for Minimax" };
+  }
+
+  try {
+    const response = await fetch("https://www.minimax.io/v1/token_plan/remains", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      return { message: `Minimax quota API returned ${response.status}: ${text}` };
+    }
+
+    const data = await response.json();
+    const modelRemains = data?.model_remains || [];
+    const quotas = {};
+
+    for (const entry of modelRemains) {
+      // Daily quota
+      if (entry.current_interval_total_count > 0) {
+        const name = `${entry.model_name} (daily)`;
+        quotas[name] = {
+          used: entry.current_interval_usage_count || 0,
+          total: entry.current_interval_total_count,
+          resetAt: entry.end_time ? new Date(entry.end_time).toISOString() : null,
+        };
+      }
+
+      // Weekly quota
+      if (entry.current_weekly_total_count > 0) {
+        const name = `${entry.model_name} (weekly)`;
+        quotas[name] = {
+          used: entry.current_weekly_usage_count || 0,
+          total: entry.current_weekly_total_count,
+          resetAt: entry.weekly_end_time ? new Date(entry.weekly_end_time).toISOString() : null,
+        };
+      }
+    }
+
+    const quotaKeys = Object.keys(quotas);
+    if (quotaKeys.length === 0) {
+      return { quotas: {}, message: "No quota limits found" };
+    }
+
+    return { quotas };
+  } catch (error) {
+    return { message: `Failed to fetch Minimax usage: ${error.message}` };
   }
 }

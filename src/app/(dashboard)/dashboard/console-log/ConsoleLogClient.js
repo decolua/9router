@@ -4,23 +4,16 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
 
-const LOG_LEVEL_COLORS = {
-  LOG: "text-green-400",
-  INFO: "text-blue-400",
-  WARN: "text-yellow-400",
-  ERROR: "text-red-500 font-semibold",
-  DEBUG: "text-purple-400",
-};
-
 function colorLine(line) {
-  const match = line.match(/\[(\w+)\]/g);
-  const levelTag = match ? match[1]?.replace(/\[|\]/g, "") : null;
-  const color = LOG_LEVEL_COLORS[levelTag] || "text-green-400";
-  return <span className={color}>{line}</span>;
+  if (line.includes("❌")) return <span className="text-red-500 font-semibold">{line}</span>;
+  if (line.includes("⚠️")) return <span className="text-yellow-400">{line}</span>;
+  if (line.includes("ℹ️")) return <span className="text-blue-400">{line}</span>;
+  if (line.includes("🔍")) return <span className="text-purple-400">{line}</span>;
+  return <span className="text-green-400">{line}</span>;
 }
 
 function isErrorLine(line) {
-  return /\bERROR\b|\[ERROR\]|\bERROR:\b/i.test(line) || line.startsWith("❌");
+  return line.includes("❌") || /\bERROR\b|\[ERROR\]|\bERROR:\b/i.test(line);
 }
 
 export default function ConsoleLogClient() {
