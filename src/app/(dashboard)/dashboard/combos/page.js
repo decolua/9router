@@ -342,7 +342,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState([]);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -362,6 +362,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   useEffect(() => {
     if (isOpen) fetchModalData();
   }, [isOpen]);
+
+  useEffect(() => {
+    setModels(combo?.models || []);
+  }, [combo]);
 
   const validateName = (value) => {
     if (!value.trim()) {
