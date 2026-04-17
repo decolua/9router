@@ -3,6 +3,12 @@ name: Build and Push Docker Image
 on:
   release:
     types: [published]
+  push:
+    branches:
+      - master
+      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 env:
