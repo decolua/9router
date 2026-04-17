@@ -350,7 +350,7 @@ model = "${effectiveSubagentModel}"
               )}
 
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedApiKey || !selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={(cloudEnabled && !selectedApiKey) || !selectedModel} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!codexStatus.has9Router} loading={restoring}>

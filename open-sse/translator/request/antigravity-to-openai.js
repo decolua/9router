@@ -98,10 +98,17 @@ function normalizeSchemaTypes(schema) {
     result.type = result.type.toLowerCase();
   }
 
+  // Strip default values from properties — prevents model from auto-filling optional params
   if (result.properties) {
     const normalized = {};
     for (const [key, val] of Object.entries(result.properties)) {
-      normalized[key] = normalizeSchemaTypes(val);
+      if (val && typeof val === "object") {
+        const cleaned = { ...val };
+        delete cleaned.default;
+        normalized[key] = normalizeSchemaTypes(cleaned);
+      } else {
+        normalized[key] = normalizeSchemaTypes(val);
+      }
     }
     result.properties = normalized;
   }

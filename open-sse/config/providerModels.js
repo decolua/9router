@@ -8,6 +8,7 @@ import { buildTtsProviderModels } from "./ttsModels.js";
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
+    { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4-5-20251101", name: "Claude 4.5 Opus" },
@@ -152,6 +153,7 @@ export const PROVIDER_MODELS = {
   ],
 
   cl: [  // Cline
+    { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex" },
