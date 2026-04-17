@@ -90,6 +90,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = model;
+    // Tag the source client so Cursor executor can force Agent mode
+    // (Claude CLI → Cursor requires Agent mode to execute commands; Ask mode blocks it)
+    if (clientTool) {
+      translatedBody._sourceClient = clientTool;
+    }
   }
 
   const executor = getExecutor(provider);

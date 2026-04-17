@@ -5,6 +5,9 @@
  * Important: Cursor can loop when tool outputs are sent via protobuf tool_results
  * with partial schema mismatches. For stability, tool outputs are represented as
  * structured text blocks in user messages.
+ *
+ * Agent-mode enforcement: When the source client is Claude CLI, force Agent mode
+ * (not Ask mode) so Cursor executes commands instead of refusing with "cannot run it".
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
@@ -171,10 +174,19 @@ export function buildCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
   // Strip fields irrelevant to Cursor (OpenAI/Anthropic-specific)
   const { user, metadata, tool_choice, stream_options, system, ...rest } = body;
+
+  // Force Agent mode when source client is Claude CLI.
+  // Without this, Cursor treats the request as "Ask Mode" and refuses to run commands
+  // with "Cannot run it — this is currently unavailable in Ask Mode".
+  // Claude CLI sets user-agent to include "claude-cli", which we detect via body._sourceClient.
+  const isClaudeCLI = body._sourceClient === "claude";
+
   return {
     ...rest,
     messages,
-    max_tokens: 32000
+    max_tokens: 32000,
+    // When Claude CLI is the source, set _forceAgentMode so encodeRequest uses UNIFIED_MODE.AGENT
+    ...(isClaudeCLI ? { _forceAgentMode: true } : {})
   };
 }
 

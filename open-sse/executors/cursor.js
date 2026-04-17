@@ -132,7 +132,9 @@ export class CursorExecutor extends BaseExecutor {
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
-    return generateCursorBody(messages, model, tools, reasoningEffort);
+    // Force Agent mode when the source client is Claude CLI (Ask mode blocks command execution)
+    const forceAgentMode = body._forceAgentMode === true;
+    return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
   }
 
   async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
