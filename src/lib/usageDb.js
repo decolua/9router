@@ -2,53 +2,10 @@ import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import { EventEmitter } from "events";
 import path from "path";
-import os from "os";
 import fs from "fs";
-import { fileURLToPath } from "url";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
-
-// Get app name from root package.json config
-function getAppName() {
-  if (isCloud) return "9router"; // Skip file system access in Workers
-
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  // Look for root package.json (monorepo root)
-  const rootPkgPath = path.resolve(__dirname, "../../../package.json");
-  try {
-    const pkg = JSON.parse(fs.readFileSync(rootPkgPath, "utf-8"));
-    return pkg.config?.appName || "9router";
-  } catch {
-    return "9router";
-  }
-}
-
-// Get user data directory based on platform
-function getUserDataDir() {
-  if (isCloud) return "/tmp"; // Fallback for Workers
-
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-
-  try {
-    const platform = process.platform;
-    const homeDir = os.homedir();
-    const appName = getAppName();
-
-    if (platform === "win32") {
-      return path.join(process.env.APPDATA || path.join(homeDir, "AppData", "Roaming"), appName);
-    } else {
-      // macOS & Linux: ~/.{appName}
-      return path.join(homeDir, `.${appName}`);
-    }
-  } catch (error) {
-    console.error("[usageDb] Failed to get user data directory:", error.message);
-    // Fallback to cwd if homedir fails
-    return path.join(process.cwd(), ".9router");
-  }
-}
-
-// Data file path - stored in user home directory
-const DATA_DIR = getUserDataDir();
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
 

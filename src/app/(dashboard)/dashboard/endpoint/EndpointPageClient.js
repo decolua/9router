@@ -226,8 +226,30 @@ export default function APIPageClient({ machineId }) {
     setTunnelLoading(true);
     setTunnelStatus(null);
     setTunnelProgress("Creating tunnel...");
+
+    // Poll download progress while enable request is pending
+    let polling = true;
+    const pollProgress = async () => {
+      while (polling) {
+        try {
+          const r = await fetch("/api/tunnel/status");
+          if (r.ok) {
+            const s = await r.json();
+            if (s.download?.downloading) {
+              setTunnelProgress(`Downloading cloudflared... ${s.download.progress}%`);
+            } else if (polling) {
+              setTunnelProgress("Creating tunnel...");
+            }
+          }
+        } catch { /* ignore */ }
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    };
+    pollProgress();
+
     try {
       const res = await fetch("/api/tunnel/enable", { method: "POST" });
+      polling = false;
       const data = await res.json();
       if (!res.ok) {
         setTunnelStatus({ type: "error", message: data.error || "Failed to enable tunnel" });
@@ -246,6 +268,7 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       setTunnelStatus({ type: "error", message: error.message });
     } finally {
+      polling = false;
       setTunnelLoading(false);
       setTunnelProgress("");
     }

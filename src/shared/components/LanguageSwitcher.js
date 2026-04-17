@@ -54,11 +54,21 @@ const getLocaleInfo = (locale) => {
   return locales[locale] || { name: locale, flag: "🌐" };
 };
 
-export default function LanguageSwitcher({ className = "" }) {
+export default function LanguageSwitcher({ className = "", isOpen: controlledOpen, onClose, hideTrigger = false }) {
   const [locale, setLocale] = useState("en");
   const [isPending, setIsPending] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const modalRef = useRef(null);
+
+  const isControlled = typeof controlledOpen === "boolean";
+  const isOpen = isControlled ? controlledOpen : internalOpen;
+  const setIsOpen = (value) => {
+    if (isControlled) {
+      if (!value && onClose) onClose();
+    } else {
+      setInternalOpen(value);
+    }
+  };
 
   useEffect(() => {
     setLocale(getLocaleFromCookie());
@@ -102,16 +112,19 @@ export default function LanguageSwitcher({ className = "" }) {
   return (
     <div className={className}>
       {/* Trigger button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        disabled={isPending}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface/60 transition-colors"
-        title="Language"
-        data-i18n-skip="true"
-      >
-        <span className="text-xl">{getLocaleInfo(locale).flag}</span>
-        <span className="text-xs font-medium uppercase">{locale.split("-")[0]}</span>
-      </button>
+      {!hideTrigger && (
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          disabled={isPending}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-text-muted hover:text-text-main hover:bg-surface/60 transition-colors"
+          title="Language"
+          data-i18n-skip="true"
+        >
+          <span className="material-symbols-outlined text-[20px]">language</span>
+          <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
+          <span className="text-lg">{getLocaleInfo(locale).flag}</span>
+        </button>
+      )}
 
       {/* Portal modal - renders at document.body to avoid parent layout constraints */}
       {isOpen && createPortal(

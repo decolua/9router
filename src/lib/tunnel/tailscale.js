@@ -4,15 +4,16 @@ import os from "os";
 import { execSync, spawn } from "child_process";
 import { execWithPassword } from "@/mitm/dns/dnsConfig";
 import { saveTailscalePid, loadTailscalePid, clearTailscalePid } from "./state.js";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
-const BIN_DIR = path.join(os.homedir(), ".9router", "bin");
+const BIN_DIR = path.join(DATA_DIR, "bin");
 const IS_MAC = os.platform() === "darwin";
 const IS_LINUX = os.platform() === "linux";
 const IS_WINDOWS = os.platform() === "win32";
 const TAILSCALE_BIN = path.join(BIN_DIR, IS_WINDOWS ? "tailscale.exe" : "tailscale");
 
 // Custom socket for userspace-networking mode (no root required)
-const TAILSCALE_DIR = path.join(os.homedir(), ".9router", "tailscale");
+const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
@@ -281,7 +282,21 @@ async function installTailscaleWindows(log) {
 
 /** Start tailscaled with sudo (TUN mode required for Funnel) */
 export async function startDaemonWithPassword(sudoPassword) {
-  if (IS_WINDOWS) return;
+  if (IS_WINDOWS) {
+    // Windows: tailscale runs as a Windows Service, try to start it
+    try {
+      const bin = getTailscaleBin();
+      if (bin) {
+        execSync(`"${bin}" status --json`, { stdio: "ignore", windowsHide: true, timeout: 3000 });
+        return; // Already running
+      }
+    } catch { /* not running */ }
+    try {
+      execSync("net start Tailscale", { stdio: "ignore", windowsHide: true, timeout: 10000 });
+      await new Promise((r) => setTimeout(r, 3000));
+    } catch { /* may need admin, or already running */ }
+    return;
+  }
 
   // Check if daemon already responds
   try {
@@ -387,7 +402,7 @@ export function startLogin(hostname) {
       clearTimeout(timeout);
       const url = parseAuthUrl(output);
       if (url) resolve({ authUrl: url });
-      else if (isTailscaleLoggedIn()) resolve({ alreadyLoggedIn: true });
+      else if (code === 0 || isTailscaleLoggedIn()) resolve({ alreadyLoggedIn: true });
       else reject(new Error(`tailscale up exited with code ${code}`));
     });
   });

@@ -2,12 +2,13 @@ import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/er
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
- * Level 0: 1s, Level 1: 2s, Level 2: 4s... → max 2 min
+ * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
  * @param {number} backoffLevel - Current backoff level
  * @returns {number} Cooldown in milliseconds
  */
 export function getQuotaCooldown(backoffLevel = 0) {
-  const cooldown = BACKOFF_CONFIG.base * Math.pow(2, backoffLevel);
+  const level = Math.max(0, backoffLevel - 1);
+  const cooldown = BACKOFF_CONFIG.base * Math.pow(2, level);
   return Math.min(cooldown, BACKOFF_CONFIG.max);
 }
 
@@ -29,7 +30,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(backoffLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
@@ -38,7 +39,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     if (rule.status && rule.status === status) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(backoffLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }

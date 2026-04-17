@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.3.91",
+  "version": "0.3.96",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -21,6 +21,7 @@
     "http-proxy-middleware": "^3.0.5",
     "jose": "^6.1.3",
     "lowdb": "^7.0.1",
+    "marked": "^18.0.1",
     "monaco-editor": "^0.55.1",
     "next": "^16.1.6",
     "node-forge": "^1.3.3",

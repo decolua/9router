@@ -8,6 +8,7 @@ import { buildTtsProviderModels } from "./ttsModels.js";
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
+    { id: "claude-opus-4-7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4-5-20251101", name: "Claude 4.5 Opus" },
@@ -111,6 +112,8 @@ export const PROVIDER_MODELS = {
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
     { id: "deepseek-3.1", name: "DeepSeek 3.1", strip: ["image", "audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
   ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
@@ -152,6 +155,7 @@ export const PROVIDER_MODELS = {
   ],
 
   cl: [  // Cline
+    { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "openai/gpt-5.3-codex", name: "GPT-5.3 Codex" },
@@ -257,6 +261,25 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+  ],
+  blackbox: [
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "gpt-4o-mini", name: "GPT-4o mini" },
+    { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
+    { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+    { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Legacy)" },
+    { id: "claude-opus-4-6", name: "Claude Opus 4.6 (Legacy)" },
+    { id: "deepseek-chat", name: "DeepSeek Chat" },
+    { id: "deepseek-v3-671b", name: "DeepSeek V3 671B" },
+    { id: "deepseek-r1", name: "DeepSeek R1" },
+    { id: "o1", name: "OpenAI o1" },
+    { id: "o3-mini", name: "OpenAI o3-mini" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
+    { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus" },
+    { id: "qwen3-max", name: "Qwen3 Max" },
+    { id: "qwen3-vl-plus", name: "Qwen3 VL Plus" },
   ],
   "minimax-cn": [
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
