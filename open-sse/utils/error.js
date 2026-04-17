@@ -126,7 +126,11 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
  * @returns {string} Formatted error message
  */
 export function formatProviderError(error, provider, model, statusCode) {
-  const code = statusCode || error.code || 'FETCH_FAILED';
+  const code = statusCode || error.code || "FETCH_FAILED";
   const message = error.message || "Unknown error";
-  return `[${code}]: ${message}`;
+  // Expose low-level cause (e.g. UND_ERR_SOCKET, ECONNRESET, ETIMEDOUT) for diagnosing fetch failures
+  const causeCode = error.cause?.code;
+  const causeMsg = error.cause?.message;
+  const causeStr = causeCode || causeMsg ? ` (cause: ${[causeCode, causeMsg].filter(Boolean).join(": ")})` : "";
+  return `[${code}]: ${message}${causeStr}`;
 }
