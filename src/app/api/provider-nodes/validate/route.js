@@ -21,10 +21,21 @@ const isValidUrl = (url) => {
 };
 
 // Parse error details for user-friendly messages
-const getErrorMessage = (error) => {
-  if (error.cause?.code === "ECONNREFUSED") return "Connection refused - provider node offline or unreachable";
+const getErrorMessage = (error, baseUrl) => {
+  if (error.cause?.code === "ECONNREFUSED") {
+    // Check if user is trying to use localhost inside Docker
+    if (baseUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(baseUrl)) {
+      return "Connection refused — are you running 9router in Docker? localhost points to the container, not your host. Use your host IP (e.g. http://192.168.x.x:11434) or http://host.docker.internal:11434 on Linux/Mac.";
+    }
+    return "Connection refused - provider node offline or unreachable";
+  }
   if (error.cause?.code === "ENOTFOUND") return "DNS lookup failed - invalid domain or network issue";
-  if (error.cause?.code === "ETIMEDOUT") return "Connection timeout - provider node too slow";
+  if (error.cause?.code === "ETIMEDOUT") {
+    if (baseUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(baseUrl)) {
+      return "Connection timeout — are you running 9router in Docker? Use your host IP (e.g. http://192.168.x.x:11434) or http://host.docker.internal:11434 on Linux/Mac.";
+    }
+    return "Connection timeout - provider node too slow";
+  }
   if (error.message.includes("timeout")) return "Request timeout (>10s) - provider node not responding";
   if (error.cause?.code === "CERT_HAS_EXPIRED") return "SSL certificate expired";
   if (error.cause?.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") return "SSL certificate verification failed";
@@ -156,16 +167,16 @@ export async function POST(request) {
 
     return NextResponse.json({ valid: false, error: getModelsErrorMessage(res.status) });
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
+    const errorMessage = getErrorMessage(error, baseUrl);
     console.error("Error validating provider node:", {
       message: error.message,
       cause: error.cause,
       code: error.cause?.code,
       userMessage: errorMessage
     });
-    return NextResponse.json({ 
+    return NextResponse.json({
       valid: false,
-      error: errorMessage 
+      error: errorMessage
     }, { status: 500 });
   }
 }
