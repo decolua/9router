@@ -64,7 +64,7 @@ function stripContentTypes(body, stripList = []) {
   };
   for (const msg of body.messages) {
     if (!Array.isArray(msg.content)) continue;
-    msg.content = msg.content.filter(part => !shouldStrip(part.type));
+    msg.content = msg.content.filter(part => part && !shouldStrip(part.type));
     if (msg.content.length === 0) msg.content = "";
   }
 }
