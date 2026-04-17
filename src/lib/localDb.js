@@ -125,8 +125,8 @@ class LocalMutex {
       return () => this._release();
     }
     return new Promise((resolve) => {
-      this._queue.push(resolve);
-    }).then(() => () => this._release());
+      this._queue.push(() => resolve(() => this._release()));
+    });
   }
 
   _release() {
