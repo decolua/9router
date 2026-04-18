@@ -120,6 +120,7 @@ export async function POST(request) {
     // Merge new env with existing settings
     const newSettings = {
       ...currentSettings,
+      hasCompletedOnboarding: true,
       env: {
         ...(currentSettings.env || {}),
         ...env,

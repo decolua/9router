@@ -1,3 +1,48 @@
+# v0.3.96 (2026-04-17)
+
+## Features
+- Add marked package for Markdown rendering
+- Enhance changelog styles
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb structure
+- Update Qwen executor for OAuth handling
+- Enhance error formatting to include low-level cause details
+- Refactor HeaderMenu to use MenuItem component
+- Improve LanguageSwitcher to support controlled open state
+- Update backoff configuration and improve CLI detection messages
+- Add installation guides for manual configuration in tool cards (Droid, Claude, OpenClaw)
+
+## Fixes
+- Fix Codex image URL fetches to await before sending upstream (#575)
+- Strip thinking/reasoning_effort for GitHub Copilot chat completions (#623)
+- Enable Codex Apply/Reset buttons when CLI is installed (#591)
+- Show manual config option when Claude CLI detection fails (#589)
+- Show manual config option when OpenClaw detection fails (#579)
+- Ensure LocalMutex acquire returns release callback correctly (#569)
+- Strip enumDescriptions from tool schema in antigravity-to-openai (#566)
+- Strip temperature parameter for gpt-5.4 model (#536)
+- Add Blackbox AI as a supported provider (#599)
+- Add multi-model support for Factory Droid CLI tool (#521)
+- Add GLM-5 and MiniMax-M2.5 models to Kiro provider (#580)
+- Fix usage tracking bug
+
+# v0.3.91 (2026-04-15)
+
+## Features
+- Add Kiro AWS Identity Center device flow for provider OAuth
+- Add TTS (Text-to-Speech) core handler and TTS models config
+- Add media providers dashboard page
+- Add suggested models API endpoint
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb and usageDb for cleaner structure
+
+## Fixes
+- Fix usage tracking bug
+
 # v0.3.90 (2026-04-14)
 
 ## Features

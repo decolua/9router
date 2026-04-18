@@ -4,15 +4,15 @@ import https from "https";
 import os from "os";
 import { execSync, spawn } from "child_process";
 import { savePid, loadPid, clearPid } from "./state.js";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
-const BIN_DIR = path.join(os.homedir(), ".9router", "bin");
+const BIN_DIR = path.join(DATA_DIR, "bin");
 const BINARY_NAME = "cloudflared";
 const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
 
-const CLOUDFLARED_VERSION = "2026.3.0";
-const GITHUB_BASE_URL = `https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}`;
+const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
 
 const PLATFORM_MAPPINGS = {
   darwin: {
@@ -21,12 +21,20 @@ const PLATFORM_MAPPINGS = {
   },
   win32: {
     x64: "cloudflared-windows-amd64.exe",
-    x32: "cloudflared-windows-386.exe"
+    ia32: "cloudflared-windows-386.exe",
+    arm64: "cloudflared-windows-386.exe"
   },
   linux: {
     x64: "cloudflared-linux-amd64",
     arm64: "cloudflared-linux-arm64"
   }
+};
+
+// Fallback order: prefer smallest/most-compatible binary per platform
+const PLATFORM_FALLBACK = {
+  darwin: "cloudflared-darwin-amd64.tgz",
+  win32: "cloudflared-windows-386.exe",
+  linux: "cloudflared-linux-amd64"
 };
 
 function getDownloadUrl() {
@@ -38,12 +46,15 @@ function getDownloadUrl() {
     throw new Error(`Unsupported platform: ${platform}`);
   }
 
-  const binaryName = platformMapping[arch];
-  if (!binaryName) {
-    throw new Error(`Unsupported architecture: ${arch} for platform ${platform}`);
-  }
-
+  const binaryName = platformMapping[arch] || PLATFORM_FALLBACK[platform];
   return `${GITHUB_BASE_URL}/${binaryName}`;
+}
+
+// Download state — shared so status API can read it
+const dlState = { downloading: false, progress: 0 };
+
+export function getDownloadStatus() {
+  return { downloading: dlState.downloading, progress: dlState.progress };
 }
 
 function downloadFile(url, dest) {
@@ -51,7 +62,7 @@ function downloadFile(url, dest) {
     const file = fs.createWriteStream(dest);
 
     https.get(url, (response) => {
-      if ([301, 302].includes(response.statusCode)) {
+      if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
         file.close();
         fs.unlinkSync(dest);
         downloadFile(response.headers.location, dest).then(resolve).catch(reject);
@@ -65,18 +76,34 @@ function downloadFile(url, dest) {
         return;
       }
 
+      const totalBytes = parseInt(response.headers["content-length"], 10) || 0;
+      let receivedBytes = 0;
+      dlState.downloading = true;
+      dlState.progress = 0;
+
+      response.on("data", (chunk) => {
+        receivedBytes += chunk.length;
+        if (totalBytes > 0) dlState.progress = Math.round((receivedBytes / totalBytes) * 100);
+      });
+
       response.pipe(file);
 
       file.on("finish", () => {
+        dlState.downloading = false;
+        dlState.progress = 100;
         file.close(() => resolve(dest));
       });
 
       file.on("error", (err) => {
+        dlState.downloading = false;
+        dlState.progress = 0;
         file.close();
         fs.unlinkSync(dest);
         reject(err);
       });
     }).on("error", (err) => {
+      dlState.downloading = false;
+      dlState.progress = 0;
       file.close();
       if (fs.existsSync(dest)) fs.unlinkSync(dest);
       reject(err);
@@ -84,27 +111,66 @@ function downloadFile(url, dest) {
   });
 }
 
+const MIN_BINARY_SIZE = 1024 * 1024; // 1MB - cloudflared is ~30MB+
+
+// Validate binary is executable on current platform and not truncated
+function isValidBinary(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size < MIN_BINARY_SIZE) return false;
+    const fd = fs.openSync(filePath, "r");
+    const buf = Buffer.alloc(4);
+    fs.readSync(fd, buf, 0, 4, 0);
+    fs.closeSync(fd);
+    const magic = buf.toString("hex");
+    if (IS_WINDOWS) return magic.startsWith("4d5a"); // PE (MZ)
+    if (os.platform() === "darwin") return magic.startsWith("cffaedfe") || magic.startsWith("cefaedfe");
+    return magic.startsWith("7f454c46"); // ELF (Linux)
+  } catch {
+    return false;
+  }
+}
+
+let downloadPromise = null;
+
 export async function ensureCloudflared() {
+  if (downloadPromise) return downloadPromise;
+  downloadPromise = _ensureCloudflared().finally(() => { downloadPromise = null; });
+  return downloadPromise;
+}
+
+async function _ensureCloudflared() {
   if (!fs.existsSync(BIN_DIR)) {
     fs.mkdirSync(BIN_DIR, { recursive: true });
   }
 
+  // Clean up incomplete downloads from previous runs
+  const tmpPath = `${BIN_PATH}.tmp`;
+  if (fs.existsSync(tmpPath)) {
+    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+  }
+
   if (fs.existsSync(BIN_PATH)) {
-    if (!IS_WINDOWS) {
-      fs.chmodSync(BIN_PATH, "755");
+    if (!isValidBinary(BIN_PATH)) {
+      console.log("[cloudflared] Invalid binary detected, re-downloading...");
+      fs.unlinkSync(BIN_PATH);
+    } else {
+      if (!IS_WINDOWS) fs.chmodSync(BIN_PATH, "755");
+      return BIN_PATH;
     }
-    return BIN_PATH;
   }
 
   const url = getDownloadUrl();
   const isArchive = url.endsWith(".tgz");
-  const downloadDest = isArchive ? path.join(BIN_DIR, "cloudflared.tgz") : BIN_PATH;
+  const downloadDest = isArchive ? path.join(BIN_DIR, "cloudflared.tgz.tmp") : tmpPath;
 
   await downloadFile(url, downloadDest);
 
   if (isArchive) {
     execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: "pipe", windowsHide: true });
     fs.unlinkSync(downloadDest);
+  } else {
+    fs.renameSync(downloadDest, BIN_PATH);
   }
 
   if (!IS_WINDOWS) {

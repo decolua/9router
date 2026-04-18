@@ -204,6 +204,24 @@ export async function POST(request) {
           break;
         }
 
+        case "blackbox": {
+          const res = await fetch("https://api.blackbox.ai/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-4o",
+              messages: [{ role: "user", content: "test" }],
+              max_tokens: 10,
+            }),
+          });
+          // Returns 401 for invalid key, 200 for valid, 400 for malformed
+          isValid = res.status === 200 || res.status === 400;
+          break;
+        }
+
         case "vertex": {
           // Raw key: probe global endpoint (always 404 for unknown model, never 401)
           // SA JSON: attempt token mint via JWT assertion
