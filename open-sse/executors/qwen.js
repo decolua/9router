@@ -87,7 +87,10 @@ export class QwenExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     let next = body && typeof body === "object" ? { ...body } : body;
-    if (stream && next?.messages && !next.stream_options) {
+    if (stream === false) {
+      // Non-streaming: strip stream_options entirely (Qwen requires it only when streaming)
+      delete next.stream_options;
+    } else if (stream && next?.messages && !next.stream_options) {
       next.stream_options = { include_usage: true };
     }
     next = sanitizeQwenThinkingToolChoice(next);
