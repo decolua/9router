@@ -171,8 +171,8 @@ export const OAUTH_ENDPOINTS = {
     auth: "https://api.anthropic.com/v1/oauth/authorize"
   },
   qwen: {
-    token: "https://chat.qwen.ai/api/v1/oauth2/token",
-    auth: "https://chat.qwen.ai/api/v1/oauth2/device/code"
+    token: "https://qwen.ai/api/v1/oauth2/token",
+    auth: "https://qwen.ai/api/v1/oauth2/device/code"
   },
   iflow: {
     token: "https://iflow.cn/oauth/token",
