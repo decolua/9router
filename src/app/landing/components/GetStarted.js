@@ -1,11 +1,25 @@
 "use client";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useState } from "react";
 
 export default function GetStarted() {
-  const { copied, copy } = useCopyToClipboard();
+  const [copied, setCopied] = useState(false);
 
   const handleCopy = (text) => {
-    copy(text, "landing");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else {
+      // Fallback for SSR/non-HTTPS
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -66,7 +80,7 @@ export default function GetStarted() {
                   <span className="text-green-400">$</span>
                   <span className="text-white">npx 9router</span>
                   <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
-                    {copied === "landing" ? "✓ Copied" : "Copy"}
+                    {copied ? "✓ Copied" : "Copy"}
                   </span>
                 </div>
                 
