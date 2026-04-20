@@ -114,7 +114,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    let providerSpecificData = null;
+    let providerSpecificData = body.providerSpecificData || null;
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
