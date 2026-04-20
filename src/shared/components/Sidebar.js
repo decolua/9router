@@ -105,7 +105,7 @@ export default function Sidebar({ onClose }) {
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                npm install -g 8router@latest
               </code>
             </div>
           )}

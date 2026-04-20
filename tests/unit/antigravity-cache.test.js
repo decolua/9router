@@ -6,7 +6,7 @@
  *  2. Different sessionId (same account) → cache miss
  *  3. Cross-account cache share? (call A warmup → B same prompt/session, check hit)
  *
- * Reads real OAuth refreshToken from ~/.9router/db.json.
+ * Reads real OAuth refreshToken from ~/.8router/db.json.
  * Enable with: AG_CACHE_TEST=1 npm test
  */
 
@@ -19,7 +19,7 @@ import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../../open-sse/config/appConstants.js";
 
 const ENABLE = process.env.AG_CACHE_TEST === "1";
-const DB_PATH = path.join(os.homedir(), ".9router", "db.json");
+const DB_PATH = path.join(os.homedir(), ".8router", "db.json");
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const MIN_CACHE_TOKENS = 100; // AG implicit cache threshold observed ~1024-2048
 const LONG_TEXT = ("You are a careful assistant. Always follow these rules. ".repeat(300)).trim();

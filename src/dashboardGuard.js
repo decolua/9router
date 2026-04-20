@@ -3,7 +3,7 @@ import { jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "8router-default-secret-change-me"
 );
 
 // Always require JWT token regardless of requireLogin setting

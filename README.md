@@ -1,24 +1,24 @@
 <div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="./images/8router.png?1" alt="8Router Dashboard" width="800"/>
   
-  # 9Router - Free AI Router
+  # 8Router - Free AI Router
   
   **Never stop coding. Auto-route to FREE & cheap AI models with smart fallback.**
   
   **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/8router.svg)](https://www.npmjs.com/package/8router)
+  [![Downloads](https://img.shields.io/npm/dm/8router.svg)](https://www.npmjs.com/package/8router)
+  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/decolua/8router/blob/main/LICENSE)
   
-  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://8router.com)
 
   [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md)
 </div>
 
 ---
 
-## 🤔 Why 9Router?
+## 🤔 Why 8Router?
 
 **Stop wasting money and hitting limits:**
 
@@ -27,7 +27,7 @@
 - ❌ Expensive APIs ($20-50/month per provider)
 - ❌ Manual switching between providers
 
-**9Router solves this:**
+**8Router solves this:**
 
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
@@ -46,7 +46,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────┐
-│           9Router (Smart Router)        │
+│           8Router (Smart Router)        │
 │  • Format translation (OpenAI ↔ Claude) │
 │  • Quota tracking                       │
 │  • Auto token refresh                   │
@@ -68,8 +68,8 @@ Result: Never stop coding, minimal cost
 **1. Install globally:**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g 8router
+8router
 ```
 
 🎉 Dashboard opens at `http://localhost:20128`
@@ -91,7 +91,7 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline Settings:
 
 **Alternative: run from source (this repository):**
 
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
+This repository package is private (`8router-app`), so source/Docker execution is the expected local development path.
 
 ```bash
 cp .env.example .env
@@ -116,12 +116,12 @@ Default URLs:
 
 <div align="center">
   
-### 📺 Complete Setup Guide - 9Router + Claude Code FREE
+### 📺 Complete Setup Guide - 8Router + Claude Code FREE
   
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![8Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 Watch the complete step-by-step tutorial:**
-- ✅ 9Router installation & setup
+- ✅ 8Router installation & setup
 - ✅ FREE Claude Sonnet 4.5 configuration
 - ✅ Claude Code integration
 - ✅ Live coding demonstration
@@ -136,7 +136,7 @@ Default URLs:
 
 ## 🛠️ Supported CLI Tools
 
-9Router works seamlessly with all major AI coding tools:
+8Router works seamlessly with all major AI coding tools:
 
 <div align="center">
   <table>
@@ -387,7 +387,7 @@ Combo: "my-coding-stack"
 
 Seamless translation between formats:
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- Your CLI tool sends OpenAI format → 9Router translates → Provider receives native format
+- Your CLI tool sends OpenAI format → 8Router translates → Provider receives native format
 - Works with any tool that supports custom OpenAI endpoints
 
 ### 👥 Multi-Account Support
@@ -441,13 +441,13 @@ Seamless translation between formats:
 > **💡 IMPORTANT - Understanding Dashboard Costs:**
 > 
 > The "cost" displayed in Usage Analytics is **for tracking and comparison purposes only**. 
-> 9Router itself **never charges** you anything. You only pay providers directly (if using paid services).
+> 8Router itself **never charges** you anything. You only pay providers directly (if using paid services).
 > 
 > **Example:** If your dashboard shows "$290 total cost" while using iFlow models, this represents 
 > what you would have paid using paid APIs directly. Your actual cost = **$0** (iFlow is free unlimited).
 > 
 > Think of it as a "savings tracker" showing how much you're saving by using free models or 
-> routing through 9Router!
+> routing through 8Router!
 
 ### 🌐 Deploy Anywhere
 
@@ -479,15 +479,15 @@ Seamless translation between formats:
 
 ---
 
-### 📊 Understanding 9Router Costs & Billing
+### 📊 Understanding 8Router Costs & Billing
 
-**9Router Billing Reality:**
+**8Router Billing Reality:**
 
-✅ **9Router software = FREE forever** (open source, never charges)  
+✅ **8Router software = FREE forever** (open source, never charges)  
 ✅ **Dashboard "costs" = Display/tracking only** (not actual bills)  
 ✅ **You pay providers directly** (subscriptions or API fees)  
 ✅ **FREE providers stay FREE** (iFlow, Kiro, Qwen = $0 unlimited)  
-❌ **9Router never sends invoices** or charges your card
+❌ **8Router never sends invoices** or charges your card
 
 **How Cost Display Works:**
 
@@ -508,9 +508,9 @@ Reality Check:
 
 **Payment Rules:**
 - **Subscription providers** (Claude Code, Codex): Pay them directly via their websites
-- **Cheap providers** (GLM, MiniMax): Pay them directly, 9Router just routes
+- **Cheap providers** (GLM, MiniMax): Pay them directly, 8Router just routes
 - **FREE providers** (iFlow, Kiro, Qwen): Genuinely free forever, no hidden charges
-- **9Router**: Never charges anything, ever
+- **8Router**: Never charges anything, ever
 
 ---
 
@@ -585,7 +585,7 @@ Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 Why does my dashboard show high costs?</b></summary>
 
-The dashboard tracks your token usage and displays **estimated costs** as if you were using paid APIs directly. This is **not actual billing** - it's a reference to show how much you're saving by using free models or existing subscriptions through 9Router.
+The dashboard tracks your token usage and displays **estimated costs** as if you were using paid APIs directly. This is **not actual billing** - it's a reference to show how much you're saving by using free models or existing subscriptions through 8Router.
 
 **Example:**
 - **Dashboard shows:** "$290 total cost"
@@ -598,16 +598,16 @@ The cost display is a "savings tracker" to help you understand your usage patter
 </details>
 
 <details>
-<summary><b>💳 Will I be charged by 9Router?</b></summary>
+<summary><b>💳 Will I be charged by 8Router?</b></summary>
 
-**No.** 9Router is free, open-source software that runs on your own computer. It never charges you anything.
+**No.** 8Router is free, open-source software that runs on your own computer. It never charges you anything.
 
 **You only pay:**
 - ✅ **Subscription providers** (Claude Code $20/mo, Codex $20-200/mo) → Pay them directly on their websites
-- ✅ **Cheap providers** (GLM, MiniMax) → Pay them directly, 9Router just routes your requests
-- ❌ **9Router itself** → **Never charges anything, ever**
+- ✅ **Cheap providers** (GLM, MiniMax) → Pay them directly, 8Router just routes your requests
+- ❌ **8Router itself** → **Never charges anything, ever**
 
-9Router is a local proxy/router. It doesn't have your credit card, can't send invoices, and has no billing system. It's completely free software.
+8Router is a local proxy/router. It doesn't have your credit card, can't send invoices, and has no billing system. It's completely free software.
 
 </details>
 
@@ -621,9 +621,9 @@ These are free services offered by those respective companies:
 - **Kiro**: Free unlimited Claude models via AWS Builder ID  
 - **Qwen**: Free unlimited access to Qwen models via device auth
 
-9Router just routes your requests to them - there's no "catch" or future billing. They're truly free services, and 9Router makes them easy to use with fallback support.
+8Router just routes your requests to them - there's no "catch" or future billing. They're truly free services, and 8Router makes them easy to use with fallback support.
 
-**Note:** Some subscription providers (Antigravity, GitHub Copilot) may have free preview periods that could become paid later, but this would be clearly announced by those providers, not 9Router.
+**Note:** Some subscription providers (Antigravity, GitHub Copilot) may have free preview periods that could become paid later, but this would be clearly announced by those providers, not 8Router.
 
 </details>
 
@@ -648,7 +648,7 @@ These are free services offered by those respective companies:
 
 3. **Use subscription providers last:**
    - Only if you already have them
-   - 9Router helps maximize their value through quota tracking
+   - 8Router helps maximize their value through quota tracking
 
 **Result:** Most users can operate at $0/month using only free tiers!
 
@@ -657,20 +657,20 @@ These are free services offered by those respective companies:
 <details>
 <summary><b>📈 What if my usage suddenly spikes?</b></summary>
 
-9Router's smart fallback prevents surprise charges:
+8Router's smart fallback prevents surprise charges:
 
 **Scenario:** You're on a coding sprint and blow through your quotas
 
-**Without 9Router:**
+**Without 8Router:**
 - ❌ Hit rate limit → Work stops → Frustration
 - ❌ Or: Accidentally rack up huge API bills
 
-**With 9Router:**
+**With 8Router:**
 - ✅ Subscription hits limit → Auto-fallback to cheap tier
 - ✅ Cheap tier gets expensive → Auto-fallback to free tier
 - ✅ Never stop coding → Predictable costs
 
-**You're in control:** Set spending limits per provider in dashboard, and 9Router respects them.
+**You're in control:** Set spending limits per provider in dashboard, and 8Router respects them.
 
 </details>
 
@@ -694,7 +694,7 @@ Models:
   cc/claude-haiku-4-5-20251001
 ```
 
-**Pro Tip:** Use Opus for complex tasks, Sonnet for speed. 9Router tracks quota per model!
+**Pro Tip:** Use Opus for complex tasks, Sonnet for speed. 8Router tracks quota per model!
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -863,7 +863,7 @@ Cost: $0 forever!
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from 8router dashboard]
   Model: cc/claude-opus-4-6
 ```
 
@@ -876,7 +876,7 @@ Edit `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-8router-api-key"
 }
 ```
 
@@ -884,7 +884,7 @@ Edit `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-8router-api-key"
 
 codex "your prompt"
 ```
@@ -904,15 +904,15 @@ Dashboard → CLI Tools → OpenClaw → Select Model → Apply
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/if/glm-4.7"
+        "primary": "8router/if/glm-4.7"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "8router": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_8router",
         "api": "openai-completions",
         "models": [
           {
@@ -926,7 +926,7 @@ Dashboard → CLI Tools → OpenClaw → Select Model → Apply
 }
 ```
 
-> **Note:** OpenClaw only works with local 9Router. Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
+> **Note:** OpenClaw only works with local 8Router. Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
 
 ### Cline / Continue / RooCode
 
@@ -946,20 +946,20 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/9router.git
-cd 9router
+git clone https://github.com/decolua/8router.git
+cd 8router
 npm install
 npm run build
 
 # Configure
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/8router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export NEXT_PUBLIC_CLOUD_URL="https://8router.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -968,7 +968,7 @@ npm run start
 
 # Or use PM2
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name 8router -- start
 pm2 save
 pm2 startup
 ```
@@ -977,28 +977,28 @@ pm2 startup
 
 ```bash
 # Build image (from repository root)
-docker build -t 9router .
+docker build -t 8router .
 
 # Run container (command used in current setup)
 docker run -d \
-  --name 9router \
+  --name 8router \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --env-file /root/dev/8router/.env \
+  -v 8router-data:/app/data \
+  -v 8router-usage:/root/.8router \
+  8router
 ```
 
 Portable command (if you are already at repository root):
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name 8router \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v 8router-data:/app/data \
+  -v 8router-usage:/root/.8router \
+  8router
 ```
 
 Container defaults:
@@ -1008,25 +1008,25 @@ Container defaults:
 Useful commands:
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f 8router
+docker restart 8router
+docker stop 8router && docker rm 8router
 ```
 
 ### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
+| `JWT_SECRET` | `8router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
 | `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
+| `DATA_DIR` | `~/.8router` | Main app database location (`db.json`) |
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
 | `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
-| `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
+| `CLOUD_URL` | `https://8router.com` | Server-side cloud sync endpoint base URL |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://8router.com` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
 | `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
@@ -1043,9 +1043,9 @@ Notes:
 ### Runtime Files and Storage
 
 - Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
-- Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
+- Usage history and logs: `~/.8router/usage.json` and `~/.8router/log.txt`, managed by `src/lib/usageDb.js`.
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
-- Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
+- Usage storage currently follows `~/.8router` path logic and is independent from `DATA_DIR`.
 
 </details>
 
@@ -1107,7 +1107,7 @@ Notes:
 - Add combo: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth token expired**
-- Auto-refreshed by 9Router
+- Auto-refreshed by 8Router
 - If issues persist: Dashboard → Provider → Reconnect
 
 **High costs**
@@ -1167,29 +1167,29 @@ Authorization: Bearer your-api-key
 
 ## 📧 Support
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Website**: [8router.com](https://8router.com)
+- **GitHub**: [github.com/decolua/8router](https://github.com/decolua/8router)
+- **Issues**: [github.com/decolua/8router/issues](https://github.com/decolua/8router/issues)
 
 ---
 
 ## 👥 Contributors
 
-Thanks to all contributors who helped make 9Router better!
+Thanks to all contributors who helped make 8Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/8router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/8router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/decolua/8router.svg?variant=adaptive)](https://starchart.cc/decolua/8router)
 
 
 
 ## 🔀 Forks
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 8Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
 
 ---
 

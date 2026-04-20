@@ -1,6 +1,6 @@
-# 9Router Cloud Worker
+# 8Router Cloud Worker
 
-Deploy your own Cloudflare Worker to access 9Router from anywhere.
+Deploy your own Cloudflare Worker to access 8Router from anywhere.
 
 ## Setup
 
@@ -22,4 +22,4 @@ wrangler d1 execute proxy-db --remote --file=./migrations/0001_init.sql
 npm run deploy
 ```
 
-Copy your Worker URL → 9Router Dashboard → **Endpoint** → **Setup Cloud** → paste → **Save** → **Enable Cloud**.
+Copy your Worker URL → 8Router Dashboard → **Endpoint** → **Setup Cloud** → paste → **Save** → **Enable Cloud**.

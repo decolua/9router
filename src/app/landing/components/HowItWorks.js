@@ -5,7 +5,7 @@ export default function HowItWorks() {
     <section className="py-24 border-y border-[#3a2f27] bg-[#23180f]/30" id="how-it-works">
       <div className="max-w-7xl mx-auto px-6">
         <div className="mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4">How 9Router Works</h2>
+          <h2 className="text-3xl md:text-4xl font-bold mb-4">How 8Router Works</h2>
           <p className="text-gray-400 max-w-xl text-lg">
             Data flows seamlessly from your application through our intelligent routing layer to the best provider for the job.
           </p>
@@ -28,13 +28,13 @@ export default function HowItWorks() {
             </div>
           </div>
 
-          {/* Step 2: 9Router Hub */}
+          {/* Step 2: 8Router Hub */}
           <div className="flex flex-col gap-6 relative group md:items-center md:text-center">
             <div className="w-24 h-24 rounded-2xl bg-[#181411] border-2 border-[#f97815] flex items-center justify-center shadow-[0_0_30px_rgba(249,120,21,0.2)] z-10 mx-auto">
               <span className="material-symbols-outlined text-4xl text-[#f97815] animate-pulse">hub</span>
             </div>
             <div>
-              <h3 className="text-xl font-bold mb-2 text-[#f97815]">2. 9Router Hub</h3>
+              <h3 className="text-xl font-bold mb-2 text-[#f97815]">2. 8Router Hub</h3>
               <p className="text-sm text-gray-400">
                 Our engine analyzes the prompt, checks provider health, and routes for lowest latency or cost.
               </p>

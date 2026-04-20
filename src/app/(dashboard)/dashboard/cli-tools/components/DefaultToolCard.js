@@ -17,7 +17,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   const replaceVars = (text) => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "your-api-key");
+      : (!cloudEnabled ? "sk_8router" : "your-api-key");
     
     // Add /v1 suffix only if not already present (DRY - avoid duplicate)
     const normalizedBaseUrl = baseUrl || "http://localhost:20128";
@@ -68,7 +68,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           </>
         ) : (
           <span className="text-sm text-text-muted">
-            {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router"}
+            {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_8router"}
           </span>
         )}
       </div>

@@ -1,9 +1,9 @@
 {
-  "name": "9router-tests",
+  "name": "8router-tests",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Unit tests for 9router embeddings endpoint",
+  "description": "Unit tests for 8router embeddings endpoint",
   "scripts": {
     "test": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose",
     "test:watch": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest --reporter=verbose"

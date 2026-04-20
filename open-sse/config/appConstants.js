@@ -188,7 +188,7 @@ export const OAUTH_ENDPOINTS = {
 // Generate Kimi OAuth custom headers
 export function buildKimiHeaders() {
   return {
-    "X-Msh-Platform": "9router",
+    "X-Msh-Platform": "8router",
     "X-Msh-Version": "2.1.2",
     "X-Msh-Device-Model": typeof process !== "undefined" ? `${process.platform} ${process.arch}` : "unknown",
     "X-Msh-Device-Id": `kimi-${Date.now()}`

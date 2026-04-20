@@ -94,10 +94,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     setApplying(true);
     setMessage(null);
     try {
-      // Use sk_9router for localhost if no key, otherwise use selected key
+      // Use sk_8router for localhost if no key, otherwise use selected key
       const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
         ? selectedApiKey 
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_8router" : selectedApiKey);
       
       const res = await fetch("/api/cli-tools/codex-settings", {
         method: "POST",
@@ -156,16 +156,16 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
       ? selectedApiKey 
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_8router" : "<API_KEY_FROM_DASHBOARD>");
     
     const effectiveSubagentModel = subagentModel || selectedModel;
     
-    const configContent = `# 9Router Configuration for Codex CLI
+    const configContent = `# 8Router Configuration for Codex CLI
 model = "${selectedModel}"
-model_provider = "9router"
+model_provider = "8router"
 
-[model_providers.9router]
-name = "9Router"
+[model_providers.8router]
+name = "8Router"
 base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
@@ -225,7 +225,7 @@ model = "${effectiveSubagentModel}"
                   <span className="material-symbols-outlined text-yellow-500">warning</span>
                   <div className="flex-1">
                     <p className="font-medium text-yellow-600 dark:text-yellow-400">Codex CLI not detected locally</p>
-                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if 8router is deployed on a remote server.</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">
@@ -306,7 +306,7 @@ model = "${effectiveSubagentModel}"
                     </select>
                   ) : (
                     <span className="flex-1 text-xs text-text-muted px-2 py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
+                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_8router (default)"}
                     </span>
                   )}
                 </div>

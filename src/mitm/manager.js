@@ -61,7 +61,7 @@ function resolveServerPath() {
 
 const SERVER_PATH = resolveServerPath();
 const ENCRYPT_ALGO = "aes-256-gcm";
-const ENCRYPT_SALT = "9router-mitm-pwd";
+const ENCRYPT_SALT = "8router-mitm-pwd";
 
 function getProcessUsingPort443() {
   try {

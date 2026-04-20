@@ -1,24 +1,24 @@
 <div align="center">
-  <img src="../images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="../images/8router.png?1" alt="8Router Dashboard" width="800"/>
 
-  # 9Router - 無料 AI ルーター
+  # 8Router - 無料 AI ルーター
 
   **コーディングを止めない。スマートフォールバックで無料＆格安AIモデルに自動ルーティング。**
 
   **すべてのAIコーディングツール（Claude Code、Cursor、Antigravity、Copilot、Codex、Gemini、OpenCode、Cline、OpenClaw...）を40以上のAIプロバイダーと100以上のモデルに接続。**
 
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/8router.svg)](https://www.npmjs.com/package/8router)
+  [![Downloads](https://img.shields.io/npm/dm/8router.svg)](https://www.npmjs.com/package/8router)
+  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/decolua/8router/blob/main/LICENSE)
 
-  [🚀 クイックスタート](#-クイックスタート) • [💡 機能](#-主な機能) • [📖 セットアップ](#-セットアップガイド) • [🌐 ウェブサイト](https://9router.com)
+  [🚀 クイックスタート](#-クイックスタート) • [💡 機能](#-主な機能) • [📖 セットアップ](#-セットアップガイド) • [🌐 ウェブサイト](https://8router.com)
 
   [🇻🇳 Tiếng Việt](./README.vi.md) • [🇨🇳 中文](./README.zh-CN.md) • [🇯🇵 日本語](./README.ja-JP.md)
 </div>
 
 ---
 
-## 🤔 なぜ9Router？
+## 🤔 なぜ8Router？
 
 **お金の無駄遣いと制限に悩まされるのはもう終わりです：**
 
@@ -27,7 +27,7 @@
 - ❌ 高額なAPI（プロバイダーごとに月額$20〜50）
 - ❌ プロバイダー間の手動切り替え
 
-**9Routerが解決します：**
+**8Routerが解決します：**
 
 - ✅ **サブスクリプションを最大化** - クオータを追跡し、リセット前にすべて使い切る
 - ✅ **自動フォールバック** - サブスクリプション → 格安 → 無料、ダウンタイムゼロ
@@ -46,7 +46,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────┐
-│        9Router（スマートルーター）        │
+│        8Router（スマートルーター）        │
 │  • フォーマット変換（OpenAI ↔ Claude）   │
 │  • クオータ追跡                          │
 │  • 自動トークンリフレッシュ               │
@@ -68,8 +68,8 @@
 **1. グローバルインストール：**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g 8router
+8router
 ```
 
 🎉 ダッシュボードが `http://localhost:20128` で開きます
@@ -91,7 +91,7 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Clineの設定:
 
 **代替方法: ソースから実行（このリポジトリ）：**
 
-このリポジトリパッケージはプライベート（`9router-app`）のため、ソース/Docker実行がローカル開発の想定パスです。
+このリポジトリパッケージはプライベート（`8router-app`）のため、ソース/Docker実行がローカル開発の想定パスです。
 
 ```bash
 cp .env.example .env
@@ -116,12 +116,12 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 <div align="center">
 
-### 📺 完全セットアップガイド - 9Router + Claude Code 無料
+### 📺 完全セットアップガイド - 8Router + Claude Code 無料
 
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![8Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 ステップバイステップのチュートリアルを視聴：**
-- ✅ 9Routerのインストールとセットアップ
+- ✅ 8Routerのインストールとセットアップ
 - ✅ 無料Claude Sonnet 4.5の設定
 - ✅ Claude Codeとの統合
 - ✅ ライブコーディングデモ
@@ -136,7 +136,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ## 🛠️ 対応CLIツール
 
-9Routerはすべての主要AIコーディングツールとシームレスに連携します：
+8Routerはすべての主要AIコーディングツールとシームレスに連携します：
 
 <div align="center">
   <table>
@@ -387,7 +387,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 フォーマット間のシームレスな変換：
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- CLIツールがOpenAIフォーマットで送信 → 9Routerが変換 → プロバイダーがネイティブフォーマットで受信
+- CLIツールがOpenAIフォーマットで送信 → 8Routerが変換 → プロバイダーがネイティブフォーマットで受信
 - カスタムOpenAIエンドポイントをサポートするすべてのツールで動作
 
 ### 👥 マルチアカウント対応
@@ -441,12 +441,12 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 > **💡 重要 - ダッシュボードのコストについて：**
 >
 > 使用状況分析に表示される「コスト」は**追跡と比較目的のみ**です。
-> 9Router自体は**一切課金しません**。有料サービスを使用する場合のみ、プロバイダーに直接支払います。
+> 8Router自体は**一切課金しません**。有料サービスを使用する場合のみ、プロバイダーに直接支払います。
 >
 > **例:** ダッシュボードにiFlowモデルの使用で「合計コスト$290」と表示されている場合、
 > これは有料APIを直接使用した場合に支払うであろう金額を表しています。実際のコスト = **$0**（iFlowは無料無制限）。
 >
-> これは無料モデルや9Router経由のルーティングでどれだけ節約しているかを示す「節約トラッカー」と考えてください！
+> これは無料モデルや8Router経由のルーティングでどれだけ節約しているかを示す「節約トラッカー」と考えてください！
 
 ### 🌐 どこでもデプロイ
 
@@ -478,15 +478,15 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ---
 
-### 📊 9Routerのコストと課金について
+### 📊 8Routerのコストと課金について
 
-**9Routerの課金の実態：**
+**8Routerの課金の実態：**
 
-✅ **9Routerソフトウェア = 永久無料**（オープンソース、課金なし）
+✅ **8Routerソフトウェア = 永久無料**（オープンソース、課金なし）
 ✅ **ダッシュボードの「コスト」= 表示/追跡のみ**（実際の請求ではない）
 ✅ **プロバイダーに直接支払い**（サブスクリプションまたはAPI料金）
 ✅ **無料プロバイダーは無料のまま**（iFlow、Kiro、Qwen = $0 無制限）
-❌ **9Routerは請求書を送ったり**カードに課金したりしません
+❌ **8Routerは請求書を送ったり**カードに課金したりしません
 
 **コスト表示の仕組み：**
 
@@ -507,9 +507,9 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 **支払いルール：**
 - **サブスクリプションプロバイダー**（Claude Code、Codex）：各ウェブサイトで直接支払い
-- **格安プロバイダー**（GLM、MiniMax）：直接支払い、9Routerはルーティングのみ
+- **格安プロバイダー**（GLM、MiniMax）：直接支払い、8Routerはルーティングのみ
 - **無料プロバイダー**（iFlow、Kiro、Qwen）：本当に永久無料、隠れた料金なし
-- **9Router**：一切課金しない
+- **8Router**：一切課金しない
 
 ---
 
@@ -584,7 +584,7 @@ vs. $20 + 制限に引っかかる = フラストレーション
 <details>
 <summary><b>📊 ダッシュボードに高額なコストが表示されるのはなぜ？</b></summary>
 
-ダッシュボードはトークン使用量を追跡し、有料APIを直接使用した場合の**推定コスト**を表示します。これは**実際の課金ではなく**、9Routerを通じて無料モデルや既存のサブスクリプションを使用することでどれだけ節約しているかを示すための参考値です。
+ダッシュボードはトークン使用量を追跡し、有料APIを直接使用した場合の**推定コスト**を表示します。これは**実際の課金ではなく**、8Routerを通じて無料モデルや既存のサブスクリプションを使用することでどれだけ節約しているかを示すための参考値です。
 
 **例：**
 - **ダッシュボード表示:** 「合計コスト$290」
@@ -597,16 +597,16 @@ vs. $20 + 制限に引っかかる = フラストレーション
 </details>
 
 <details>
-<summary><b>💳 9Routerに課金されますか？</b></summary>
+<summary><b>💳 8Routerに課金されますか？</b></summary>
 
-**いいえ。** 9Routerはあなたのコンピューター上で動作する無料のオープンソースソフトウェアです。一切課金しません。
+**いいえ。** 8Routerはあなたのコンピューター上で動作する無料のオープンソースソフトウェアです。一切課金しません。
 
 **支払い先：**
 - ✅ **サブスクリプションプロバイダー**（Claude Code $20/月、Codex $20-200/月）→ 各ウェブサイトで直接支払い
-- ✅ **格安プロバイダー**（GLM、MiniMax）→ 直接支払い、9Routerはリクエストをルーティングするだけ
-- ❌ **9Router自体** → **一切課金しない**
+- ✅ **格安プロバイダー**（GLM、MiniMax）→ 直接支払い、8Routerはリクエストをルーティングするだけ
+- ❌ **8Router自体** → **一切課金しない**
 
-9Routerはローカルプロキシ/ルーターです。クレジットカード情報を持たず、請求書を送信できず、課金システムもありません。完全に無料のソフトウェアです。
+8Routerはローカルプロキシ/ルーターです。クレジットカード情報を持たず、請求書を送信できず、課金システムもありません。完全に無料のソフトウェアです。
 
 </details>
 
@@ -620,9 +620,9 @@ vs. $20 + 制限に引っかかる = フラストレーション
 - **Kiro**: AWS Builder ID経由で無料無制限Claudeモデル
 - **Qwen**: デバイス認証経由でQwenモデルに無料無制限アクセス
 
-9Routerはリクエストをルーティングするだけで、「罠」や将来の課金はありません。本当に無料のサービスであり、9Routerはフォールバックサポートでそれらを使いやすくしています。
+8Routerはリクエストをルーティングするだけで、「罠」や将来の課金はありません。本当に無料のサービスであり、8Routerはフォールバックサポートでそれらを使いやすくしています。
 
-**注意:** 一部のサブスクリプションプロバイダー（Antigravity、GitHub Copilot）には無料プレビュー期間があり、後に有料になる可能性がありますが、それは9Routerではなく各プロバイダーから明確に告知されます。
+**注意:** 一部のサブスクリプションプロバイダー（Antigravity、GitHub Copilot）には無料プレビュー期間があり、後に有料になる可能性がありますが、それは8Routerではなく各プロバイダーから明確に告知されます。
 
 </details>
 
@@ -647,7 +647,7 @@ vs. $20 + 制限に引っかかる = フラストレーション
 
 3. **サブスクリプションプロバイダーは最後に使用：**
    - 既にお持ちの場合のみ
-   - 9Routerがクオータ追跡で価値を最大化
+   - 8Routerがクオータ追跡で価値を最大化
 
 **結果:** ほとんどのユーザーは無料ティアのみで月額$0で運用可能！
 
@@ -656,20 +656,20 @@ vs. $20 + 制限に引っかかる = フラストレーション
 <details>
 <summary><b>📈 使用量が突然急増したら？</b></summary>
 
-9Routerのスマートフォールバックが予期しない課金を防止します：
+8Routerのスマートフォールバックが予期しない課金を防止します：
 
 **シナリオ:** コーディングスプリント中にクオータを使い切った
 
-**9Routerなし：**
+**8Routerなし：**
 - ❌ レート制限に到達 → 作業停止 → フラストレーション
 - ❌ または: 意図せず高額なAPI請求が発生
 
-**9Routerあり：**
+**8Routerあり：**
 - ✅ サブスクリプションが上限に達する → 格安ティアに自動フォールバック
 - ✅ 格安ティアが高くなる → 無料ティアに自動フォールバック
 - ✅ コーディングが止まらない → 予測可能なコスト
 
-**あなたがコントロール:** ダッシュボードでプロバイダーごとの支出上限を設定し、9Routerはそれを遵守します。
+**あなたがコントロール:** ダッシュボードでプロバイダーごとの支出上限を設定し、8Routerはそれを遵守します。
 
 </details>
 
@@ -693,7 +693,7 @@ vs. $20 + 制限に引っかかる = フラストレーション
   cc/claude-haiku-4-5-20251001
 ```
 
-**プロのヒント:** 複雑なタスクにはOpus、スピード重視ならSonnet。9Routerはモデルごとにクオータを追跡します！
+**プロのヒント:** 複雑なタスクにはOpus、スピード重視ならSonnet。8Routerはモデルごとにクオータを追跡します！
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -862,7 +862,7 @@ CLIでの使用: premium-coding
 ```
 設定 → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [9routerダッシュボードから]
+  OpenAI API Key: [8routerダッシュボードから]
   Model: cc/claude-opus-4-6
 ```
 
@@ -875,7 +875,7 @@ CLIでの使用: premium-coding
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-8router-api-key"
 }
 ```
 
@@ -883,7 +883,7 @@ CLIでの使用: premium-coding
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-8router-api-key"
 
 codex "your prompt"
 ```
@@ -903,15 +903,15 @@ codex "your prompt"
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/if/glm-4.7"
+        "primary": "8router/if/glm-4.7"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "8router": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_8router",
         "api": "openai-completions",
         "models": [
           {
@@ -925,7 +925,7 @@ codex "your prompt"
 }
 ```
 
-> **注意:** OpenClawはローカルの9Routerのみで動作します。IPv6解決の問題を避けるため、`localhost` ではなく `127.0.0.1` を使用してください。
+> **注意:** OpenClawはローカルの8Routerのみで動作します。IPv6解決の問題を避けるため、`localhost` ではなく `127.0.0.1` を使用してください。
 
 ### Cline / Continue / RooCode
 
@@ -945,20 +945,20 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # クローンとインストール
-git clone https://github.com/decolua/9router.git
-cd 9router
+git clone https://github.com/decolua/8router.git
+cd 8router
 npm install
 npm run build
 
 # 設定
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/8router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
 export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
+export NEXT_PUBLIC_CLOUD_URL="https://8router.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
@@ -967,7 +967,7 @@ npm run start
 
 # またはPM2を使用
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name 8router -- start
 pm2 save
 pm2 startup
 ```
@@ -976,28 +976,28 @@ pm2 startup
 
 ```bash
 # イメージをビルド（リポジトリルートから）
-docker build -t 9router .
+docker build -t 8router .
 
 # コンテナを実行（現在のセットアップで使用しているコマンド）
 docker run -d \
-  --name 9router \
+  --name 8router \
   -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --env-file /root/dev/8router/.env \
+  -v 8router-data:/app/data \
+  -v 8router-usage:/root/.8router \
+  8router
 ```
 
 ポータブルコマンド（リポジトリルートにいる場合）：
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name 8router \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  -v 8router-data:/app/data \
+  -v 8router-usage:/root/.8router \
+  8router
 ```
 
 コンテナのデフォルト：
@@ -1007,25 +1007,25 @@ docker run -d \
 便利なコマンド：
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f 8router
+docker restart 8router
+docker stop 8router && docker rm 8router
 ```
 
 ### 環境変数
 
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `JWT_SECRET` | `9router-default-secret-change-me` | ダッシュボード認証クッキーのJWT署名シークレット（**本番環境では変更必須**） |
+| `JWT_SECRET` | `8router-default-secret-change-me` | ダッシュボード認証クッキーのJWT署名シークレット（**本番環境では変更必須**） |
 | `INITIAL_PASSWORD` | `123456` | 保存されたハッシュがない場合の初回ログインパスワード |
-| `DATA_DIR` | `~/.9router` | メインアプリのデータベース格納場所（`db.json`） |
+| `DATA_DIR` | `~/.8router` | メインアプリのデータベース格納場所（`db.json`） |
 | `PORT` | フレームワークデフォルト | サービスポート（例では`20128`） |
 | `HOSTNAME` | フレームワークデフォルト | バインドホスト（Dockerデフォルトは`0.0.0.0`） |
 | `NODE_ENV` | ランタイムデフォルト | デプロイ時は`production`に設定 |
 | `BASE_URL` | `http://localhost:20128` | クラウド同期ジョブで使用されるサーバーサイド内部ベースURL |
-| `CLOUD_URL` | `https://9router.com` | サーバーサイドのクラウド同期エンドポイントベースURL |
+| `CLOUD_URL` | `https://8router.com` | サーバーサイドのクラウド同期エンドポイントベースURL |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | 後方互換/公開ベースURL（サーバーランタイムには`BASE_URL`を推奨） |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | 後方互換/公開クラウドURL（サーバーランタイムには`CLOUD_URL`を推奨） |
+| `NEXT_PUBLIC_CLOUD_URL` | `https://8router.com` | 後方互換/公開クラウドURL（サーバーランタイムには`CLOUD_URL`を推奨） |
 | `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | 生成されたAPIキーのHMACシークレット |
 | `MACHINE_ID_SALT` | `endpoint-proxy-salt` | 安定したマシンIDハッシュのソルト |
 | `ENABLE_REQUEST_LOGS` | `false` | `logs/` 配下のリクエスト/レスポンスログを有効化 |
@@ -1042,9 +1042,9 @@ docker stop 9router && docker rm 9router
 ### ランタイムファイルとストレージ
 
 - メインアプリ状態: `${DATA_DIR}/db.json`（プロバイダー、コンボ、エイリアス、キー、設定）、`src/lib/localDb.js` で管理。
-- 使用履歴とログ: `~/.9router/usage.json` と `~/.9router/log.txt`、`src/lib/usageDb.js` で管理。
+- 使用履歴とログ: `~/.8router/usage.json` と `~/.8router/log.txt`、`src/lib/usageDb.js` で管理。
 - オプションのリクエスト/トランスレーターログ: `ENABLE_REQUEST_LOGS=true` 時に `<repo>/logs/...`。
-- 使用状況ストレージは現在 `~/.9router` パスロジックに従い、`DATA_DIR` とは独立しています。
+- 使用状況ストレージは現在 `~/.8router` パスロジックに従い、`DATA_DIR` とは独立しています。
 
 </details>
 
@@ -1106,7 +1106,7 @@ docker stop 9router && docker rm 9router
 - コンボを追加: `cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuthトークンの期限切れ**
-- 9Routerが自動リフレッシュ
+- 8Routerが自動リフレッシュ
 - 問題が続く場合: ダッシュボード → Provider → 再接続
 
 **高コスト**
@@ -1166,29 +1166,29 @@ Authorization: Bearer your-api-key
 
 ## 📧 サポート
 
-- **ウェブサイト**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **ウェブサイト**: [8router.com](https://8router.com)
+- **GitHub**: [github.com/decolua/8router](https://github.com/decolua/8router)
+- **Issues**: [github.com/decolua/8router/issues](https://github.com/decolua/8router/issues)
 
 ---
 
 ## 👥 コントリビューター
 
-9Routerの改善に貢献してくださったすべてのコントリビューターに感謝します！
+8Routerの改善に貢献してくださったすべてのコントリビューターに感謝します！
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/8router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/8router/graphs/contributors)
 
 ---
 
 ## 📊 スターチャート
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/decolua/8router.svg?variant=adaptive)](https://starchart.cc/decolua/8router)
 
 
 
 ## 🔀 フォーク
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — 9RouterのフルフィーチャーTypeScriptフォーク。36以上のプロバイダー、4段階自動フォールバック、マルチモーダルAPI（画像、埋め込み、音声、TTS）、サーキットブレーカー、セマンティックキャッシュ、LLM評価、洗練されたダッシュボードを追加。368以上のユニットテスト。npmとDockerで利用可能。
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — 8RouterのフルフィーチャーTypeScriptフォーク。36以上のプロバイダー、4段階自動フォールバック、マルチモーダルAPI（画像、埋め込み、音声、TTS）、サーキットブレーカー、セマンティックキャッシュ、LLM評価、洗練されたダッシュボードを追加。368以上のユニットテスト。npmとDockerで利用可能。
 
 ---
 

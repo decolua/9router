@@ -1,10 +1,10 @@
-# 9Router Architecture
+# 8Router Architecture
 
 _Last updated: 2026-02-06_
 
 ## Executive Summary
 
-9Router is a local AI routing gateway and dashboard built on Next.js.
+8Router is a local AI routing gateway and dashboard built on Next.js.
 It provides a single OpenAI-compatible endpoint (`/v1/*`) and routes traffic across multiple upstream providers with translation, fallback, token refresh, and usage tracking.
 
 Core capabilities:
@@ -52,7 +52,7 @@ flowchart LR
         BROWSER[Browser Dashboard]
     end
 
-    subgraph Router[9Router Local Process]
+    subgraph Router[8Router Local Process]
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
@@ -138,13 +138,13 @@ Main flow modules:
 Primary state DB:
 
 - `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
+- file: `${DATA_DIR}/db.json` (or `~/.8router/db.json` when `DATA_DIR` is unset)
 - entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
 
 Usage DB:
 
 - `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
+- files: `~/.8router/usage.json`, `~/.8router/log.txt`
 - note: currently independent from `DATA_DIR`
 
 ## 4) Auth + Security Surfaces
@@ -377,9 +377,9 @@ erDiagram
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
-- usage stats: `~/.9router/usage.json`
-- request log lines: `~/.9router/log.txt`
+- main state: `${DATA_DIR}/db.json` (or `~/.8router/db.json`)
+- usage stats: `~/.8router/usage.json`
+- request log lines: `~/.8router/log.txt`
 - optional translator/request debug sessions: `<repo>/logs/...`
 
 ## Deployment Topology
@@ -391,7 +391,7 @@ flowchart LR
         Browser[Dashboard Browser]
     end
 
-    subgraph ContainerOrProcess[9Router Runtime]
+    subgraph ContainerOrProcess[8Router Runtime]
         Next[Next.js Server\nPORT=20128]
         Core[SSE Core + Executors]
         MainDB[(db.json)]
@@ -542,15 +542,15 @@ Environment variables actively used by code:
 
 ## Known Architectural Notes
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
+1. `usageDb` currently stores under `~/.8router` and does not follow `DATA_DIR`.
 2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
 3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
 4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
 
 ## Operational Verification Checklist
 
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
+- Build from source: `cd /root/dev/8router && npm run build`
+- Build Docker image: `cd /root/dev/8router && docker build -t 8router .`
 - Start service and verify:
 - `GET /api/settings`
 - `GET /api/v1/models`

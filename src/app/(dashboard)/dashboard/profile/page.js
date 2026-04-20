@@ -281,7 +281,7 @@ export default function ProfilePage() {
       const anchor = document.createElement("a");
       const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      anchor.download = `8router-backup-${stamp}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -371,7 +371,7 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
               <div>
                 <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+                <p className="text-sm text-text-muted font-mono">~/.8router/db.json</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">

@@ -64,7 +64,7 @@ export default function LandingPage() {
                 Ready to Simplify Your AI Infrastructure?
               </CardTitle>
               <CardDescription className="mx-auto max-w-2xl text-lg text-gray-400">
-                Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.
+                Join developers who are streamlining their AI integrations with 8Router. Open source and free to start.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -79,7 +79,7 @@ export default function LandingPage() {
                 variant="outline"
                 size="lg"
                 className="h-14 w-full rounded-lg border-[#3a2f27] bg-transparent px-10 text-lg font-bold text-white hover:bg-[#23180f] sm:w-auto"
-                onClick={() => window.open("https://github.com/decolua/9router#readme", "_blank")}
+                onClick={() => window.open("https://github.com/decolua/8router#readme", "_blank")}
               >
                 Read Documentation
               </Button>

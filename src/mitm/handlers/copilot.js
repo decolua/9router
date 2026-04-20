@@ -1,7 +1,7 @@
 const { err } = require("../logger");
 const { fetchRouter, pipeSSE } = require("./base");
 
-// Map Copilot endpoint → 9Router path
+// Map Copilot endpoint → 8Router path
 const URL_MAP = {
   "/chat/completions": "/v1/chat/completions",
   "/v1/messages":      "/v1/messages",
@@ -16,7 +16,7 @@ function resolveRouterPath(reqUrl) {
 }
 
 /**
- * Intercept Copilot request — replace model and forward to matching 9Router endpoint
+ * Intercept Copilot request — replace model and forward to matching 8Router endpoint
  */
 async function intercept(req, res, bodyBuffer, mappedModel) {
   try {

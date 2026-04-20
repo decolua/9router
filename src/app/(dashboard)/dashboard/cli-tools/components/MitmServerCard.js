@@ -74,7 +74,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       } else if (action === "start") {
         const keyToUse = selectedApiKey?.trim()
           || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-          || (!cloudEnabled ? "sk_9router" : null);
+          || (!cloudEnabled ? "sk_8router" : null);
         res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -151,17 +151,17 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {/* Purpose & How it works */}
           <div className="px-2 py-2 rounded-lg bg-surface/50 border border-border/50 flex flex-col gap-2">
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router
+              <span className="font-medium text-text-main">Purpose:</span> Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 8Router
             </p>
             <p className="text-[11px] text-text-muted leading-relaxed">
-              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot
+              <span className="font-medium text-text-main">How it works:</span> Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 8Router → response to Antigravity/Copilot
             </p>
           </div>
 
           {/* Base URL + API Key — same row pattern as Claude Code / cli-tools */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">9Router Base URL</span>
+              <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">8Router Base URL</span>
               <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
               <input
                 type="text"
@@ -190,7 +190,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                   </select>
                 ) : (
                   <span className="flex-1 px-2 py-1.5 text-xs text-text-muted">
-                    {cloudEnabled ? "No API keys — create one in Keys page" : "sk_9router (default)"}
+                    {cloudEnabled ? "No API keys — create one in Keys page" : "sk_8router (default)"}
                   </span>
                 )}
               </div>
@@ -245,7 +245,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           {isWindows && !isAdmin && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 border border-red-500/20">
               <span className="material-symbols-outlined text-[14px]">shield_lock</span>
-              <span>Administrator required — restart 9Router as Administrator to use MITM</span>
+              <span>Administrator required — restart 8Router as Administrator to use MITM</span>
             </div>
           )}
         </div>

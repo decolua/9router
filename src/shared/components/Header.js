@@ -97,7 +97,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/mitm"))
     return {
       title: "MITM Proxy",
-      description: "Intercept CLI tool traffic and route through 9Router",
+      description: "Intercept CLI tool traffic and route through 8Router",
       icon: "security",
       breadcrumbs: [],
     };

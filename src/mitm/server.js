@@ -180,7 +180,7 @@ const server = https.createServer(sslOptions, async (req, res) => {
     const bodyBuffer = await collectBodyRaw(req);
     if (bodyBuffer.length > 0) saveRequestLog(req.url, bodyBuffer);
 
-    // Anti-loop: skip requests from 9Router
+    // Anti-loop: skip requests from 8Router
     if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
       return passthrough(req, res, bodyBuffer);
     }

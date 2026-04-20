@@ -45,7 +45,7 @@ function checkCertInstalledMac(certPath) {
 function checkCertInstalledWindows(certPath) {
   return new Promise((resolve) => {
     // Check Root store for our Root CA by common name
-    exec("certutil -store Root \"9Router MITM Root CA\"", { windowsHide: true }, (error) => {
+    exec("certutil -store Root \"8Router MITM Root CA\"", { windowsHide: true }, (error) => {
       resolve(!error);
     });
   });
@@ -76,7 +76,7 @@ async function installCert(sudoPassword, certPath) {
 
 async function installCertMac(sudoPassword, certPath) {
   // Remove all old certs with same name first to avoid duplicate/stale cert conflict
-  const deleteOld = `security delete-certificate -c "9Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
+  const deleteOld = `security delete-certificate -c "8Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
   const install = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
     await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
@@ -135,7 +135,7 @@ async function uninstallCertWindows() {
   // Process already has admin rights — run certutil directly, no UAC needed
   return new Promise((resolve, reject) => {
     exec(
-      `certutil -delstore Root "9Router MITM Root CA"`,
+      `certutil -delstore Root "8Router MITM Root CA"`,
       { windowsHide: true },
       (error) => {
         if (error) reject(new Error(`Failed to uninstall certificate: ${error.message}`));
@@ -146,7 +146,7 @@ async function uninstallCertWindows() {
 }
 
 function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const certFile = `${LINUX_CERT_DIR}/8router-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
 }
 
@@ -155,7 +155,7 @@ async function installCertLinux(sudoPassword, certPath) {
     log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/8router-root-ca.crt`;
   // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
   const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
@@ -170,7 +170,7 @@ async function uninstallCertLinux(sudoPassword) {
   if (!isSudoAvailable()) {
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/8router-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
     await execWithPassword(cmd, sudoPassword);

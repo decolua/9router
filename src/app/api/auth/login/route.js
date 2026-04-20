@@ -5,7 +5,7 @@ import { SignJWT } from "jose";
 import { cookies } from "next/headers";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "8router-default-secret-change-me"
 );
 
 function isTunnelRequest(request, settings) {

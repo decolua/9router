@@ -31,10 +31,10 @@ if (cleanupInterval.unref) cleanupInterval.unref();
  * Get or create a session ID for the given connection.
  *
  * The binary generates a session ID once at startup: `rs() + Date.now()`.
- * Since 9router is long-running, we simulate this "per-launch" behavior by
+ * Since 8router is long-running, we simulate this "per-launch" behavior by
  * storing a generated ID in memory for each connection.
  *
- * - If 9router restarts, the ID changes (matching binary restart behavior).
+ * - If 8router restarts, the ID changes (matching binary restart behavior).
  * - Within a running instance, the ID is stable for that connection.
  * - This enables prompt caching while using the EXACT random logic of the binary.
  *

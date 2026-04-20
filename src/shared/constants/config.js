@@ -2,14 +2,14 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router proxy",
+  name: "8Router proxy",
   description: "AI Infrastructure Management",
   version: pkg.version,
 };
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
+  changelogUrl: "https://raw.githubusercontent.com/decolua/8router/refs/heads/master/CHANGELOG.md",
 };
 
 // Theme configuration

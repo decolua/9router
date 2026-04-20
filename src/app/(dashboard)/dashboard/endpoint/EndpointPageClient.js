@@ -981,7 +981,7 @@ export default function APIPageClient({ machineId }) {
                   Cloudflare Tunnel
                 </p>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                  Expose your local 8Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
                 </p>
               </div>
             </div>

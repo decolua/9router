@@ -1,4 +1,4 @@
-name = "9router"
+name = "8router"
 main = "src/index.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
