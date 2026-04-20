@@ -7,6 +7,14 @@ import HowItWorks from "./components/HowItWorks";
 import Features from "./components/Features";
 import GetStarted from "./components/GetStarted";
 import Footer from "./components/Footer";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 export default function LandingPage() {
   const router = useRouter();
@@ -47,29 +55,36 @@ export default function LandingPage() {
         <HowItWorks />
         <Features />
         
-        {/* CTA Section */}
-        <section className="py-32 px-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-linear-to-t from-[#f97815]/5 to-transparent pointer-events-none"></div>
-          <div className="max-w-4xl mx-auto text-center relative z-10">
-            <h2 className="text-4xl md:text-5xl font-black mb-6">Ready to Simplify Your AI Infrastructure?</h2>
-            <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
-              Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button 
+        {/* CTA — shadcn Card + Button */}
+        <section className="relative overflow-hidden px-6 py-32">
+          <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-[#f97815]/5 to-transparent"></div>
+          <Card className="relative z-10 mx-auto max-w-4xl border-[#3a2f27] bg-[#1a1512]/90 text-center text-white shadow-2xl backdrop-blur-md">
+            <CardHeader className="space-y-4">
+              <CardTitle className="font-heading text-4xl font-black tracking-tight text-white md:text-5xl">
+                Ready to Simplify Your AI Infrastructure?
+              </CardTitle>
+              <CardDescription className="mx-auto max-w-2xl text-lg text-gray-400">
+                Join developers who are streamlining their AI integrations with 9Router. Open source and free to start.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <Button
+                size="lg"
+                className="h-14 w-full rounded-lg border-transparent bg-[#f97815] px-10 text-lg font-bold text-[#181411] shadow-[0_0_20px_rgba(249,120,21,0.5)] hover:bg-[#e0650a] sm:w-auto"
                 onClick={() => router.push("/dashboard")}
-                className="w-full sm:w-auto h-14 px-10 rounded-lg bg-[#f97815] hover:bg-[#e0650a] text-[#181411] text-lg font-bold transition-all shadow-[0_0_20px_rgba(249,120,21,0.5)]"
               >
                 Start Free
-              </button>
-              <button 
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="h-14 w-full rounded-lg border-[#3a2f27] bg-transparent px-10 text-lg font-bold text-white hover:bg-[#23180f] sm:w-auto"
                 onClick={() => window.open("https://github.com/decolua/9router#readme", "_blank")}
-                className="w-full sm:w-auto h-14 px-10 rounded-lg border border-[#3a2f27] hover:bg-[#23180f] text-white text-lg font-bold transition-all"
               >
                 Read Documentation
-              </button>
-            </div>
-          </div>
+              </Button>
+            </CardContent>
+          </Card>
         </section>
         </main>
         

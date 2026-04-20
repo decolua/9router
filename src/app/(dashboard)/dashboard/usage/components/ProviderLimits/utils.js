@@ -75,6 +75,84 @@ export function calculatePercentage(used, total) {
   return Math.round(((total - used) / total) * 100);
 }
 
+/** Remaining % for a normalized quota row */
+export function getQuotaRemainingPercent(quota) {
+  if (!quota || typeof quota !== "object") return 0;
+  if (quota.remainingPercentage !== undefined) {
+    return Math.round(quota.remainingPercentage);
+  }
+  return calculatePercentage(quota.used, quota.total);
+}
+
+/**
+ * Tailwind classes for quota health (by remaining %)
+ * @param {number} remaining - 0–100
+ */
+export function getQuotaHealthStyles(remaining) {
+  if (remaining > 70) {
+    return {
+      text: "text-green-600 dark:text-green-400",
+      bar: "bg-green-500",
+      track: "bg-green-500/15",
+      dot: "bg-green-500",
+    };
+  }
+  if (remaining >= 30) {
+    return {
+      text: "text-yellow-600 dark:text-yellow-400",
+      bar: "bg-yellow-500",
+      track: "bg-yellow-500/15",
+      dot: "bg-yellow-500",
+    };
+  }
+  return {
+    text: "text-red-600 dark:text-red-400",
+    bar: "bg-red-500",
+    track: "bg-red-500/15",
+    dot: "bg-red-500",
+  };
+}
+
+/**
+ * Same idea as quota rows in ProviderQuotaCard — for reset column in summary / cards
+ */
+export function formatResetTimeDisplay(resetTime) {
+  if (!resetTime) return null;
+
+  try {
+    const date = new Date(resetTime);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    let dayStr = "";
+    if (date >= today && date < tomorrow) {
+      dayStr = "Today";
+    } else if (
+      date >= tomorrow &&
+      date < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)
+    ) {
+      dayStr = "Tomorrow";
+    } else {
+      dayStr = date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+    }
+
+    const timeStr = date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return `${dayStr}, ${timeStr}`;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)

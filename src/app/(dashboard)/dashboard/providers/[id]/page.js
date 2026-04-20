@@ -4,7 +4,41 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
+import {
+  Cookie,
+  Loader2,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import {
+  OAuthModal,
+  KiroOAuthWrapper,
+  CursorAuthModal,
+  IFlowCookieModal,
+  GitLabAuthModal,
+  EditConnectionModal,
+} from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -464,7 +498,7 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
-    <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+    <div className="flex flex-col divide-y divide-border">
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex items-stretch">
@@ -520,33 +554,69 @@ export default function ProviderDetailPage() {
   const canApplyBulkProxy = selectedConnectionIds.length > 0 && !bulkUpdatingProxy;
 
   const bulkActionModal = (
-    <Modal
-      isOpen={showBulkProxyModal}
-      onClose={closeBulkProxyModal}
-      title={`Proxy Action (${selectedConnectionIds.length} selected)`}
+    <Dialog
+      open={showBulkProxyModal}
+      onOpenChange={(open) => {
+        if (!open) closeBulkProxyModal();
+      }}
     >
-      <div className="flex flex-col gap-4">
-        <Select
-          label="Proxy Pool"
-          value={bulkProxyPoolId}
-          onChange={(e) => setBulkProxyPoolId(e.target.value)}
-          options={bulkProxyOptions}
-          placeholder="None"
-        />
-
-        <p className="text-xs text-text-muted">{bulkHint}</p>
-        <p className="text-xs text-text-muted">Selecting None will unbind selected connections from proxy pool.</p>
-
-        <div className="flex gap-2">
-          <Button onClick={handleBulkApplyProxyPool} fullWidth disabled={!canApplyBulkProxy}>
-            {bulkUpdatingProxy ? "Applying..." : "Apply"}
-          </Button>
-          <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
+      <DialogContent className="sm:max-w-md" showCloseButton>
+        <DialogHeader>
+          <DialogTitle>
+            Proxy Action ({selectedConnectionIds.length} selected)
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="space-y-2">
+            <Label>Proxy Pool</Label>
+            <Select
+              value={bulkProxyPoolId}
+              onValueChange={setBulkProxyPoolId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                {bulkProxyOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-xs text-muted-foreground">{bulkHint}</p>
+          <p className="text-xs text-muted-foreground">
+            Selecting None will unbind selected connections from proxy pool.
+          </p>
+        </div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={closeBulkProxyModal}
+            disabled={bulkUpdatingProxy}
+          >
             Cancel
           </Button>
+          <Button
+            type="button"
+            className="gap-2"
+            onClick={handleBulkApplyProxyPool}
+            disabled={!canApplyBulkProxy}
+          >
+            {bulkUpdatingProxy ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Applying...
+              </>
+            ) : (
+              "Apply"
+            )}
+          </Button>
         </div>
-      </div>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 
   const handleTestModel = async (modelId) => {
@@ -654,13 +724,16 @@ export default function ProviderDetailPage() {
         ))}
 
         {/* Add model button — inline, same style as model chips */}
-        <button
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
           onClick={() => setShowAddCustomModel(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+          className="h-auto border-dashed py-2 text-xs"
         >
-          <span className="material-symbols-outlined text-sm">add</span>
+          <Plus className="size-3.5" />
           Add Model
-        </button>
+        </Button>
 
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
@@ -671,22 +744,27 @@ export default function ProviderDetailPage() {
           );
           if (notAdded.length === 0) return null;
           return (
-            <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+            <div className="mt-2 w-full">
+              <p className="mb-2 text-xs text-muted-foreground">
+                Suggested free models (≥200k context):
+              </p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
-                  <button
+                  <Button
                     key={m.id}
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     onClick={async () => {
                       const alias = m.id.split("/").pop();
                       await handleSetAlias(m.id, alias, providerStorageAlias);
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    className="h-auto gap-1 px-2.5 py-1.5 text-xs font-normal"
                     title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
                   >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    <Plus className="size-3" />
                     {m.id.split("/").pop()}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -699,17 +777,23 @@ export default function ProviderDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
-        <CardSkeleton />
-        <CardSkeleton />
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-10 w-2/3 max-w-md" />
+          <Skeleton className="h-24 w-full rounded-xl" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
-}
+  }
 
   if (!providerInfo) {
     return (
-      <div className="text-center py-20">
-        <p className="text-text-muted">Provider not found</p>
-        <Link href="/dashboard/providers" className="text-primary mt-4 inline-block">
+      <div className="py-20 text-center">
+        <p className="text-muted-foreground">Provider not found</p>
+        <Link
+          href="/dashboard/providers"
+          className={cn(buttonVariants({ variant: "link" }), "mt-4")}
+        >
           Back to Providers
         </Link>
       </div>
@@ -733,7 +817,7 @@ export default function ProviderDetailPage() {
       <div>
         <Link
           href="/dashboard/providers"
-          className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
@@ -761,7 +845,7 @@ export default function ProviderDetailPage() {
           </div>
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
-            <p className="text-text-muted">
+            <p className="text-muted-foreground">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
           </div>
@@ -769,22 +853,33 @@ export default function ProviderDetailPage() {
       </div>
 
       {providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
-          <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <span className="material-symbols-outlined mt-0.5 shrink-0 text-[16px] text-amber-600 dark:text-amber-400">
+            warning
+          </span>
+          <p className="text-xs leading-relaxed text-amber-900 dark:text-amber-100">
+            {providerInfo.deprecationNotice}
+          </p>
         </div>
       )}
 
       {providerInfo.notice && !providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
-          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-          <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{providerInfo.notice.text}</p>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-500/35 bg-blue-500/10 px-3 py-2">
+          <span className="material-symbols-outlined shrink-0 text-[16px] text-blue-600 dark:text-blue-400">
+            info
+          </span>
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-900 dark:text-blue-100">
+            {providerInfo.notice.text}
+          </p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-2 py-0.5 rounded shrink-0 transition-colors"
+              className={cn(
+                buttonVariants({ size: "sm", variant: "secondary" }),
+                "shrink-0",
+              )}
             >
               Get API Key →
             </a>
@@ -793,40 +888,61 @@ export default function ProviderDetailPage() {
       )}
 
       {isCompatible && providerNode && (
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
-              <p className="text-sm text-text-muted">
-                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+        <Card className="gap-4 p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-1">
+              <h2 className="text-lg font-semibold tracking-tight">
+                {isAnthropicCompatible
+                  ? "Anthropic Compatible Details"
+                  : "OpenAI Compatible Details"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {isAnthropicCompatible
+                  ? "Messages API"
+                  : providerNode.apiType === "responses"
+                    ? "Responses API"
+                    : "Chat Completions"}{" "}
+                · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                {isAnthropicCompatible
+                  ? "messages"
+                  : providerNode.apiType === "responses"
+                    ? "responses"
+                    : "chat/completions"}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               <Button
                 size="sm"
-                icon="add"
                 onClick={() => setShowAddApiKeyModal(true)}
                 disabled={connections.length > 0}
+                className="gap-1.5"
               >
+                <Plus className="size-3.5" />
                 Add
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
-                icon="edit"
                 onClick={() => setShowEditNodeModal(true)}
+                className="gap-1.5"
               >
+                <Pencil className="size-3.5" />
                 Edit
               </Button>
               <Button
                 size="sm"
                 variant="secondary"
-                icon="delete"
                 onClick={async () => {
-                  if (!confirm(`Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`)) return;
+                  if (
+                    !confirm(
+                      `Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
+                    )
+                  )
+                    return;
                   try {
-                    const res = await fetch(`/api/provider-nodes/${providerId}`, { method: "DELETE" });
+                    const res = await fetch(`/api/provider-nodes/${providerId}`, {
+                      method: "DELETE",
+                    });
                     if (res.ok) {
                       router.push("/dashboard/providers");
                     }
@@ -834,14 +950,17 @@ export default function ProviderDetailPage() {
                     console.log("Error deleting provider node:", error);
                   }
                 }}
+                className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
+                <Trash2 className="size-3.5" />
                 Delete
               </Button>
             </div>
           </div>
           {connections.length > 0 && (
-            <p className="text-sm text-text-muted">
-              Only one connection is allowed per compatible node. Add another node if you need more connections.
+            <p className="text-sm text-muted-foreground">
+              Only one connection is allowed per compatible node. Add another node
+              if you need more connections.
             </p>
           )}
         </Card>
@@ -849,54 +968,42 @@ export default function ProviderDetailPage() {
 
       {/* Connections */}
       {isFreeNoAuth ? (
-        <Card>
+        <Card className="gap-4 p-6">
           <div className="flex items-center gap-3">
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
+            <div className="inline-flex size-10 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
               <span className="material-symbols-outlined text-[20px]">lock_open</span>
             </div>
             <div>
               <p className="text-sm font-medium">No authentication required</p>
-              <p className="text-xs text-text-muted">This provider is ready to use.</p>
+              <p className="text-xs text-muted-foreground">
+                This provider is ready to use.
+              </p>
             </div>
           </div>
         </Card>
       ) : (
-        <Card>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Connections</h2>
-            <div className="flex items-center gap-4">
-              {/* Thinking config */}
-              {/* {thinkingConfig && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thinking</span>
-                  <select
-                    value={thinkingMode}
-                    onChange={(e) => handleThinkingModeChange(e.target.value)}
-                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  >
-                    {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-              )} */}
-              {/* Round Robin toggle */}
+        <Card className="gap-4 p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="text-lg font-semibold tracking-tight">Connections</h2>
+            <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">Round Robin</span>
-                <Toggle
+                <span className="text-xs font-medium text-muted-foreground">
+                  Round Robin
+                </span>
+                <Switch
                   checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
+                  onCheckedChange={handleRoundRobinToggle}
                 />
                 {providerStrategy === "round-robin" && (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-muted">Sticky:</span>
-                    <input
+                    <span className="text-xs text-muted-foreground">Sticky:</span>
+                    <Input
                       type="number"
                       min={1}
                       value={providerStickyLimit}
                       onChange={(e) => handleStickyLimitChange(e.target.value)}
                       placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                      className="h-8 w-14 px-2 text-xs"
                     />
                   </div>
                 )}
@@ -905,20 +1012,35 @@ export default function ProviderDetailPage() {
           </div>
 
           {connections.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-                <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+            <div className="py-12 text-center">
+              <div className="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <span className="material-symbols-outlined text-[32px]">
+                  {isOAuth ? "lock" : "key"}
+                </span>
               </div>
-              <p className="text-text-main font-medium mb-1">No connections yet</p>
-              <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
+              <p className="mb-1 font-medium text-foreground">No connections yet</p>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Add your first connection to get started
+              </p>
               {!isCompatible && (
-                <div className="flex gap-2 justify-center">
+                <div className="flex justify-center gap-2">
                   {providerId === "iflow" && (
-                    <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowIFlowCookieModal(true)}
+                      className="gap-2"
+                    >
+                      <Cookie className="size-4" />
                       Cookie Auth
                     </Button>
                   )}
-                  <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                  <Button
+                    onClick={() =>
+                      isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)
+                    }
+                    className="gap-2"
+                  >
+                    <Plus className="size-4" />
                     {providerId === "iflow" ? "OAuth" : "Add Connection"}
                   </Button>
                 </div>
@@ -928,23 +1050,27 @@ export default function ProviderDetailPage() {
             <>
               {connectionsList}
               {!isCompatible && (
-                <div className="flex gap-2 mt-4">
+                <div className="mt-4 flex flex-wrap gap-2">
                   {providerId === "iflow" && (
                     <Button
                       size="sm"
-                      icon="cookie"
                       variant="secondary"
                       onClick={() => setShowIFlowCookieModal(true)}
                       title="Add connection using browser cookie"
+                      className="gap-1.5"
                     >
+                      <Cookie className="size-3.5" />
                       Cookie
                     </Button>
                   )}
                   <Button
                     size="sm"
-                    icon="add"
-                    onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+                    onClick={() =>
+                      isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)
+                    }
+                    className="gap-1.5"
                   >
+                    <Plus className="size-3.5" />
                     Add
                   </Button>
                 </div>
@@ -955,14 +1081,10 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Models */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">
-            {"Available Models"}
-          </h2>
-        </div>
+      <Card className="gap-4 p-6">
+        <h2 className="text-lg font-semibold tracking-tight">Available Models</h2>
         {!!modelsTestError && (
-          <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+          <p className="break-words text-xs text-destructive">{modelsTestError}</p>
         )}
         {renderModelsSection()}
       </Card>

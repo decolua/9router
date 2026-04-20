@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button } from "@/shared/components";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
@@ -137,19 +140,29 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
 
       {/* Add new model */}
       <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
-          <input
+        <div className="flex-1 space-y-1.5">
+          <Label
+            htmlFor="new-model-input"
+            className="text-xs text-muted-foreground"
+          >
+            Model ID (from OpenRouter)
+          </Label>
+          <Input
             id="new-model-input"
             type="text"
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder="anthropic/claude-3-opus"
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
+        <Button
+          size="sm"
+          onClick={handleAdd}
+          disabled={!newModel.trim() || adding}
+          className="gap-1.5"
+        >
+          <Plus className="size-3.5" />
           {adding ? "Adding..." : "Add"}
         </Button>
       </div>

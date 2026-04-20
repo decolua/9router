@@ -1,64 +1,103 @@
 import PropTypes from "prop-types";
+import { cn } from "@/lib/utils";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
-  const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
-    : testStatus === "error"
-    ? "border-red-500/40"
-    : "border-border";
+export default function ModelRow({
+  model,
+  fullModel,
+  alias,
+  copied,
+  onCopy,
+  testStatus,
+  isCustom,
+  isFree,
+  onDeleteAlias,
+  onTest,
+  isTesting,
+}) {
+  const borderClass =
+    testStatus === "ok"
+      ? "border-emerald-500/40"
+      : testStatus === "error"
+        ? "border-destructive/40"
+        : "border-border";
 
-  const iconColor = testStatus === "ok"
-    ? "#22c55e"
-    : testStatus === "error"
-    ? "#ef4444"
-    : undefined;
+  const iconClass =
+    testStatus === "ok"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : testStatus === "error"
+        ? "text-destructive"
+        : "text-muted-foreground";
 
   return (
-    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div
+      className={cn(
+        "group rounded-lg border px-3 py-2 transition-colors",
+        borderClass,
+        "hover:bg-muted/50",
+      )}
+    >
       <div className="flex items-center gap-2">
-        <span
-          className="material-symbols-outlined text-base"
-          style={iconColor ? { color: iconColor } : undefined}
-        >
-          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+        <span className={cn("material-symbols-outlined text-base", iconClass)}>
+          {testStatus === "ok"
+            ? "check_circle"
+            : testStatus === "error"
+              ? "cancel"
+              : "smart_toy"}
         </span>
-        <div className="flex flex-col gap-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+        <div className="flex min-w-0 flex-col gap-1">
+          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+            {fullModel}
+          </code>
+          {model.name && (
+            <span className="pl-1 text-[9px] italic text-muted-foreground/80">
+              {model.name}
+            </span>
+          )}
         </div>
         {onTest && (
-          <div className="relative group/btn">
+          <div className="group/btn relative">
             <button
+              type="button"
               onClick={onTest}
               disabled={isTesting}
-              className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+              className={cn(
+                "rounded p-0.5 text-muted-foreground transition-opacity hover:bg-accent hover:text-foreground",
+                isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
             >
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+              <span
+                className="material-symbols-outlined text-sm"
+                style={
+                  isTesting ? { animation: "spin 1s linear infinite" } : undefined
+                }
+              >
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
-            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute top-5 left-1/2 mt-1 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/btn:opacity-100">
               {isTesting ? "Testing..." : "Test"}
             </span>
           </div>
         )}
-        <div className="relative group/btn">
+        <div className="group/btn relative">
           <button
+            type="button"
             onClick={() => onCopy(fullModel, `model-${model.id}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <span className="material-symbols-outlined text-sm">
               {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>
-          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+          <span className="pointer-events-none absolute top-5 left-1/2 mt-1 -translate-x-1/2 whitespace-nowrap text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover/btn:opacity-100">
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
         {isCustom && (
           <button
+            type="button"
             onClick={onDeleteAlias}
-            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
+            className="ml-auto rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
             title="Remove custom model"
           >
             <span className="material-symbols-outlined text-sm">close</span>

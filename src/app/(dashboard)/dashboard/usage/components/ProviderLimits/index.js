@@ -1,12 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import ProviderIcon from "@/shared/components/ProviderIcon";
-import QuotaTable from "./QuotaTable";
-import Toggle from "@/shared/components/Toggle";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Link from "next/link";
+import { Loader2, RefreshCw, CloudOff } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import ProviderQuotaCard from "./ProviderQuotaCard";
+import QuotaAggregateSummary from "./QuotaAggregateSummary";
 import { parseQuotaData, calculatePercentage } from "./utils";
-import Card from "@/shared/components/Card";
-import Button from "@/shared/components/Button";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
@@ -388,203 +394,230 @@ export default function ProviderLimits() {
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
-  // Empty state
-  if (!connectionsLoading && sortedConnections.length === 0) {
+  /**
+   * Tổng gộp đúng 2 loại: session và weekly (khớp tên quota, không cộng lẫn).
+   * Cộng dồn used/total trên mọi kết nối cho từng loại.
+   */
+  const quotaAggregate = useMemo(() => {
+    const session = { sumUsed: 0, sumTotal: 0 };
+    const weekly = { sumUsed: 0, sumTotal: 0 };
+
+    const bucket = (name) => {
+      const n = String(name ?? "")
+        .toLowerCase()
+        .trim();
+      if (n === "session") return "session";
+      if (n === "weekly") return "weekly";
+      return null;
+    };
+
+    const add = (target, q) => {
+      if (q.total > 0) {
+        target.sumUsed += q.used;
+        target.sumTotal += q.total;
+      }
+    };
+
+    for (const conn of sortedConnections) {
+      const data = quotaData[conn.id];
+      if (!data?.quotas?.length) continue;
+      for (const q of data.quotas) {
+        if (q.name === "error" && q.message) continue;
+        const b = bucket(q.name);
+        if (b === "session") add(session, q);
+        else if (b === "weekly") add(weekly, q);
+      }
+    }
+
+    const build = (s) => {
+      if (s.sumTotal <= 0) return null;
+      const remainingPct = calculatePercentage(s.sumUsed, s.sumTotal);
+      const usedPct = Math.min(
+        100,
+        Math.max(0, Math.round((100 * s.sumUsed) / s.sumTotal)),
+      );
+      return {
+        sumUsed: s.sumUsed,
+        sumTotal: s.sumTotal,
+        remainingPct,
+        usedPct,
+      };
+    };
+
+    const sessionAgg = build(session);
+    const weeklyAgg = build(weekly);
+    if (!sessionAgg && !weeklyAgg) {
+      return { kind: "empty" };
+    }
+    return { kind: "ok", session: sessionAgg, weekly: weeklyAgg };
+  }, [sortedConnections, quotaData]);
+
+  if (connectionsLoading) {
     return (
-      <Card padding="lg">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            cloud_off
-          </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
-            No Providers Connected
-          </h3>
-          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            Connect to providers with OAuth to track your API quota limits and
-            usage.
-          </p>
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 pb-6">
+        <div className="border-b border-border/50 pb-3">
+          <Skeleton className="h-7 w-32" />
+          <Skeleton className="mt-2 h-3 w-full max-w-md" />
         </div>
-      </Card>
+        <Skeleton className="h-16 w-full rounded-md" />
+        <div className="flex flex-wrap justify-end gap-2">
+          <Skeleton className="h-8 w-40 rounded-md" />
+          <Skeleton className="h-8 w-24 rounded-md" />
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[180px] rounded-lg" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (sortedConnections.length === 0) {
+    return (
+      <div className="mx-auto max-w-5xl pb-6">
+        <Card className="flex flex-col items-center border-dashed py-10 text-center">
+          <CloudOff
+            className="mb-3 size-10 text-muted-foreground"
+            aria-hidden
+          />
+          <h3 className="text-sm font-semibold text-foreground">
+            Chưa có kết nối OAuth hỗ trợ quota
+          </h3>
+          <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+            Thêm kết nối OAuth trong Providers để xem hạn mức tại đây.
+          </p>
+          <Link
+            href="/dashboard/providers"
+            className={cn(buttonVariants({ size: "sm" }), "mt-4")}
+          >
+            Providers
+          </Link>
+        </Card>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">
-            Provider Limits
-          </h2>
-          <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
-          </span>
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 pb-6">
+      <header className="flex flex-wrap items-end justify-between gap-2 border-b border-border/50 pb-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">
+            Quota
+          </h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            OAuth được hỗ trợ · tự làm mới 60s
+          </p>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Cập nhật:{" "}
+          <span className="font-medium text-foreground">
+            {formatLastUpdated()}
+          </span>
+        </p>
+      </header>
 
-        <div className="flex items-center gap-2">
-          {/* Auto-refresh toggle */}
-          <button
-            onClick={() => setAutoRefresh((prev) => !prev)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-            title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
-          >
-            <span
-              className={`material-symbols-outlined text-[18px] ${
-                autoRefresh ? "text-primary" : "text-text-muted"
-              }`}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span>
+          <span className="font-medium text-foreground">{totalProviders}</span>{" "}
+          kết nối
+        </span>
+        <span className="text-border">·</span>
+        <span>
+          <span className="font-medium text-foreground">{activeWithLimits}</span>{" "}
+          có dữ liệu
+        </span>
+        <span className="text-border">·</span>
+        <span>
+          {lowQuotasCount > 0 ? (
+            <Badge variant="destructive" className="px-1.5 py-0 text-xs">
+              {lowQuotasCount} &lt;30%
+            </Badge>
+          ) : (
+            <>
+              <span className="font-medium text-foreground">0</span> cảnh báo
+            </>
+          )}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 sm:max-w-xl">
+          <QuotaAggregateSummary aggregate={quotaAggregate} />
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2 py-1">
+            <Switch
+              id="quota-auto-refresh"
+              size="sm"
+              checked={autoRefresh}
+              onCheckedChange={setAutoRefresh}
+            />
+            <Label
+              htmlFor="quota-auto-refresh"
+              className="cursor-pointer text-xs text-foreground"
             >
-              {autoRefresh ? "toggle_on" : "toggle_off"}
-            </span>
-            <span className="text-sm text-text-primary">Auto-refresh</span>
-            {autoRefresh && (
-              <span className="text-xs text-text-muted">({countdown}s)</span>
-            )}
-          </button>
-
-          {/* Refresh all button */}
+              Tự làm mới
+            </Label>
+            {autoRefresh ? (
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {countdown}s
+              </span>
+            ) : null}
+          </div>
           <Button
             variant="secondary"
-            size="md"
-            icon="refresh"
+            size="sm"
+            className="h-8 gap-1 px-2.5 text-xs"
             onClick={refreshAll}
             disabled={refreshingAll}
-            loading={refreshingAll}
           >
-            Refresh All
+            {refreshingAll ? (
+              <Loader2 className="size-3 animate-spin" aria-hidden />
+            ) : (
+              <RefreshCw className="size-3" aria-hidden />
+            )}
+            Làm mới
           </Button>
         </div>
       </div>
 
-      {/* Provider cards: 2 columns, compact */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <h2 className="text-xs font-medium text-muted-foreground">
+          Theo kết nối
+        </h2>
+        <div className="mt-1.5 grid grid-cols-1 gap-1.5 md:grid-cols-2 md:gap-2">
         {sortedConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
 
-          // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const rowBusy = deletingId === conn.id || togglingId === conn.id;
 
           return (
-            <Card
+            <ProviderQuotaCard
               key={conn.id}
-              padding="none"
-              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
-            >
-              <div className="px-4 py-3 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
-                      <ProviderIcon
-                        src={`/providers/${conn.provider}.png`}
-                        alt={conn.provider}
-                        size={32}
-                        className="object-contain"
-                        fallbackText={
-                          conn.provider?.slice(0, 2).toUpperCase() || "PR"
-                        }
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
-                      </h3>
-                      {conn.name && (
-                        <p className="text-xs text-text-muted truncate">
-                          {conn.name}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => refreshProvider(conn.id, conn.provider)}
-                      disabled={isLoading || rowBusy}
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                      title="Refresh quota"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
-                      >
-                        refresh
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedConnection(conn);
-                        setShowEditModal(true);
-                      }}
-                      disabled={rowBusy}
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
-                      title="Edit connection"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        edit
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteConnection(conn.id)}
-                      disabled={rowBusy}
-                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
-                      title="Delete connection"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
-                      >
-                        delete
-                      </span>
-                    </button>
-                    <div
-                      className="inline-flex items-center pl-0.5"
-                      title={
-                        (conn.isActive ?? true)
-                          ? "Disable connection"
-                          : "Enable connection"
-                      }
-                    >
-                      <Toggle
-                        size="sm"
-                        checked={conn.isActive ?? true}
-                        disabled={rowBusy}
-                        onChange={(nextActive) =>
-                          handleToggleConnectionActive(conn.id, nextActive)
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="px-3 py-3">
-                {isLoading ? (
-                  <div className="text-center py-5 text-text-muted">
-                    <span className="material-symbols-outlined text-[28px] animate-spin">
-                      progress_activity
-                    </span>
-                  </div>
-                ) : error ? (
-                  <div className="text-center py-5">
-                    <span className="material-symbols-outlined text-[28px] text-red-500">
-                      error
-                    </span>
-                    <p className="mt-1.5 text-xs text-text-muted">{error}</p>
-                  </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-5">
-                    <p className="text-xs text-text-muted">{quota.message}</p>
-                  </div>
-                ) : (
-                  <QuotaTable quotas={quota?.quotas} compact />
-                )}
-              </div>
-            </Card>
+              connection={conn}
+              quota={quota}
+              isLoading={isLoading}
+              error={error}
+              isInactive={isInactive}
+              rowBusy={rowBusy}
+              isDeleting={deletingId === conn.id}
+              onRefresh={() => refreshProvider(conn.id, conn.provider)}
+              onEdit={() => {
+                setSelectedConnection(conn);
+                setShowEditModal(true);
+              }}
+              onDelete={() => handleDeleteConnection(conn.id)}
+              onToggleActive={(next) =>
+                handleToggleConnectionActive(conn.id, next)
+              }
+            />
           );
         })}
+        </div>
       </div>
 
       <EditConnectionModal

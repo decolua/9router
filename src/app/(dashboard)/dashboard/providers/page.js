@@ -2,16 +2,28 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
+import { Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
-  Card,
-  CardSkeleton,
-  Badge,
-  Button,
-  Input,
-  Modal,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
   Select,
-  Toggle,
-} from "@/shared/components";
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
@@ -25,11 +37,47 @@ import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 
+/** Section shell: bordered panel + title + optional actions */
+function ProvidersPageSection({ title, description, actions, children }) {
+  return (
+    <section className="rounded-2xl border border-border/70 bg-gradient-to-b from-card to-card/95 p-5 shadow-sm ring-1 ring-border/30 dark:from-card/90 dark:to-card/70 md:p-6">
+      <div className="mb-5 flex flex-col gap-4 border-b border-border/50 pb-5 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <h2 className="text-base font-semibold tracking-tight text-foreground md:text-lg">
+            {title}
+          </h2>
+          {description ? (
+            <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground md:text-sm">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const providerCardSurface = (allDisabled) =>
+  cn(
+    "h-full min-h-[92px] cursor-pointer border-0 shadow-sm ring-1 ring-border/60 transition-all duration-200",
+    "bg-card/90 backdrop-blur-sm",
+    "hover:-translate-y-0.5 hover:shadow-md hover:ring-primary/25",
+    "dark:bg-card/70 dark:hover:bg-card/90",
+    allDisabled && "opacity-60 saturate-75",
+  );
+
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
   if (connected > 0) {
     parts.push(
-      <Badge key="connected" variant="success" size="sm" dot>
+      <Badge
+        key="connected"
+        className="border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300"
+      >
         {connected} Connected
       </Badge>,
     );
@@ -39,13 +87,13 @@ function getStatusDisplay(connected, error, errorCode) {
       ? `${error} Error (${errorCode})`
       : `${error} Error`;
     parts.push(
-      <Badge key="error" variant="error" size="sm" dot>
+      <Badge key="error" variant="destructive">
         {errText}
       </Badge>,
     );
   }
   if (parts.length === 0) {
-    return <span className="text-text-muted">No connections</span>;
+    return <span className="text-muted-foreground">No connections</span>;
   }
   return parts;
 }
@@ -90,6 +138,36 @@ function getConnectionErrorTag(connection) {
     return "AUTH";
 
   return "ERR";
+}
+
+function TestAllButton({ mode, testingMode, onTest, title, ariaLabel }) {
+  const active = testingMode === mode;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={!!testingMode && !active}
+      onClick={() => onTest(mode)}
+      title={title}
+      aria-label={ariaLabel}
+      className={cn(
+        "gap-1.5",
+        active &&
+          "animate-pulse border-primary/40 bg-primary/10 text-primary hover:bg-primary/15",
+      )}
+    >
+      <span
+        className={cn(
+          "material-symbols-outlined text-[14px]",
+          active && "animate-spin",
+        )}
+      >
+        {active ? "sync" : "play_arrow"}
+      </span>
+      {active ? "Testing..." : "Test All"}
+    </Button>
+  );
 }
 
 export default function ProvidersPage() {
@@ -236,44 +314,64 @@ export default function ProvidersPage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col gap-8">
-        <CardSkeleton />
-        <CardSkeleton />
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-8 pb-8">
+        <div className="border-b border-border/60 pb-6">
+          <Skeleton className="h-9 w-48 md:h-10" />
+          <Skeleton className="mt-3 h-4 max-w-xl" />
+        </div>
+        {[1, 2, 3].map((section) => (
+          <div
+            key={section}
+            className="rounded-2xl border border-border/70 bg-card/50 p-5 shadow-sm ring-1 ring-border/30 md:p-6"
+          >
+            <div className="mb-5 flex flex-col gap-4 border-b border-border/50 pb-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <Skeleton className="h-6 w-48" />
+                <Skeleton className="h-4 w-full max-w-md" />
+              </div>
+              <Skeleton className="h-9 w-28 shrink-0" />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-[100px] rounded-2xl" />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-8 pb-8">
+      <header className="border-b border-border/60 pb-6">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+          Providers
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          Kết nối OAuth, API key và endpoint tương thích. Chọn một ô để mở chi
+          tiết, bật/tắt nhóm kết nối bằng công tắc khi đã có kết nối.
+        </p>
+      </header>
+
       {/* OAuth Providers */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            OAuth Providers
-          </h2>
-          <div className="flex items-center gap-2">
+      <ProvidersPageSection
+        title="OAuth Providers"
+        description="Đăng nhập qua OAuth — Claude Code, Codex, Gemini CLI, Cursor, v.v."
+        actions={
+          <>
             <ModelAvailabilityBadge />
-            <button
-              onClick={() => handleBatchTest("oauth")}
-              disabled={!!testingMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-              }`}
+            <TestAllButton
+              mode="oauth"
+              testingMode={testingMode}
+              onTest={handleBatchTest}
               title="Test all OAuth connections"
-              aria-label="Test all OAuth connections"
-            >
-              <span
-                className={`material-symbols-outlined text-[14px]${testingMode === "oauth" ? " animate-spin" : ""}`}
-              >
-                {testingMode === "oauth" ? "sync" : "play_arrow"}
-              </span>
-              {testingMode === "oauth" ? "Testing..." : "Test All"}
-            </button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              ariaLabel="Test all OAuth connections"
+            />
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
           {Object.entries(OAUTH_PROVIDERS).map(([key, info]) => (
             <ProviderCard
               key={key}
@@ -285,34 +383,22 @@ export default function ProvidersPage() {
             />
           ))}
         </div>
-      </div>
+      </ProvidersPageSection>
 
-      {/* Free & Free Tier Providers */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            Free &amp; Free Tier Providers
-          </h2>
-          <button
-            onClick={() => handleBatchTest("free")}
-            disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-            }`}
+      <ProvidersPageSection
+        title="Free & Free Tier"
+        description="Miễn phí hoặc tầng free — thường không cần thẻ thanh toán."
+        actions={
+          <TestAllButton
+            mode="free"
+            testingMode={testingMode}
+            onTest={handleBatchTest}
             title="Test all Free connections"
-            aria-label="Test all Free provider connections"
-          >
-            <span
-              className={`material-symbols-outlined text-[14px]${testingMode === "free" ? " animate-spin" : ""}`}
-            >
-              {testingMode === "free" ? "sync" : "play_arrow"}
-            </span>
-            {testingMode === "free" ? "Testing..." : "Test All"}
-          </button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            ariaLabel="Test all Free provider connections"
+          />
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
           {Object.entries(FREE_PROVIDERS).map(([key, info]) => (
             <ProviderCard
               key={key}
@@ -334,36 +420,26 @@ export default function ProvidersPage() {
             />
           ))}
         </div>
-      </div>
+      </ProvidersPageSection>
 
-      {/* API Key Providers — fixed list */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            API Key Providers{" "}
-          </h2>
-          <button
-            onClick={() => handleBatchTest("apikey")}
-            disabled={!!testingMode}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-              testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-            }`}
+      <ProvidersPageSection
+        title="API Key Providers"
+        description="Nhập API key từ OpenRouter, GLM, DeepSeek, v.v."
+        actions={
+          <TestAllButton
+            mode="apikey"
+            testingMode={testingMode}
+            onTest={handleBatchTest}
             title="Test all API Key connections"
-            aria-label="Test all API Key connections"
-          >
-            <span
-              className={`material-symbols-outlined text-[14px]${testingMode === "apikey" ? " animate-spin" : ""}`}
-            >
-              {testingMode === "apikey" ? "sync" : "play_arrow"}
-            </span>
-            {testingMode === "apikey" ? "Testing..." : "Test All"}
-          </button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            ariaLabel="Test all API Key connections"
+          />
+        }
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
           {Object.entries(APIKEY_PROVIDERS)
-            .filter(([, info]) => (info.serviceKinds ?? ["llm"]).includes("llm"))
+            .filter(([, info]) =>
+              (info.serviceKinds ?? ["llm"]).includes("llm"),
+            )
             .map(([key, info]) => (
               <ApiKeyProviderCard
                 key={key}
@@ -371,69 +447,57 @@ export default function ProvidersPage() {
                 provider={info}
                 stats={getProviderStats(key, "apikey")}
                 authType="apikey"
-                onToggle={(active) => handleToggleProvider(key, "apikey", active)}
+                onToggle={(active) =>
+                  handleToggleProvider(key, "apikey", active)
+                }
               />
             ))}
         </div>
-      </div>
+      </ProvidersPageSection>
 
-      {/* API Key Compatible Providers — dynamic (OpenAI/Anthropic compatible) */}
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            API Key Compatible Providers{" "}
-          </h2>
-          <div className="flex gap-2">
-            {/* {(compatibleProviders.length > 0 || anthropicCompatibleProviders.length > 0) && (
-              <button
-                onClick={() => handleBatchTest("compatible")}
-                disabled={!!testingMode}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${testingMode === "compatible"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
-                  }`}
-                title="Test all Compatible connections"
-              >
-                <span className={`material-symbols-outlined text-[14px]${testingMode === "compatible" ? " animate-spin" : ""}`}>
-                  {testingMode === "compatible" ? "sync" : "play_arrow"}
-                </span>
-                {testingMode === "compatible" ? "Testing..." : "Test All"}
-              </button>
-            )} */}
+      <ProvidersPageSection
+        title="Compatible endpoints"
+        description="OpenAI / Anthropic-compatible — trỏ tới base URL của bạn."
+        actions={
+          <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
+              className="gap-1.5 shadow-sm"
             >
-              Add Anthropic Compatible
+              <Plus className="size-4" />
+              Anthropic
             </Button>
             <Button
               size="sm"
               variant="secondary"
-              icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
-              className="!bg-white !text-black hover:!bg-gray-100"
+              className="gap-1.5 shadow-sm"
             >
-              Add OpenAI Compatible
+              <Plus className="size-4" />
+              OpenAI
             </Button>
           </div>
-        </div>
+        }
+      >
         {compatibleProviders.length === 0 &&
         anthropicCompatibleProviders.length === 0 ? (
-          <div className="text-center py-8 border border-dashed border-border rounded-xl">
-            <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
-              extension
-            </span>
-            <p className="text-text-muted text-sm">
-              No compatible providers added yet
+          <Card className="flex flex-col items-center justify-center border-dashed border-border/80 bg-muted/20 py-14 text-center dark:bg-muted/10">
+            <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-muted ring-1 ring-border/60">
+              <span className="material-symbols-outlined text-[28px] text-muted-foreground">
+                extension
+              </span>
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              Chưa có compatible provider
             </p>
-            <p className="text-text-muted text-xs mt-1">
-              Use the buttons above to add OpenAI or Anthropic compatible
-              endpoints
+            <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
+              Dùng hai nút phía trên để thêm endpoint Anthropic hoặc OpenAI
+              tương thích.
             </p>
-          </div>
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5 xl:grid-cols-4">
             {[...compatibleProviders, ...anthropicCompatibleProviders].map(
               (info) => (
                 <ApiKeyProviderCard
@@ -450,7 +514,7 @@ export default function ProvidersPage() {
             )}
           </div>
         )}
-      </div>
+      </ProvidersPageSection>
 
       <AddOpenAICompatibleModal
         isOpen={showAddCompatibleModal}
@@ -469,33 +533,24 @@ export default function ProvidersPage() {
         }}
       />
 
-      {/* Test Results Modal */}
-      {testResults && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[10vh]"
-          onClick={() => setTestResults(null)}
+      <Dialog
+        open={!!testResults}
+        onOpenChange={(open) => {
+          if (!open) setTestResults(null);
+        }}
+      >
+        <DialogContent
+          className="top-[10%] max-h-[80vh] max-w-[600px] translate-y-0 overflow-y-auto sm:max-w-[600px]"
+          showCloseButton
         >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[80vh] overflow-y-auto shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
-              <h3 className="font-semibold">Test Results</h3>
-              <button
-                onClick={() => setTestResults(null)}
-                className="p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
-                aria-label="Close test results"
-              >
-                <span className="material-symbols-outlined text-lg">close</span>
-              </button>
-            </div>
-            <div className="p-5">
-              <ProviderTestResultsView results={testResults} />
-            </div>
-          </div>
-        </div>
-      )}
+          <DialogHeader>
+            <DialogTitle>Test Results</DialogTitle>
+          </DialogHeader>
+          {testResults ? (
+            <ProviderTestResultsView results={testResults} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -504,29 +559,16 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group">
+    <Link href={`/dashboard/providers/${providerId}`} className="group block">
       <Card
-        padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        size="sm"
+        className={cn("p-4", providerCardSurface(allDisabled))}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div
-              className="size-8 rounded-lg flex items-center justify-center"
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-black/5 dark:ring-white/10"
               style={{
                 backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}`,
               }}
@@ -535,52 +577,55 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={30}
-                className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
+                className="max-h-[32px] max-w-[32px] rounded-lg object-contain"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
                 fallbackColor={provider.color}
               />
             </div>
-            <div>
-              <h3 className="font-semibold">{provider.name}</h3>
-              <div className="flex items-center gap-2 text-xs flex-wrap">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+                {provider.name}
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 {allDisabled ? (
-                  <Badge variant="default" size="sm">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
-                      </span>
-                      Disabled
+                  <Badge variant="secondary" className="gap-1">
+                    <span className="material-symbols-outlined text-[12px]">
+                      pause_circle
                     </span>
+                    Disabled
                   </Badge>
                 ) : isNoAuth ? (
-                  <Badge variant="success" size="sm" dot>Ready</Badge>
+                  <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+                    Ready
+                  </Badge>
                 ) : (
                   <>
                     {getStatusDisplay(connected, error, errorCode)}
                     {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
+                      <span className="text-muted-foreground">{errorTime}</span>
                     )}
                   </>
                 )}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                className="opacity-90 transition-opacity group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
                 }}
+                onKeyDown={(e) => e.stopPropagation()}
+                role="presentation"
               >
-                <Toggle
+                <Switch
                   size="sm"
                   checked={!allDisabled}
-                  onChange={() => {}}
+                  onCheckedChange={(checked) => onToggle(checked)}
                   title={allDisabled ? "Enable provider" : "Disable provider"}
                 />
               </div>
@@ -623,19 +668,6 @@ function ApiKeyProviderCard({
     ANTHROPIC_COMPATIBLE_PREFIX,
   );
 
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
-
   const getIconPath = () => {
     if (isCompatible)
       return provider.apiType === "responses"
@@ -646,15 +678,15 @@ function ApiKeyProviderCard({
   };
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group">
+    <Link href={`/dashboard/providers/${providerId}`} className="group block">
       <Card
-        padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        size="sm"
+        className={cn("p-4", providerCardSurface(allDisabled))}
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <div
-              className="size-8 rounded-lg flex items-center justify-center"
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl ring-1 ring-black/5 dark:ring-white/10"
               style={{
                 backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}`,
               }}
@@ -663,62 +695,60 @@ function ApiKeyProviderCard({
                 src={getIconPath()}
                 alt={provider.name}
                 size={30}
-                className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
+                className="max-h-[30px] max-w-[30px] rounded-lg object-contain"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
                 fallbackColor={provider.color}
               />
             </div>
-            <div>
-              <h3 className="font-semibold">{provider.name}</h3>
-              <div className="flex items-center gap-2 text-xs flex-wrap">
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+                {provider.name}
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
                 {allDisabled ? (
-                  <Badge variant="default" size="sm">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[12px]">
-                        pause_circle
-                      </span>
-                      Disabled
+                  <Badge variant="secondary" className="gap-1">
+                    <span className="material-symbols-outlined text-[12px]">
+                      pause_circle
                     </span>
+                    Disabled
                   </Badge>
                 ) : (
                   <>
                     {getStatusDisplay(connected, error, errorCode)}
                     {isCompatible && (
-                      <Badge variant="default" size="sm">
+                      <Badge variant="outline">
                         {provider.apiType === "responses"
                           ? "Responses"
                           : "Chat"}
                       </Badge>
                     )}
                     {isAnthropicCompatible && (
-                      <Badge variant="default" size="sm">
-                        Messages
-                      </Badge>
+                      <Badge variant="outline">Messages</Badge>
                     )}
                     {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
+                      <span className="text-muted-foreground">{errorTime}</span>
                     )}
                   </>
                 )}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                className="opacity-90 transition-opacity group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
                 }}
+                role="presentation"
               >
-                <Toggle
+                <Switch
                   size="sm"
                   checked={!allDisabled}
-                  onChange={() => {}}
+                  onCheckedChange={(checked) => onToggle(checked)}
                   title={allDisabled ? "Enable provider" : "Disable provider"}
                 />
               </div>
@@ -841,9 +871,11 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
     if (valid) {
       return (
         <>
-          <Badge variant="success">Valid</Badge>
+          <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+            Valid
+          </Badge>
           {method === "chat" && (
-            <span className="text-sm text-text-muted">
+            <span className="text-sm text-muted-foreground">
               (via inference test)
             </span>
           )}
@@ -852,88 +884,145 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
     }
     return (
       <div className="flex flex-col gap-1">
-        <Badge variant="error">Invalid</Badge>
+        <Badge variant="destructive">Invalid</Badge>
         {error && <span className="text-sm text-red-500">{error}</span>}
       </div>
     );
   };
 
   return (
-    <Modal isOpen={isOpen} title="Add OpenAI Compatible" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="OpenAI Compatible (Prod)"
-          hint="Required. A friendly label for this node."
-        />
-        <Input
-          label="Prefix"
-          value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-          placeholder="oc-prod"
-          hint="Required. Used as the provider prefix for model IDs."
-        />
-        <Select
-          label="API Type"
-          options={apiTypeOptions}
-          value={formData.apiType}
-          onChange={(e) =>
-            setFormData({ ...formData, apiType: e.target.value })
-          }
-        />
-        <Input
-          label="Base URL"
-          value={formData.baseUrl}
-          onChange={(e) =>
-            setFormData({ ...formData, baseUrl: e.target.value })
-          }
-          placeholder="https://api.openai.com/v1"
-          hint="Use the base URL (ending in /v1) for your OpenAI-compatible API."
-        />
-        <Input
-          label="API Key (for Check)"
-          type="password"
-          value={checkKey}
-          onChange={(e) => setCheckKey(e.target.value)}
-        />
-        <Input
-          label="Model ID (optional)"
-          value={checkModelId}
-          onChange={(e) => setCheckModelId(e.target.value)}
-          placeholder="e.g. gpt-4, claude-3-opus"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
-        />
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
-            variant="secondary"
-          >
-            {validating ? "Checking..." : "Check"}
-          </Button>
-          {renderValidationResult()}
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add OpenAI Compatible</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="oai-name">Name</Label>
+            <Input
+              id="oai-name"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              placeholder="OpenAI Compatible (Prod)"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required. A friendly label for this node.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="oai-prefix">Prefix</Label>
+            <Input
+              id="oai-prefix"
+              value={formData.prefix}
+              onChange={(e) =>
+                setFormData({ ...formData, prefix: e.target.value })
+              }
+              placeholder="oc-prod"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required. Used as the provider prefix for model IDs.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label>API Type</Label>
+            <Select
+              value={formData.apiType}
+              onValueChange={(v) =>
+                setFormData({ ...formData, apiType: v })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {apiTypeOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="oai-base">Base URL</Label>
+            <Input
+              id="oai-base"
+              value={formData.baseUrl}
+              onChange={(e) =>
+                setFormData({ ...formData, baseUrl: e.target.value })
+              }
+              placeholder="https://api.openai.com/v1"
+            />
+            <p className="text-xs text-muted-foreground">
+              Use the base URL (ending in /v1) for your OpenAI-compatible API.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="oai-key">API Key (for Check)</Label>
+            <Input
+              id="oai-key"
+              type="password"
+              value={checkKey}
+              onChange={(e) => setCheckKey(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="oai-model">Model ID (optional)</Label>
+            <Input
+              id="oai-model"
+              value={checkModelId}
+              onChange={(e) => setCheckModelId(e.target.value)}
+              placeholder="e.g. gpt-4, claude-3-opus"
+            />
+            <p className="text-xs text-muted-foreground">
+              If provider lacks /models endpoint, enter a model ID to validate
+              via chat/completions instead.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleValidate}
+              disabled={!checkKey || validating || !formData.baseUrl.trim()}
+              variant="secondary"
+            >
+              {validating ? "Checking..." : "Check"}
+            </Button>
+            {renderValidationResult()}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="flex-1"
+              onClick={handleSubmit}
+              disabled={
+                !formData.name.trim() ||
+                !formData.prefix.trim() ||
+                !formData.baseUrl.trim() ||
+                submitting
+              }
+            >
+              {submitting ? "Creating..." : "Create"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={handleSubmit}
-            fullWidth
-            disabled={
-              !formData.name.trim() ||
-              !formData.prefix.trim() ||
-              !formData.baseUrl.trim() ||
-              submitting
-            }
-          >
-            {submitting ? "Creating..." : "Create"}
-          </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1030,9 +1119,11 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
     if (valid) {
       return (
         <>
-          <Badge variant="success">Valid</Badge>
+          <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-300">
+            Valid
+          </Badge>
           {method === "chat" && (
-            <span className="text-sm text-text-muted">
+            <span className="text-sm text-muted-foreground">
               (via inference test)
             </span>
           )}
@@ -1041,80 +1132,126 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
     }
     return (
       <div className="flex flex-col gap-1">
-        <Badge variant="error">Invalid</Badge>
+        <Badge variant="destructive">Invalid</Badge>
         {error && <span className="text-sm text-red-500">{error}</span>}
       </div>
     );
   };
 
   return (
-    <Modal isOpen={isOpen} title="Add Anthropic Compatible" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Anthropic Compatible (Prod)"
-          hint="Required. A friendly label for this node."
-        />
-        <Input
-          label="Prefix"
-          value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-          placeholder="ac-prod"
-          hint="Required. Used as the provider prefix for model IDs."
-        />
-        <Input
-          label="Base URL"
-          value={formData.baseUrl}
-          onChange={(e) =>
-            setFormData({ ...formData, baseUrl: e.target.value })
-          }
-          placeholder="https://api.anthropic.com/v1"
-          hint="Use the base URL (ending in /v1) for your Anthropic-compatible API. The system will append /messages."
-        />
-        <Input
-          label="API Key (for Check)"
-          type="password"
-          value={checkKey}
-          onChange={(e) => setCheckKey(e.target.value)}
-        />
-        <Input
-          label="Model ID (optional)"
-          value={checkModelId}
-          onChange={(e) => setCheckModelId(e.target.value)}
-          placeholder="e.g. claude-3-opus"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
-        />
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
-            variant="secondary"
-          >
-            {validating ? "Checking..." : "Check"}
-          </Button>
-          {renderValidationResult()}
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add Anthropic Compatible</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="anth-name">Name</Label>
+            <Input
+              id="anth-name"
+              value={formData.name}
+              onChange={(e) =>
+                setFormData({ ...formData, name: e.target.value })
+              }
+              placeholder="Anthropic Compatible (Prod)"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required. A friendly label for this node.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="anth-prefix">Prefix</Label>
+            <Input
+              id="anth-prefix"
+              value={formData.prefix}
+              onChange={(e) =>
+                setFormData({ ...formData, prefix: e.target.value })
+              }
+              placeholder="ac-prod"
+            />
+            <p className="text-xs text-muted-foreground">
+              Required. Used as the provider prefix for model IDs.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="anth-base">Base URL</Label>
+            <Input
+              id="anth-base"
+              value={formData.baseUrl}
+              onChange={(e) =>
+                setFormData({ ...formData, baseUrl: e.target.value })
+              }
+              placeholder="https://api.anthropic.com/v1"
+            />
+            <p className="text-xs text-muted-foreground">
+              Use the base URL (ending in /v1) for your Anthropic-compatible API.
+              The system will append /messages.
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="anth-key">API Key (for Check)</Label>
+            <Input
+              id="anth-key"
+              type="password"
+              value={checkKey}
+              onChange={(e) => setCheckKey(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="anth-model">Model ID (optional)</Label>
+            <Input
+              id="anth-model"
+              value={checkModelId}
+              onChange={(e) => setCheckModelId(e.target.value)}
+              placeholder="e.g. claude-3-opus"
+            />
+            <p className="text-xs text-muted-foreground">
+              If provider lacks /models endpoint, enter a model ID to validate
+              via chat/completions instead.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleValidate}
+              disabled={!checkKey || validating || !formData.baseUrl.trim()}
+              variant="secondary"
+            >
+              {validating ? "Checking..." : "Check"}
+            </Button>
+            {renderValidationResult()}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="flex-1"
+              onClick={handleSubmit}
+              disabled={
+                !formData.name.trim() ||
+                !formData.prefix.trim() ||
+                !formData.baseUrl.trim() ||
+                submitting
+              }
+            >
+              {submitting ? "Creating..." : "Create"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="flex-1"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            onClick={handleSubmit}
-            fullWidth
-            disabled={
-              !formData.name.trim() ||
-              !formData.prefix.trim() ||
-              !formData.baseUrl.trim() ||
-              submitting
-            }
-          >
-            {submitting ? "Creating..." : "Create"}
-          </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
+      </DialogContent>
+    </Dialog>
   );
 }
 
