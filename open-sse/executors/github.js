@@ -103,6 +103,29 @@ export class GithubExecutor extends BaseExecutor {
     return sanitized;
   }
 
+  // GitHub Copilot /chat/completions rejects Claude-style `thinking: { type: "enabled" }`
+  // (used by OpenClaw and similar clients for Claude models) with a 400.
+  // GPT-5 family, in contrast, *does* accept `reasoning_effort` (low/medium/high) and uses
+  // it to trade off quality for latency/cost. Stripping it for all GitHub-routed models
+  // (as the blanket fix for #623 did) regresses that capability.
+  //
+  // Return false only for models that actually reject these fields.
+  supportsThinking(model) {
+    return !/claude/i.test(model);
+  }
+
+  transformRequest(model, body, stream, credentials) {
+    const transformed = { ...body };
+    // Strip Claude-style `thinking` and `reasoning_effort` only for models that reject them.
+    // GPT-5 family honors `reasoning_effort` via /chat/completions; Codex models need it
+    // via /responses. Don't strip indiscriminately.
+    if (!this.supportsThinking(model)) {
+      delete transformed.thinking;
+      delete transformed.reasoning_effort;
+    }
+    return transformed;
+  }
+
   async execute(options) {
     const { model, log } = options;
 
