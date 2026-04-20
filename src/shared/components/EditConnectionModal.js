@@ -215,11 +215,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 hint="Azure OpenAI API version to use"
               />
               <Input
-                label="Organization (Optional)"
+                label="Organization"
                 value={azureData.organization}
                 onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
                 placeholder="Organization ID"
-                hint="Optional: Your Azure organization ID"
+                hint="Required for billing"
               />
             </div>
           </div>

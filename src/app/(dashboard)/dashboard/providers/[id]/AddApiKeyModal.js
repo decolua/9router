@@ -25,13 +25,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const validatePayload = () => {
+    const payload = { provider, apiKey: formData.apiKey };
+    if (isAzure) payload.providerSpecificData = azureData;
+    return payload;
+  };
+
   const handleValidate = async () => {
     setValidating(true);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+        body: JSON.stringify(validatePayload()),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -54,7 +60,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+          body: JSON.stringify(validatePayload()),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -144,7 +150,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 placeholder="2024-10-01-preview"
               />
               <Input
-                label="Organization (Optional)"
+                label="Organization"
                 value={azureData.organization}
                 onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
                 placeholder="Organization ID"
@@ -182,7 +188,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || (isAzure && (!azureData.azureEndpoint || !azureData.deployment)) || saving}>
+          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
