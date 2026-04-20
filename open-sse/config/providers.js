@@ -338,4 +338,11 @@ export const PROVIDERS = {
     headers: { "x-opencode-client": "desktop" },
     noAuth: true
   },
+  // Azure OpenAI - requires azureEndpoint, apiVersion, deployment in providerSpecificData
+  // Uses api-key header for authentication instead of Bearer token
+  azure: {
+    baseUrl: "", // Constructed dynamically by AzureExecutor based on credentials
+    format: "openai",
+    headers: {}
+  },
 };
