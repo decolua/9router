@@ -112,6 +112,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      // 428 = provider doesn't support tool calls — skip to next model (not a real error)
+      if (result.status === 428) {
+        const skipReason = result.headers?.get("X-Skip-Reason") || errorText || "tool-calls-unsupported";
+        log.info("COMBO", `Model ${modelStr} skipped (${skipReason}), trying next`);
+        lastError = errorText || "skipped";
+        if (!lastStatus) lastStatus = 428;
+        continue;
+      }
+
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 

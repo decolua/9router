@@ -35,16 +35,16 @@ function normalizeProxyConfig(body = {}) {
 
 async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   if (proxyPoolIdInput === undefined) {
-    return { hasProxyPoolField: false, proxyPoolId: null };
+    return { hasProxyPoolField: false, proxyPoolId: null, proxyPoolIds: null };
   }
 
   if (proxyPoolIdInput === null || proxyPoolIdInput === "" || proxyPoolIdInput === "__none__") {
-    return { hasProxyPoolField: true, proxyPoolId: null };
+    return { hasProxyPoolField: true, proxyPoolId: null, proxyPoolIds: null };
   }
 
   const proxyPoolId = String(proxyPoolIdInput).trim();
   if (!proxyPoolId) {
-    return { hasProxyPoolField: true, proxyPoolId: null };
+    return { hasProxyPoolField: true, proxyPoolId: null, proxyPoolIds: null };
   }
 
   const proxyPool = await getProxyPoolById(proxyPoolId);
@@ -53,6 +53,36 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   }
 
   return { hasProxyPoolField: true, proxyPoolId };
+}
+
+async function normalizeProxyPoolIdsUpdate(proxyPoolIdsInput) {
+  if (proxyPoolIdsInput === undefined) {
+    return { hasProxyPoolIdsField: false, proxyPoolIds: null };
+  }
+
+  // null or empty array = clear
+  if (proxyPoolIdsInput === null || (Array.isArray(proxyPoolIdsInput) && proxyPoolIdsInput.length === 0)) {
+    return { hasProxyPoolIdsField: true, proxyPoolIds: null };
+  }
+
+  if (!Array.isArray(proxyPoolIdsInput)) {
+    return { hasProxyPoolIdsField: true, error: "proxyPoolIds must be an array" };
+  }
+
+  // Validate all pool IDs exist
+  const validated = [];
+  for (const poolId of proxyPoolIdsInput) {
+    if (!poolId || typeof poolId !== "string") continue;
+    const trimmed = poolId.trim();
+    if (!trimmed) continue;
+    const pool = await getProxyPoolById(trimmed);
+    if (!pool) {
+      return { hasProxyPoolIdsField: true, error: `Proxy pool not found: ${trimmed}` };
+    }
+    validated.push(trimmed);
+  }
+
+  return { hasProxyPoolIdsField: true, proxyPoolIds: validated.length > 0 ? validated : null };
 }
 
 function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
@@ -116,6 +146,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
     }
 
+    const proxyPoolIdsResult = await normalizeProxyPoolIdsUpdate(body.proxyPoolIds);
+    if (proxyPoolIdsResult.error) {
+      return NextResponse.json({ error: proxyPoolIdsResult.error }, { status: 400 });
+    }
+
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
@@ -123,7 +158,6 @@ export async function PUT(request, { params }) {
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
-    if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
 
@@ -132,7 +166,7 @@ export async function PUT(request, { params }) {
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField || proxyPoolIdsResult.hasProxyPoolIdsField
       )
     ) {
       updateData.providerSpecificData = {
@@ -151,6 +185,19 @@ export async function PUT(request, { params }) {
           delete updateData.providerSpecificData.proxyPoolId;
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+        }
+      }
+
+      if (proxyPoolIdsResult.hasProxyPoolIdsField) {
+        if (proxyPoolIdsResult.proxyPoolIds === null) {
+          // Clear all proxy pool references (both new and legacy)
+          delete updateData.providerSpecificData.proxyPoolIds;
+          delete updateData.providerSpecificData.proxyPoolIndex;
+          delete updateData.providerSpecificData.proxyPoolId;
+        } else {
+          updateData.providerSpecificData.proxyPoolIds = proxyPoolIdsResult.proxyPoolIds;
+          // Clear legacy field to avoid conflicts
+          delete updateData.providerSpecificData.proxyPoolId;
         }
       }
     }

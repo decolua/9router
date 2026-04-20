@@ -8,8 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings, getProviderDisplayName } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getSettings, getProviderDisplayName, getProviderNodeSupportsToolCalls, getProviderNodeSupportsStreaming } from "@/lib/localDb";
+import { getModelInfo, getComboModels, hasToolCalls } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat } from "open-sse/services/combo.js";
@@ -152,6 +152,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     log.info("ROUTING", `Provider: ${displayName}, Model: ${model}`);
   }
 
+  // Check tool call support — if request has tools but provider doesn't, return 428 to trigger combo skip
+  if (hasToolCalls(body)) {
+    const supportsToolCalls = await getProviderNodeSupportsToolCalls(provider);
+    if (!supportsToolCalls) {
+      log.warn("ROUTING", `Provider ${displayName} does not support tool calls, skipping (428)`);
+      return new Response(
+        JSON.stringify({ error: { message: `Provider ${displayName} does not support tool calls` } }),
+        { status: 428, headers: { "Content-Type": "application/json", "X-Skip-Reason": "tool-calls-unsupported" } }
+      );
+    }
+  }
+
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
@@ -194,11 +206,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     }
 
+    // Build request body — apply provider-level stream override if needed
+    const supportsStreaming = await getProviderNodeSupportsStreaming(provider);
+    const requestBody = { ...body, model: `${provider}/${model}` };
+    if (!supportsStreaming && requestBody.stream === true) {
+      log.info("ROUTING", `Provider ${displayName} does not support streaming, forcing stream=false`);
+      requestBody.stream = false;
+    }
+
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: requestBody,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,

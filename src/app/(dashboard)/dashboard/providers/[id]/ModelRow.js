@@ -1,13 +1,18 @@
 import PropTypes from "prop-types";
+import { Toggle } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
-  const borderColor = testStatus === "ok"
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, isDisabled, onToggleDisabled }) {
+  const borderColor = isDisabled
+    ? "border-red-500/40 opacity-60"
+    : testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
     : "border-border";
 
-  const iconColor = testStatus === "ok"
+  const iconColor = isDisabled
+    ? "#ef4444"
+    : testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
     ? "#ef4444"
@@ -20,12 +25,22 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           className="material-symbols-outlined text-base"
           style={iconColor ? { color: iconColor } : undefined}
         >
-          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : isDisabled ? "block" : "smart_toy"}
         </span>
         <div className="flex flex-col gap-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <code className={`text-xs font-mono bg-sidebar px-1.5 py-0.5 rounded ${isDisabled ? "line-through text-text-muted" : ""}`}>{fullModel}</code>
           {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
         </div>
+        {onToggleDisabled && (
+          <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+            <Toggle
+              size="sm"
+              checked={!isDisabled}
+              onChange={onToggleDisabled}
+              title={isDisabled ? "Enable model" : "Disable model"}
+            />
+          </div>
+        )}
         {onTest && (
           <div className="relative group/btn">
             <button
@@ -83,4 +98,6 @@ ModelRow.propTypes = {
   onDeleteAlias: PropTypes.func,
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
+  isDisabled: PropTypes.bool,
+  onToggleDisabled: PropTypes.func,
 };

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, Toggle } from "@/shared/components";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -10,6 +10,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     prefix: "",
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
+    supportsToolCalls: true,
+    supportsStreaming: true,
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -24,6 +26,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        supportsToolCalls: node.supportsToolCalls !== false,
+        supportsStreaming: node.supportsStreaming !== false,
       });
     }
   }, [node, isAnthropic]);
@@ -41,6 +45,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        supportsToolCalls: formData.supportsToolCalls,
+        supportsStreaming: formData.supportsStreaming,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -133,6 +139,30 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
             {validationResult === "success" ? "Valid" : "Invalid"}
           </Badge>
         )}
+        <div className="flex items-center gap-3">
+          <Toggle
+            checked={formData.supportsToolCalls}
+            onChange={(checked) => setFormData({ ...formData, supportsToolCalls: checked })}
+          />
+          <div>
+            <div className="text-sm font-medium">Tool Call Support</div>
+            <div className="text-xs text-base-content/60">
+              Combos will skip this provider for tool call requests when disabled.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <Toggle
+            checked={formData.supportsStreaming}
+            onChange={(checked) => setFormData({ ...formData, supportsStreaming: checked })}
+          />
+          <div>
+            <div className="text-sm font-medium">Streaming Support</div>
+            <div className="text-xs text-base-content/60">
+              Disable if this provider has issues with stream=true.
+            </div>
+          </div>
+        </div>
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || saving}>
             {saving ? "Saving..." : "Save"}

@@ -66,3 +66,27 @@ export async function getComboModels(modelStr) {
   }
   return null;
 }
+
+/**
+ * Detect if a request body contains tool calls
+ */
+export function hasToolCalls(body) {
+  if (!body) return false;
+
+  // Top-level tools array
+  if (body.tools?.length > 0) return true;
+
+  // tool_calls in assistant messages (OpenAI format)
+  if (body.messages?.some(msg =>
+    msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0
+  )) return true;
+
+  // Claude tool_use blocks in content
+  if (body.messages?.some(msg =>
+    msg.role === "assistant" &&
+    Array.isArray(msg.content) &&
+    msg.content.some(b => b.type === "tool_use")
+  )) return true;
+
+  return false;
+}

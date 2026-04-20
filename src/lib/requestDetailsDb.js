@@ -136,11 +136,12 @@ async function flushToDatabase() {
         providerRequest: item.providerRequest || {},
         providerResponse: item.providerResponse || {},
         response: item.response || {},
+        clientResponse: item.clientResponse || null,  // Actual response sent to client
       };
 
       // Truncate oversized JSON fields
       const maxSize = config.maxJsonSize;
-      for (const field of ["request", "providerRequest", "providerResponse", "response"]) {
+      for (const field of ["request", "providerRequest", "providerResponse", "response", "clientResponse"]) {
         const str = JSON.stringify(record[field]);
         if (str.length > maxSize) {
           record[field] = { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };

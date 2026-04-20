@@ -24,6 +24,7 @@ product
 # misc
 .DS_Store
 *.pem
+/9router-data
 
 # debug
 npm-debug.log*

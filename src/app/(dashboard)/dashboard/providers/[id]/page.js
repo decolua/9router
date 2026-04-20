@@ -44,8 +44,10 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [capabilities, setCapabilities] = useState({ supportsToolCalls: true, supportsStreaming: true });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [providerDisabledModels, setProviderDisabledModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -122,6 +124,15 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      // Load per-provider capabilities
+      const providerCaps = (settingsData.providerCapabilities || {})[providerId] || {};
+      setCapabilities({
+        supportsToolCalls: providerCaps.supportsToolCalls !== false,
+        supportsStreaming: providerCaps.supportsStreaming !== false,
+      });
+      // Load per-provider disabled models
+      const disabledModelsData = (settingsData.providerDisabledModels || {})[providerId] || [];
+      setProviderDisabledModels(disabledModelsData);
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -232,6 +243,54 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
+  };
+
+  const saveCapabilities = async (key, value) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerCapabilities || {};
+      const updated = {
+        ...current,
+        [providerId]: {
+          ...(current[providerId] || {}),
+          [key]: value,
+        },
+      };
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerCapabilities: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving capabilities:", error);
+    }
+  };
+
+  const handleCapabilityToggle = (key, value) => {
+    setCapabilities(prev => ({ ...prev, [key]: value }));
+    saveCapabilities(key, value);
+  };
+
+  const toggleModelDisabled = async (modelId) => {
+    const next = providerDisabledModels.includes(modelId)
+      ? providerDisabledModels.filter(m => m !== modelId)
+      : [...providerDisabledModels, modelId];
+    setProviderDisabledModels(next);
+    // Save to settings
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerDisabledModels || {};
+      const updated = { ...current, [providerId]: next };
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerDisabledModels: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving disabled models:", error);
+    }
   };
 
   useEffect(() => {
@@ -427,7 +486,7 @@ export default function ProviderDetailPage() {
   const handleBulkApplyProxyPool = async () => {
     if (selectedConnectionIds.length === 0) return;
 
-    const proxyPoolId = bulkProxyPoolId === "__none__" ? null : bulkProxyPoolId;
+    const proxyPoolIds = bulkProxyPoolId === "__none__" ? null : [bulkProxyPoolId];
     setBulkUpdatingProxy(true);
     try {
       const results = [];
@@ -436,7 +495,7 @@ export default function ProviderDetailPage() {
           const res = await fetch(`/api/providers/${connectionId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ proxyPoolId }),
+            body: JSON.stringify({ proxyPoolIds }),
           });
           results.push(res.ok);
         } catch (e) {
@@ -478,19 +537,24 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onUpdateProxy={async (proxyPoolId) => {
+                onUpdateProxy={async (proxyPoolIds) => {
                   try {
                     const res = await fetch(`/api/providers/${conn.id}`, {
                       method: "PUT",
                       headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
+                      body: JSON.stringify({ proxyPoolIds: proxyPoolIds || null }),
                     });
                     if (res.ok) {
-                      setConnections(prev => prev.map(c =>
-                        c.id === conn.id
-                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
-                          : c
-                      ));
+                      setConnections(prev => prev.map(c => {
+                        if (c.id !== conn.id) return c;
+                        const newPsd = { ...c.providerSpecificData, proxyPoolIds: proxyPoolIds || null };
+                        // Clear legacy field when removing proxy
+                        if (!proxyPoolIds) {
+                          delete newPsd.proxyPoolId;
+                          delete newPsd.proxyPoolIndex;
+                        }
+                        return { ...c, providerSpecificData: newPsd };
+                      }));
                     }
                   } catch (error) {
                     console.log("Error updating proxy:", error);
@@ -582,6 +646,8 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          providerDisabledModels={providerDisabledModels}
+          onToggleModelDisabled={toggleModelDisabled}
         />
       );
     }
@@ -616,6 +682,7 @@ export default function ProviderDetailPage() {
           const existingAlias = Object.entries(modelAliases).find(
             ([, m]) => m === fullModel || m === oldFormatModel
           )?.[0];
+          const isDisabled = providerDisabledModels.includes(model.id);
           return (
             <ModelRow
               key={model.id}
@@ -630,6 +697,8 @@ export default function ProviderDetailPage() {
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
               isFree={model.isFree}
+              isDisabled={isDisabled}
+              onToggleDisabled={() => toggleModelDisabled(model.id)}
             />
           );
         })}
@@ -650,6 +719,8 @@ export default function ProviderDetailPage() {
             isTesting={testingModelId === model.id}
             isCustom
             isFree={false}
+            isDisabled={providerDisabledModels.includes(model.id)}
+            onToggleDisabled={() => toggleModelDisabled(model.id)}
           />
         ))}
 
@@ -859,7 +930,45 @@ export default function ProviderDetailPage() {
             </div>
           </div>
         </Card>
-      ) : (
+      ) : null}
+
+      {/* Capabilities card — only for non-compatible providers */}
+      {!isCompatible && (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Capabilities</h2>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Toggle
+                checked={capabilities.supportsToolCalls}
+                onChange={(checked) => handleCapabilityToggle("supportsToolCalls", checked)}
+              />
+              <div>
+                <div className="text-sm font-medium">Tool Call Support</div>
+                <div className="text-xs text-base-content/60">
+                  Combos will skip this provider when disabled.
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Toggle
+                checked={capabilities.supportsStreaming}
+                onChange={(checked) => handleCapabilityToggle("supportsStreaming", checked)}
+              />
+              <div>
+                <div className="text-sm font-medium">Streaming Support</div>
+                <div className="text-xs text-base-content/60">
+                  Disable if this provider has issues with stream=true.
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Connections */}
+      {isFreeNoAuth ? null : (
         <Card>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Connections</h2>

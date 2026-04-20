@@ -32,10 +32,30 @@ function buildUsageMap(connections = []) {
   const usageMap = new Map();
 
   for (const connection of connections) {
-    const proxyPoolId = connection?.providerSpecificData?.proxyPoolId;
-    if (!proxyPoolId) continue;
+    const psd = connection?.providerSpecificData || {};
+    const connectionName = connection.name || connection.email || connection.displayName || `Conn ${connection.id.slice(0, 8)}`;
 
-    usageMap.set(proxyPoolId, (usageMap.get(proxyPoolId) || 0) + 1);
+    // Check legacy single proxyPoolId
+    if (psd.proxyPoolId) {
+      const entry = usageMap.get(psd.proxyPoolId) || { count: 0, names: [] };
+      usageMap.set(psd.proxyPoolId, {
+        count: entry.count + 1,
+        names: [...entry.names, connectionName]
+      });
+    }
+
+    // Check new proxyPoolIds array
+    if (Array.isArray(psd.proxyPoolIds)) {
+      for (const poolId of psd.proxyPoolIds) {
+        if (poolId) {
+          const entry = usageMap.get(poolId) || { count: 0, names: [] };
+          usageMap.set(poolId, {
+            count: entry.count + 1,
+            names: [...entry.names, connectionName]
+          });
+        }
+      }
+    }
   }
 
   return usageMap;
@@ -62,10 +82,15 @@ export async function GET(request) {
     const connections = await getProviderConnections();
     const usageMap = buildUsageMap(connections);
 
-    const enrichedProxyPools = proxyPools.map((pool) => ({
-      ...pool,
-      boundConnectionCount: usageMap.get(pool.id) || 0,
-    }));
+    const enrichedProxyPools = proxyPools.map((pool) => {
+      const usage = usageMap.get(pool.id) || { count: 0, names: [] };
+      return {
+        ...pool,
+        boundConnectionCount: usage.count,
+        boundConnectionNames: usage.names.slice(0, 5),
+        boundConnectionCountTotal: usage.names.length,
+      };
+    });
 
     return NextResponse.json({ proxyPools: enrichedProxyPools });
   } catch (error) {

@@ -11,35 +11,40 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
-  const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
-  const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
+  // Support both legacy single proxyPoolId and new proxyPoolIds array
+  const boundProxyPoolIds = connection.providerSpecificData?.proxyPoolIds ||
+    (connection.providerSpecificData?.proxyPoolId ? [connection.providerSpecificData.proxyPoolId] : []);
+  const boundProxyPools = boundProxyPoolIds.map(id => proxyPoolMap.get(id)).filter(Boolean);
   const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
-  const hasAnyProxy = !!boundProxyPoolId || hasLegacyProxy;
-  const proxyDisplayText = boundProxyPool
-    ? `Pool: ${boundProxyPool.name}`
-    : boundProxyPoolId
-      ? `Pool: ${boundProxyPoolId} (inactive/missing)`
-      : hasLegacyProxy
-        ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
-        : "";
+  const hasAnyProxy = boundProxyPoolIds.length > 0 || hasLegacyProxy;
+  const proxyDisplayText = boundProxyPools.length > 0
+    ? boundProxyPools.length === 1
+      ? `Pool: ${boundProxyPools[0].name}`
+      : `${boundProxyPools.length} pools`
+    : hasLegacyProxy
+      ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
+      : "";
 
+  // Show first active pool's URL as hint (round-robin means any could be active)
   let maskedProxyUrl = "";
-  if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
-    const rawProxyUrl = boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl;
+  const firstActivePool = boundProxyPools.find(p => p.isActive === true) || boundProxyPools[0];
+  if (firstActivePool?.proxyUrl) {
     try {
-      const parsed = new URL(rawProxyUrl);
+      const parsed = new URL(firstActivePool.proxyUrl);
       maskedProxyUrl = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
     } catch {
-      maskedProxyUrl = rawProxyUrl;
+      maskedProxyUrl = firstActivePool.proxyUrl;
     }
+  } else if (connection.providerSpecificData?.connectionProxyUrl) {
+    maskedProxyUrl = connection.providerSpecificData.connectionProxyUrl;
   }
 
-  const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
+  const noProxyText = firstActivePool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
 
   let proxyBadgeVariant = "default";
-  if (boundProxyPool?.isActive === true) {
+  if (boundProxyPools.some(p => p.isActive === true)) {
     proxyBadgeVariant = "success";
-  } else if (boundProxyPoolId || hasLegacyProxy) {
+  } else if (boundProxyPoolIds.length > 0 || hasLegacyProxy) {
     proxyBadgeVariant = "error";
   }
 
@@ -55,13 +60,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
-  const handleSelectProxy = async (poolId) => {
+  const handleToggleProxy = async (poolId, checked) => {
+    const current = boundProxyPoolIds;
+    let next;
+    if (checked) {
+      next = [...current, poolId];
+    } else {
+      next = current.filter(id => id !== poolId);
+    }
     setUpdatingProxy(true);
     try {
-      await onUpdateProxy(poolId === "__none__" ? null : poolId);
+      await onUpdateProxy(next.length > 0 ? next : null);
     } finally {
       setUpdatingProxy(false);
-      setShowProxyDropdown(false);
     }
   };
 
@@ -194,22 +205,31 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 <span className="text-[10px] leading-tight">Proxy</span>
               </button>
               {showProxyDropdown && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[180px]">
                   <button
-                    onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
+                    onClick={() => onUpdateProxy(null)}
+                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolIds.length === 0 ? "text-primary font-medium" : "text-text-main"}`}
                   >
                     None
                   </button>
-                  {(proxyPools || []).map((pool) => (
-                    <button
-                      key={pool.id}
-                      onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
-                    >
-                      {pool.name}
-                    </button>
-                  ))}
+                  <div className="h-px bg-border mx-2 my-1" />
+                  {(proxyPools || []).map((pool) => {
+                    const isChecked = boundProxyPoolIds.includes(pool.id);
+                    return (
+                      <label
+                        key={pool.id}
+                        className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => handleToggleProxy(pool.id, e.target.checked)}
+                          className="checkbox checkbox-sm checkbox-primary"
+                        />
+                        <span className={isChecked ? "font-medium" : ""}>{pool.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </div>

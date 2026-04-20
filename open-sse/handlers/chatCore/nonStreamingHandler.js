@@ -1,12 +1,13 @@
+import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
+
 import { FORMATS } from "../../translator/formats.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { createErrorResult } from "../../utils/error.js";
 import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
-import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
-import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
-import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -161,15 +162,24 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
 
-  // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
-  if (translatedResponse?.choices?.[0]) {
-    const choice = translatedResponse.choices[0];
-    const msg = choice.message;
-    const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
-      choice.finish_reason = "tool_calls";
-    }
-  }
+  // Normalize tool_calls responses: omit content (when null) and finish_reason
+  // if (translatedResponse?.choices?.[0]) {
+  //   const choice = translatedResponse.choices[0];
+  //   const msg = choice.message;
+  //   const finishReason = choice.finish_reason;
+  //   const stopReason = choice.stop_reason;
+  //   const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+  //   if (hasToolCalls) {
+  //     if (msg.content === null) delete msg.content;
+  //   }
+  //   if (finishReason) {
+  //     if (!stopReason)
+  //       choice.stop_reason = finishReason;
+  //     delete choice.finish_reason;
+  //     if(choice.stop_reason === "tool_calls") 
+  //       delete choice.stop_reason;
+  //   }
+  // }
 
   // Ensure OpenAI-required fields
   if (!translatedResponse.object) translatedResponse.object = "chat.completion";
@@ -208,6 +218,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
       finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
     },
+    clientResponse: translatedResponse || null,  // Actual response sent to client
     status: "success"
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);

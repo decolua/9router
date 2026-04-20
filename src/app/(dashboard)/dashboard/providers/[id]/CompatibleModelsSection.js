@@ -2,30 +2,35 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button } from "@/shared/components";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
-  const borderColor = testStatus === "ok"
+import { Button, Toggle } from "@/shared/components";
+
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, isDisabled, onToggleDisabled }) {
+  const borderColor = isDisabled
+    ? "border-red-500/40 opacity-60"
+    : testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
     : "border-border";
 
-  const iconColor = testStatus === "ok"
+  const iconColor = isDisabled
+    ? "#ef4444"
+    : testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
     ? "#ef4444"
     : undefined;
 
   return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <span
         className="material-symbols-outlined text-base text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
       >
-        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : isDisabled ? "block" : "smart_toy"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{modelId}</p>
+        <p className={`text-sm font-medium truncate ${isDisabled ? "line-through text-text-muted" : ""}`}>{modelId}</p>
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
@@ -66,11 +71,21 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
       >
         <span className="material-symbols-outlined text-sm">delete</span>
       </button>
+      {onToggleDisabled && (
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+          <Toggle
+            size="sm"
+            checked={!isDisabled}
+            onChange={onToggleDisabled}
+            title={isDisabled ? "Enable model" : "Disable model"}
+          />
+        </div>
+      )}
     </div>
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic, providerDisabledModels, onToggleModelDisabled }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -226,6 +241,8 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
               testStatus={modelTestResults[modelId]}
               isTesting={testingModelId === modelId}
+              isDisabled={providerDisabledModels?.includes(modelId)}
+              onToggleDisabled={onToggleModelDisabled ? () => onToggleModelDisabled(modelId) : undefined}
             />
           ))}
         </div>
@@ -247,4 +264,6 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  providerDisabledModels: PropTypes.arrayOf(PropTypes.string),
+  onToggleModelDisabled: PropTypes.func,
 };

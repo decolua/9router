@@ -4,6 +4,7 @@ import {
   getProviderConnections,
   getProxyPoolById,
   updateProxyPool,
+  updateProviderConnection,
 } from "@/models";
 
 function normalizeProxyPoolUpdate(body = {}) {
@@ -46,7 +47,25 @@ function normalizeProxyPoolUpdate(body = {}) {
 }
 
 function countBoundConnections(connections = [], proxyPoolId) {
-  return connections.filter((connection) => connection?.providerSpecificData?.proxyPoolId === proxyPoolId).length;
+  return connections.filter((connection) => {
+    const psd = connection?.providerSpecificData || {};
+    // Check legacy single proxyPoolId
+    if (psd.proxyPoolId === proxyPoolId) return true;
+    // Check new proxyPoolIds array
+    if (Array.isArray(psd.proxyPoolIds) && psd.proxyPoolIds.includes(proxyPoolId)) return true;
+    return false;
+  }).length;
+}
+
+function getBoundConnections(connections = [], proxyPoolId) {
+  return connections.filter((connection) => {
+    const psd = connection?.providerSpecificData || {};
+    // Check legacy single proxyPoolId
+    if (psd.proxyPoolId === proxyPoolId) return true;
+    // Check new proxyPoolIds array
+    if (Array.isArray(psd.proxyPoolIds) && psd.proxyPoolIds.includes(proxyPoolId)) return true;
+    return false;
+  });
 }
 
 // GET /api/proxy-pools/[id] - Get proxy pool
@@ -102,20 +121,37 @@ export async function DELETE(request, { params }) {
     }
 
     const connections = await getProviderConnections();
-    const boundConnectionCount = countBoundConnections(connections, id);
+    const boundConnections = getBoundConnections(connections, id);
 
-    if (boundConnectionCount > 0) {
-      return NextResponse.json(
-        {
-          error: "Proxy pool is currently in use",
-          boundConnectionCount,
-        },
-        { status: 409 }
-      );
+    // If pool is bound to connections, deactivate them and clear proxy refs
+    if (boundConnections.length > 0) {
+      for (const conn of boundConnections) {
+        const psd = { ...conn.providerSpecificData };
+        // Remove from proxyPoolIds array
+        if (Array.isArray(psd.proxyPoolIds)) {
+          psd.proxyPoolIds = psd.proxyPoolIds.filter(poolId => poolId !== id);
+          if (psd.proxyPoolIds.length === 0) {
+            delete psd.proxyPoolIds;
+          }
+        }
+        // Clear legacy field if matches
+        if (psd.proxyPoolId === id) {
+          delete psd.proxyPoolId;
+        }
+        delete psd.proxyPoolIndex;
+
+        await updateProviderConnection(conn.id, {
+          isActive: false,
+          providerSpecificData: psd,
+        });
+      }
     }
 
     await deleteProxyPool(id);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      deactivatedConnections: boundConnections.length,
+    });
   } catch (error) {
     console.log("Error deleting proxy pool:", error);
     return NextResponse.json({ error: "Failed to delete proxy pool" }, { status: 500 });

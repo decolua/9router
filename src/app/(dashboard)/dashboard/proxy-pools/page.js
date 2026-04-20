@@ -33,6 +33,9 @@ export default function ProxyPoolsPage() {
   const [showFormModal, setShowFormModal] = useState(false);
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
   const [showVercelModal, setShowVercelModal] = useState(false);
+  const [showRedeployModal, setShowRedeployModal] = useState(false);
+  const [redeployPool, setRedeployPool] = useState(null);
+  const [redeployToken, setRedeployToken] = useState("");
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
@@ -41,6 +44,7 @@ export default function ProxyPoolsPage() {
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [testingId, setTestingId] = useState(null);
+  const [hoveredPoolId, setHoveredPoolId] = useState(null);
   const notify = useNotificationStore();
 
   const fetchProxyPools = useCallback(async () => {
@@ -123,15 +127,15 @@ export default function ProxyPoolsPage() {
 
     try {
       const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
+      const data = await res.json();
+
       if (res.ok) {
         setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
-        notify.success("Proxy pool deleted");
-        return;
-      }
-
-      const data = await res.json();
-      if (res.status === 409) {
-        notify.warning(`Cannot delete: ${data.boundConnectionCount || 0} connection(s) are still using this pool.`);
+        if (data.deactivatedConnections > 0) {
+          notify.warning(`Proxy pool deleted. ${data.deactivatedConnections} connection(s) were deactivated.`);
+        } else {
+          notify.success("Proxy pool deleted");
+        }
       } else {
         notify.error(data.error || "Failed to delete proxy pool");
       }
@@ -202,6 +206,44 @@ export default function ProxyPoolsPage() {
     } catch (error) {
       console.log("Error deploying Vercel relay:", error);
       notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
+  };
+
+  const openRedeployModal = (pool) => {
+    setRedeployPool(pool);
+    setRedeployToken("");
+    setShowRedeployModal(true);
+  };
+
+  const closeRedeployModal = () => {
+    if (deploying) return;
+    setShowRedeployModal(false);
+    setRedeployPool(null);
+    setRedeployToken("");
+  };
+
+  const handleRedeploy = async () => {
+    if (!redeployToken.trim() || !redeployPool) return;
+    setDeploying(true);
+    try {
+      const res = await fetch(`/api/proxy-pools/vercel-deploy?poolId=${redeployPool.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vercelToken: redeployToken }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeRedeployModal();
+        notify.success(`Redeployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Redeploy failed");
+      }
+    } catch (error) {
+      console.log("Error redeploying Vercel relay:", error);
+      notify.error("Redeploy failed");
     } finally {
       setDeploying(false);
     }
@@ -385,9 +427,28 @@ export default function ProxyPoolsPage() {
                     {pool.type === "vercel" && (
                       <Badge variant="default" size="sm">vercel relay</Badge>
                     )}
-                    <Badge variant="default" size="sm">
-                      {pool.boundConnectionCount || 0} bound
-                    </Badge>
+                    <div className="relative">
+                      <Badge
+                        variant="default"
+                        size="sm"
+                        className="cursor-help"
+                        onMouseEnter={() => setHoveredPoolId(pool.id)}
+                        onMouseLeave={() => setHoveredPoolId(null)}
+                      >
+                        {pool.boundConnectionCount || 0} bound
+                      </Badge>
+                      {hoveredPoolId === pool.id && pool.boundConnectionNames?.length > 0 && (
+                        <div className="absolute left-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-2 px-3 min-w-[200px] max-w-[300px]">
+                          <p className="text-xs font-medium mb-1">Bound connections:</p>
+                          {pool.boundConnectionNames.map((name, i) => (
+                            <p key={i} className="text-xs text-text-muted truncate">{name}</p>
+                          ))}
+                          {pool.boundConnectionCountTotal > 5 && (
+                            <p className="text-xs text-text-muted mt-1">+{pool.boundConnectionCountTotal - 5} more</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <p className="text-xs text-text-muted truncate mt-1">{pool.proxyUrl}</p>
                   {pool.noProxy ? (
@@ -400,6 +461,18 @@ export default function ProxyPoolsPage() {
                 </div>
 
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {pool.type === "vercel" && (
+                    <button
+                      onClick={() => openRedeployModal(pool)}
+                      className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
+                      title="Redeploy relay"
+                      disabled={deploying}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">
+                        {deploying && redeployPool?.id === pool.id ? "progress_activity" : "restart_alt"}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleTest(pool.id)}
                     className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary"
@@ -506,6 +579,42 @@ export default function ProxyPoolsPage() {
               {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeVercelModal} disabled={deploying}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showRedeployModal}
+        title="Redeploy Vercel Relay"
+        onClose={closeRedeployModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-blue-500/5 border border-blue-500/10 p-3">
+            <p className="text-sm text-text-main font-medium">Redeploying: {redeployPool?.name}</p>
+            <p className="text-xs text-text-muted mt-1">{redeployPool?.proxyUrl}</p>
+          </div>
+          <p className="text-sm text-text-muted">
+            This will deploy the latest relay code to the same project. Your proxy URL will be updated with the new deployment.
+          </p>
+          <Input
+            label="Vercel API Token"
+            value={redeployToken}
+            onChange={(e) => setRedeployToken(e.target.value)}
+            placeholder="your-vercel-api-token"
+            hint={<>Token is used once for deployment and not stored. <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            type="password"
+          />
+          <div className="flex gap-2">
+            <Button
+              fullWidth
+              onClick={handleRedeploy}
+              disabled={!redeployToken.trim() || deploying}
+            >
+              {deploying ? "Redeploying... (may take ~1 min)" : "Redeploy"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeRedeployModal} disabled={deploying}>
               Cancel
             </Button>
           </div>

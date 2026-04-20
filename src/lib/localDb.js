@@ -243,6 +243,47 @@ export async function getProviderDisplayName(providerId) {
   return displayName;
 }
 
+export async function getProviderNodeSupportsToolCalls(providerId) {
+  // Non-compatible providers: check settings
+  if (!COMPATIBLE_PROVIDER_PREFIXES.some(p => providerId.startsWith(p))) {
+    const caps = await getProviderCapabilities(providerId);
+    return caps.supportsToolCalls;
+  }
+  // Compatible providers: node setting overrides settings
+  const node = await getProviderNodeById(providerId);
+  if (!node) {
+    const caps = await getProviderCapabilities(providerId);
+    return caps.supportsToolCalls;
+  }
+  return node.supportsToolCalls !== false;
+}
+
+export async function getProviderNodeSupportsStreaming(providerId) {
+  if (!COMPATIBLE_PROVIDER_PREFIXES.some(p => providerId.startsWith(p))) {
+    const caps = await getProviderCapabilities(providerId);
+    return caps.supportsStreaming;
+  }
+  const node = await getProviderNodeById(providerId);
+  if (!node) {
+    const caps = await getProviderCapabilities(providerId);
+    return caps.supportsStreaming;
+  }
+  return node.supportsStreaming !== false;
+}
+
+/**
+ * Get provider-level capabilities (tool calls, streaming) from settings.
+ * Used for both compatible and built-in providers.
+ */
+export async function getProviderCapabilities(providerId) {
+  const settings = await getSettings();
+  const caps = settings.providerCapabilities?.[providerId] || {};
+  return {
+    supportsToolCalls: caps.supportsToolCalls !== false,
+    supportsStreaming: caps.supportsStreaming !== false,
+  };
+}
+
 export async function createProviderNode(data) {
   const db = await getDb();
   if (!db.data.providerNodes) db.data.providerNodes = [];
@@ -255,6 +296,8 @@ export async function createProviderNode(data) {
     prefix: data.prefix,
     apiType: data.apiType,
     baseUrl: data.baseUrl,
+    supportsToolCalls: data.supportsToolCalls !== false, // default true
+    supportsStreaming: data.supportsStreaming !== false,  // default true
     createdAt: now,
     updatedAt: now,
   };
