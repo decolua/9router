@@ -76,7 +76,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
+        body: JSON.stringify({
+          provider: connection.provider,
+          apiKey: formData.apiKey,
+          ...(isAzure ? { providerSpecificData: azureData } : {}),
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -105,7 +109,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             const res = await fetch("/api/providers/validate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
+              body: JSON.stringify({
+                provider: connection.provider,
+                apiKey: formData.apiKey,
+                ...(isAzure ? { providerSpecificData: azureData } : {}),
+              }),
             });
             const data = await res.json();
             isValid = !!data.valid;
