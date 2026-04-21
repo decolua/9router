@@ -6,7 +6,7 @@ import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
-import { deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
+import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -381,6 +381,9 @@ export async function deleteProviderConnectionsByProvider(providerId) {
   );
   const deletedCount = beforeCount - db.data.providerConnections.length;
   await safeWrite(db);
+  if (deletedCount > 0) {
+    await clearProviderHotState(providerId);
+  }
   return deletedCount;
 }
 
@@ -784,6 +787,7 @@ export async function importDb(payload) {
   const db = await getDb();
   db.data = normalized;
   await safeWrite(db);
+  await clearAllHotState();
   return db.data;
 }
 

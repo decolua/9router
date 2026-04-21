@@ -122,7 +122,7 @@ describe("getConnectionEffectiveStatus", () => {
     });
     expect(getConnectionStatusBadgeMeta({ healthStatus: "failed" })).toEqual({
       status: "blocked_health",
-      label: "Auth blocked",
+      label: "Health blocked",
       variant: "error",
     });
   });

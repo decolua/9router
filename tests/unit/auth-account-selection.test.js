@@ -9,7 +9,7 @@ const getSettings = vi.fn(async () => ({
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
 }));
-const getEligibleConnections = vi.fn(async () => []);
+const getEligibleConnections = vi.fn(async () => null);
 const resolveConnectionProxyConfig = vi.fn(async () => ({
   connectionProxyEnabled: false,
   connectionProxyUrl: "",
@@ -38,6 +38,18 @@ vi.mock("@/shared/constants/providers.js", () => ({
   FREE_PROVIDERS: {},
 }));
 
+vi.mock("open-sse/services/accountFallback.js", () => ({
+  formatRetryAfter: vi.fn((value) => value),
+  checkFallbackError: vi.fn(() => ({ shouldFallback: false, cooldownMs: 0, newBackoffLevel: 0 })),
+  isModelLockActive: vi.fn((connection, model) => {
+    if (!connection || !model) return false;
+    const expiry = connection[`modelLock_${model}`] || connection.modelLock___all;
+    return Boolean(expiry) && new Date(expiry).getTime() > Date.now();
+  }),
+  buildModelLockUpdate: vi.fn(() => ({ modelLock___all: null })),
+  getEarliestModelLockUntil: vi.fn(() => null),
+}));
+
 describe("auth account selection", () => {
   beforeEach(() => {
     mockConnections.length = 0;
@@ -53,7 +65,7 @@ describe("auth account selection", () => {
       stickyRoundRobinLimit: 3,
       providerStrategies: {},
     });
-    getEligibleConnections.mockResolvedValue([]);
+    getEligibleConnections.mockResolvedValue(null);
     resolveConnectionProxyConfig.mockResolvedValue({
       connectionProxyEnabled: false,
       connectionProxyUrl: "",
@@ -96,6 +108,66 @@ describe("auth account selection", () => {
     ]));
     expect(credentials.connectionId).toBe("conn-eligible");
     expect(credentials.accessToken).toBe("eligible-token");
+  });
+
+  it("selects an untouched healthy account instead of falling back to a higher-priority blocked account", async () => {
+    mockConnections.push(
+      {
+        id: "conn-blocked",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Blocked first",
+        accessToken: "blocked-token",
+        testStatus: "active",
+      },
+      {
+        id: "conn-untouched",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "Untouched second",
+        accessToken: "healthy-token",
+        testStatus: "active",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce([mockConnections[1]]);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
+
+    expect(credentials.connectionId).toBe("conn-untouched");
+    expect(credentials.accessToken).toBe("healthy-token");
+  });
+
+  it("selects an untouched unknown-status account instead of falling back to a higher-priority blocked account", async () => {
+    mockConnections.push(
+      {
+        id: "conn-blocked",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Blocked first",
+        accessToken: "blocked-token",
+        testStatus: "active",
+      },
+      {
+        id: "conn-untouched",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "Untouched second",
+        accessToken: "healthy-token",
+        testStatus: "unknown",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce([mockConnections[1]]);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
+
+    expect(credentials.connectionId).toBe("conn-untouched");
+    expect(credentials.accessToken).toBe("healthy-token");
   });
 
   it("avoids excluded and model-locked accounts when using eligible selection", async () => {
@@ -141,7 +213,36 @@ describe("auth account selection", () => {
     expect(credentials.connectionId).toBe("conn-eligible");
   });
 
-  it("falls back to available accounts when no centralized eligible accounts exist", async () => {
+  it("does not fall back to raw available accounts when centralized eligibility is definitively empty", async () => {
+    mockConnections.push(
+      {
+        id: "conn-blocked",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Blocked first",
+        accessToken: "blocked-token",
+        testStatus: "active",
+      },
+      {
+        id: "conn-second",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "Second",
+        accessToken: "second-token",
+        testStatus: "active",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce([]);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
+
+    expect(credentials).toBeNull();
+  });
+
+  it("falls back to available accounts when centralized eligibility is unavailable", async () => {
     mockConnections.push(
       {
         id: "conn-first",
@@ -162,6 +263,7 @@ describe("auth account selection", () => {
         testStatus: "active",
       },
     );
+    getEligibleConnections.mockResolvedValueOnce(null);
 
     const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
     const credentials = await getProviderCredentials("codex", null, "gpt-4.1");

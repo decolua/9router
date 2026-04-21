@@ -3,6 +3,8 @@ import { createClient } from "redis";
 const REDIS_PREFIX = "9router:provider-hot-state:";
 const HOT_STATE_TTL_SECONDS = Number(process.env.REDIS_HOT_STATE_TTL_SECONDS || 86400);
 const PROVIDER_META_FIELD = "__provider_meta__";
+const CONNECTION_FIELD_PREFIX = "__conn__:";
+const CONNECTION_FIELD_SEPARATOR = ":";
 const providerStateCache = new Map();
 
 const HOT_STATE_KEYS = new Set([
@@ -79,6 +81,74 @@ function parseStoredState(raw) {
   }
 }
 
+function parseStoredValue(raw) {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+function encodeRedisFieldPart(value) {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+function decodeRedisFieldPart(value) {
+  if (typeof value !== "string" || value.length === 0) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) return null;
+
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8");
+    if (!decoded.length) return null;
+    return Buffer.from(decoded, "utf8").toString("base64") === value ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function getRedisConnectionField(connectionId, stateKey) {
+  if (!connectionId || !stateKey) return null;
+
+  const encodedConnectionId = encodeRedisFieldPart(connectionId);
+  const encodedStateKey = encodeRedisFieldPart(stateKey);
+  if (!encodedConnectionId || !encodedStateKey) return null;
+
+  return `${CONNECTION_FIELD_PREFIX}${encodedConnectionId}${CONNECTION_FIELD_SEPARATOR}${encodedStateKey}`;
+}
+
+function parseRedisConnectionField(field) {
+  if (!field || !field.startsWith(CONNECTION_FIELD_PREFIX)) return null;
+
+  const encoded = field.slice(CONNECTION_FIELD_PREFIX.length);
+  const separatorIndex = encoded.indexOf(CONNECTION_FIELD_SEPARATOR);
+  if (separatorIndex === -1) return null;
+
+  const encodedConnectionId = encoded.slice(0, separatorIndex);
+  const encodedStateKey = encoded.slice(separatorIndex + 1);
+
+  const decodedConnectionId = decodeRedisFieldPart(encodedConnectionId);
+  const decodedStateKey = decodeRedisFieldPart(encodedStateKey);
+
+  if (decodedConnectionId && decodedStateKey) {
+    return {
+      connectionId: decodedConnectionId,
+      stateKey: decodedStateKey,
+    };
+  }
+
+  try {
+    return {
+      connectionId: decodeURIComponent(encodedConnectionId),
+      stateKey: decodeURIComponent(encodedStateKey),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function mergeState(base, updates) {
   return { ...(base || {}), ...(updates || {}) };
 }
@@ -95,6 +165,11 @@ function normalizeConnectionRef(entry) {
     return { connectionId, providerId, connection: entry };
   }
   return null;
+}
+
+function getProviderScopedConnectionKey(providerId, connectionId) {
+  if (!providerId || !connectionId) return null;
+  return `${providerId}:${connectionId}`;
 }
 
 function createEmptyProviderState() {
@@ -188,13 +263,34 @@ function serializeProviderMeta(providerState) {
 
 function hydrateProviderState(providerId, rawState = {}) {
   const providerState = createEmptyProviderState();
+  const legacyConnectionStates = new Map();
 
   for (const [field, raw] of Object.entries(rawState || {})) {
     if (field === PROVIDER_META_FIELD) continue;
+
+    const parsedField = parseRedisConnectionField(field);
+    if (parsedField) {
+      const value = parseStoredValue(raw);
+      if (value !== undefined) {
+        const connectionState = providerState.connections.get(parsedField.connectionId) || {};
+        connectionState[parsedField.stateKey] = value;
+        providerState.connections.set(parsedField.connectionId, connectionState);
+      }
+      continue;
+    }
+
     const parsed = parseStoredState(raw);
     if (parsed) {
-      providerState.connections.set(field, parsed);
+      legacyConnectionStates.set(field, parsed);
     }
+  }
+
+  for (const [connectionId, legacyState] of legacyConnectionStates.entries()) {
+    const currentState = providerState.connections.get(connectionId) || {};
+    providerState.connections.set(connectionId, {
+      ...legacyState,
+      ...currentState,
+    });
   }
 
   recalculateProviderIndexes(providerState);
@@ -258,6 +354,184 @@ async function persistProviderState(providerId, providerState) {
   }
 }
 
+async function persistConnectionField(providerId, connectionId, updates = {}) {
+  const client = await getRedisClient();
+  if (!client) return { storedInRedis: false, providerState: null };
+
+  const key = getProviderRedisKey(providerId);
+
+  const buildPersistPlan = (rawState = {}) => {
+    const legacyState = parseStoredState(rawState?.[connectionId]);
+    const hasLegacyState = Boolean(legacyState);
+
+    const payload = {};
+    const fieldsToPersist = hasLegacyState
+      ? (() => {
+          const mergedState = { ...legacyState };
+
+          for (const [field, raw] of Object.entries(rawState || {})) {
+            const parsedField = parseRedisConnectionField(field);
+            if (parsedField?.connectionId === connectionId) {
+              const parsedValue = parseStoredValue(raw);
+              if (parsedValue !== undefined) {
+                mergedState[parsedField.stateKey] = parsedValue;
+              }
+            }
+          }
+
+          return mergeState(mergedState, updates);
+        })()
+      : updates;
+
+    for (const [stateKey, value] of Object.entries(fieldsToPersist || {})) {
+      const redisField = getRedisConnectionField(connectionId, stateKey);
+      if (redisField) {
+        payload[redisField] = JSON.stringify(value);
+      }
+    }
+
+    const nextRawState = { ...(rawState || {}) };
+    if (Object.keys(payload).length > 0) {
+      Object.assign(nextRawState, payload);
+    }
+    if (hasLegacyState) {
+      delete nextRawState[connectionId];
+    }
+
+    return {
+      hasLegacyState,
+      payload,
+      nextRawState,
+    };
+  };
+
+  try {
+    if (typeof client.watch === "function" && typeof client.multi === "function") {
+      const maxAttempts = 5;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        await client.watch(key);
+
+        try {
+          const currentRawState = await client.hGetAll(key);
+          const { hasLegacyState, payload, nextRawState } = buildPersistPlan(currentRawState);
+
+          if (!nextRawState || Object.keys(nextRawState).length === 0) {
+            providerStateCache.delete(providerId);
+            return { storedInRedis: true, providerState: null };
+          }
+
+          const providerState = hydrateProviderState(providerId, nextRawState);
+          const multi = client.multi();
+
+          if (Object.keys(payload).length > 0) {
+            multi.hSet(key, payload);
+          }
+
+          if (hasLegacyState) {
+            multi.hDel(key, connectionId);
+          }
+
+          multi.hSet(key, {
+            [PROVIDER_META_FIELD]: serializeProviderMeta(providerState),
+          });
+
+          if (Number.isFinite(HOT_STATE_TTL_SECONDS) && HOT_STATE_TTL_SECONDS > 0) {
+            multi.expire(key, HOT_STATE_TTL_SECONDS);
+          }
+
+          const execResult = await multi.exec();
+          if (execResult) {
+            return { storedInRedis: true, providerState };
+          }
+        } finally {
+          if (typeof client.unwatch === "function") {
+            await client.unwatch();
+          }
+        }
+      }
+
+      throw new Error(`Concurrent hot-state migration retry limit exceeded for ${providerId}/${connectionId}`);
+    }
+
+    const currentRawState = await client.hGetAll(key);
+    const { hasLegacyState, payload, nextRawState } = buildPersistPlan(currentRawState);
+
+    if (Object.keys(payload).length > 0) {
+      await client.hSet(key, payload);
+    }
+
+    if (hasLegacyState) {
+      await client.hDel(key, connectionId);
+    }
+
+    if (!nextRawState || Object.keys(nextRawState).length === 0) {
+      providerStateCache.delete(providerId);
+      return { storedInRedis: true, providerState: null };
+    }
+
+    const rawState = await client.hGetAll(key);
+    const providerState = hydrateProviderState(providerId, rawState);
+
+    await client.hSet(key, {
+      [PROVIDER_META_FIELD]: serializeProviderMeta(providerState),
+    });
+
+    if (Number.isFinite(HOT_STATE_TTL_SECONDS) && HOT_STATE_TTL_SECONDS > 0) {
+      await client.expire(key, HOT_STATE_TTL_SECONDS);
+    }
+
+    return { storedInRedis: true, providerState };
+  } catch (error) {
+    console.warn(`[Redis] Failed to store hot state for provider ${providerId}: ${error?.message || error}`);
+    return { storedInRedis: false, providerState: null };
+  }
+}
+
+async function deleteConnectionField(providerId, connectionId) {
+  const client = await getRedisClient();
+  if (!client) return { storedInRedis: false, providerState: null };
+
+  const key = getProviderRedisKey(providerId);
+
+  try {
+    const rawState = await client.hGetAll(key);
+    const fieldsToDelete = Object.keys(rawState || {}).filter((field) => {
+      if (field === connectionId) return true;
+      const parsedField = parseRedisConnectionField(field);
+      return parsedField?.connectionId === connectionId;
+    });
+
+    for (const field of fieldsToDelete) {
+      await client.hDel(key, field);
+    }
+
+    const nextRawState = await client.hGetAll(key);
+    const remainingFields = Object.keys(nextRawState || {}).filter((field) => field !== PROVIDER_META_FIELD);
+
+    if (remainingFields.length === 0) {
+      await client.del(key);
+      providerStateCache.delete(providerId);
+      return { storedInRedis: true, providerState: null };
+    }
+
+    const providerState = hydrateProviderState(providerId, nextRawState);
+
+    await client.hSet(key, {
+      [PROVIDER_META_FIELD]: serializeProviderMeta(providerState),
+    });
+
+    if (Number.isFinite(HOT_STATE_TTL_SECONDS) && HOT_STATE_TTL_SECONDS > 0) {
+      await client.expire(key, HOT_STATE_TTL_SECONDS);
+    }
+
+    return { storedInRedis: true, providerState };
+  } catch (error) {
+    console.warn(`[Redis] Failed to delete hot state for ${providerId}/${connectionId}: ${error?.message || error}`);
+    return { storedInRedis: false, providerState: null };
+  }
+}
+
 export function isHotStateKey(key) {
   return HOT_STATE_KEYS.has(key) || key.startsWith("modelLock_");
 }
@@ -278,20 +552,25 @@ export function isHotOnlyUpdate(updates = {}) {
 
 export async function getProviderHotState(providerId) {
   if (!providerId) return null;
-  if (providerStateCache.has(providerId)) {
+  if (providerStateCache.has(providerId) && !isRedisConfigured()) {
     return providerStateCache.get(providerId);
   }
 
   const client = await getRedisClient();
-  if (!client) return null;
+  if (!client) {
+    return providerStateCache.get(providerId) || null;
+  }
 
   try {
     const rawState = await client.hGetAll(getProviderRedisKey(providerId));
-    if (!rawState || Object.keys(rawState).length === 0) return null;
+    if (!rawState || Object.keys(rawState).length === 0) {
+      providerStateCache.delete(providerId);
+      return null;
+    }
     return hydrateProviderState(providerId, rawState);
   } catch (error) {
     console.warn(`[Redis] Failed to read hot state for provider ${providerId}: ${error?.message || error}`);
-    return null;
+    return providerStateCache.get(providerId) || null;
   }
 }
 
@@ -306,9 +585,20 @@ export async function getEligibleConnections(providerId, connections = []) {
   if (!providerId || !Array.isArray(connections) || connections.length === 0) return [];
 
   const providerState = await getProviderHotState(providerId);
-  if (!providerState?.eligibleConnectionIds) return [];
+  if (!providerState) return null;
 
-  return connections.filter((connection) => providerState.eligibleConnectionIds.has(connection.id));
+  const eligibleConnectionIds = providerState.eligibleConnectionIds;
+  if (!(eligibleConnectionIds instanceof Set)) return null;
+
+  return connections.filter((connection) => {
+    if (!connection?.id) return false;
+    if (eligibleConnectionIds.has(connection.id)) return true;
+    if (providerState.connections.has(connection.id)) return false;
+
+    return connection.testStatus === "active"
+      || connection.testStatus === "success"
+      || connection.testStatus === "unknown";
+  });
 }
 
 export function projectProviderHotState(connection = {}, providerState = null) {
@@ -319,7 +609,7 @@ export function projectProviderHotState(connection = {}, providerState = null) {
   const projected = connectionHotState ? { ...connection, ...connectionHotState } : { ...connection };
   const eligibleSet = providerState.eligibleConnectionIds;
 
-  if (eligibleSet instanceof Set && !eligibleSet.has(connection.id)) {
+  if (connectionHotState && eligibleSet instanceof Set && !eligibleSet.has(connection.id)) {
     if (!projected.rateLimitedUntil && providerState.retryAt) {
       projected.rateLimitedUntil = providerState.retryAt;
     }
@@ -356,8 +646,11 @@ export async function getConnectionHotStates(connectionRefs = []) {
 
   if (refs.length === 0) return result;
 
+  const connectionIdProviderCounts = new Map();
   const refsByProvider = new Map();
   for (const ref of refs) {
+    connectionIdProviderCounts.set(ref.connectionId, (connectionIdProviderCounts.get(ref.connectionId) || 0) + 1);
+
     if (!refsByProvider.has(ref.providerId)) {
       refsByProvider.set(ref.providerId, []);
     }
@@ -369,10 +662,14 @@ export async function getConnectionHotStates(connectionRefs = []) {
     if (!providerState) continue;
 
     for (const ref of providerRefs) {
-      result.set(
-        ref.connectionId,
-        projectProviderHotState(ref.connection || { id: ref.connectionId }, providerState),
-      );
+      const projected = projectProviderHotState(ref.connection || { id: ref.connectionId }, providerState);
+      const scopedKey = getProviderScopedConnectionKey(ref.providerId, ref.connectionId);
+
+      result.set(scopedKey, projected);
+
+      if (connectionIdProviderCounts.get(ref.connectionId) === 1 && !result.has(ref.connectionId)) {
+        result.set(ref.connectionId, projected);
+      }
     }
   }
 
@@ -392,14 +689,23 @@ export async function setConnectionHotState(connectionId, providerId, updates = 
   recalculateProviderIndexes(providerState);
   providerStateCache.set(providerId, providerState);
 
-  const storedInRedis = await persistProviderState(providerId, providerState);
+  let storedInRedis = false;
+  const client = await getRedisClient();
+  if (client) {
+    const persisted = await persistConnectionField(providerId, connectionId, updates);
+    storedInRedis = persisted.storedInRedis;
+  } else {
+    storedInRedis = await persistProviderState(providerId, providerState);
+  }
+
+  const latestProviderState = providerStateCache.get(providerId) || providerState;
   return {
     storedInRedis,
     state: next,
     providerState: {
-      eligibleConnectionIds: providerState.eligibleConnectionIds ? [...providerState.eligibleConnectionIds] : null,
-      retryAt: providerState.retryAt,
-      updatedAt: providerState.updatedAt,
+      eligibleConnectionIds: latestProviderState.eligibleConnectionIds ? [...latestProviderState.eligibleConnectionIds] : null,
+      retryAt: latestProviderState.retryAt,
+      updatedAt: latestProviderState.updatedAt,
     },
   };
 }
@@ -490,15 +796,56 @@ export async function deleteConnectionHotState(connectionId, providerId) {
   const client = await getRedisClient();
   if (!client) return;
 
-  const key = getProviderRedisKey(providerId);
+  await deleteConnectionField(providerId, connectionId);
+}
+
+export async function clearProviderHotState(providerId) {
+  if (!providerId) return false;
+
+  providerStateCache.delete(providerId);
+
+  const client = await getRedisClient();
+  if (!client) return false;
+
   try {
-    if (providerState.connections.size === 0) {
-      await client.del(key);
-    } else {
-      await persistProviderState(providerId, providerState);
-    }
+    await client.del(getProviderRedisKey(providerId));
+    return true;
   } catch (error) {
-    console.warn(`[Redis] Failed to delete hot state for ${providerId}/${connectionId}: ${error?.message || error}`);
+    console.warn(`[Redis] Failed to clear hot state for provider ${providerId}: ${error?.message || error}`);
+    return false;
+  }
+}
+
+export async function clearAllHotState() {
+  providerStateCache.clear();
+
+  const client = await getRedisClient();
+  if (!client) return false;
+
+  try {
+    if (typeof client.scanIterator === "function") {
+      const keys = [];
+      for await (const key of client.scanIterator({ MATCH: `${REDIS_PREFIX}*` })) {
+        keys.push(key);
+      }
+      if (keys.length > 0) {
+        await client.del(keys);
+      }
+      return keys.length > 0;
+    }
+
+    if (typeof client.keys === "function") {
+      const keys = await client.keys(`${REDIS_PREFIX}*`);
+      if (Array.isArray(keys) && keys.length > 0) {
+        await client.del(keys);
+        return true;
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.warn(`[Redis] Failed to clear all provider hot state: ${error?.message || error}`);
+    return false;
   }
 }
 
@@ -511,12 +858,21 @@ export async function mergeConnectionsWithHotState(connections = []) {
     ...connection,
   })));
 
-  return connections.map((connection) => hotStates.get(connection.id) || connection);
+  return connections.map((connection) => {
+    const scopedKey = getProviderScopedConnectionKey(connection.provider, connection.id);
+    return hotStates.get(scopedKey) || hotStates.get(connection.id) || connection;
+  });
 }
 
 export function __resetProviderHotStateForTests() {
   providerStateCache.clear();
   redisClient = null;
+  redisConnectPromise = null;
+  redisDisabled = false;
+}
+
+export function __setRedisClientForTests(client) {
+  redisClient = client;
   redisConnectPromise = null;
   redisDisabled = false;
 }

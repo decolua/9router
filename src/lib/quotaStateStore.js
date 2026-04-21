@@ -1,4 +1,6 @@
 export {
+  clearAllHotState,
+  clearProviderHotState,
   deleteConnectionHotState,
   extractHotState,
   getConnectionHotState,

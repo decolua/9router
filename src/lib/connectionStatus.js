@@ -239,7 +239,7 @@ export function getConnectionStatusBadgeMeta(connection = {}) {
     case "blocked_auth":
       return { status, label: "Auth blocked", variant: "error" };
     case "blocked_health":
-      return { status, label: "Auth blocked", variant: "error" };
+      return { status, label: "Health blocked", variant: "error" };
     case "disabled":
       return { status, label: "Disabled", variant: "default" };
     default:

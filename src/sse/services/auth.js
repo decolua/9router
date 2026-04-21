@@ -73,10 +73,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return true;
     });
 
-    const eligibleConnections = sortByPriority(await getEligibleConnections(providerId, availableConnections));
-    const selectionPool = eligibleConnections.length > 0 ? eligibleConnections : availableConnections;
+    const centralizedEligibleConnections = await getEligibleConnections(providerId, availableConnections);
+    const eligibleConnections = Array.isArray(centralizedEligibleConnections)
+      ? sortByPriority(centralizedEligibleConnections)
+      : null;
+    const selectionPool = eligibleConnections === null ? availableConnections : eligibleConnections;
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections.length}`);
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
@@ -103,6 +106,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      return null;
+    }
+
+    if (selectionPool.length === 0) {
+      log.warn("AUTH", `${provider} | centralized eligibility returned no routable accounts`);
       return null;
     }
 
