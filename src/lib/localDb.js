@@ -7,11 +7,6 @@ import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
 import { deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady } from "@/lib/quotaStateStore.js";
-import {
-  createDefaultOpenCodePreferences,
-  normalizeOpenCodePreferences,
-  validateOpenCodePreferences,
-} from "@/lib/opencodeSync/schema.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -54,26 +49,9 @@ function cloneDefaultData() {
     mitmAlias: {},
     combos: [],
     apiKeys: [],
-    opencodeSync: {
-      preferences: createDefaultOpenCodePreferences(),
-      tokens: [],
-    },
     settings: { ...DEFAULT_SETTINGS },
     pricing: {},
   };
-}
-
-function normalizeOpenCodeSyncDomain(value) {
-  const current = value && typeof value === "object" && !Array.isArray(value) ? value : {};
-
-  return {
-    preferences: normalizeOpenCodePreferences(current.preferences),
-    tokens: Array.isArray(current.tokens) ? current.tokens : [],
-  };
-}
-
-function isOpenCodeSyncDomainEqual(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export { getConnectionEffectiveStatus };
@@ -134,15 +112,6 @@ function ensureDbShape(data) {
           }
           changed = true;
         }
-      }
-    }
-
-    if (key === "opencodeSync") {
-      const normalizedOpenCodeSync = normalizeOpenCodeSyncDomain(next.opencodeSync);
-
-      if (!isOpenCodeSyncDomainEqual(next.opencodeSync, normalizedOpenCodeSync)) {
-        next.opencodeSync = normalizedOpenCodeSync;
-        changed = true;
       }
     }
 
@@ -763,41 +732,6 @@ export async function getSettings() {
   return db.data.settings || { cloudEnabled: false };
 }
 
-export async function getOpenCodePreferences() {
-  const db = await getDb();
-  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
-  db.data.opencodeSync.preferences = normalizeOpenCodePreferences(db.data.opencodeSync.preferences);
-  return db.data.opencodeSync.preferences;
-}
-
-export async function updateOpenCodePreferences(updates) {
-  const db = await getDb();
-  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
-
-  const current = normalizeOpenCodePreferences(db.data.opencodeSync.preferences);
-  db.data.opencodeSync.preferences = validateOpenCodePreferences({
-    ...current,
-    ...(updates && typeof updates === "object" && !Array.isArray(updates) ? updates : {}),
-  });
-
-  await safeWrite(db);
-  return db.data.opencodeSync.preferences;
-}
-
-export async function listOpenCodeTokens() {
-  const db = await getDb();
-  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
-  return db.data.opencodeSync.tokens;
-}
-
-export async function replaceOpenCodeTokens(tokens) {
-  const db = await getDb();
-  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
-  db.data.opencodeSync.tokens = Array.isArray(tokens) ? [...tokens] : [];
-  await safeWrite(db);
-  return db.data.opencodeSync.tokens;
-}
-
 export async function updateSettings(updates) {
   const db = await getDb();
   db.data.settings = { ...db.data.settings, ...updates };
@@ -818,12 +752,6 @@ export async function importDb(payload) {
   const nextData = {
     ...cloneDefaultData(),
     ...payload,
-    opencodeSync: {
-      ...cloneDefaultData().opencodeSync,
-      ...(payload.opencodeSync && typeof payload.opencodeSync === "object" && !Array.isArray(payload.opencodeSync)
-        ? payload.opencodeSync
-        : {}),
-    },
     settings: {
       ...cloneDefaultData().settings,
       ...(payload.settings && typeof payload.settings === "object" && !Array.isArray(payload.settings)

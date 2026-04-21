@@ -32,8 +32,4 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
-  getOpenCodePreferences,
-  updateOpenCodePreferences,
-  listOpenCodeTokens,
-  replaceOpenCodeTokens,
 } from "@/lib/localDb";
