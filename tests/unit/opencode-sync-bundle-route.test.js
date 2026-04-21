@@ -126,4 +126,60 @@ describe("/api/opencode/sync/bundle", () => {
       },
     });
   });
+
+  it("supports object-shaped model catalogs using map keys for filtering", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            "gpt-4o-mini-free": { name: "GPT-4o mini free" },
+            "gpt-4o": { name: "GPT-4o" },
+          },
+        }),
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/bundle", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.bundle.models).toEqual({
+      "gpt-4o-mini-free": {
+        id: "gpt-4o-mini-free",
+        name: "GPT-4o mini free",
+      },
+    });
+  });
+
+  it("returns 500 when upstream catalog JSON is invalid", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token");
+        },
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/bundle", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to generate OpenCode sync bundle" });
+  });
 });

@@ -18,7 +18,7 @@ function getCatalogModelId(model, fallbackId = "") {
   if (typeof model === "string") return model.trim();
   if (!model || typeof model !== "object" || Array.isArray(model)) return fallbackId;
 
-  for (const key of ["id", "key", "model", "name"]) {
+  for (const key of ["id", "key", "model"]) {
     if (typeof model[key] === "string" && model[key].trim()) {
       return model[key].trim();
     }
@@ -28,8 +28,6 @@ function getCatalogModelId(model, fallbackId = "") {
 }
 
 function isValidationError(error) {
-  if (error instanceof SyntaxError) return true;
-
   const message = typeof error?.message === "string" ? error.message : "";
   return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
@@ -45,13 +43,17 @@ function filterOpenCodeModels(models) {
 
   return Object.keys(models).reduce((result, key) => {
     const model = models[key];
-    const modelId = getCatalogModelId(model, key);
+    const modelId = typeof key === "string" ? key.trim() : "";
 
     if (!modelId.endsWith("-free")) {
       return result;
     }
 
-    result[key] = model;
+    if (model && typeof model === "object" && !Array.isArray(model)) {
+      result[key] = model.id || model.key || model.model ? model : { ...model, id: modelId };
+    } else {
+      result[key] = model;
+    }
     return result;
   }, {});
 }
@@ -68,7 +70,12 @@ async function loadOpenCodeModelCatalog() {
     throw new Error(`Failed to load OpenCode model catalog: ${response.status}`);
   }
 
-  const json = await response.json();
+  let json;
+  try {
+    json = await response.json();
+  } catch {
+    throw new Error("Failed to parse OpenCode model catalog response");
+  }
   const rawModels = json?.data ?? json?.models ?? json;
   return filterOpenCodeModels(rawModels);
 }

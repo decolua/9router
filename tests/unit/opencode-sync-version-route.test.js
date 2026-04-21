@@ -116,4 +116,60 @@ describe("/api/opencode/sync/version", () => {
     expect(response.body.revision).toHaveLength(12);
     expect(response.body.hash).toHaveLength(64);
   });
+
+  it("supports object-shaped model catalogs using map keys for filtering", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: {
+            "gpt-4o-mini-free": { name: "GPT-4o mini free" },
+            "gpt-4o": { name: "GPT-4o" },
+          },
+        }),
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      revision: expect.any(String),
+      hash: expect.any(String),
+      generatedAt: expect.any(String),
+      schemaVersion: 1,
+    });
+  });
+
+  it("returns 500 when upstream catalog JSON is invalid", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token");
+        },
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to generate OpenCode sync version" });
+  });
 });
