@@ -16,6 +16,21 @@ vi.mock("@/models", () => ({
   getOpenCodePreferences,
 }));
 
+vi.mock("@/lib/opencodeSync/generator.js", async () => {
+  const actual = await vi.importActual("../../src/lib/opencodeSync/generator.js");
+  return actual;
+});
+
+vi.mock("@/shared/constants/providers.js", () => ({
+  FREE_PROVIDERS: {
+    opencode: {
+      modelsFetcher: {
+        url: "https://opencode.ai/zen/v1/models",
+      },
+    },
+  },
+}));
+
 let GET;
 
 describe("/api/opencode/bundle/preview", () => {
