@@ -66,6 +66,56 @@ export function cloakClaudeTools(body) {
   };
 }
 
+/**
+ * Reverse cloakClaudeTools() on any Claude-format node headed back to the client.
+ *
+ * Walks recursively and renames every `tool_use` block whose `name` is in
+ * `toolNameMap`. Shape-agnostic on purpose: works for streaming SSE chunks
+ * (content_block_start.content_block), full non-streaming response bodies
+ * (content[] arrays), message history, and any nested envelope a future
+ * Claude API revision might use.
+ *
+ * MUST run on every client-bound path when cloakClaudeTools() touched the
+ * request. If it doesn't, clients see "_ide"-suffixed tool names, their
+ * registry has no match, and the model refuses:
+ *   "I can't use the tool 'exec_ide' here because it isn't available.
+ *    I need to stop retrying it and answer without that tool."
+ *
+ * @param {*} node - Any JSON-serializable value (object, array, primitive).
+ * @param {Map<string,string>|null} toolNameMap - cloaked → original name.
+ * @returns {*} The node with tool_use names restored. Returns the same
+ *   reference if nothing changed (structural sharing, GC-friendly).
+ */
+export function decloakToolNames(node, toolNameMap) {
+  if (!toolNameMap?.size || !node || typeof node !== "object") return node;
+
+  if (Array.isArray(node)) {
+    let changed = false;
+    const next = node.map(child => {
+      const mapped = decloakToolNames(child, toolNameMap);
+      if (mapped !== child) changed = true;
+      return mapped;
+    });
+    return changed ? next : node;
+  }
+
+  if (node.type === "tool_use" && typeof node.name === "string") {
+    const original = toolNameMap.get(node.name);
+    if (original && original !== node.name) {
+      return { ...node, name: original };
+    }
+  }
+
+  let changed = false;
+  const next = {};
+  for (const key of Object.keys(node)) {
+    const mapped = decloakToolNames(node[key], toolNameMap);
+    if (mapped !== node[key]) changed = true;
+    next[key] = mapped;
+  }
+  return changed ? next : node;
+}
+
 // CC decoy tools — Claude Code native tool names, marked unavailable
 const CC_DECOY_TOOLS = [
   { name: "Task", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },

@@ -1,6 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
+import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
@@ -127,7 +128,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -157,9 +158,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
+  // Decloak AFTER provider-response logging so logs preserve upstream fidelity
+  // (debugging the cloak system itself needs to see what upstream actually sent).
+  // Runs before translation so translator sees real tool names. Covers Claude→Claude
+  // passthrough and Claude→OpenAI translation. See claudeCloaking.js for "exec_ide" symptom.
+  const decloakedBody = decloakToolNames(responseBody, toolNameMap);
+
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
-    : responseBody;
+    ? translateNonStreamingResponse(decloakedBody, targetFormat, sourceFormat)
+    : decloakedBody;
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {
