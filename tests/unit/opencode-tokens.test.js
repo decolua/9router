@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { createSyncToken, toPublicTokenRecord, verifySyncToken } from "../../src/lib/opencodeSync/tokens.js";
+import {
+  createSyncToken,
+  normalizeSyncTokenPatch,
+  toPublicTokenRecord,
+  validateSyncTokenMode,
+  verifySyncToken,
+} from "../../src/lib/opencodeSync/tokens.js";
 
 describe("opencode sync token helpers", () => {
   it("stores only a hash and verifies the raw token", () => {
@@ -46,5 +52,27 @@ describe("opencode sync token helpers", () => {
       createdAt: "2026-04-21T00:00:00.000Z",
       updatedAt: "2026-04-21T00:00:00.000Z",
     });
+  });
+
+  it("validates allowed token modes", () => {
+    expect(validateSyncTokenMode("device")).toBe("device");
+    expect(validateSyncTokenMode(" shared ")).toBe("shared");
+    expect(() => validateSyncTokenMode("admin")).toThrow(/invalid token mode/i);
+  });
+
+  it("normalizes sync-token patch payloads", () => {
+    expect(
+      normalizeSyncTokenPatch({
+        name: "  Laptop Pro  ",
+        metadata: { platform: "macOS", retries: 2, nested: { ignored: true } },
+      })
+    ).toEqual({
+      name: "Laptop Pro",
+      metadata: { platform: "macOS", retries: 2 },
+    });
+
+    expect(() => normalizeSyncTokenPatch({ mode: "shared" })).toThrow(/cannot be updated/i);
+    expect(() => normalizeSyncTokenPatch({ name: "   " })).toThrow(/token name is required/i);
+    expect(() => normalizeSyncTokenPatch({ metadata: "bad" })).toThrow(/invalid token metadata/i);
   });
 });
