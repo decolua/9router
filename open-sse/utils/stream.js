@@ -82,6 +82,9 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              if (parsed === null || parsed === undefined) {
+                continue;
+              }
 
               const idFixed = fixInvalidId(parsed);
 
@@ -261,12 +264,35 @@ export function createSSEStream(options = {}) {
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
-            let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
-              output = "data: " + buffer.slice(5);
+            let output = null;
+            const trimmedBuffer = buffer.trim();
+
+            if (trimmedBuffer.startsWith("data:")) {
+              const dataStr = trimmedBuffer.slice(5).trim();
+              if (dataStr !== "[DONE]") {
+                try {
+                  const parsed = JSON.parse(dataStr);
+                  if (parsed !== null && parsed !== undefined) {
+                    output = buffer;
+                    if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
+                      output = "data: " + buffer.slice(5);
+                    }
+                  }
+                } catch {
+                  output = buffer;
+                  if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
+                    output = "data: " + buffer.slice(5);
+                  }
+                }
+              }
+            } else {
+              output = buffer;
             }
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+
+            if (output) {
+              reqLogger?.appendConvertedChunk?.(output);
+              controller.enqueue(sharedEncoder.encode(output));
+            }
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
