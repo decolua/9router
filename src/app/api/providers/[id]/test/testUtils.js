@@ -24,10 +24,16 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     extraHeaders: { "Content-Type": "application/json", "originator": "codex-cli", "User-Agent": "codex-cli/1.0.18 (macOS; arm64)" },
-    // Minimal invalid body — triggers fast 400 without consuming quota
-    body: JSON.stringify({ model: "gpt-5.3-codex", input: [], stream: false, store: false }),
-    // 400 (bad request) means auth succeeded; only 401/403 means token is bad
-    acceptStatuses: [400],
+    // Use a valid payload shape so schema errors do not mark the provider unavailable.
+    body: JSON.stringify({
+      model: "gpt-5.2",
+      instructions: "You are a coding assistant.",
+      input: [{ role: "user", content: [{ type: "input_text", text: "Reply with exactly: ok" }] }],
+      stream: true,
+      store: false,
+    }),
+    // 200 means the probe model is usable; 400 can still mean auth succeeded but the account is gated.
+    acceptStatuses: [200, 400],
     refreshable: true,
   },
   "gemini-cli": {
