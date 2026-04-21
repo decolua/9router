@@ -115,6 +115,21 @@ describe("buildOpenCodeSyncBundle", () => {
     expect(minimal.hash).not.toBe(opinionated.hash);
   });
 
+  it("includes slim preset plugin and keeps bundle default model consistent", () => {
+    const result = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "slim",
+        defaultModel: "openai/gpt-4.1",
+        excludedModels: ["xai/grok-3-mini"],
+      },
+      modelCatalog,
+    });
+
+    expect(result.bundle.plugins).toEqual([OPENCODE_SYNC_PLUGIN, SLIM_PRESET_PLUGIN]);
+    expect(result.bundle.defaultModel).toBe("openai/gpt-4.1");
+    expect(Object.keys(result.bundle.models)).toContain("openai/gpt-4.1");
+  });
+
   it("lets explicit custom overrides extend template preset output", () => {
     const result = buildOpenCodeSyncBundle({
       preferences: {
@@ -147,6 +162,59 @@ describe("buildOpenCodeSyncBundle", () => {
     });
   });
 
+  it("keeps explicit null advanced overrides as values instead of removal", () => {
+    const result = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "custom",
+        customTemplate: "opinionated",
+        advancedOverrides: {
+          custom: {
+            safety: null,
+            ui: {
+              mode: null,
+            },
+          },
+        },
+      },
+      modelCatalog,
+    });
+
+    expect(result.bundle.advancedOverrides).toEqual({
+      generation: {
+        strategy: "assisted",
+      },
+      safety: null,
+      ui: {
+        mode: null,
+      },
+    });
+  });
+
+  it("fails fast when default model is not present in selected models", () => {
+    expect(() =>
+      buildOpenCodeSyncBundle({
+        preferences: {
+          variant: "openagent",
+          defaultModel: "xai/grok-3-mini",
+          excludedModels: ["xai/grok-3-mini"],
+        },
+        modelCatalog,
+      })
+    ).toThrow("Default model must be included in generated bundle models");
+  });
+
+  it("fails fast for invalid normalized preference combinations", () => {
+    expect(() =>
+      buildOpenCodeSyncBundle({
+        preferences: {
+          variant: "openagent",
+          customTemplate: "minimal",
+        },
+        modelCatalog,
+      })
+    ).toThrow("Custom template is only valid for custom variant");
+  });
+
   it("keeps revision and hash stable for same effective input", () => {
     const first = buildOpenCodeSyncPreview({
       preferences: {
@@ -175,5 +243,40 @@ describe("buildOpenCodeSyncBundle", () => {
     expect(second.revision).toBe(first.revision);
     expect(second.hash).toBe(first.hash);
     expect(second.preview).toEqual(first.preview);
+  });
+
+  it("treats MCP server array ordering as semantic for bundle hashing", () => {
+    const first = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "openagent",
+        mcpServers: [
+          { name: "alpha", command: "alpha" },
+          { name: "beta", command: "beta" },
+        ],
+      },
+      modelCatalog,
+    });
+
+    const second = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "openagent",
+        mcpServers: [
+          { name: "beta", command: "beta" },
+          { name: "alpha", command: "alpha" },
+        ],
+      },
+      modelCatalog,
+    });
+
+    expect(first.bundle.mcpServers).toEqual([
+      { name: "alpha", command: "alpha" },
+      { name: "beta", command: "beta" },
+    ]);
+    expect(second.bundle.mcpServers).toEqual([
+      { name: "beta", command: "beta" },
+      { name: "alpha", command: "alpha" },
+    ]);
+    expect(second.hash).not.toBe(first.hash);
+    expect(second.revision).not.toBe(first.revision);
   });
 });

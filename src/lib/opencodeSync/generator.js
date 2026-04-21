@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-import { normalizeOpenCodePreferences } from "./schema.js";
+import { validateOpenCodePreferences } from "./schema.js";
 import {
   getCustomTemplatePreset,
   getVariantPreset,
@@ -186,7 +186,7 @@ function buildMetadata(source) {
 }
 
 export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
-  const normalizedPreferences = normalizeOpenCodePreferences(preferences);
+  const normalizedPreferences = validateOpenCodePreferences(preferences);
   const variantPreset = getVariantPreset(normalizedPreferences.variant);
   const customTemplatePreset = getCustomTemplatePreset(normalizedPreferences.customTemplate);
   const plugins = buildDeterministicPluginList(normalizedPreferences);
@@ -197,6 +197,10 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
     templateBundle.advancedOverrides || {},
     normalizedPreferences.advancedOverrides[normalizedPreferences.variant] || {}
   );
+
+  if (normalizedPreferences.defaultModel && !Object.hasOwn(models, normalizedPreferences.defaultModel)) {
+    throw new Error("Default model must be included in generated bundle models");
+  }
 
   const bundle = {
     variant: normalizedPreferences.variant,
