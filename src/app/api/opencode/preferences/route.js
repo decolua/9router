@@ -3,8 +3,17 @@ import { NextResponse } from "next/server";
 import { getOpenCodePreferences, updateOpenCodePreferences } from "@/models";
 import { sanitizeOpenCodePreferencesForResponse } from "@/lib/opencodeSync/schema.js";
 
+const VALIDATION_ERROR_PATTERNS = [/^Invalid\b/u, /only valid/u];
+
 function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidationError(error) {
+  if (error instanceof SyntaxError) return true;
+
+  const message = typeof error?.message === "string" ? error.message : "";
+  return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 export async function GET() {
@@ -33,7 +42,7 @@ export async function PATCH(request) {
       preferences: sanitizeOpenCodePreferencesForResponse(preferences),
     });
   } catch (error) {
-    if (error instanceof SyntaxError || error?.message?.startsWith("Invalid") || error?.message?.includes("only valid")) {
+    if (isValidationError(error)) {
       return NextResponse.json({ error: error?.message || "Invalid preferences payload" }, { status: 400 });
     }
 

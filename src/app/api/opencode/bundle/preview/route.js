@@ -6,21 +6,53 @@ import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
 
 export const dynamic = "force-dynamic";
 
-function normalizeModelCatalog(models) {
-  return models.reduce((result, model) => {
-    if (!model?.id) return result;
-    result[model.id] = {
-      id: model.id,
-      name: model.name || model.id,
-    };
-    return result;
-  }, {});
+const VALIDATION_ERROR_PATTERNS = [
+  /^Invalid\b/u,
+  /must be included/u,
+  /only valid/u,
+  /^Default model\b/u,
+];
+
+function getCatalogModelId(model, fallbackId = "") {
+  if (typeof model === "string") return model.trim();
+  if (!model || typeof model !== "object" || Array.isArray(model)) return fallbackId;
+
+  for (const key of ["id", "key", "model", "name"]) {
+    if (typeof model[key] === "string" && model[key].trim()) {
+      return model[key].trim();
+    }
+  }
+
+  return fallbackId;
+}
+
+function isValidationError(error) {
+  if (error instanceof SyntaxError) return true;
+
+  const message = typeof error?.message === "string" ? error.message : "";
+  return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 function filterOpenCodeModels(models) {
-  return models
-    .filter((model) => model?.id?.endsWith("-free"))
-    .map((model) => ({ id: model.id, name: model.id }));
+  if (Array.isArray(models)) {
+    return models.filter((model) => getCatalogModelId(model).endsWith("-free"));
+  }
+
+  if (!models || typeof models !== "object") {
+    return {};
+  }
+
+  return Object.keys(models).reduce((result, key) => {
+    const model = models[key];
+    const modelId = getCatalogModelId(model, key);
+
+    if (!modelId.endsWith("-free")) {
+      return result;
+    }
+
+    result[key] = model;
+    return result;
+  }, {});
 }
 
 async function loadOpenCodeModelCatalog() {
@@ -37,9 +69,9 @@ async function loadOpenCodeModelCatalog() {
 
   const json = await response.json();
   const rawModels = json?.data ?? json?.models ?? json;
-  const filteredModels = filterOpenCodeModels(Array.isArray(rawModels) ? rawModels : []);
+  const filteredModels = filterOpenCodeModels(rawModels);
 
-  return normalizeModelCatalog(filteredModels);
+  return filteredModels;
 }
 
 export async function GET() {
@@ -51,7 +83,7 @@ export async function GET() {
 
     return NextResponse.json(buildOpenCodeSyncPreview({ preferences, modelCatalog }));
   } catch (error) {
-    if (error?.message?.startsWith("Invalid") || error?.message?.includes("must be included") || error?.message?.includes("only valid")) {
+    if (isValidationError(error)) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 

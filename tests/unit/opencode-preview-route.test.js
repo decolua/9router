@@ -69,4 +69,81 @@ describe("/api/opencode/bundle/preview", () => {
     expect(response.body.bundle.defaultModel).toBe("openai/gpt-4.1-free");
     expect(Object.keys(response.body.bundle.models)).toEqual(["openai/gpt-4.1-free"]);
   });
+
+  it("supports object-shaped catalogs and preserves model metadata", async () => {
+    getOpenCodePreferences.mockResolvedValue({
+      variant: "openagent",
+      defaultModel: "openai/gpt-4.1-free",
+    });
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          "openai/gpt-4.1-free": {
+            id: "openai/gpt-4.1-free",
+            name: "GPT-4.1 Free",
+            provider: "openai",
+            contextWindow: 128000,
+            tags: ["free", "chat"],
+          },
+          "openai/gpt-4.1": {
+            id: "openai/gpt-4.1",
+            name: "GPT-4.1",
+          },
+        },
+      }),
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(response.body.bundle.models).toEqual({
+      "openai/gpt-4.1-free": {
+        id: "openai/gpt-4.1-free",
+        name: "GPT-4.1 Free",
+        provider: "openai",
+        contextWindow: 128000,
+        tags: ["free", "chat"],
+      },
+    });
+  });
+
+  it("returns 500 when the catalog fetch fails", async () => {
+    getOpenCodePreferences.mockResolvedValue({ variant: "openagent" });
+
+    global.fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to generate OpenCode bundle preview" });
+  });
+
+  it("returns 400 when preview generation rejects an invalid default model", async () => {
+    getOpenCodePreferences.mockResolvedValue({
+      variant: "openagent",
+      defaultModel: "anthropic/claude-3.7-sonnet-free",
+    });
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "openai/gpt-4.1-free", name: "GPT-4.1 Free", provider: "openai" },
+        ],
+      }),
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "Default model must be included in generated bundle models",
+    });
+  });
 });
