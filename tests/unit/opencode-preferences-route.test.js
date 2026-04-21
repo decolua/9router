@@ -18,6 +18,11 @@ vi.mock("@/models", () => ({
   updateOpenCodePreferences,
 }));
 
+vi.mock("@/lib/opencodeSync/schema.js", async () => {
+  const actual = await vi.importActual("../../src/lib/opencodeSync/schema.js");
+  return actual;
+});
+
 let GET;
 let PATCH;
 
@@ -74,5 +79,35 @@ describe("/api/opencode/preferences", () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: "Invalid OpenCode variant" });
+  });
+
+  it("persists valid partial PATCH payloads and returns sanitized preferences", async () => {
+    const partialPayload = {
+      envVars: [
+        { key: "PUBLIC_FLAG", value: "enabled", secret: false },
+        { key: "API_KEY", value: "super-secret", secret: true },
+      ],
+    };
+
+    updateOpenCodePreferences.mockResolvedValue({
+      variant: "openagent",
+      ...partialPayload,
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/opencode/preferences", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(partialPayload),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateOpenCodePreferences).toHaveBeenCalledWith(partialPayload);
+    expect(response.body.preferences.variant).toBe("openagent");
+    expect(response.body.preferences.envVars).toEqual([
+      { key: "API_KEY", value: "********", secret: true },
+      { key: "PUBLIC_FLAG", value: "enabled", secret: false },
+    ]);
   });
 });
