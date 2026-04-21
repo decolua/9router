@@ -263,7 +263,7 @@ function EmbeddingExampleCard({ providerId }) {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                  {running ? "progress_activity" : "play_arrow"}
+                  play_arrow
                 </span>
                 {running ? "Running..." : "Run"}
               </button>
@@ -699,7 +699,7 @@ function TtsExampleCard({ providerId }) {
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                    {running ? "progress_activity" : "play_arrow"}
+                    play_arrow
                   </span>
                   {running ? "Generating..." : "Run"}
                 </button>
@@ -959,7 +959,7 @@ function GenericExampleCard({ providerId, kind }) {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                  {running ? "progress_activity" : "play_arrow"}
+                  play_arrow
                 </span>
                 {running ? "Running..." : "Run"}
               </button>
