@@ -46,7 +46,14 @@ export function filterToOpenAIFormat(body) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: "text", text: "" });
       }
-      
+
+      if (filteredContent.every((block) => block.type === "text")) {
+        return {
+          ...msg,
+          content: filteredContent.map((block) => block.text).join("\n"),
+        };
+      }
+
       return { ...msg, content: filteredContent };
     }
     
@@ -124,4 +131,3 @@ export function filterToOpenAIFormat(body) {
 
   return body;
 }
-

@@ -2,7 +2,8 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { exec } = require("child_process");
 const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
-const { log, err } = require("../logger");
+const log = (msg) => console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] [MITM] ${msg}`);
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";

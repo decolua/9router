@@ -6,6 +6,36 @@ import { startLocalServer } from "../utils/server.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
+function extractEmailFromJwt(token) {
+  try {
+    if (!token || typeof token !== "string") return undefined;
+    const parts = token.split(".");
+    if (parts.length !== 3) return undefined;
+
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(Buffer.from(base64 + padding, "base64").toString("utf8"));
+    return payload.email || payload.preferred_username || payload.sub || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function getCodexIdentity(tokens) {
+  const email =
+    extractEmailFromJwt(tokens.id_token) ||
+    extractEmailFromJwt(tokens.access_token) ||
+    tokens.email ||
+    tokens.preferred_username ||
+    tokens.sub ||
+    undefined;
+
+  return {
+    email,
+    name: email,
+  };
+}
+
 /**
  * Codex (OpenAI) OAuth Service
  */
@@ -42,6 +72,7 @@ export class CodexService extends OAuthService {
    */
   async saveTokens(tokens) {
     const { server, token, userId } = getServerCredentials();
+    const identity = getCodexIdentity(tokens);
 
     const response = await fetch(`${server}/api/cli/providers/codex`, {
       method: "POST",
@@ -55,6 +86,8 @@ export class CodexService extends OAuthService {
         refreshToken: tokens.refresh_token,
         idToken: tokens.id_token,
         expiresIn: tokens.expires_in,
+        email: identity.email,
+        name: identity.name,
       }),
     });
 
@@ -142,4 +175,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-

@@ -2,7 +2,13 @@
 
 import { NextResponse } from "next/server";
 import { getMitmAlias, setMitmAliasAll } from "@/models";
-import { getMitmStatus } from "@/mitm/manager";
+import { getSettings, updateSettings } from "@/lib/localDb";
+
+async function loadMitmManager() {
+  const mitmManager = await import("@/mitm/manager");
+  mitmManager.initDbHooks(getSettings, updateSettings);
+  return mitmManager;
+}
 
 // GET - Get MITM aliases for a tool
 export async function GET(request) {
@@ -20,6 +26,7 @@ export async function GET(request) {
 // PUT - Save MITM aliases for a specific tool
 export async function PUT(request) {
   try {
+    const { getMitmStatus } = await loadMitmManager();
     const { tool, mappings } = await request.json();
 
     if (!tool || !mappings || typeof mappings !== "object") {

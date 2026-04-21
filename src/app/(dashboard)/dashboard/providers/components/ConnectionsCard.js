@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal } from "@/shared/components";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -84,7 +85,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
-  const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
+  const effectiveStatus = getConnectionEffectiveStatus(connection);
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";

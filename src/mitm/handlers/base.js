@@ -1,4 +1,5 @@
-const { log, err } = require("../logger");
+const log = (msg) => console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] [MITM] ${msg}`);
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
 
 const DEFAULT_LOCAL_ROUTER = "http://localhost:20128";
 const ROUTER_BASE = String(process.env.MITM_ROUTER_BASE || DEFAULT_LOCAL_ROUTER)

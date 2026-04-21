@@ -12,6 +12,7 @@ export default function Modal({
   footer,
   size = "md",
   closeOnOverlay = true,
+  closeOnEscape = true,
   showCloseButton = true,
   className,
 }) {
@@ -38,13 +39,13 @@ export default function Modal({
   // Handle escape key
   useEffect(() => {
     const handleEscape = (e) => {
-      if (e.key === "Escape" && isOpen) {
+      if (e.key === "Escape" && isOpen && closeOnEscape) {
         onClose();
       }
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, closeOnEscape]);
 
   if (!isOpen) return null;
 
@@ -140,4 +141,3 @@ export function ConfirmModal({
     </Modal>
   );
 }
-

@@ -11,6 +11,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const originalFetch = global.fetch;
 
+vi.mock("../../open-sse/index.js", () => ({}));
+
 describe("Codex Refresh Token", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -78,6 +80,30 @@ describe("Codex Refresh Token", () => {
       const { getRefreshLeadMs, TOKEN_EXPIRY_BUFFER_MS } = await import("../../open-sse/services/tokenRefresh.js");
 
       expect(getRefreshLeadMs("codex")).toBeGreaterThan(TOKEN_EXPIRY_BUFFER_MS);
+    });
+  });
+
+  describe("Codex identity mapping", () => {
+    it("prefers email/name from id_token so add-account saves a real label", async () => {
+      const jwt = (payload) => {
+        const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
+        const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+        return `${header}.${body}.sig`;
+      };
+
+      const { getProvider } = await import("../../src/lib/oauth/providers.js");
+      const provider = getProvider("codex");
+
+      const result = provider.mapTokens({
+        access_token: jwt({ sub: "opaque-sub" }),
+        refresh_token: "refresh-token",
+        id_token: jwt({ email: "codex.user@example.com", name: "Codex User" }),
+        expires_in: 3600,
+      });
+
+      expect(result.email).toBe("codex.user@example.com");
+      expect(result.name).toBe("codex.user@example.com");
+      expect(result.displayName).toBe("Codex User");
     });
   });
 });

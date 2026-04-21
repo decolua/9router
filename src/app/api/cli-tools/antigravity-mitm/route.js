@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
-import {
-  getMitmStatus,
-  startServer,
-  stopServer,
-  enableToolDNS,
-  disableToolDNS,
-  trustCert,
-  getCachedPassword,
-  setCachedPassword,
-  loadEncryptedPassword,
-  initDbHooks,
-} from "@/mitm/manager";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
-initDbHooks(getSettings, updateSettings);
+async function loadMitmManager() {
+  const mitmManager = await import("@/mitm/manager");
+  mitmManager.initDbHooks(getSettings, updateSettings);
+  return mitmManager;
+}
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -53,6 +45,11 @@ function checkIsAdmin() {
 // GET - Full MITM status (server + per-tool DNS)
 export async function GET() {
   try {
+    const {
+      getMitmStatus,
+      getCachedPassword,
+      loadEncryptedPassword,
+    } = await loadMitmManager();
     const status = await getMitmStatus();
     const settings = await getSettings();
     return NextResponse.json({
@@ -76,6 +73,11 @@ export async function GET() {
 // POST - Start MITM server (cert + server, no DNS)
 export async function POST(request) {
   try {
+    const {
+      startServer,
+      getCachedPassword,
+      loadEncryptedPassword,
+    } = await loadMitmManager();
     const { apiKey, sudoPassword, mitmRouterBaseUrl } = await request.json();
     const pwd = getPassword(sudoPassword) || await loadEncryptedPassword() || "";
 
@@ -111,6 +113,11 @@ export async function POST(request) {
 // DELETE - Stop MITM server (removes all DNS first, then kills server)
 export async function DELETE(request) {
   try {
+    const {
+      stopServer,
+      getCachedPassword,
+      loadEncryptedPassword,
+    } = await loadMitmManager();
     const body = await request.json().catch(() => ({}));
     const { sudoPassword } = body;
     const pwd = getPassword(sudoPassword) || await loadEncryptedPassword() || "";
@@ -132,6 +139,14 @@ export async function DELETE(request) {
 // PATCH - Toggle DNS for a specific tool (enable/disable)
 export async function PATCH(request) {
   try {
+    const {
+      enableToolDNS,
+      disableToolDNS,
+      trustCert,
+      getCachedPassword,
+      loadEncryptedPassword,
+      getMitmStatus,
+    } = await loadMitmManager();
     const { tool, action, sudoPassword } = await request.json();
     const pwd = getPassword(sudoPassword) || await loadEncryptedPassword() || "";
 

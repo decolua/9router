@@ -2,7 +2,8 @@ const { exec, spawn, execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { log, err } = require("../logger");
+const log = (msg) => console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] [MITM] ${msg}`);
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
 
 // Per-tool DNS hosts mapping
 const TOOL_HOSTS = {

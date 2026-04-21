@@ -5,15 +5,16 @@ const os = require("os");
 const net = require("net");
 const https = require("https");
 const crypto = require("crypto");
-const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable } = require("./dns/dnsConfig");
+const { addDNSEntry, removeDNSEntry, removeAllDNSEntries, checkAllDNSStatus, TOOL_HOSTS, isSudoAvailable, execWithPassword } = require("./dns/dnsConfig.js");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
-const { generateCert } = require("./cert/generate");
-const { installCert, uninstallCert } = require("./cert/install");
-const { isCertExpired } = require("./cert/rootCA");
-const { MITM_DIR } = require("./paths");
-const { log, err } = require("./logger");
+const { generateCert } = require("./cert/generate.js");
+const { installCert, uninstallCert, checkCertInstalled } = require("./cert/install.js");
+const { isCertExpired } = require("./cert/rootCA.js");
+const { MITM_DIR } = require("./paths.js");
+const log = (msg) => console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] [MITM] ${msg}`);
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -109,7 +110,6 @@ function killProcess(pid, force = false, sudoPassword = null) {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
     if (sudoPassword) {
-      const { execWithPassword } = require("./dns/dnsConfig");
       execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, { windowsHide: true }, () => { }));
     } else {
       exec(cmd, { windowsHide: true }, () => { });
@@ -249,7 +249,6 @@ async function killLeftoverMitm(sudoPassword) {
     try {
       const escaped = SERVER_PATH.replace(/'/g, "'\\''");
       if (sudoPassword) {
-        const { execWithPassword } = require("./dns/dnsConfig");
         await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
       } else {
         exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
@@ -310,7 +309,6 @@ async function getMitmStatus() {
   const dnsStatus = checkAllDNSStatus();
   const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
   const certExists = fs.existsSync(rootCACertPath);
-  const { checkCertInstalled } = require("./cert/install");
   const certTrusted = certExists ? await checkCertInstalled(rootCACertPath) : false;
 
   return { running, pid, certExists, certTrusted, dnsStatus };
@@ -395,7 +393,6 @@ async function startServer(apiKey, sudoPassword) {
       if (ownerIsNode) {
         log(`Killing orphan node process on port 443 (PID ${owner.pid}, name=${owner.name})...`);
         try {
-          const { execWithPassword } = require("./dns/dnsConfig");
           await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
           await new Promise(r => setTimeout(r, 800));
         } catch { /* best effort */ }
@@ -425,7 +422,6 @@ async function startServer(apiKey, sudoPassword) {
   }
 
   // Step 1.5: Auto-install Root CA if not trusted yet
-  const { checkCertInstalled } = require("./cert/install");
   const rootCATrusted = await checkCertInstalled(rootCACertPath);
   const linuxNoSystemTrust = !IS_WIN && !IS_MAC && !isSudoAvailable();
   if (!rootCATrusted) {
@@ -644,7 +640,6 @@ async function disableToolDNS(tool, sudoPassword) {
 async function trustCert(sudoPassword) {
   const rootCACertPath = path.join(MITM_DIR, "rootCA.crt");
   if (!fs.existsSync(rootCACertPath)) throw new Error("Root CA not found. Start server first to generate it.");
-  const { installCert } = require("./cert/install");
   if (!IS_WIN && !IS_MAC && !isSudoAvailable()) {
     log(`🔐 Cert: system trust unavailable (no sudo). Use file: ${rootCACertPath}`);
     return;

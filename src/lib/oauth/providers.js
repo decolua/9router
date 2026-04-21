@@ -47,6 +47,25 @@ function extractEmailFromAccessToken(accessToken) {
   }
 }
 
+function extractIdentityFromJwt(token) {
+  try {
+    if (!token || typeof token !== "string") return {};
+    const parts = token.split(".");
+    if (parts.length !== 3) return {};
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
+    const padded = base64 + "=".repeat(missingPadding);
+    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+
+    return {
+      email: payload.email || undefined,
+      displayName: payload.name || payload.nickname || payload.preferred_username || payload.email || undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 // Provider configurations
 const PROVIDERS = {
   claude: {
@@ -155,6 +174,18 @@ const PROVIDERS = {
       refreshToken: tokens.refresh_token,
       idToken: tokens.id_token,
       expiresIn: tokens.expires_in,
+      ...(() => {
+        const idIdentity = extractIdentityFromJwt(tokens.id_token);
+        const accessIdentity = extractIdentityFromJwt(tokens.access_token);
+        const email = idIdentity.email || accessIdentity.email || undefined;
+        const displayName = idIdentity.displayName || accessIdentity.displayName || undefined;
+
+        return {
+          email,
+          displayName,
+          name: email || displayName || undefined,
+        };
+      })(),
     }),
   },
 

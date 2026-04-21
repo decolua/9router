@@ -1,7 +1,7 @@
 const path = require("path");
 const fs = require("fs");
 const forge = require("node-forge");
-const { MITM_DIR } = require("../paths");
+const { MITM_DIR } = require("../paths.js");
 
 const ROOT_CA_KEY_PATH = path.join(MITM_DIR, "rootCA.key");
 const ROOT_CA_CERT_PATH = path.join(MITM_DIR, "rootCA.crt");

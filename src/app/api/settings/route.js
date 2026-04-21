@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { readRuntimeConfig } from "@/lib/runtimeConfig";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -11,11 +12,20 @@ export async function GET() {
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
+    const runtimeConfig = await readRuntimeConfig();
+    const redis = runtimeConfig.redis || {};
+
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
       enableTranslator,
-      hasPassword: !!password
+      hasPassword: !!password,
+      redis: {
+        enabled: redis.enabled === true,
+        activeServerId: redis.activeServerId || null,
+        lastStatus: redis.lastStatus || null,
+        server: (redis.servers || []).find((server) => server.id === redis.activeServerId) || null,
+      },
     });
   } catch (error) {
     console.log("Error getting settings:", error);

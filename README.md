@@ -96,7 +96,7 @@ This repository package is private (`9router-app`), so source/Docker execution i
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+PORT=20129 NEXT_PUBLIC_BASE_URL=http://localhost:20129 npm run dev
 ```
 
 Production mode:
@@ -104,6 +104,14 @@ Production mode:
 ```bash
 npm run build
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
+```
+
+If you get a bind error or the port is already in use, kill the process first:
+
+```bash
+fuser -k 20128/tcp
+# fallback:
+lsof -ti :20128 | xargs -r kill -9
 ```
 
 Default URLs:
@@ -1033,6 +1041,7 @@ docker stop 9router && docker rm 9router
 | `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
 | `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
+| `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_TLS`, `REDIS_CLIENT_NAME`, `REDIS_CONNECT_TIMEOUT_MS` | empty | Optional Redis backend for hot quota/account state; if unset, local fallback is used |
 
 Notes:
 - Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
@@ -1046,6 +1055,7 @@ Notes:
 - Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
 - Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
+- Hot quota/account state can optionally use Redis when `REDIS_URL` or `REDIS_HOST` is configured; otherwise the app keeps the current local fallback path.
 
 </details>
 

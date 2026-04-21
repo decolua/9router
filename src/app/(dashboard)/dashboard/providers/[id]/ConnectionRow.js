@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -97,9 +98,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
-    : connection.testStatus;
+  const effectiveStatus = getConnectionEffectiveStatus(connection);
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
@@ -258,4 +257,3 @@ ConnectionRow.propTypes = {
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
-

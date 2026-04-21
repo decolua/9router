@@ -3,7 +3,9 @@ import { loadState, saveState, generateShortId } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { startFunnel, stopFunnel, stopDaemon, isTailscaleRunning, isTailscaleLoggedIn, startLogin, startDaemonWithPassword } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import * as mitmManager from "@/mitm/manager";
+
+const { getCachedPassword, loadEncryptedPassword, initDbHooks } = mitmManager;
 
 initDbHooks(getSettings, updateSettings);
 

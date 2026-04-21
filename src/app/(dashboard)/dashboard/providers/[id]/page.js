@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
+import Pagination from "@/shared/components/Pagination";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
@@ -46,6 +48,10 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -73,6 +79,66 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+
+  const filteredConnections = useMemo(() => {
+    let result = connections;
+
+    if (statusFilter !== "all") {
+      result = result.filter(connection => {
+        if (connection.isActive === false) return statusFilter === "disabled";
+
+        const effectiveStatus = getConnectionEffectiveStatus(connection);
+
+        if (!effectiveStatus) return statusFilter === "unknown";
+        if (statusFilter === "unknown") return effectiveStatus === "unknown";
+        
+        return effectiveStatus === statusFilter;
+      });
+    }
+
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return result;
+
+    return result.filter((connection) => {
+      const searchableValues = [
+        connection.provider,
+        connection.name,
+        connection.displayName,
+        connection.email,
+        connection.connectionName,
+        connection.id,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+
+      return searchableValues.some((value) => value.includes(query));
+    });
+  }, [connections, searchQuery, statusFilter]);
+
+  const totalConnections = filteredConnections.length;
+  const totalPages = Math.max(1, Math.ceil(totalConnections / pageSize));
+
+  const visibleCurrentPage = Math.min(currentPage, totalPages);
+
+  const paginatedConnections = useMemo(() => {
+    const start = (visibleCurrentPage - 1) * pageSize;
+    return filteredConnections.slice(start, start + pageSize);
+  }, [filteredConnections, pageSize, visibleCurrentPage]);
+
+  const connectionIndexMap = useMemo(
+    () => new Map(connections.map((connection, index) => [connection.id, index])),
+    [connections]
+  );
+
+  const filteredConnectionIndexMap = useMemo(
+    () => new Map(filteredConnections.map((connection, index) => [connection.id, index])),
+    [filteredConnections]
+  );
+
+  const normalizedSelectedConnectionIds = useMemo(
+    () => selectedConnectionIds.filter((id) => connections.some((conn) => conn.id === id)),
+    [connections, selectedConnectionIds]
+  );
 
   // Define callbacks BEFORE the useEffect that uses them
   const fetchAliases = useCallback(async () => {
@@ -235,8 +301,10 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
-    fetchConnections();
-    fetchAliases();
+    void Promise.resolve().then(() => {
+      fetchConnections();
+      fetchAliases();
+    });
   }, [fetchConnections, fetchAliases]);
 
   // Fetch suggested models from provider's public API (if configured)
@@ -347,7 +415,13 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleSwapPriority = async (index1, index2) => {
+  const handleSwapPriority = async (connectionId1, connectionId2) => {
+    if (!connectionId1 || !connectionId2) return;
+
+    const index1 = connectionIndexMap.get(connectionId1);
+    const index2 = connectionIndexMap.get(connectionId2);
+    if (index1 == null || index2 == null || index1 === index2) return;
+
     // Optimistic update state
     const newConnections = [...connections];
     [newConnections[index1], newConnections[index2]] = [newConnections[index2], newConnections[index1]];
@@ -372,8 +446,8 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
-  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
+  const selectedConnections = connections.filter((conn) => normalizedSelectedConnectionIds.includes(conn.id));
+  const allSelected = connections.length > 0 && normalizedSelectedConnectionIds.length === connections.length;
 
   const toggleSelectConnection = (connectionId) => {
     setSelectedConnectionIds((prev) => (
@@ -395,10 +469,6 @@ export default function ProviderDetailPage() {
     setSelectedConnectionIds([]);
     setBulkProxyPoolId("__none__");
   };
-
-  useEffect(() => {
-    setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
-  }, [connections]);
 
   const selectedProxySummary = (() => {
     if (selectedConnections.length === 0) return "";
@@ -462,49 +532,123 @@ export default function ProviderDetailPage() {
 
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+  };
+
+  const handleStatusFilterChange = (e) => {
+    setStatusFilter(e.target.value);
+    setCurrentPage(1);
+  };
 
   const connectionsList = (
-    <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
-          <div key={conn.id} className="flex items-stretch">
-            <div className="flex-1 min-w-0">
-              <ConnectionRow
-                connection={conn}
-                proxyPools={proxyPools}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(index, index - 1)}
-                onMoveDown={() => handleSwapPriority(index, index + 1)}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onUpdateProxy={async (proxyPoolId) => {
-                  try {
-                    const res = await fetch(`/api/providers/${conn.id}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
-                    });
-                    if (res.ok) {
-                      setConnections(prev => prev.map(c =>
-                        c.id === conn.id
-                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
-                          : c
-                      ));
-                    }
-                  } catch (error) {
-                    console.log("Error updating proxy:", error);
-                  }
-                }}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-              />
-            </div>
+    <div className="flex flex-col gap-4">
+      <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur-sm shadow-sm px-4 py-4 space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-text-primary">Connections</h3>
+            <p className="mt-1 text-sm text-text-muted">
+              Search, reorder, and manage saved accounts for this provider.
+            </p>
           </div>
-        ))}
+          <div className="text-sm text-text-muted">
+            {totalConnections === 0
+              ? "No matching connections"
+              : `${totalConnections} matching connection${totalConnections === 1 ? "" : "s"}`}
+          </div>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
+          <Input
+            label="Search connections"
+            icon="search"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search by name, email, provider, or id"
+            className="min-w-0"
+          />
+
+          <Select
+            label="Status filter"
+            value={statusFilter}
+            onChange={handleStatusFilterChange}
+            options={[
+              { value: "all", label: "All Statuses" },
+              { value: "active", label: "Active" },
+              { value: "error", label: "Error" },
+              { value: "unknown", label: "Unknown" },
+              { value: "disabled", label: "Disabled" },
+            ]}
+          />
+
+          <div className="flex items-center gap-2 rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-surface px-3 py-2.5 text-xs text-text-muted h-[40px]">
+            <span className="material-symbols-outlined text-[16px] text-primary">info</span>
+            <span>Use the arrows in each row to reorder visible results.</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] rounded-xl border border-black/5 dark:border-white/5 overflow-hidden bg-surface">
+        {paginatedConnections.map((conn) => {
+          const filteredIndex = filteredConnectionIndexMap.get(conn.id) ?? 0;
+          const previousConnection = filteredConnections[filteredIndex - 1] || null;
+          const nextConnection = filteredConnections[filteredIndex + 1] || null;
+
+          return (
+            <div key={conn.id} className="flex items-stretch bg-surface">
+              <div className="flex-1 min-w-0">
+                <ConnectionRow
+                  connection={conn}
+                  proxyPools={proxyPools}
+                  isOAuth={isOAuth}
+                  isFirst={filteredIndex === 0}
+                  isLast={filteredIndex === filteredConnections.length - 1}
+                  onMoveUp={() => handleSwapPriority(conn.id, previousConnection?.id)}
+                  onMoveDown={() => handleSwapPriority(conn.id, nextConnection?.id)}
+                  onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                  onUpdateProxy={async (proxyPoolId) => {
+                    try {
+                      const res = await fetch(`/api/providers/${conn.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
+                      });
+                      if (res.ok) {
+                        setConnections(prev => prev.map(c =>
+                          c.id === conn.id
+                            ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
+                            : c
+                        ));
+                      }
+                    } catch (error) {
+                      console.log("Error updating proxy:", error);
+                    }
+                  }}
+                  onEdit={() => {
+                    setSelectedConnection(conn);
+                    setShowEditModal(true);
+                  }}
+                  onDelete={() => handleDelete(conn.id)}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {totalConnections > 0 && (
+        <Pagination
+          currentPage={visibleCurrentPage}
+          pageSize={pageSize}
+          totalItems={totalConnections}
+          onPageChange={(page) => setCurrentPage(Math.max(1, Math.min(page, totalPages)))}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
+      )}
     </div>
   );
 

@@ -4,6 +4,9 @@ import "open-sse/index.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { runUsageRefreshJob } from "../../../../lib/usageRefreshQueue.js";
+
+const usageRequestCache = new Map();
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -11,6 +14,57 @@ function isAuthExpiredMessage(usage) {
   if (!usage?.message) return false;
   const msg = usage.message.toLowerCase();
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
+async function syncUsageStatus(connection, updates = {}) {
+  if (!connection?.id) return;
+
+  await updateProviderConnection(connection.id, {
+    testStatus: updates.testStatus,
+    lastTested: updates.lastTested || new Date().toISOString(),
+    lastError: updates.lastError ?? null,
+    lastErrorType: updates.lastErrorType ?? null,
+    lastErrorAt: updates.lastErrorAt ?? null,
+    rateLimitedUntil: updates.rateLimitedUntil ?? null,
+    errorCode: updates.errorCode ?? null,
+  });
+}
+
+function getUsageStatusUpdates(connection, usage) {
+  const base = {
+    testStatus: "active",
+    lastError: null,
+    lastErrorType: null,
+    lastErrorAt: null,
+    rateLimitedUntil: null,
+    errorCode: null,
+  };
+
+  if (connection?.provider !== "codex") {
+    return base;
+  }
+
+  const sessionQuota = usage?.quotas?.session;
+  const weeklyQuota = usage?.quotas?.weekly;
+  const isWeeklyOnly = !sessionQuota && !!weeklyQuota;
+
+  if (!isWeeklyOnly) {
+    return base;
+  }
+
+  if ((weeklyQuota.remaining ?? 0) <= 0) {
+    return {
+      ...base,
+      testStatus: "unavailable",
+      lastError: "Codex weekly quota exhausted",
+      lastErrorType: "quota_exhausted",
+      lastErrorAt: new Date().toISOString(),
+      rateLimitedUntil: weeklyQuota.resetAt || null,
+      errorCode: "weekly_quota_exhausted",
+    };
+  }
+
+  return base;
 }
 
 /**
@@ -97,6 +151,26 @@ async function refreshAndUpdateCredentials(connection, force = false) {
   };
 }
 
+async function getQueuedUsageResult(connectionId, handler) {
+  const cached = usageRequestCache.get(connectionId);
+  if (cached) {
+    return cached.promise;
+  }
+
+  const promise = runUsageRefreshJob(connectionId, async () => handler());
+
+  usageRequestCache.set(connectionId, { promise });
+
+  promise.finally(() => {
+    const entry = usageRequestCache.get(connectionId);
+    if (entry?.promise === promise) {
+      usageRequestCache.delete(connectionId);
+    }
+  });
+
+  return promise;
+}
+
 /**
  * GET /api/usage/[connectionId] - Get usage data for a specific connection
  */
@@ -104,6 +178,8 @@ export async function GET(request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
+
+    return await getQueuedUsageResult(connectionId, async () => {
 
 
     // Get connection from database
@@ -123,6 +199,11 @@ export async function GET(request, { params }) {
       connection = result.connection;
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
+      await syncUsageStatus(connection, {
+        testStatus: "error",
+        lastError: refreshError.message,
+        lastErrorType: "refresh_failed",
+      });
       return Response.json({
         error: `Credential refresh failed: ${refreshError.message}`
       }, { status: 401 });
@@ -130,6 +211,7 @@ export async function GET(request, { params }) {
 
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection);
+    let shouldMarkActive = true;
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once
@@ -140,13 +222,31 @@ export async function GET(request, { params }) {
         usage = await getUsageForProvider(connection);
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+        await syncUsageStatus(connection, {
+          testStatus: "error",
+          lastError: retryError.message,
+          lastErrorType: "auth_expired",
+        });
+        shouldMarkActive = false;
       }
     }
 
+    if (shouldMarkActive) {
+      await syncUsageStatus(connection, getUsageStatusUpdates(connection, usage));
+    }
+
     return Response.json(usage);
+    });
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
+    if (connection?.id) {
+      await syncUsageStatus(connection, {
+        testStatus: "error",
+        lastError: error.message,
+        lastErrorType: "usage_request_failed",
+      });
+    }
     return Response.json({ error: error.message }, { status: 500 });
   }
 }

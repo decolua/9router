@@ -197,13 +197,20 @@ function convertClaudeMessage(msg) {
       return result;
     }
 
-    // Return content
-    if (parts.length > 0) {
+  // Return content
+  if (parts.length > 0) {
+    if (parts.every((part) => part.type === "text")) {
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: parts.map((part) => part.text).join("\n"),
       };
     }
+
+    return {
+      role,
+      content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+    };
+  }
     
     // Empty content array
     if (msg.content.length === 0) {
@@ -229,4 +236,3 @@ function convertToolChoice(choice) {
 
 // Register
 register(FORMATS.CLAUDE, FORMATS.OPENAI, claudeToOpenAIRequest, null);
-

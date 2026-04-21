@@ -2,7 +2,9 @@
 
 import { NextResponse } from "next/server";
 import { startDaemonWithPassword } from "@/lib/tunnel/tailscale";
-import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import * as mitmManager from "@/mitm/manager";
+
+const { getCachedPassword, loadEncryptedPassword, initDbHooks } = mitmManager;
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 initDbHooks(getSettings, updateSettings);

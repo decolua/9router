@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import {
   Card,
@@ -23,9 +23,10 @@ import {
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 
-function getStatusDisplay(connected, error, errorCode) {
+function getStatusDisplay(connected, error, total, errorCode) {
   const parts = [];
   if (connected > 0) {
     parts.push(
@@ -41,6 +42,13 @@ function getStatusDisplay(connected, error, errorCode) {
     parts.push(
       <Badge key="error" variant="error" size="sm" dot>
         {errText}
+      </Badge>,
+    );
+  }
+  if (total > 0 && connected === 0 && error === 0) {
+    parts.push(
+      <Badge key="saved" variant="default" size="sm">
+        {total} Saved
       </Badge>,
     );
   }
@@ -96,12 +104,35 @@ export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCredentialImportModal, setShowCredentialImportModal] =
+    useState(false);
+  const [credentialImportText, setCredentialImportText] = useState("");
+  const [credentialImportFileName, setCredentialImportFileName] = useState("");
+  const [importingCredentials, setImportingCredentials] = useState(false);
+  const [credentialImportStatus, setCredentialImportStatus] = useState({
+    type: "",
+    message: "",
+    detail: "",
+  });
+  const [exportingCredentials, setExportingCredentials] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [providerSummaries, setProviderSummaries] = useState({});
+  const credentialFileInputRef = useRef(null);
   const notify = useNotificationStore();
+
+  const refreshConnections = async () => {
+    const res = await fetch("/api/providers");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to refresh providers");
+    }
+    setConnections(data.connections || []);
+    setProviderSummaries(data.providerSummaries || {});
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -112,8 +143,10 @@ export default function ProvidersPage() {
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
-        if (connectionsRes.ok)
+        if (connectionsRes.ok) {
           setConnections(connectionsData.connections || []);
+          setProviderSummaries(connectionsData.providerSummaries || {});
+        }
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
       } catch (error) {
         console.log("Error fetching data:", error);
@@ -124,20 +157,197 @@ export default function ProvidersPage() {
     fetchData();
   }, []);
 
+  const handleExportCredentials = async () => {
+    setExportingCredentials(true);
+    try {
+      const res = await fetch("/api/credentials/export");
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to export credentials");
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `9router-credentials-${timestamp}.json`;
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      notify.success("Credentials backup exported");
+    } catch (error) {
+      notify.error(error?.message || "Failed to export credentials");
+    } finally {
+      setExportingCredentials(false);
+    }
+  };
+
+  const handlePickImportFile = () => {
+    credentialFileInputRef.current?.click();
+  };
+
+  const handleCredentialFileChange = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setCredentialImportText(text);
+      setCredentialImportFileName(file.name);
+      setCredentialImportStatus({
+        type: "info",
+        message: "Backup file loaded",
+        detail: file.name,
+      });
+      notify.success(`Loaded backup file: ${file.name}`);
+    } catch {
+      setCredentialImportStatus({
+        type: "error",
+        message: "Failed to read backup file",
+        detail: "Choose a valid JSON backup file",
+      });
+      notify.error("Failed to read backup file");
+    } finally {
+      // Allow selecting the same file again.
+      event.target.value = "";
+    }
+  };
+
+  const handleImportCredentials = async () => {
+    if (!credentialImportText.trim()) {
+      setCredentialImportStatus({
+        type: "warning",
+        message: "No backup JSON found",
+        detail: "Paste backup JSON or choose a file before restoring",
+      });
+      notify.warning("Please paste a backup JSON or choose a backup file");
+      return;
+    }
+
+    setImportingCredentials(true);
+    setCredentialImportStatus({
+      type: "info",
+      message: "Validating backup JSON",
+      detail: credentialImportFileName || "Parsing pasted backup text",
+    });
+    try {
+      const payload = JSON.parse(credentialImportText);
+      setCredentialImportStatus({
+        type: "info",
+        message: "Uploading backup to restore service",
+        detail: "Sending credentials for import",
+      });
+      const res = await fetch("/api/credentials/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to import credentials");
+      }
+
+      setCredentialImportStatus({
+        type: "info",
+        message: "Import complete",
+        detail: `Refreshing providers after ${data.imported} imported, ${data.updated} updated${data.skipped ? `, ${data.skipped} skipped` : ""}`,
+      });
+      try {
+        await refreshConnections();
+      } catch {
+        setCredentialImportStatus({
+          type: "warning",
+          message: "Import completed, but provider refresh failed",
+          detail: "The restored credentials are saved; close the modal and refresh the page later if needed.",
+        });
+      }
+      setCredentialImportText("");
+      setCredentialImportFileName("");
+      if (credentialFileInputRef.current) {
+        credentialFileInputRef.current.value = "";
+      }
+      setCredentialImportStatus({
+        type: "success",
+        message: "Credentials restored successfully",
+        detail: `${data.imported} imported, ${data.updated} updated, ${data.created} created${data.skipped ? `, ${data.skipped} skipped` : ""}`,
+      });
+
+      setShowCredentialImportModal(false);
+      setCredentialImportText("");
+      setCredentialImportFileName("");
+      if (credentialFileInputRef.current) {
+        credentialFileInputRef.current.value = "";
+      }
+
+      notify.success(
+        `Credentials restored (${data.imported} imported, ${data.updated} updated, ${data.created} created${data.skipped ? `, ${data.skipped} skipped` : ""})`,
+      );
+    } catch (error) {
+      setCredentialImportStatus({
+        type: "error",
+        message: "Restore failed",
+        detail: error?.message || "Failed to import credentials",
+      });
+      notify.error(error?.message || "Failed to import credentials");
+    } finally {
+      setImportingCredentials(false);
+    }
+  };
+
   const getProviderStats = (providerId, authType) => {
     const providerConnections = connections.filter(
       (c) => c.provider === providerId && c.authType === authType,
     );
 
-    const getEffectiveStatus = (conn) => {
-      const isCooldown = Object.entries(conn).some(
-        ([k, v]) =>
-          k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now(),
-      );
-      return conn.testStatus === "unavailable" && !isCooldown
-        ? "active"
-        : conn.testStatus;
-    };
+    const summary = providerSummaries?.[providerId]?.[authType];
+    if (summary) {
+      return {
+        connected: summary.connected,
+        error: summary.error,
+        unknown: summary.unknown,
+        total: summary.total,
+        errorCode: providerConnections
+          .filter((c) => {
+            const status = c.testStatus;
+            return status === "error" || status === "expired" || status === "unavailable";
+          })
+          .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]
+          ? getConnectionErrorTag(
+              providerConnections
+                .filter((c) => {
+                  const status = c.testStatus;
+                  return status === "error" || status === "expired" || status === "unavailable";
+                })
+                .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0],
+            )
+          : null,
+        errorTime: providerConnections
+          .filter((c) => {
+            const status = c.testStatus;
+            return status === "error" || status === "expired" || status === "unavailable";
+          })
+          .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]?.lastErrorAt
+          ? getRelativeTime(
+              providerConnections
+                .filter((c) => {
+                  const status = c.testStatus;
+                  return status === "error" || status === "expired" || status === "unavailable";
+                })
+                .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0].lastErrorAt,
+            )
+          : null,
+        allDisabled: summary.total > 0 && providerConnections.every((c) => c.isActive === false),
+      };
+    }
+
+    const getEffectiveStatus = (conn) => getConnectionEffectiveStatus(conn);
 
     const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
@@ -153,6 +363,7 @@ export default function ProvidersPage() {
 
     const error = errorConns.length;
     const total = providerConnections.length;
+    const unknown = Math.max(total - connected - error, 0);
     const allDisabled =
       total > 0 && providerConnections.every((c) => c.isActive === false);
 
@@ -164,7 +375,7 @@ export default function ProvidersPage() {
       ? getRelativeTime(latestError.lastErrorAt)
       : null;
 
-    return { connected, error, total, errorCode, errorTime, allDisabled };
+    return { connected, error, unknown, total, errorCode, errorTime, allDisabled };
   };
 
   // Toggle all connections for a provider on/off
@@ -245,6 +456,48 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <Card className="border border-border shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-black/[0.03] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-text-muted">
+              <span className="material-symbols-outlined text-[14px]">
+                backup
+              </span>
+              Credentials
+            </div>
+            <h2 className="mt-3 text-lg font-semibold text-text-main">
+              Backup and restore credentials
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
+              Export and restore access tokens, refresh tokens, API keys, and
+              provider-specific auth data. This keeps OAuth sessions like Codex
+              usable after moving devices.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-2xl border border-border bg-bg/80 p-2 shadow-inner">
+            <Button
+              variant="outline"
+              size="sm"
+              icon="upload"
+              onClick={handleExportCredentials}
+              loading={exportingCredentials}
+              className="min-w-[96px]"
+            >
+              Export
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="download"
+              onClick={() => setShowCredentialImportModal(true)}
+              className="min-w-[96px]"
+            >
+              Import
+            </Button>
+          </div>
+        </div>
+      </Card>
+
       {/* OAuth Providers */}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
@@ -496,6 +749,137 @@ export default function ProvidersPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        isOpen={showCredentialImportModal}
+        onClose={() => {
+          if (importingCredentials) return;
+          setShowCredentialImportModal(false);
+          setCredentialImportStatus({ type: "", message: "", detail: "" });
+        }}
+        title="Import Credentials Backup"
+        size="lg"
+        closeOnOverlay={false}
+        closeOnEscape={false}
+        showCloseButton={false}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowCredentialImportModal(false);
+                setCredentialImportText("");
+                setCredentialImportFileName("");
+                setCredentialImportStatus({ type: "", message: "", detail: "" });
+                if (credentialFileInputRef.current) {
+                  credentialFileInputRef.current.value = "";
+                }
+              }}
+              disabled={importingCredentials}
+            >
+              Close
+            </Button>
+            <Button
+              variant="primary"
+              icon="download"
+              onClick={handleImportCredentials}
+              loading={importingCredentials}
+              disabled={importingCredentials}
+            >
+              Restore Credentials
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          <div className="text-sm text-text-muted">
+            Paste exported backup JSON or load a backup file. Existing provider
+            connections will be matched and updated so refresh tokens (including
+            Codex OAuth tokens) remain usable. Import accepts universal JSON
+            shapes (entries/credentials/items/connections) with camelCase or
+            snake_case fields.
+          </div>
+
+          <div
+            className={`rounded-xl border px-4 py-3 ${credentialImportStatus.type === "error"
+              ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
+              : credentialImportStatus.type === "success"
+                ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                : credentialImportStatus.type === "warning"
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                  : credentialImportStatus.type === "info"
+                    ? "border-primary/30 bg-primary/10 text-text-main"
+                    : "border-border bg-bg/60 text-text-muted"
+              }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                <span className="material-symbols-outlined text-[18px]">
+                  {importingCredentials
+                    ? "progress_activity"
+                    : credentialImportStatus.type === "error"
+                      ? "error"
+                      : credentialImportStatus.type === "success"
+                        ? "check_circle"
+                        : credentialImportStatus.type === "warning"
+                          ? "warning"
+                          : "info"}
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">
+                  {credentialImportStatus.message ||
+                    (importingCredentials
+                      ? "Restoring credentials"
+                      : "Ready to restore")}
+                </div>
+                <div className="mt-1 text-sm opacity-90 break-words">
+                  {credentialImportStatus.detail ||
+                    (importingCredentials
+                      ? "The modal stays open until the restore finishes."
+                      : "Load a backup file or paste JSON to begin.")}
+                </div>
+                {importingCredentials && (
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                    <div className="h-full w-2/3 animate-pulse rounded-full bg-primary" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              icon="upload_file"
+              onClick={handlePickImportFile}
+            >
+              Choose Backup File
+            </Button>
+            {credentialImportFileName && (
+              <span className="text-xs text-text-muted">
+                Loaded: {credentialImportFileName}
+              </span>
+            )}
+          </div>
+
+          <input
+            ref={credentialFileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleCredentialFileChange}
+          />
+
+          <textarea
+            value={credentialImportText}
+            onChange={(e) => setCredentialImportText(e.target.value)}
+            className="w-full min-h-[240px] rounded-lg border border-border bg-bg p-3 text-sm font-mono text-text-main focus:outline-none focus:ring-2 focus:ring-primary/30"
+            placeholder="Paste credentials backup JSON here"
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -558,7 +942,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                     {getStatusDisplay(connected, error, stats.total, errorCode)}
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
@@ -684,7 +1068,7 @@ function ApiKeyProviderCard({
                   </Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                     {getStatusDisplay(connected, error, stats.total, errorCode)}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
                         {provider.apiType === "responses"

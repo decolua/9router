@@ -6,8 +6,10 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { getSafeExecCwd } from "../_lib/safeExec";
 
 const execAsync = promisify(exec);
+const SAFE_EXEC_CWD = getSafeExecCwd();
 
 const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
 const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
@@ -21,7 +23,7 @@ const checkOpenClawInstalled = async () => {
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
       : process.env;
-    await execAsync(command, { windowsHide: true, env });
+    await execAsync(command, { cwd: SAFE_EXEC_CWD, windowsHide: true, env });
     return true;
   } catch {
     try {

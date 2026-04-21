@@ -2,9 +2,11 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 import { execSync, spawn } from "child_process";
-import { execWithPassword } from "@/mitm/dns/dnsConfig";
 import { saveTailscalePid, loadTailscalePid, clearTailscalePid } from "./state.js";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import * as dnsConfig from "@/mitm/dns/dnsConfig";
+
+const { execWithPassword } = dnsConfig;
 
 const BIN_DIR = path.join(DATA_DIR, "bin");
 const IS_MAC = os.platform() === "darwin";

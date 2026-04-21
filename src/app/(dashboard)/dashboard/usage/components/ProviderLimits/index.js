@@ -7,8 +7,15 @@ import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
+import Input from "@/shared/components/Input";
+import Select from "@/shared/components/Select";
+import Pagination from "@/shared/components/Pagination";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
+import { createSingleFlight } from "./refreshQueue";
+
+const DEFAULT_PAGE_SIZE = 24;
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 
@@ -27,9 +34,17 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
+  const runRefreshSingleFlightRef = useRef(null);
+
+  if (!runRefreshSingleFlightRef.current) {
+    runRefreshSingleFlightRef.current = createSingleFlight();
+  }
 
   // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
@@ -222,33 +237,31 @@ export default function ProviderLimits() {
 
   // Refresh all providers
   const refreshAll = useCallback(async () => {
-    if (refreshingAll) return;
+    return runRefreshSingleFlightRef.current(async () => {
+      setRefreshingAll(true);
+      setCountdown(60);
 
-    setRefreshingAll(true);
-    setCountdown(60);
+      try {
+        const conns = await fetchConnections();
 
-    try {
-      const conns = await fetchConnections();
+        const oauthConnections = conns.filter(
+          (conn) =>
+            USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
+            conn.authType === "oauth",
+        );
 
-      // Filter only supported OAuth providers
-      const oauthConnections = conns.filter(
-        (conn) =>
-          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-          conn.authType === "oauth",
-      );
+        await Promise.all(
+          oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        );
 
-      // Fetch quota for supported OAuth connections only
-      await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
-
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error("Error refreshing all providers:", error);
-    } finally {
-      setRefreshingAll(false);
-    }
-  }, [refreshingAll, fetchConnections, fetchQuota]);
+        setLastUpdated(new Date());
+      } catch (error) {
+        console.error("Error refreshing all providers:", error);
+      } finally {
+        setRefreshingAll(false);
+      }
+    });
+  }, [fetchConnections, fetchQuota]);
 
   // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
@@ -270,9 +283,11 @@ export default function ProviderLimits() {
       });
       setLoading(loadingState);
 
-      await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      await runRefreshSingleFlightRef.current(async () => {
+        await Promise.all(
+          oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        );
+      });
       setLastUpdated(new Date());
     };
 
@@ -355,20 +370,43 @@ export default function ProviderLimits() {
     return "Just now";
   }, [lastUpdated]);
 
-  // Filter only supported providers
-  const filteredConnections = connections.filter(
-    (conn) =>
-      USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-      conn.authType === "oauth",
+  const getEffectiveStatus = useCallback(
+    (conn) => getConnectionEffectiveStatus(conn),
+    [],
   );
 
-  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically
-  const sortedConnections = [...filteredConnections].sort((a, b) => {
+  const supportedConnections = connections.filter(
+    (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth",
+  );
+
+  const visibleConnections = supportedConnections.filter((conn) => {
+    const query = searchQuery.trim().toLowerCase();
+    const status = getEffectiveStatus(conn);
+    const matchesSearch = !query || [conn.provider, conn.name, conn.displayName, conn.email, conn.connectionName, conn.id]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+    const matchesStatus =
+      statusFilter === "all" ||
+      (statusFilter === "active" && (status === "active" || status === "success")) ||
+      (statusFilter === "quota-exhausted" && status === "unavailable") ||
+      (statusFilter === "revoked-invalid" && (status === "expired" || status === "error"));
+
+    return matchesSearch && matchesStatus;
+  });
+
+  const sortedConnections = [...visibleConnections].sort((a, b) => {
     const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
     const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
     if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
+
+  const totalPages = Math.max(1, Math.ceil(sortedConnections.length / DEFAULT_PAGE_SIZE));
+  const currentPageSafe = Math.min(currentPage, totalPages);
+  const paginatedConnections = sortedConnections.slice(
+    (currentPageSafe - 1) * DEFAULT_PAGE_SIZE,
+    currentPageSafe * DEFAULT_PAGE_SIZE,
+  );
 
   // Calculate summary stats
   const totalProviders = sortedConnections.length;
@@ -389,7 +427,7 @@ export default function ProviderLimits() {
   }, 0);
 
   // Empty state
-  if (!connectionsLoading && sortedConnections.length === 0) {
+  if (!connectionsLoading && supportedConnections.length === 0) {
     return (
       <Card padding="lg">
         <div className="text-center py-12">
@@ -411,21 +449,63 @@ export default function ProviderLimits() {
   return (
     <div className="space-y-6">
       {/* Header Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-text-primary">
-            Provider Limits
-          </h2>
-          <span className="text-sm text-text-muted">
-            Last updated: {formatLastUpdated()}
-          </span>
+      <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur-sm shadow-sm px-4 py-4 space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-text-primary">
+              Provider Limits
+            </h2>
+            <p className="mt-1 text-sm text-text-muted">
+              Last updated: {formatLastUpdated()}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {sortedConnections.length} matching {sortedConnections.length === 1 ? "connection" : "connections"}
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {activeWithLimits} with quota data
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {lowQuotasCount} low quota
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Auto-refresh toggle */}
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto_auto] lg:items-end">
+          <Input
+            label="Search accounts"
+            icon="search"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search by name, provider, email, or id"
+            className="min-w-0"
+          />
+
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="All"
+            options={[
+              { value: "all", label: "All" },
+              { value: "active", label: "Active" },
+              { value: "quota-exhausted", label: "Quota exhausted" },
+              { value: "revoked-invalid", label: "Revoked/invalid" },
+            ]}
+            className="min-w-0"
+          />
+
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-surface px-4 py-2.5 text-sm text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
@@ -435,13 +515,10 @@ export default function ProviderLimits() {
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="text-sm text-text-primary">Auto-refresh</span>
-            {autoRefresh && (
-              <span className="text-xs text-text-muted">({countdown}s)</span>
-            )}
+            Auto-refresh
+            {autoRefresh && <span className="text-xs text-text-muted">({countdown}s)</span>}
           </button>
 
-          {/* Refresh all button */}
           <Button
             variant="secondary"
             size="md"
@@ -449,6 +526,7 @@ export default function ProviderLimits() {
             onClick={refreshAll}
             disabled={refreshingAll}
             loading={refreshingAll}
+            className="w-full lg:w-auto"
           >
             Refresh All
           </Button>
@@ -457,7 +535,7 @@ export default function ProviderLimits() {
 
       {/* Provider cards: 2 columns, compact */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {sortedConnections.map((conn) => {
+        {paginatedConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
@@ -586,6 +664,15 @@ export default function ProviderLimits() {
           );
         })}
       </div>
+
+      {sortedConnections.length > 0 && (
+        <Pagination
+          currentPage={currentPageSafe}
+          pageSize={DEFAULT_PAGE_SIZE}
+          totalItems={sortedConnections.length}
+          onPageChange={(page) => setCurrentPage(Math.max(1, Math.min(page, totalPages)))}
+        />
+      )}
 
       <EditConnectionModal
         isOpen={showEditModal}

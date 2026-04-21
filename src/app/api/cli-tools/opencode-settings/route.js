@@ -6,8 +6,10 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { getSafeExecCwd } from "../_lib/safeExec";
 
 const execAsync = promisify(exec);
+const SAFE_EXEC_CWD = getSafeExecCwd();
 
 const getConfigDir = () => path.join(os.homedir(), ".config", "opencode");
 const getConfigPath = () => path.join(getConfigDir(), "opencode.json");
@@ -20,7 +22,7 @@ const checkOpenCodeInstalled = async () => {
     const env = isWindows
       ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
       : process.env;
-    await execAsync(command, { windowsHide: true, env });
+    await execAsync(command, { cwd: SAFE_EXEC_CWD, windowsHide: true, env });
     return true;
   } catch {
     try {
@@ -38,6 +40,7 @@ const readConfig = async () => {
     return JSON.parse(content);
   } catch (error) {
     if (error.code === "ENOENT") return null;
+    if (error instanceof SyntaxError) return null;
     throw error;
   }
 };

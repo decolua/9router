@@ -1,5 +1,5 @@
-const { err } = require("../logger");
-const { fetchRouter, pipeSSE } = require("./base");
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
+const { fetchRouter, pipeSSE } = require("./base.js");
 
 // Map Copilot endpoint → 9Router path
 const URL_MAP = {

@@ -6,6 +6,7 @@ import {
   getProviderNodes,
   getProxyPoolById,
 } from "@/models";
+import { getConnectionStatusSummary } from "@/lib/localDb";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -49,6 +50,22 @@ async function normalizeProxyPoolId(proxyPoolId) {
 export async function GET() {
   try {
     const connections = await getProviderConnections();
+    const providerSummaries = {};
+    const summaryGroups = new Map();
+
+    for (const connection of connections) {
+      const providerId = connection.provider || "unknown";
+      const authType = connection.authType || "unknown";
+      const groupKey = `${providerId}::${authType}`;
+      if (!summaryGroups.has(groupKey)) summaryGroups.set(groupKey, []);
+      summaryGroups.get(groupKey).push(connection);
+    }
+
+    for (const [groupKey, groupedConnections] of summaryGroups.entries()) {
+      const [providerId, authType] = groupKey.split("::");
+      if (!providerSummaries[providerId]) providerSummaries[providerId] = {};
+      providerSummaries[providerId][authType] = getConnectionStatusSummary(groupedConnections);
+    }
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -75,7 +92,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    return NextResponse.json({ connections: safeConnections, providerSummaries });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });

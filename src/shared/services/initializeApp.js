@@ -1,7 +1,9 @@
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
-import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import * as mitmManager from "@/mitm/manager";
+
+const { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } = mitmManager;
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";

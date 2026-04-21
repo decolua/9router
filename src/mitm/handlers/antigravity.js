@@ -1,5 +1,5 @@
-const { err } = require("../logger");
-const { fetchRouter, pipeSSE } = require("./base");
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
+const { fetchRouter, pipeSSE } = require("./base.js");
 
 /**
  * Intercept Antigravity (Gemini) request — replace model and forward to router

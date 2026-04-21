@@ -5,6 +5,8 @@ import path from "node:path";
 import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
+import { deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady } from "@/lib/quotaStateStore.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -50,6 +52,27 @@ function cloneDefaultData() {
     settings: { ...DEFAULT_SETTINGS },
     pricing: {},
   };
+}
+
+export { getConnectionEffectiveStatus };
+
+export function getConnectionStatusSummary(connections = []) {
+  const summary = {
+    connected: 0,
+    error: 0,
+    unknown: 0,
+    total: connections.length,
+    allDisabled: connections.length > 0 && connections.every((c) => c?.isActive === false),
+  };
+
+  for (const connection of connections || []) {
+    const status = getConnectionEffectiveStatus(connection);
+    if (status === "active" || status === "success") summary.connected += 1;
+    else if (status === "error" || status === "expired" || status === "unavailable") summary.error += 1;
+    else summary.unknown += 1;
+  }
+
+  return summary;
 }
 
 if (!isCloud && DB_FILE && !fs.existsSync(DB_FILE)) {
@@ -216,7 +239,7 @@ export async function getProviderConnections(filter = {}) {
   if (filter.isActive !== undefined) connections = connections.filter(c => c.isActive === filter.isActive);
 
   connections.sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  return connections;
+  return await mergeConnectionsWithHotState(connections);
 }
 
 export async function getProviderNodes(filter = {}) {
@@ -392,10 +415,12 @@ export async function createProviderConnection(data) {
     return db.data.providerConnections[existingIndex];
   }
 
-  let connectionName = data.name || null;
+  let connectionName = data.name || data.email || data.displayName || null;
   if (!connectionName && data.authType === "oauth") {
     if (data.email) {
       connectionName = data.email;
+    } else if (data.displayName) {
+      connectionName = data.displayName;
     } else {
       const existingCount = db.data.providerConnections.filter(
         c => c.provider === data.provider
@@ -418,6 +443,7 @@ export async function createProviderConnection(data) {
     name: connectionName,
     priority: connectionPriority,
     isActive: data.isActive !== undefined ? data.isActive : true,
+    testStatus: data.testStatus !== undefined ? data.testStatus : "unknown",
     createdAt: now,
     updatedAt: now,
   };
@@ -425,8 +451,8 @@ export async function createProviderConnection(data) {
   const optionalFields = [
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
-    "scope", "idToken", "projectId", "apiKey", "testStatus",
-    "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
+    "scope", "idToken", "projectId", "apiKey",
+    "testStatus", "lastTested", "lastError", "lastErrorType", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
     "consecutiveUseCount"
   ];
 
@@ -453,6 +479,9 @@ export async function updateProviderConnection(id, data) {
   if (index === -1) return null;
 
   const providerId = db.data.providerConnections[index].provider;
+  const current = db.data.providerConnections[index];
+  const shouldStoreHotState = isHotOnlyUpdate(data);
+  const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
 
   db.data.providerConnections[index] = {
     ...db.data.providerConnections[index],
@@ -460,8 +489,19 @@ export async function updateProviderConnection(id, data) {
     updatedAt: new Date().toISOString(),
   };
 
-  await safeWrite(db);
+  if (!canUseRedisForHotState) {
+    await safeWrite(db);
+  }
   if (data.priority !== undefined) await reorderProviderConnections(providerId);
+
+  if (shouldStoreHotState) {
+    const result = await setConnectionHotState(id, providerId, data);
+    if (!result?.storedInRedis && canUseRedisForHotState) {
+      await safeWrite(db);
+    }
+  } else if (current && data.isActive === false) {
+    await deleteConnectionHotState(id, providerId);
+  }
 
   return db.data.providerConnections[index];
 }
@@ -475,6 +515,7 @@ export async function deleteProviderConnection(id) {
   db.data.providerConnections.splice(index, 1);
   await safeWrite(db);
   await reorderProviderConnections(providerId);
+  await deleteConnectionHotState(id, providerId);
 
   return true;
 }
@@ -664,7 +705,7 @@ export async function cleanupProviderConnections() {
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
     "scope", "idToken", "projectId", "apiKey", "testStatus",
-    "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
+    "lastTested", "lastError", "lastErrorType", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
     "consecutiveUseCount"
   ];
 

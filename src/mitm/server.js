@@ -4,10 +4,11 @@ const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
-const { log, err } = require("./logger");
-const { TARGET_HOSTS, URL_PATTERNS, getToolForHost } = require("./config");
-const { DATA_DIR, MITM_DIR } = require("./paths");
-const { getCertForDomain } = require("./cert/generate");
+const log = (msg) => console.log(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] [MITM] ${msg}`);
+const err = (msg) => console.error(`[${new Date().toLocaleTimeString("en-US", { hour12: false })}] ❌ [MITM] ${msg}`);
+const { TARGET_HOSTS, URL_PATTERNS, getToolForHost } = require("./config.js");
+const { DATA_DIR, MITM_DIR } = require("./paths.js");
+const { getCertForDomain } = require("./cert/generate.js");
 
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const LOCAL_PORT = 443;

@@ -41,11 +41,15 @@ export default function Sidebar({ onClose }) {
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [redisInfo, setRedisInfo] = useState(null);
 
   useEffect(() => {
     fetch("/api/settings")
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => {
+        if (data.enableTranslator) setEnableTranslator(true);
+        setRedisInfo(data.redis || null);
+      })
       .catch(() => {});
   }, []);
 
@@ -63,6 +67,35 @@ export default function Sidebar({ onClose }) {
     }
     return pathname.startsWith(href);
   };
+
+  const redisStatus = (() => {
+    if (!redisInfo) return null;
+    const serverName = redisInfo.server?.name || redisInfo.server?.url || "Redis";
+    const ready = redisInfo.lastStatus?.ready === true;
+    const configured = redisInfo.enabled === true || Boolean(redisInfo.server);
+    if (ready) {
+      return {
+        label: "Redis Active",
+        detail: serverName,
+        className: "border-emerald-500/30 text-emerald-600 dark:text-emerald-400",
+        dotClassName: "bg-emerald-500",
+      };
+    }
+    if (configured) {
+      return {
+        label: "Redis Offline",
+        detail: serverName,
+        className: "border-amber-500/30 text-amber-600 dark:text-amber-400",
+        dotClassName: "bg-amber-500",
+      };
+    }
+    return {
+      label: "Local DB Mode",
+      detail: "Fallback storage",
+      className: "border-slate-500/30 text-slate-500 dark:text-slate-400",
+      dotClassName: "bg-slate-400",
+    };
+  })();
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -257,7 +290,25 @@ export default function Sidebar({ onClose }) {
         </nav>
 
         {/* Footer section */}
-        <div className="p-3 border-t border-black/5 dark:border-white/5">
+        <div className="p-4 border-t border-black/5 dark:border-white/5 flex flex-col gap-3">
+          {redisStatus && (
+            <div className={cn(
+              "flex items-center justify-between rounded-xl border px-3 py-2.5 text-xs shadow-sm transition-all duration-300",
+              "bg-surface/50 backdrop-blur-md hover:bg-surface/80 dark:bg-black/20 dark:hover:bg-black/30",
+              redisStatus.className
+            )}>
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex size-2 items-center justify-center">
+                  <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-30", redisStatus.dotClassName)} />
+                  <span className={cn("relative inline-flex size-2 rounded-full", redisStatus.dotClassName)} />
+                </div>
+                <span className="font-medium tracking-tight text-text-main">{redisStatus.label}</span>
+              </div>
+              <span className="max-w-[100px] truncate text-[10px] font-medium opacity-60 mix-blend-luminosity">
+                {redisStatus.detail}
+              </span>
+            </div>
+          )}
           {/* Shutdown button */}
           <Button
             variant="outline"

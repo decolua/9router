@@ -16,6 +16,7 @@ const MITM_BYPASS_HOSTS = [
   "codewhisperer.us-east-1.amazonaws.com",
   "api2.cursor.sh",
 ];
+const ANTHROPIC_HOST = "api.anthropic.com";
 const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
@@ -195,13 +196,46 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+async function createGotScrapingResponse(targetUrl, options) {
+  const { gotScraping } = await import("got-scraping");
+  const response = await gotScraping(targetUrl, {
+    method: options.method || "GET",
+    headers: options.headers,
+    body: options.body,
+    throwHttpErrors: false,
+    responseType: "buffer",
+  });
+
+  const rawBody = response.rawBody ?? Buffer.alloc(0);
+  return {
+    ok: response.statusCode >= HTTP_SUCCESS_MIN && response.statusCode < HTTP_SUCCESS_MAX,
+    status: response.statusCode,
+    statusText: response.statusMessage,
+    headers: new Map(Object.entries(response.headers || {})),
+    body: Readable.toWeb(Readable.from([rawBody])),
+    text: async () => rawBody.toString(),
+    json: async () => JSON.parse(rawBody.toString() || "{}"),
+  };
+}
+
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  const parsedTarget = new URL(targetUrl);
+  const isAnthropicHost = parsedTarget.hostname === ANTHROPIC_HOST;
+  const wantsStream = normalizeString(options.headers?.Accept || options.headers?.accept) === "text/event-stream";
+
+  if (isAnthropicHost && !wantsStream) {
+    try {
+      return await createGotScrapingResponse(targetUrl, options);
+    } catch (error) {
+      console.warn(`[ProxyFetch] got-scraping failed, falling back to standard fetch: ${error.message}`);
+    }
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
   if (vercelRelayUrl) {
-    const parsed = new URL(targetUrl);
+    const parsed = parsedTarget;
     const relayHeaders = {
       ...options.headers,
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,

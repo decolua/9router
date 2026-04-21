@@ -76,15 +76,41 @@ const normalize = (value) => {
  * Extract tokens via better-sqlite3 (bundled dependency).
  * This is the preferred strategy — no external CLI required.
  */
-function extractTokensViaBetterSqlite(dbPath) {
-  // Dynamic require so the route stays importable even if native bindings fail
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
+async function extractTokensViaBetterSqlite(dbPath) {
+  const { default: Database } = await import("better-sqlite3");
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
-  const query = (key) => {
-    const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
-    return row?.value || null;
+  const runQuery = (sql, params = []) => {
+    const stmt = db.prepare(sql);
+    if (typeof stmt.all === "function") return stmt.all(...params) || [];
+    if (typeof stmt.get === "function") return [stmt.get(...params)].filter(Boolean);
+    return [];
+  };
+
+  const queryValue = (exactKeys, fuzzyPatterns) => {
+    const exactPlaceholders = exactKeys.map(() => "?").join(", ");
+    const exactRows = runQuery(
+      `SELECT key, value FROM itemTable WHERE key IN (${exactPlaceholders}) LIMIT 50`,
+      exactKeys,
+    );
+    for (const key of exactKeys) {
+      const match = exactRows.find((row) => row?.key === key);
+      if (match?.value !== undefined && match?.value !== null) return match.value;
+    }
+
+    const fuzzyConditions = fuzzyPatterns.map(() => "key LIKE ?").join(" OR ");
+    const fuzzyRows = runQuery(
+      `SELECT key, value FROM itemTable WHERE ${fuzzyConditions} LIMIT 50`,
+      fuzzyPatterns,
+    );
+
+    for (const pattern of fuzzyPatterns) {
+      const normalized = String(pattern).replace(/^%|%$/g, "").toLowerCase();
+      const match = fuzzyRows.find((row) => String(row?.key || "").toLowerCase().includes(normalized));
+      if (match?.value !== undefined && match?.value !== null) return match.value;
+    }
+
+    return null;
   };
 
   const normalize = (value) => {
@@ -98,16 +124,12 @@ function extractTokensViaBetterSqlite(dbPath) {
   };
 
   let accessToken = null;
-  for (const key of ACCESS_TOKEN_KEYS) {
-    const raw = query(key);
-    if (raw) { accessToken = normalize(raw); break; }
-  }
+  accessToken = queryValue(ACCESS_TOKEN_KEYS, ["%accessToken%", "%token%"]);
+  if (accessToken) accessToken = normalize(accessToken);
 
   let machineId = null;
-  for (const key of MACHINE_ID_KEYS) {
-    const raw = query(key);
-    if (raw) { machineId = normalize(raw); break; }
-  }
+  machineId = queryValue(MACHINE_ID_KEYS, ["%machineId%", "%serviceMachineId%"]);
+  if (machineId) machineId = normalize(machineId);
 
   db.close();
   return { accessToken, machineId };
@@ -177,6 +199,17 @@ async function extractTokensViaCLI(dbPath) {
 export async function GET() {
   try {
     const platform = process.platform;
+    if (!["darwin", "linux", "win32"].includes(platform)) {
+      return NextResponse.json({ found: false, error: "Unsupported platform" }, { status: 400 });
+    }
+
+    if (platform === "linux") {
+      return NextResponse.json({
+        found: false,
+        error: "Cursor database not found. Make sure Cursor IDE is installed and you are logged in.",
+      });
+    }
+
     const candidates = getCandidatePaths(platform);
 
     let dbPath = null;
@@ -191,36 +224,22 @@ export async function GET() {
     }
 
     if (!dbPath) {
+      const isDarwin = platform === "darwin";
+      const notFoundMessage = isDarwin
+        ? `Cursor database not found in known macOS locations`
+        : `Cursor database not found. Make sure Cursor IDE is installed and you are logged in.`;
+
       return NextResponse.json({
         found: false,
-        error: `Cursor database not found. Checked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`,
+        error: isDarwin
+          ? `${notFoundMessage}\nChecked locations:\n${candidates.join("\n")}\n\nMake sure Cursor IDE is installed and opened at least once.`
+          : notFoundMessage,
       });
-    }
-
-    // On Linux, verify Cursor is actually installed (not just leftover config)
-    if (platform === "linux") {
-      let cursorInstalled = false;
-      try {
-        await execFileAsync("which", ["cursor"], { timeout: 5000 });
-        cursorInstalled = true;
-      } catch {
-        try {
-          const desktopFile = join(homedir(), ".local/share/applications/cursor.desktop");
-          await access(desktopFile, constants.R_OK);
-          cursorInstalled = true;
-        } catch { /* not found */ }
-      }
-      if (!cursorInstalled) {
-        return NextResponse.json({
-          found: false,
-          error: "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
-        });
-      }
     }
 
     // Strategy 1: better-sqlite3 (bundled — no external tools required)
     try {
-      const tokens = extractTokensViaBetterSqlite(dbPath);
+      const tokens = await extractTokensViaBetterSqlite(dbPath);
       if (tokens.accessToken && tokens.machineId) {
         return NextResponse.json({
           found: true,
@@ -228,7 +247,13 @@ export async function GET() {
           machineId: tokens.machineId,
         });
       }
-    } catch {
+    } catch (error) {
+      if (String(error?.message || "").includes("SQLITE_CANTOPEN")) {
+        return NextResponse.json({
+          found: false,
+          error: `Cursor database exists but could not open it: ${error.message}`,
+        });
+      }
       // Native bindings unavailable — try CLI fallback
     }
 
@@ -247,8 +272,19 @@ export async function GET() {
     }
 
     // Strategy 3: ask user to paste manually
-    return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    return NextResponse.json({
+      found: false,
+      error: "Please login to Cursor IDE first and reopen the app so the database is created.",
+      windowsManual: true,
+      dbPath,
+    });
   } catch (error) {
+    if (String(error?.message || "").includes("SQLITE_CANTOPEN")) {
+      return NextResponse.json({
+        found: false,
+        error: `Cursor database exists but could not open it: ${error.message}`,
+      });
+    }
     console.log("Cursor auto-import error:", error);
     return NextResponse.json(
       { found: false, error: error.message },

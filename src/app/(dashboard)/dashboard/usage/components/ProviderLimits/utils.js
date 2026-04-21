@@ -119,11 +119,14 @@ export function parseQuotaData(provider, data) {
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            if (!quota || typeof quota !== "object") return;
+
             normalizedQuotas.push({
               name: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
+              remaining: quota.remaining,
             });
           });
         }

@@ -6,12 +6,10 @@ import { useEffect, useState } from "react";
 import { Card, Badge } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 
 function getEffectiveStatus(conn) {
-  const isCooldown = Object.entries(conn).some(
-    ([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now()
-  );
-  return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
+  return getConnectionEffectiveStatus(conn);
 }
 
 function MediaProviderCard({ provider, kind, connections }) {

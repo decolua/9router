@@ -8,6 +8,7 @@ import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
+import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 export default function ProviderDetailPage() {
@@ -1168,9 +1169,7 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired → treat as active
-    : connection.testStatus;
+  const effectiveStatus = getConnectionEffectiveStatus(connection);
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
