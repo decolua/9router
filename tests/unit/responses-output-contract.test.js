@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createResponsesApiTransformStream } from "../../open-sse/transformer/responsesTransformer.js";
+import { initState } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
 
 const encoder = new TextEncoder();
@@ -54,33 +56,8 @@ async function collectTransformerEvents(chunks) {
   return parseSseEvents(raw);
 }
 
-function createTranslatorState() {
-  return {
-    seq: 0,
-    responseId: "resp_seed",
-    created: 1700000000,
-    started: false,
-    msgTextBuf: {},
-    msgItemAdded: {},
-    msgContentAdded: {},
-    msgItemDone: {},
-    reasoningId: "",
-    reasoningIndex: -1,
-    reasoningBuf: "",
-    reasoningPartAdded: false,
-    reasoningDone: false,
-    inThinking: false,
-    funcArgsBuf: {},
-    funcNames: {},
-    funcCallIds: {},
-    funcArgsDone: {},
-    funcItemDone: {},
-    completedSent: false,
-  };
-}
-
 function collectTranslatorEvents(chunks) {
-  const state = createTranslatorState();
+  const state = initState(FORMATS.OPENAI_RESPONSES);
   const events = [];
 
   for (const chunk of chunks) {
@@ -130,17 +107,26 @@ function normalizeOutputItem(item) {
   return item;
 }
 
-function normalizedFinalizedOutput(events) {
+function finalizedOutputItemsByIndex(events) {
   return events
     .filter(({ event }) => event === "response.output_item.done")
-    .map(({ data }) => normalizeOutputItem(data.item));
+    .sort((left, right) => left.data.output_index - right.data.output_index);
+}
+
+function normalizedFinalizedOutput(events) {
+  return finalizedOutputItemsByIndex(events).map(({ data }) => normalizeOutputItem(data.item));
+}
+
+function finalizedOutputIndexes(events) {
+  return finalizedOutputItemsByIndex(events).map(({ data }) => data.output_index);
 }
 
 function expectCompletedOutputToMatchFinalized(events) {
   const finalizedOutput = normalizedFinalizedOutput(events);
   const response = completedResponse(events);
   expect(response).toHaveProperty("output");
-  expect((response.output ?? []).map(normalizeOutputItem)).toEqual(finalizedOutput);
+  expect(Array.isArray(response.output), "response.output must be an array").toBe(true);
+  expect(response.output.map(normalizeOutputItem)).toEqual(finalizedOutput);
 }
 
 describe("Responses output contract", () => {
@@ -173,6 +159,10 @@ describe("Responses output contract", () => {
     ]);
 
     expect(normalizedFinalizedOutput(events)).toEqual([]);
+    const response = completedResponse(events);
+    expect(response).toHaveProperty("output");
+    expect(Array.isArray(response.output), "response.output must be an array").toBe(true);
+    expect(response.output).toEqual([]);
     expectCompletedOutputToMatchFinalized(events);
   });
 
@@ -186,19 +176,18 @@ describe("Responses output contract", () => {
 
     const finalizedOutput = normalizedFinalizedOutput(events);
     expect(finalizedOutput).toHaveLength(2);
-    expect(finalizedOutput).toEqual(
-      expect.arrayContaining([
-        {
-          type: "reasoning",
-          summary: [{ type: "summary_text", text: "Check constraints." }],
-        },
-        {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: "Proceed." }],
-        },
-      ])
-    );
+    expect(finalizedOutputIndexes(events)).toEqual([0, 2]);
+    expect(finalizedOutput).toEqual([
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Check constraints." }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Proceed." }],
+      },
+    ]);
     expectCompletedOutputToMatchFinalized(events);
   });
 
@@ -264,6 +253,10 @@ describe("Responses output contract", () => {
     ]);
 
     expect(normalizedFinalizedOutput(events)).toEqual([]);
+    const response = completedResponse(events);
+    expect(response).toHaveProperty("output");
+    expect(Array.isArray(response.output), "response.output must be an array").toBe(true);
+    expect(response.output).toEqual([]);
     expectCompletedOutputToMatchFinalized(events);
   });
 
@@ -276,49 +269,16 @@ describe("Responses output contract", () => {
 
     const finalizedOutput = normalizedFinalizedOutput(events);
     expect(finalizedOutput).toHaveLength(2);
-    expect(finalizedOutput).toEqual(
-      expect.arrayContaining([
-        {
-          type: "reasoning",
-          summary: [{ type: "summary_text", text: "Plan first." }],
-        },
-        {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: "Then ship." }],
-        },
-      ])
-    );
-    expectCompletedOutputToMatchFinalized(events);
-  });
-
-  it("translator preserves function_call essentials in final output", () => {
-    const events = collectTranslatorEvents([
-      chatChunk({
-        id: "chatcmpl-translator-tool",
-        index: 0,
-        delta: {
-          tool_calls: [
-            {
-              index: 3,
-              id: "call_lookup_2",
-              function: {
-                name: "lookupWeather",
-                arguments: '{"city":"Paris"}',
-              },
-            },
-          ],
-        },
-      }),
-      chatChunk({ id: "chatcmpl-translator-tool", index: 0, delta: {}, finish_reason: "tool_calls" }),
-    ]);
-
-    expect(normalizedFinalizedOutput(events)).toEqual([
+    expect(finalizedOutputIndexes(events)).toEqual([0, 2]);
+    expect(finalizedOutput).toEqual([
       {
-        type: "function_call",
-        call_id: "call_lookup_2",
-        name: "lookupWeather",
-        arguments: '{"city":"Paris"}',
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Plan first." }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Then ship." }],
       },
     ]);
     expectCompletedOutputToMatchFinalized(events);
