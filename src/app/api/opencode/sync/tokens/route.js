@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listOpenCodeTokens, replaceOpenCodeTokens } from "@/models";
+import { listOpenCodeTokens, mutateOpenCodeTokens } from "@/models";
 import { createSyncToken, toPublicTokenRecord } from "@/lib/opencodeSync/tokens.js";
 
 function isValidationError(error) {
@@ -24,8 +24,9 @@ export async function POST(request) {
   try {
     const payload = await request.json();
     const { token, record } = createSyncToken(payload);
-    const tokens = await listOpenCodeTokens();
-    await replaceOpenCodeTokens([...(tokens || []), record]);
+    await mutateOpenCodeTokens((tokens) => ({
+      tokens: [...tokens, record],
+    }));
 
     return NextResponse.json(
       {

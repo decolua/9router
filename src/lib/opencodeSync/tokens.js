@@ -77,7 +77,14 @@ export function verifySyncToken(token, record) {
 export function toPublicTokenRecord(record) {
   if (!isPlainObject(record)) return null;
 
-  const { tokenHash, ...publicRecord } = record;
+  const publicRecord = {
+    id: record.id,
+    name: record.name,
+    mode: record.mode,
+    metadata: record.metadata,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
   return {
     ...publicRecord,
     metadata: normalizeMetadata(publicRecord.metadata),

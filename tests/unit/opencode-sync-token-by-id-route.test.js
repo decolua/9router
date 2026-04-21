@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const listOpenCodeTokens = vi.fn();
-const replaceOpenCodeTokens = vi.fn();
+const mutateOpenCodeTokens = vi.fn();
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -14,8 +13,7 @@ vi.mock("next/server", () => ({
 }));
 
 vi.mock("@/models", () => ({
-  listOpenCodeTokens,
-  replaceOpenCodeTokens,
+  mutateOpenCodeTokens,
 }));
 
 vi.mock("@/lib/opencodeSync/tokens.js", async () => {
@@ -45,8 +43,10 @@ describe("/api/opencode/sync/tokens/[id]", () => {
   });
 
   it("updates editable fields on PATCH and returns a public record", async () => {
-    listOpenCodeTokens.mockResolvedValue([existingRecord]);
-    replaceOpenCodeTokens.mockResolvedValue([]);
+    mutateOpenCodeTokens.mockImplementation(async (mutator) => {
+      const result = mutator([existingRecord]);
+      return result.tokens;
+    });
 
     const response = await PATCH(
       new Request("http://localhost/api/opencode/sync/tokens/token-1", {
@@ -67,13 +67,16 @@ describe("/api/opencode/sync/tokens/[id]", () => {
       mode: "device",
       metadata: { deviceName: "MacBook Pro", platform: "macOS" },
     });
-    const persisted = replaceOpenCodeTokens.mock.calls[0][0][0];
+    const persistedResult = await mutateOpenCodeTokens.mock.results[0].value;
+    const persisted = persistedResult[0];
     expect(persisted.tokenHash).toBe(existingRecord.tokenHash);
   });
 
   it("deletes the token on DELETE", async () => {
-    listOpenCodeTokens.mockResolvedValue([existingRecord, { ...existingRecord, id: "token-2" }]);
-    replaceOpenCodeTokens.mockResolvedValue([]);
+    mutateOpenCodeTokens.mockImplementation(async (mutator) => {
+      const result = mutator([existingRecord, { ...existingRecord, id: "token-2" }]);
+      return result.tokens;
+    });
 
     const response = await DELETE(new Request("http://localhost/api/opencode/sync/tokens/token-1"), {
       params: { id: "token-1" },
@@ -81,6 +84,41 @@ describe("/api/opencode/sync/tokens/[id]", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true });
-    expect(replaceOpenCodeTokens).toHaveBeenCalledWith([{ ...existingRecord, id: "token-2" }]);
+    expect(mutateOpenCodeTokens).toHaveBeenCalledTimes(1);
+    const persisted = await mutateOpenCodeTokens.mock.results[0].value;
+    expect(persisted).toEqual([{ ...existingRecord, id: "token-2" }]);
+  });
+
+  it("returns 404 when token id does not exist", async () => {
+    mutateOpenCodeTokens.mockImplementation(async (mutator) => {
+      const result = mutator([existingRecord]);
+      return result.tokens;
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/opencode/sync/tokens/missing", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Nope" }),
+      }),
+      { params: { id: "missing" } }
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Token not found" });
+  });
+
+  it("rejects mode updates on PATCH", async () => {
+    const response = await PATCH(
+      new Request("http://localhost/api/opencode/sync/tokens/token-1", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "shared" }),
+      }),
+      { params: { id: "token-1" } }
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/cannot be updated/i);
   });
 });

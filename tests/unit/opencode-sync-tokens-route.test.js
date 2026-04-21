@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const listOpenCodeTokens = vi.fn();
-const replaceOpenCodeTokens = vi.fn();
+const mutateOpenCodeTokens = vi.fn();
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -15,7 +15,7 @@ vi.mock("next/server", () => ({
 
 vi.mock("@/models", () => ({
   listOpenCodeTokens,
-  replaceOpenCodeTokens,
+  mutateOpenCodeTokens,
 }));
 
 vi.mock("@/lib/opencodeSync/tokens.js", async () => {
@@ -65,8 +65,10 @@ describe("/api/opencode/sync/tokens", () => {
   });
 
   it("creates and persists a hashed token on POST", async () => {
-    listOpenCodeTokens.mockResolvedValue([]);
-    replaceOpenCodeTokens.mockResolvedValue([]);
+    mutateOpenCodeTokens.mockImplementation(async (mutator) => {
+      const result = mutator([]);
+      return result.tokens;
+    });
 
     const response = await POST(
       new Request("http://localhost/api/opencode/sync/tokens", {
@@ -87,10 +89,12 @@ describe("/api/opencode/sync/tokens", () => {
       mode: "shared",
       metadata: { owner: "support", platform: "ios" },
     });
-    expect(replaceOpenCodeTokens).toHaveBeenCalledTimes(1);
-    const persisted = replaceOpenCodeTokens.mock.calls[0][0][0];
-    expect(persisted.tokenHash).toBeTypeOf("string");
-    expect(persisted.tokenHash).not.toBe(response.body.token);
-    expect(persisted).not.toHaveProperty("token");
+    expect(mutateOpenCodeTokens).toHaveBeenCalledTimes(1);
+    const persisted = mutateOpenCodeTokens.mock.results[0].value;
+    const resolvedTokens = await persisted;
+    const saved = resolvedTokens[0];
+    expect(saved.tokenHash).toBeTypeOf("string");
+    expect(saved.tokenHash).not.toBe(response.body.token);
+    expect(saved).not.toHaveProperty("token");
   });
 });

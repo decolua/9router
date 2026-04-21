@@ -36,4 +36,5 @@ export {
   updateOpenCodePreferences,
   listOpenCodeTokens,
   replaceOpenCodeTokens,
+  mutateOpenCodeTokens,
 } from "@/lib/localDb";

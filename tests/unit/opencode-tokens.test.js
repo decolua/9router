@@ -25,4 +25,26 @@ describe("opencode sync token helpers", () => {
       updatedAt: record.updatedAt,
     });
   });
+
+  it("does not leak unapproved fields in public records", () => {
+    const publicRecord = toPublicTokenRecord({
+      id: "token-1",
+      name: "Laptop",
+      mode: "device",
+      metadata: { deviceName: "MacBook" },
+      tokenHash: "a".repeat(64),
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z",
+      internalAuditNote: "do-not-expose",
+    });
+
+    expect(publicRecord).toEqual({
+      id: "token-1",
+      name: "Laptop",
+      mode: "device",
+      metadata: { deviceName: "MacBook" },
+      createdAt: "2026-04-21T00:00:00.000Z",
+      updatedAt: "2026-04-21T00:00:00.000Z",
+    });
+  });
 });

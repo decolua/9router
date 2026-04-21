@@ -798,6 +798,30 @@ export async function replaceOpenCodeTokens(tokens) {
   return db.data.opencodeSync.tokens;
 }
 
+export async function mutateOpenCodeTokens(mutator) {
+  if (typeof mutator !== "function") {
+    throw new Error("Token mutator is required");
+  }
+
+  const db = await getDb();
+  await withFileLock(db, async () => {
+    await db.read();
+    db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+    const current = [...(db.data.opencodeSync.tokens || [])];
+    const result = mutator(current);
+
+    if (!result || typeof result !== "object" || !Array.isArray(result.tokens)) {
+      throw new Error("Invalid token mutation result");
+    }
+
+    db.data.opencodeSync.tokens = [...result.tokens];
+    await db.write();
+  });
+
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+  return db.data.opencodeSync.tokens;
+}
+
 export async function updateSettings(updates) {
   const db = await getDb();
   db.data.settings = { ...db.data.settings, ...updates };

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listOpenCodeTokens, replaceOpenCodeTokens } from "@/models";
+import { mutateOpenCodeTokens } from "@/models";
 import { normalizeSyncTokenPatch, toPublicTokenRecord } from "@/lib/opencodeSync/tokens.js";
 
 async function getTokenId(context) {
@@ -22,23 +22,30 @@ export async function PATCH(request, context) {
 
     const payload = await request.json();
     const updates = normalizeSyncTokenPatch(payload);
-    const tokens = await listOpenCodeTokens();
-    const currentTokens = tokens || [];
-    const index = currentTokens.findIndex((record) => record?.id === id);
+    let nextRecord = null;
+    let found = false;
 
-    if (index === -1) {
+    await mutateOpenCodeTokens((currentTokens) => {
+      const index = currentTokens.findIndex((record) => record?.id === id);
+      if (index === -1) {
+        return { tokens: currentTokens };
+      }
+
+      found = true;
+      nextRecord = {
+        ...currentTokens[index],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const nextTokens = [...currentTokens];
+      nextTokens[index] = nextRecord;
+      return { tokens: nextTokens };
+    });
+
+    if (!found || !nextRecord) {
       return NextResponse.json({ error: "Token not found" }, { status: 404 });
     }
-
-    const nextRecord = {
-      ...currentTokens[index],
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const nextTokens = [...currentTokens];
-    nextTokens[index] = nextRecord;
-    await replaceOpenCodeTokens(nextTokens);
 
     return NextResponse.json({ record: toPublicTokenRecord(nextRecord) });
   } catch (error) {
@@ -58,14 +65,17 @@ export async function DELETE(_request, context) {
       return NextResponse.json({ error: "Token id is required" }, { status: 400 });
     }
 
-    const tokens = await listOpenCodeTokens();
-    const nextTokens = (tokens || []).filter((record) => record?.id !== id);
+    let removed = false;
+    await mutateOpenCodeTokens((tokens) => {
+      const nextTokens = tokens.filter((record) => record?.id !== id);
+      removed = nextTokens.length !== tokens.length;
+      return { tokens: nextTokens };
+    });
 
-    if (nextTokens.length === (tokens || []).length) {
+    if (!removed) {
       return NextResponse.json({ error: "Token not found" }, { status: 404 });
     }
 
-    await replaceOpenCodeTokens(nextTokens);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting OpenCode sync token:", error);
