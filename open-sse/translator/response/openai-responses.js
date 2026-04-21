@@ -114,9 +114,18 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
 // Helper functions
 function ensureCompletedOutputState(state) {
-  if (!(state.completedOutputItems instanceof Map)) {
-    state.completedOutputItems = new Map();
+  if (Array.isArray(state.completedOutputItems)) {
+    return state.completedOutputItems;
   }
+
+  if (state.completedOutputItems instanceof Map) {
+    state.completedOutputItems = Array.from(state.completedOutputItems.entries()).map(
+      ([output_index, item], seq) => ({ output_index, item, seq })
+    );
+    return state.completedOutputItems;
+  }
+
+  state.completedOutputItems = [];
 
   return state.completedOutputItems;
 }
@@ -130,18 +139,24 @@ function recordCompletedItem(state, outputIndex, item) {
   const completedOutputItems = ensureCompletedOutputState(state);
   const normalized = normalizeOutputIndex(outputIndex);
 
-  if (completedOutputItems.has(normalized)) {
-    console.warn(`[Responses API] duplicate completed output_index ${normalized}; replacing previous item`);
-  }
-
-  completedOutputItems.set(normalized, item);
+  completedOutputItems.push({
+    output_index: normalized,
+    item,
+    seq: state.seq
+  });
   return normalized;
 }
 
 function buildDenseOutput(state) {
-  return Array.from(ensureCompletedOutputState(state).entries())
-    .sort(([left], [right]) => left - right)
-    .map(([, item]) => item);
+  return ensureCompletedOutputState(state)
+    .slice()
+    .sort((left, right) => {
+      if (left.output_index !== right.output_index) {
+        return left.output_index - right.output_index;
+      }
+      return left.seq - right.seq;
+    })
+    .map(({ item }) => item);
 }
 
 function startReasoning(state, emit, idx) {

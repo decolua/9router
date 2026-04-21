@@ -72,7 +72,7 @@ export function createResponsesApiTransformStream(logger = null) {
     funcCallIds: {},
     funcArgsDone: {},
     funcItemDone: {},
-    completedOutputItems: new Map(),
+    completedOutputItems: [],
     buffer: "",
     completedSent: false
   };
@@ -85,16 +85,23 @@ export function createResponsesApiTransformStream(logger = null) {
   };
   const recordCompletedItem = (outputIndex, item) => {
     const normalized = normalizeOutputIndex(outputIndex);
-    if (state.completedOutputItems.has(normalized)) {
-      console.warn(`[Responses API] duplicate completed output_index ${normalized}; replacing previous item`);
-    }
-    state.completedOutputItems.set(normalized, item);
+    state.completedOutputItems.push({
+      output_index: normalized,
+      item,
+      seq: state.seq
+    });
     return normalized;
   };
   const buildDenseOutput = () =>
-    Array.from(state.completedOutputItems.entries())
-      .sort(([left], [right]) => left - right)
-      .map(([, item]) => item);
+    state.completedOutputItems
+      .slice()
+      .sort((left, right) => {
+        if (left.output_index !== right.output_index) {
+          return left.output_index - right.output_index;
+        }
+        return left.seq - right.seq;
+      })
+      .map(({ item }) => item);
   
   const emit = (controller, eventType, data) => {
     data.sequence_number = nextSeq();

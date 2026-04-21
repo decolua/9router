@@ -109,8 +109,14 @@ function normalizeOutputItem(item) {
 
 function finalizedOutputItemsByIndex(events) {
   return events
+    .map((entry, position) => ({ ...entry, position }))
     .filter(({ event }) => event === "response.output_item.done")
-    .sort((left, right) => left.data.output_index - right.data.output_index);
+    .sort((left, right) => {
+      if (left.data.output_index !== right.data.output_index) {
+        return left.data.output_index - right.data.output_index;
+      }
+      return left.position - right.position;
+    });
 }
 
 function normalizedFinalizedOutput(events) {
@@ -121,12 +127,26 @@ function finalizedOutputIndexes(events) {
   return finalizedOutputItemsByIndex(events).map(({ data }) => data.output_index);
 }
 
+function finalizedOutputItemRefs(events) {
+  return finalizedOutputItemsByIndex(events).map(({ data }) => data.item);
+}
+
 function expectCompletedOutputToMatchFinalized(events) {
   const finalizedOutput = normalizedFinalizedOutput(events);
   const response = completedResponse(events);
   expect(response).toHaveProperty("output");
   expect(Array.isArray(response.output), "response.output must be an array").toBe(true);
   expect(response.output.map(normalizeOutputItem)).toEqual(finalizedOutput);
+}
+
+function expectCompletedOutputToReuseFinalizedItems(events) {
+  const response = completedResponse(events);
+  const finalizedItems = finalizedOutputItemRefs(events);
+
+  expect(response.output).toHaveLength(finalizedItems.length);
+  finalizedItems.forEach((item, index) => {
+    expect(response.output[index]).toBe(item);
+  });
 }
 
 describe("Responses output contract", () => {
@@ -186,6 +206,31 @@ describe("Responses output contract", () => {
         type: "message",
         role: "assistant",
         content: [{ type: "output_text", text: "Proceed." }],
+      },
+    ]);
+    expectCompletedOutputToMatchFinalized(events);
+  });
+
+  it("transformer preserves same-index finalized items on response.completed", async () => {
+    const events = await collectTransformerEvents([
+      sseData(chatChunk({ id: "chatcmpl-same-index", index: 0, delta: { reasoning_content: "Think first." } })),
+      sseData(chatChunk({ id: "chatcmpl-same-index", index: 0, delta: { content: "Answer next." } })),
+      sseData(chatChunk({ id: "chatcmpl-same-index", index: 0, delta: {}, finish_reason: "stop" })),
+      "data: [DONE]\n\n",
+    ]);
+
+    const finalizedOutput = normalizedFinalizedOutput(events);
+    expect(finalizedOutput).toHaveLength(2);
+    expect(finalizedOutputIndexes(events)).toEqual([0, 0]);
+    expect(finalizedOutput).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Answer next." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Think first." }],
       },
     ]);
     expectCompletedOutputToMatchFinalized(events);
@@ -282,5 +327,30 @@ describe("Responses output contract", () => {
       },
     ]);
     expectCompletedOutputToMatchFinalized(events);
+  });
+
+  it("translator preserves same-index finalized items on response.completed", () => {
+    const events = collectTranslatorEvents([
+      chatChunk({ id: "chatcmpl-translator-same-index", index: 0, delta: { reasoning_content: "Think first." } }),
+      chatChunk({ id: "chatcmpl-translator-same-index", index: 0, delta: { content: "Answer next." } }),
+      chatChunk({ id: "chatcmpl-translator-same-index", index: 0, delta: {}, finish_reason: "stop" }),
+    ]);
+
+    const finalizedOutput = normalizedFinalizedOutput(events);
+    expect(finalizedOutput).toHaveLength(2);
+    expect(finalizedOutputIndexes(events)).toEqual([0, 0]);
+    expect(finalizedOutput).toEqual([
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Answer next." }],
+      },
+      {
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: "Think first." }],
+      },
+    ]);
+    expectCompletedOutputToMatchFinalized(events);
+    expectCompletedOutputToReuseFinalizedItems(events);
   });
 });
