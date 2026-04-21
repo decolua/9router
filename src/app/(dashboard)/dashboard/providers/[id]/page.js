@@ -8,7 +8,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import Pagination from "@/shared/components/Pagination";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
-import { getConnectionFilterStatus, normalizeConnectionFilterStatus } from "@/lib/connectionStatus";
+import { getConnectionFilterStatus, normalizeConnectionFilterStatus, getConnectionCentralizedStatus, getConnectionProviderCooldownUntil } from "@/lib/connectionStatus";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
@@ -139,6 +139,99 @@ export default function ProviderDetailPage() {
       return searchableValues.some((value) => value.includes(query));
     });
   }, [connections, searchQuery, statusFilter]);
+
+  const quotaSummary = useMemo(() => {
+    if (connections.length === 0) {
+      return {
+        blockedQuota: 0,
+        blockedHealth: 0,
+        coolingDown: 0,
+        eligible: 0,
+        disabled: 0,
+        unknown: 0,
+        nextResetAt: null,
+      };
+    }
+
+    const summary = {
+      blockedQuota: 0,
+      blockedHealth: 0,
+      coolingDown: 0,
+      eligible: 0,
+      disabled: 0,
+      unknown: 0,
+      nextResetAt: null,
+    };
+
+    for (const connection of connections) {
+      const status = getConnectionCentralizedStatus(connection);
+      const cooldownUntil = getConnectionProviderCooldownUntil(connection);
+
+      switch (status) {
+        case "blocked_quota":
+          summary.blockedQuota += 1;
+          break;
+        case "blocked_health":
+          summary.blockedHealth += 1;
+          break;
+        case "cooldown":
+          summary.coolingDown += 1;
+          break;
+        case "eligible":
+          summary.eligible += 1;
+          break;
+        case "disabled":
+          summary.disabled += 1;
+          break;
+        default:
+          summary.unknown += 1;
+          break;
+      }
+
+      if (
+        ["cooldown", "blocked_quota"].includes(status)
+        && cooldownUntil
+        && (!summary.nextResetAt || cooldownUntil < summary.nextResetAt)
+      ) {
+        summary.nextResetAt = cooldownUntil;
+      }
+    }
+
+    return summary;
+  }, [connections]);
+
+  const quotaSummaryItems = useMemo(() => ([
+    {
+      key: "eligible",
+      label: "Ready",
+      value: quotaSummary.eligible,
+      tone: "text-emerald-600 dark:text-emerald-400",
+    },
+    {
+      key: "coolingDown",
+      label: "Cooling down",
+      value: quotaSummary.coolingDown,
+      tone: "text-amber-600 dark:text-amber-400",
+    },
+    {
+      key: "blockedQuota",
+      label: "Quota blocked",
+      value: quotaSummary.blockedQuota,
+      tone: "text-rose-600 dark:text-rose-400",
+    },
+    {
+      key: "blockedHealth",
+      label: "Health blocked",
+      value: quotaSummary.blockedHealth,
+      tone: "text-fuchsia-600 dark:text-fuchsia-400",
+    },
+    {
+      key: "disabled",
+      label: "Disabled",
+      value: quotaSummary.disabled,
+      tone: "text-text-muted",
+    },
+  ]), [quotaSummary]);
 
   const totalConnections = filteredConnections.length;
   const totalPages = Math.max(1, Math.ceil(totalConnections / pageSize));
@@ -899,6 +992,10 @@ export default function ProviderDetailPage() {
     return `/providers/${providerInfo.id}.png`;
   };
 
+  const nextQuotaResetLabel = quotaSummary.nextResetAt
+    ? new Date(quotaSummary.nextResetAt).toLocaleString()
+    : null;
+
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
@@ -962,6 +1059,51 @@ export default function ProviderDetailPage() {
             </a>
           )}
         </div>
+      )}
+
+      {connections.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+                <span className="material-symbols-outlined text-[14px]">donut_large</span>
+                Routing availability
+              </div>
+              <h2 className="mt-3 text-lg font-semibold text-text-primary">Connection routing summary</h2>
+              <p className="mt-1 text-sm text-text-muted">
+                This rolls up each connection&apos;s current routing status for this provider. Quota and cooldown signals are only shown when the connection is explicitly reporting them.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-surface px-4 py-3 text-sm text-text-muted min-w-[240px]">
+              <div className="flex items-center gap-2 text-text-primary font-medium">
+                <span className="material-symbols-outlined text-[16px] text-primary">schedule</span>
+                Next quota retry/reset
+              </div>
+              <p className="mt-1 text-sm">
+                {nextQuotaResetLabel || "No quota retry/reset scheduled"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            {quotaSummaryItems.map((item) => (
+              <div
+                key={item.key}
+                className="rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/[0.03] px-4 py-3"
+              >
+                <p className="text-xs uppercase tracking-[0.14em] text-text-muted">{item.label}</p>
+                <p className={`mt-2 text-2xl font-semibold ${item.tone}`}>{item.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {quotaSummary.unknown > 0 && (
+            <p className="mt-4 text-xs text-text-muted">
+              {quotaSummary.unknown} connection{quotaSummary.unknown === 1 ? " is" : "s are"} still reporting unknown availability.
+            </p>
+          )}
+        </Card>
       )}
 
       {isCompatible && providerNode && (

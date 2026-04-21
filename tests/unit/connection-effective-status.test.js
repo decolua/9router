@@ -99,6 +99,10 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionCentralizedStatus({ testStatus: "unavailable" })).toBe("eligible");
   });
 
+  it("treats blocked_health as a first-class centralized status", () => {
+    expect(getConnectionCentralizedStatus({ routingStatus: "blocked_health" })).toBe("blocked_health");
+  });
+
   it("collapses health failures into the auth-blocked filter bucket for current UI filters", () => {
     expect(getConnectionFilterStatus({ healthStatus: "failed" })).toBe("blocked_auth");
     expect(getConnectionFilterStatus({ routingStatus: "blocked_health" })).toBe("blocked_auth");

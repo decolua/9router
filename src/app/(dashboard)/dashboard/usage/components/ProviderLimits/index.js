@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
@@ -58,6 +58,7 @@ function getPaginatedConnections(connections = [], currentPage = 1, pageSize = D
 }
 
 export default function ProviderLimits() {
+  const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [connections, setConnections] = useState([]);
@@ -99,10 +100,11 @@ export default function ProviderLimits() {
     });
 
     const query = params.toString();
-    router.replace(query ? `/dashboard/usage?${query}` : "/dashboard/usage", {
+    const targetPath = pathname || "/dashboard/usage";
+    router.replace(query ? `${targetPath}?${query}` : targetPath, {
       scroll: false,
     });
-  }, [router, searchParams]);
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!rawStatusFilter) return;
@@ -579,9 +581,12 @@ export default function ProviderLimits() {
             className="min-w-0"
           />
 
-          <button
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
             onClick={() => setAutoRefresh((prev) => !prev)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-black/10 dark:border-white/10 bg-surface px-4 py-2.5 text-sm text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="w-full lg:w-auto"
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
@@ -593,7 +598,7 @@ export default function ProviderLimits() {
             </span>
             Auto-refresh
             {autoRefresh && <span className="text-xs text-text-muted">({countdown}s)</span>}
-          </button>
+          </Button>
 
           <Button
             variant="secondary"
