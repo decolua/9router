@@ -6,7 +6,7 @@ import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
-import { deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady } from "@/lib/quotaStateStore.js";
+import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -381,12 +381,18 @@ export async function deleteProviderConnectionsByProvider(providerId) {
   );
   const deletedCount = beforeCount - db.data.providerConnections.length;
   await safeWrite(db);
+  if (deletedCount > 0) {
+    await clearProviderHotState(providerId);
+  }
   return deletedCount;
 }
 
 export async function getProviderConnectionById(id) {
   const db = await getDb();
-  return db.data.providerConnections.find(c => c.id === id) || null;
+  const connection = db.data.providerConnections.find(c => c.id === id) || null;
+  if (!connection) return null;
+  const merged = await mergeConnectionsWithHotState([connection]);
+  return merged[0] || connection;
 }
 
 export async function createProviderConnection(data) {
@@ -483,6 +489,28 @@ export async function updateProviderConnection(id, data) {
   const shouldStoreHotState = isHotOnlyUpdate(data);
   const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
 
+   if (shouldStoreHotState) {
+    const hotStateResult = await setConnectionHotState(id, providerId, data);
+    const projectedLegacyState = projectLegacyConnectionState(hotStateResult?.state || data);
+    const dbCompatiblePatch = {
+      ...data,
+      ...projectedLegacyState,
+      updatedAt: new Date().toISOString(),
+    };
+
+    db.data.providerConnections[index] = {
+      ...db.data.providerConnections[index],
+      ...dbCompatiblePatch,
+    };
+
+    if (!canUseRedisForHotState || !hotStateResult?.storedInRedis) {
+      await safeWrite(db);
+    }
+
+    if (data.priority !== undefined) await reorderProviderConnections(providerId);
+    return db.data.providerConnections[index];
+  }
+
   db.data.providerConnections[index] = {
     ...db.data.providerConnections[index],
     ...data,
@@ -494,12 +522,7 @@ export async function updateProviderConnection(id, data) {
   }
   if (data.priority !== undefined) await reorderProviderConnections(providerId);
 
-  if (shouldStoreHotState) {
-    const result = await setConnectionHotState(id, providerId, data);
-    if (!result?.storedInRedis && canUseRedisForHotState) {
-      await safeWrite(db);
-    }
-  } else if (current && data.isActive === false) {
+  if (current && data.isActive === false) {
     await deleteConnectionHotState(id, providerId);
   }
 
@@ -764,6 +787,7 @@ export async function importDb(payload) {
   const db = await getDb();
   db.data = normalized;
   await safeWrite(db);
+  await clearAllHotState();
   return db.data;
 }
 

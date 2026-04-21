@@ -13,6 +13,16 @@ const getProxyPoolById = vi.fn(async () => null);
 const getProviderConnectionById = vi.fn(async (id) => providerConnectionById.get(id) || null);
 const updateProviderConnection = vi.fn(async () => ({}));
 const getUsageForProvider = vi.fn(async () => ({ message: "ok", plan: "pro" }));
+const writeConnectionHotState = vi.fn(async ({ patch }) => patch);
+const projectLegacyConnectionState = vi.fn((snapshot = {}) => ({
+  testStatus: snapshot.routingStatus === "blocked_quota" ? "unavailable" : "active",
+  lastTested: snapshot.lastCheckedAt || null,
+  lastError: snapshot.reasonDetail ?? snapshot.lastError ?? null,
+  lastErrorType: snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : snapshot.lastErrorType ?? null,
+  lastErrorAt: snapshot.lastErrorAt ?? null,
+  rateLimitedUntil: snapshot.nextRetryAt ?? snapshot.rateLimitedUntil ?? null,
+  errorCode: snapshot.errorCode ?? (snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : null),
+}));
 const getExecutor = vi.fn(() => ({
   needsRefresh: vi.fn(() => false),
   refreshCredentials: vi.fn(async () => null),
@@ -82,6 +92,11 @@ vi.mock("@/lib/localDb", () => ({
   }),
 }));
 
+vi.mock("@/lib/providerHotState", () => ({
+  writeConnectionHotState,
+  projectLegacyConnectionState,
+}));
+
 vi.mock("open-sse/services/usage.js", () => ({
   getUsageForProvider,
 }));
@@ -107,6 +122,8 @@ describe("provider summary API and usage dedupe", () => {
     getProviderConnectionById.mockClear();
     updateProviderConnection.mockClear();
     getUsageForProvider.mockClear();
+    writeConnectionHotState.mockClear();
+    projectLegacyConnectionState.mockClear();
     getExecutor.mockClear();
     mockRedisClient.set.mockClear();
     mockRedisClient.get.mockClear();
@@ -185,6 +202,7 @@ describe("provider summary API and usage dedupe", () => {
     expect(firstResponse.status).toBe(200);
     expect(secondResponse.status).toBe(200);
     expect(getUsageForProvider).toHaveBeenCalledTimes(1);
+    expect(writeConnectionHotState).toHaveBeenCalledTimes(1);
   });
 
   it("runs queued refreshes with a bounded concurrency limit", async () => {
