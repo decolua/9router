@@ -47,6 +47,7 @@ describe("/api/opencode/bundle/preview", () => {
       defaultModel: "openai/gpt-4.1-free",
       excludedModels: ["anthropic/claude-3.7-sonnet-free"],
       customPlugins: ["team-plugin@latest"],
+      envVars: [{ key: "OPENAI_API_KEY", value: "super-secret", secret: true }],
     });
 
     global.fetch.mockResolvedValue({
@@ -68,6 +69,9 @@ describe("/api/opencode/bundle/preview", () => {
     expect(response.body.preview.plugins).toContain("opencode-cliproxyapi-sync@latest");
     expect(response.body.bundle.defaultModel).toBe("openai/gpt-4.1-free");
     expect(Object.keys(response.body.bundle.models)).toEqual(["openai/gpt-4.1-free"]);
+    expect(response.body.bundle.envVars).toEqual([
+      { key: "OPENAI_API_KEY", value: "********", secret: true },
+    ]);
   });
 
   it("supports object-shaped catalogs and preserves model metadata", async () => {
@@ -116,6 +120,22 @@ describe("/api/opencode/bundle/preview", () => {
       ok: false,
       status: 500,
       json: async () => ({}),
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Failed to generate OpenCode bundle preview" });
+  });
+
+  it("returns 500 instead of 400 for upstream catalog parse errors", async () => {
+    getOpenCodePreferences.mockResolvedValue({ variant: "openagent" });
+
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("Unexpected token");
+      },
     });
 
     const response = await GET();

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createSyncToken,
   normalizeSyncTokenPatch,
+  touchSyncTokenRecord,
   toPublicTokenRecord,
   validateSyncTokenMode,
   verifySyncToken,
@@ -29,6 +30,7 @@ describe("opencode sync token helpers", () => {
       metadata: { deviceName: "MacBook Pro", retries: 3 },
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
+      lastUsedAt: null,
     });
   });
 
@@ -51,6 +53,18 @@ describe("opencode sync token helpers", () => {
       metadata: { deviceName: "MacBook" },
       createdAt: "2026-04-21T00:00:00.000Z",
       updatedAt: "2026-04-21T00:00:00.000Z",
+      lastUsedAt: null,
+    });
+  });
+
+  it("updates token bookkeeping timestamps when touched", () => {
+    const usedAt = "2026-04-21T10:00:00.000Z";
+    const { record } = createSyncToken({ name: "Laptop", mode: "device" });
+
+    expect(touchSyncTokenRecord(record, usedAt)).toMatchObject({
+      id: record.id,
+      lastUsedAt: usedAt,
+      updatedAt: usedAt,
     });
   });
 

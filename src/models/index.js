@@ -37,4 +37,5 @@ export {
   listOpenCodeTokens,
   replaceOpenCodeTokens,
   mutateOpenCodeTokens,
+  touchOpenCodeTokenLastUsedAt,
 } from "@/lib/localDb";

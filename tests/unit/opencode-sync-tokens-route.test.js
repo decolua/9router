@@ -59,6 +59,7 @@ describe("/api/opencode/sync/tokens", () => {
           metadata: { deviceName: "MacBook" },
           createdAt: "2026-04-21T00:00:00.000Z",
           updatedAt: "2026-04-21T00:00:00.000Z",
+          lastUsedAt: null,
         },
       ],
     });

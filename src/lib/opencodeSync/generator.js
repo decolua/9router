@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-import { validateOpenCodePreferences } from "./schema.js";
+import { createOpenCodeValidationError, sanitizeSensitiveConfig, validateOpenCodePreferences } from "./schema.js";
 import {
   getCustomTemplatePreset,
   getVariantPreset,
@@ -199,7 +199,7 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
   );
 
   if (normalizedPreferences.defaultModel && !Object.hasOwn(models, normalizedPreferences.defaultModel)) {
-    throw new Error("Default model must be included in generated bundle models");
+    throw createOpenCodeValidationError("Default model must be included in generated bundle models");
   }
 
   const bundle = {
@@ -231,17 +231,19 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
 
 export function buildOpenCodeSyncPreview(args = {}) {
   const result = buildOpenCodeSyncBundle(args);
+  const sanitizedBundle = sanitizeSensitiveConfig(result.bundle);
 
   return {
     ...result,
+    bundle: sanitizedBundle,
     preview: {
-      variant: result.bundle.variant,
-      customTemplate: result.bundle.customTemplate,
-      defaultModel: result.bundle.defaultModel,
-      modelCount: Object.keys(result.bundle.models).length,
-      pluginCount: result.bundle.plugins.length,
-      plugins: [...result.bundle.plugins],
-      modelIds: Object.keys(result.bundle.models),
+      variant: sanitizedBundle.variant,
+      customTemplate: sanitizedBundle.customTemplate,
+      defaultModel: sanitizedBundle.defaultModel,
+      modelCount: Object.keys(sanitizedBundle.models).length,
+      pluginCount: sanitizedBundle.plugins.length,
+      plugins: [...sanitizedBundle.plugins],
+      modelIds: Object.keys(sanitizedBundle.models),
     },
   };
 }

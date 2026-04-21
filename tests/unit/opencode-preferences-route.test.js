@@ -110,4 +110,29 @@ describe("/api/opencode/preferences", () => {
       { key: "PUBLIC_FLAG", value: "enabled", secret: false },
     ]);
   });
+
+  it("redacts nested sensitive override values on PATCH responses", async () => {
+    updateOpenCodePreferences.mockResolvedValue({
+      variant: "custom",
+      customTemplate: "minimal",
+      advancedOverrides: {
+        custom: {
+          headers: {
+            Authorization: "Bearer secret",
+          },
+        },
+      },
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/opencode/preferences", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ advancedOverrides: { custom: { headers: { Authorization: "Bearer secret" } } } }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.preferences.advancedOverrides.custom.headers.Authorization).toBe("********");
+  });
 });

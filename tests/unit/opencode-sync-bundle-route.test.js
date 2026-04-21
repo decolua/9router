@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getOpenCodePreferences = vi.fn();
 const listOpenCodeTokens = vi.fn();
+const touchOpenCodeTokenLastUsedAt = vi.fn();
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -16,6 +17,7 @@ vi.mock("next/server", () => ({
 vi.mock("@/models", () => ({
   getOpenCodePreferences,
   listOpenCodeTokens,
+  touchOpenCodeTokenLastUsedAt,
 }));
 
 vi.mock("@/shared/constants/providers.js", () => ({
@@ -125,6 +127,7 @@ describe("/api/opencode/sync/bundle", () => {
         },
       },
     });
+    expect(touchOpenCodeTokenLastUsedAt).toHaveBeenCalledWith(record.id);
   });
 
   it("supports object-shaped model catalogs using map keys for filtering", async () => {
@@ -181,5 +184,34 @@ describe("/api/opencode/sync/bundle", () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: "Failed to generate OpenCode sync bundle" });
+    expect(touchOpenCodeTokenLastUsedAt).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for authenticated validation errors only", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue({
+      ...preferences,
+      mcpServers: [{ name: "Remote", type: "remote", url: "ftp://example.test/mcp" }],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
+        }),
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/bundle", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid MCP server URL for Remote" });
+    expect(touchOpenCodeTokenLastUsedAt).not.toHaveBeenCalled();
   });
 });

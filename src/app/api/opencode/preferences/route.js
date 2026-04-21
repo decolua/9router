@@ -1,19 +1,22 @@
 import { NextResponse } from "next/server";
 
 import { getOpenCodePreferences, updateOpenCodePreferences } from "@/models";
-import { sanitizeOpenCodePreferencesForResponse } from "@/lib/opencodeSync/schema.js";
-
-const VALIDATION_ERROR_PATTERNS = [/^Invalid\b/u, /only valid/u];
+import {
+  isOpenCodeValidationError,
+  sanitizeOpenCodePreferencesForResponse,
+} from "@/lib/opencodeSync/schema.js";
 
 function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
 
 function isValidationError(error) {
-  if (error instanceof SyntaxError) return true;
+  if (error instanceof SyntaxError || isOpenCodeValidationError(error)) {
+    return true;
+  }
 
   const message = typeof error?.message === "string" ? error.message : "";
-  return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return /^Invalid\b/u.test(message) || /only valid/u.test(message);
 }
 
 export async function GET() {

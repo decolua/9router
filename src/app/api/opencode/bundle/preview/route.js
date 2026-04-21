@@ -4,14 +4,9 @@ import { getOpenCodePreferences } from "@/models";
 import { buildOpenCodeSyncPreview } from "@/lib/opencodeSync/generator.js";
 import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
 
-export const dynamic = "force-dynamic";
+const VALIDATION_ERROR_CODES = new Set(["OPENCODE_VALIDATION_ERROR"]);
 
-const VALIDATION_ERROR_PATTERNS = [
-  /^Invalid\b/u,
-  /must be included/u,
-  /only valid/u,
-  /^Default model\b/u,
-];
+export const dynamic = "force-dynamic";
 
 function getCatalogModelId(model, fallbackId = "") {
   if (typeof model === "string") return model.trim();
@@ -27,10 +22,7 @@ function getCatalogModelId(model, fallbackId = "") {
 }
 
 function isValidationError(error) {
-  if (error instanceof SyntaxError) return true;
-
-  const message = typeof error?.message === "string" ? error.message : "";
-  return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return VALIDATION_ERROR_CODES.has(error?.code) || error?.name === "OpenCodeValidationError";
 }
 
 function filterOpenCodeModels(models) {

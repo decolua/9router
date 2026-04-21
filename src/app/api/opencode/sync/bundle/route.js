@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { getOpenCodePreferences, listOpenCodeTokens } from "@/models";
+import { getOpenCodePreferences, listOpenCodeTokens, touchOpenCodeTokenLastUsedAt } from "@/models";
 import { buildOpenCodeSyncBundle } from "@/lib/opencodeSync/generator.js";
 import { findMatchingSyncTokenRecord } from "@/lib/opencodeSync/tokens.js";
 import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
 
 export const dynamic = "force-dynamic";
 
-const VALIDATION_ERROR_PATTERNS = [
-  /^Invalid\b/u,
-  /must be included/u,
-  /only valid/u,
-  /^Default model\b/u,
-];
+const VALIDATION_ERROR_CODES = new Set(["OPENCODE_VALIDATION_ERROR"]);
 
 function getCatalogModelId(model, fallbackId = "") {
   if (typeof model === "string") return model.trim();
@@ -28,8 +23,7 @@ function getCatalogModelId(model, fallbackId = "") {
 }
 
 function isValidationError(error) {
-  const message = typeof error?.message === "string" ? error.message : "";
-  return VALIDATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return VALIDATION_ERROR_CODES.has(error?.code) || error?.name === "OpenCodeValidationError";
 }
 
 function filterOpenCodeModels(models) {
@@ -81,10 +75,7 @@ async function loadOpenCodeModelCatalog() {
 }
 
 async function generateAuthenticatedSyncBundle(request) {
-  const tokenRecord = findMatchingSyncTokenRecord(
-    await listOpenCodeTokens(),
-    request.headers.get("authorization")
-  );
+  const tokenRecord = findMatchingSyncTokenRecord(await listOpenCodeTokens(), request.headers.get("authorization"));
 
   if (!tokenRecord) {
     return null;
@@ -95,7 +86,9 @@ async function generateAuthenticatedSyncBundle(request) {
     loadOpenCodeModelCatalog(),
   ]);
 
-  return buildOpenCodeSyncBundle({ preferences, modelCatalog });
+  const bundle = buildOpenCodeSyncBundle({ preferences, modelCatalog });
+  await touchOpenCodeTokenLastUsedAt(tokenRecord.id);
+  return bundle;
 }
 
 export async function GET(request) {

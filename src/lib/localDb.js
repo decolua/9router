@@ -822,6 +822,25 @@ export async function mutateOpenCodeTokens(mutator) {
   return db.data.opencodeSync.tokens;
 }
 
+export async function touchOpenCodeTokenLastUsedAt(tokenId, usedAt = new Date().toISOString()) {
+  const normalizedId = typeof tokenId === "string" ? tokenId.trim() : "";
+  if (!normalizedId) {
+    throw new Error("Token id is required");
+  }
+
+  return mutateOpenCodeTokens((tokens) => ({
+    tokens: tokens.map((token) =>
+      token?.id === normalizedId
+        ? {
+            ...token,
+            lastUsedAt: usedAt,
+            updatedAt: usedAt,
+          }
+        : token
+    ),
+  }));
+}
+
 export async function updateSettings(updates) {
   const db = await getDb();
   db.data.settings = { ...db.data.settings, ...updates };

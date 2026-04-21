@@ -58,6 +58,7 @@ export function createSyncToken({ name, mode, metadata } = {}) {
       tokenHash,
       createdAt: now,
       updatedAt: now,
+      lastUsedAt: null,
     },
   };
 }
@@ -101,10 +102,23 @@ export function toPublicTokenRecord(record) {
     metadata: record.metadata,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+    lastUsedAt: record.lastUsedAt || null,
   };
   return {
     ...publicRecord,
     metadata: normalizeMetadata(publicRecord.metadata),
+  };
+}
+
+export function touchSyncTokenRecord(record, usedAt = new Date().toISOString()) {
+  if (!isPlainObject(record)) {
+    throw new Error("Invalid token record");
+  }
+
+  return {
+    ...record,
+    lastUsedAt: usedAt,
+    updatedAt: usedAt,
   };
 }
 

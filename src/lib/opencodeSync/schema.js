@@ -4,6 +4,19 @@ const DEFAULT_MODEL_SELECTION_MODE = "exclude";
 const VALID_VARIANTS = new Set(["openagent", "slim", "custom"]);
 const VALID_CUSTOM_TEMPLATES = new Set([null, "minimal", "opinionated"]);
 const VALID_MODEL_SELECTION_MODES = new Set(["include", "exclude"]);
+const VALID_MCP_SERVER_TYPES = new Set(["local", "remote"]);
+const REDACTED_VALUE = "********";
+
+export function createOpenCodeValidationError(message) {
+  const error = new Error(message);
+  error.name = "OpenCodeValidationError";
+  error.code = "OPENCODE_VALIDATION_ERROR";
+  return error;
+}
+
+export function isOpenCodeValidationError(error) {
+  return error?.code === "OPENCODE_VALIDATION_ERROR" || error?.name === "OpenCodeValidationError";
+}
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -49,8 +62,39 @@ function normalizeEnvVars(values) {
   return Array.from(byKey.values()).sort((left, right) => left.key.localeCompare(right.key));
 }
 
+function normalizeMcpCommand(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeString(item)).filter(Boolean);
+  }
+
+  const normalized = normalizeString(value);
+  return normalized ? normalized : "";
+}
+
+function normalizeMcpServer(server) {
+  if (!server || typeof server !== "object" || Array.isArray(server)) return null;
+
+  const explicitType = normalizeString(server.type);
+  const type = explicitType || "local";
+  const normalized = {
+    name: normalizeString(server.name),
+  };
+
+  if (explicitType) {
+    normalized.type = explicitType;
+  }
+
+  if (type === "remote") {
+    normalized.url = normalizeString(server.url);
+  } else {
+    normalized.command = normalizeMcpCommand(server.command);
+  }
+
+  return normalized;
+}
+
 function normalizeMcpServers(values) {
-  return Array.isArray(values) ? values.filter((value) => value && typeof value === "object") : [];
+  return Array.isArray(values) ? values.map((value) => normalizeMcpServer(value)).filter(Boolean) : [];
 }
 
 function normalizeAdvancedOverrides(value) {
@@ -117,33 +161,111 @@ export function validateOpenCodePreferences(input) {
   const normalized = normalizeOpenCodePreferences(input);
 
   if (!VALID_VARIANTS.has(normalized.variant)) {
-    throw new Error("Invalid OpenCode variant");
+    throw createOpenCodeValidationError("Invalid OpenCode variant");
   }
 
   if (!VALID_CUSTOM_TEMPLATES.has(normalized.customTemplate)) {
-    throw new Error("Invalid custom template");
+    throw createOpenCodeValidationError("Invalid custom template");
   }
 
   if (normalized.variant !== "custom" && normalized.customTemplate !== null) {
-    throw new Error("Custom template is only valid for custom variant");
+    throw createOpenCodeValidationError("Custom template is only valid for custom variant");
   }
 
   if (!VALID_MODEL_SELECTION_MODES.has(normalized.modelSelectionMode)) {
-    throw new Error("Invalid model selection mode");
+    throw createOpenCodeValidationError("Invalid model selection mode");
+  }
+
+  const seenMcpNames = new Set();
+
+  for (const server of normalized.mcpServers) {
+    if (!server.name) {
+      throw createOpenCodeValidationError("Invalid MCP server: name is required");
+    }
+
+    const duplicateKey = server.name.toLowerCase();
+    if (seenMcpNames.has(duplicateKey)) {
+      throw createOpenCodeValidationError(`Duplicate MCP server name: ${server.name}`);
+    }
+    seenMcpNames.add(duplicateKey);
+
+    const serverType = server.type || "local";
+
+    if (!VALID_MCP_SERVER_TYPES.has(serverType)) {
+      throw createOpenCodeValidationError(`Invalid MCP server type for ${server.name}`);
+    }
+
+    if (serverType === "remote") {
+      if (!server.url) {
+        throw createOpenCodeValidationError(`Remote MCP server \"${server.name}\" requires a URL`);
+      }
+
+      try {
+        const parsedUrl = new URL(server.url);
+        if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+          throw new Error("unsupported");
+        }
+      } catch {
+        throw createOpenCodeValidationError(`Invalid MCP server URL for ${server.name}`);
+      }
+
+      continue;
+    }
+
+    if (Array.isArray(server.command)) {
+      if (server.command.length === 0) {
+        throw createOpenCodeValidationError(`Local MCP server \"${server.name}\" requires a command`);
+      }
+    } else if (!server.command) {
+      throw createOpenCodeValidationError(`Local MCP server \"${server.name}\" requires a command`);
+    }
   }
 
   return normalized;
 }
 
-export function sanitizeOpenCodePreferencesForResponse(input) {
-  const normalized = normalizeOpenCodePreferences(input);
+function isSensitiveKey(key) {
+  const loweredKey = normalizeString(key).toLowerCase();
 
-  return {
-    ...normalized,
-    envVars: normalized.envVars.map((item) =>
-      item.secret
-        ? { ...item, value: "********" }
-        : { ...item }
-    ),
-  };
+  if (["secret", "issecret", "sensitive"].includes(loweredKey)) {
+    return false;
+  }
+
+  return ["secret", "token", "apikey", "api_key", "password", "authorization"].some((fragment) =>
+    loweredKey.includes(fragment)
+  );
+}
+
+export function sanitizeSensitiveConfig(value, key = "") {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeSensitiveConfig(entry, key));
+  }
+
+  if (isSensitiveKey(key)) {
+    return REDACTED_VALUE;
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const objectLooksSecret = value.secret === true || value.isSecret === true || value.sensitive === true;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([entryKey, entryValue]) => {
+      if (objectLooksSecret && entryKey === "value") {
+        return [entryKey, REDACTED_VALUE];
+      }
+
+      if (isSensitiveKey(entryKey)) {
+        return [entryKey, REDACTED_VALUE];
+      }
+
+      return [entryKey, sanitizeSensitiveConfig(entryValue, entryKey)];
+    })
+  );
+}
+
+export function sanitizeOpenCodePreferencesForResponse(input) {
+  return sanitizeSensitiveConfig(normalizeOpenCodePreferences(input));
 }
