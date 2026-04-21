@@ -49,6 +49,9 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/superpowers/
+!docs/superpowers/specs/
+!docs/superpowers/specs/*.md
 test/*
 bin/*
 open-sse/test/*
