@@ -60,7 +60,7 @@ Thanks.md
 PUBLIC.en.md
 PR/*
 package-lock.json
-
+.worktrees/
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
