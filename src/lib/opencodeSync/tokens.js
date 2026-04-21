@@ -74,6 +74,23 @@ export function verifySyncToken(token, record) {
   return crypto.timingSafeEqual(expected, actual);
 }
 
+export function extractBearerToken(authorizationHeader) {
+  const value = normalizeString(authorizationHeader);
+  if (!value) return "";
+
+  const match = /^Bearer\s+(.+)$/iu.exec(value);
+  return match ? normalizeString(match[1]) : "";
+}
+
+export function findMatchingSyncTokenRecord(records, authorizationHeader) {
+  const token = extractBearerToken(authorizationHeader);
+  if (!token || !Array.isArray(records)) {
+    return null;
+  }
+
+  return records.find((record) => verifySyncToken(token, record)) || null;
+}
+
 export function toPublicTokenRecord(record) {
   if (!isPlainObject(record)) return null;
 

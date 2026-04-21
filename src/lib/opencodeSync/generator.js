@@ -220,9 +220,11 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
     variantPreset,
     customTemplatePreset,
   });
+  const generatedAt = new Date().toISOString();
 
   return {
     ...metadata,
+    generatedAt,
     bundle,
   };
 }
