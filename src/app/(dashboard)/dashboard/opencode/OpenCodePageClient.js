@@ -347,12 +347,6 @@ export default function OpenCodePageClient() {
 
         <div className="space-y-6">
           <BundlePreviewCard preview={preview} loading={previewLoading} error={previewError} onRefresh={refreshPreview} />
-
-          <Card title="Saved preferences snapshot" subtitle="Sanitized server state after the latest successful save." icon="tune">
-            <pre className="overflow-x-auto rounded-lg border border-black/5 bg-black px-4 py-3 text-xs leading-6 text-slate-100 dark:border-white/5">
-              <code>{JSON.stringify(preferences, null, 2)}</code>
-            </pre>
-          </Card>
         </div>
       </div>
     </div>

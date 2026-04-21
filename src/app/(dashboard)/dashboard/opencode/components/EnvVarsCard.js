@@ -33,16 +33,15 @@ export default function EnvVarsCard({ preferences, saving = false, error = "", o
   const removeRow = (index) => {
     const nextVars = draftVars.filter((_, currentIndex) => currentIndex !== index);
     setDraftVars(nextVars);
-    onSave?.({ envVars: nextVars.map(({ masked, ...item }) => item) });
   };
 
   const handleSave = () => {
-    const hasHiddenSecret = draftVars.some(
-      (item) => item.key.trim() && item.secret && item.masked && !item.value
+    const hasHiddenValue = draftVars.some(
+      (item) => item.key.trim() && item.masked && !item.value
     );
 
-    if (hasHiddenSecret) {
-      setLocalError("Re-enter masked secret values before saving, or remove those rows.");
+    if (hasHiddenValue) {
+      setLocalError("Re-enter masked values before saving, or remove those rows.");
       return;
     }
 

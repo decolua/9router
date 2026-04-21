@@ -45,14 +45,25 @@ export default function McpServersCard({ preferences, saving = false, error = ""
   const [draftServers, setDraftServers] = useState(() =>
     (preferences?.mcpServers || []).map((server) => fromStoredServer(server))
   );
+  const [localError, setLocalError] = useState("");
+
+  const validateServer = (server) => {
+    if (!server?.name?.trim()) return "Server name is required";
+    if (server.type === "remote" && !server.url?.trim()) return `Remote MCP server "${server.name.trim()}" requires a URL`;
+    if (server.type !== "remote" && !server.command?.trim()) return `Local MCP server "${server.name.trim()}" requires a command`;
+    return "";
+  };
 
   const addServer = () => {
-    if (!draft.name.trim()) return;
-    if (draft.type === "remote" && !draft.url.trim()) return;
-    if (draft.type === "local" && !draft.command.trim()) return;
+    const validationError = validateServer(draft);
+    if (validationError) {
+      setLocalError(validationError);
+      return;
+    }
 
     setDraftServers((current) => [...current, draft]);
     setDraft(createEmptyServer());
+    setLocalError("");
   };
 
   const updateDraftServer = (index, patch) => {
@@ -66,6 +77,14 @@ export default function McpServersCard({ preferences, saving = false, error = ""
   };
 
   const saveServers = () => {
+    const firstInvalid = draftServers.find((server) => validateServer(server));
+    if (firstInvalid) {
+      setLocalError(validateServer(firstInvalid));
+      return;
+    }
+
+    setLocalError("");
+
     onSave?.({
       mcpServers: draftServers
         .filter((server) => server.name.trim())
@@ -135,6 +154,7 @@ export default function McpServersCard({ preferences, saving = false, error = ""
         </div>
 
         {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+        {localError ? <p className="text-sm text-red-600 dark:text-red-400">{localError}</p> : null}
 
         <div className="space-y-3">
           {draftServers.length === 0 ? (

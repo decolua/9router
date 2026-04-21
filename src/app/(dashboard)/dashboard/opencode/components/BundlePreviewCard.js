@@ -2,7 +2,54 @@
 
 import { Badge, Button, Card } from "@/shared/components";
 
+function sanitizePreviewValue(value, key = "") {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizePreviewValue(entry));
+  }
+
+  const loweredKey = key.toLowerCase();
+  const isSensitiveKey =
+    loweredKey.includes("secret") ||
+    loweredKey.includes("token") ||
+    loweredKey.includes("apikey") ||
+    loweredKey.includes("api_key");
+
+  if (!value || typeof value !== "object") {
+    if (isSensitiveKey) return "********";
+    return value;
+  }
+
+  if (isSensitiveKey) {
+    return "********";
+  }
+
+  const objectLooksSecret = value.secret === true || value.isSecret === true;
+
+  return Object.fromEntries(
+    Object.entries(value).map(([entryKey, entryValue]) => {
+      const loweredEntryKey = entryKey.toLowerCase();
+      const sensitiveEntry =
+        loweredEntryKey.includes("secret") ||
+        loweredEntryKey.includes("token") ||
+        loweredEntryKey.includes("apikey") ||
+        loweredEntryKey.includes("api_key");
+
+      if (objectLooksSecret && loweredEntryKey === "value") {
+        return [entryKey, "********"];
+      }
+
+      if (sensitiveEntry) {
+        return [entryKey, "********"];
+      }
+
+      return [entryKey, sanitizePreviewValue(entryValue, entryKey)];
+    })
+  );
+}
+
 export default function BundlePreviewCard({ preview, loading = false, error = "", onRefresh }) {
+  const safePreview = sanitizePreviewValue(preview || null);
+
   return (
     <Card
       title="Generated server bundle"
@@ -32,7 +79,7 @@ export default function BundlePreviewCard({ preview, loading = false, error = ""
         ) : null}
 
         <pre className="max-h-[42rem] overflow-auto rounded-lg border border-black/5 bg-black px-4 py-3 text-xs leading-6 text-slate-100 dark:border-white/5">
-          <code>{JSON.stringify(preview, null, 2)}</code>
+          <code>{JSON.stringify(safePreview, null, 2)}</code>
         </pre>
       </div>
     </Card>
