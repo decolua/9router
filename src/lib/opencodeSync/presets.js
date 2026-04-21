@@ -21,10 +21,33 @@ export const CUSTOM_TEMPLATE_PRESETS = Object.freeze({
   minimal: Object.freeze({
     template: "minimal",
     plugin: null,
+    bundle: Object.freeze({
+      advancedOverrides: Object.freeze({
+        generation: Object.freeze({
+          strategy: "manual",
+        }),
+        ui: Object.freeze({
+          mode: "minimal",
+        }),
+      }),
+    }),
   }),
   opinionated: Object.freeze({
     template: "opinionated",
     plugin: null,
+    bundle: Object.freeze({
+      advancedOverrides: Object.freeze({
+        generation: Object.freeze({
+          strategy: "assisted",
+        }),
+        safety: Object.freeze({
+          confirmations: true,
+        }),
+        ui: Object.freeze({
+          mode: "opinionated",
+        }),
+      }),
+    }),
   }),
 });
 

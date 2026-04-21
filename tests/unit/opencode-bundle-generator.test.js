@@ -63,6 +63,88 @@ describe("buildOpenCodeSyncBundle", () => {
       "anthropic/claude-3.7-sonnet",
       "openai/gpt-4.1",
     ]);
+    expect(result.bundle.advancedOverrides).toEqual({
+      generation: {
+        strategy: "assisted",
+      },
+      safety: {
+        confirmations: true,
+      },
+      ui: {
+        mode: "opinionated",
+      },
+    });
+  });
+
+  it("applies deterministic custom template presets to bundle output", () => {
+    const minimal = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "custom",
+        customTemplate: "minimal",
+      },
+      modelCatalog,
+    });
+
+    const opinionated = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "custom",
+        customTemplate: "opinionated",
+      },
+      modelCatalog,
+    });
+
+    expect(minimal.bundle.advancedOverrides).toEqual({
+      generation: {
+        strategy: "manual",
+      },
+      ui: {
+        mode: "minimal",
+      },
+    });
+    expect(opinionated.bundle.advancedOverrides).toEqual({
+      generation: {
+        strategy: "assisted",
+      },
+      safety: {
+        confirmations: true,
+      },
+      ui: {
+        mode: "opinionated",
+      },
+    });
+    expect(minimal.hash).not.toBe(opinionated.hash);
+  });
+
+  it("lets explicit custom overrides extend template preset output", () => {
+    const result = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "custom",
+        customTemplate: "minimal",
+        advancedOverrides: {
+          custom: {
+            generation: {
+              strategy: "guided",
+            },
+            safety: {
+              confirmations: false,
+            },
+          },
+        },
+      },
+      modelCatalog,
+    });
+
+    expect(result.bundle.advancedOverrides).toEqual({
+      generation: {
+        strategy: "guided",
+      },
+      safety: {
+        confirmations: false,
+      },
+      ui: {
+        mode: "minimal",
+      },
+    });
   });
 
   it("keeps revision and hash stable for same effective input", () => {

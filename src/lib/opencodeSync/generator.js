@@ -38,6 +38,33 @@ function stableClone(value) {
     }, {});
 }
 
+function mergePlainObjects(base, override) {
+  if (!isPlainObject(base)) {
+    return stableClone(override);
+  }
+
+  if (!isPlainObject(override)) {
+    return stableClone(base);
+  }
+
+  const merged = {};
+
+  for (const key of Object.keys(base)) {
+    merged[key] = stableClone(base[key]);
+  }
+
+  for (const key of Object.keys(override)) {
+    if (isPlainObject(merged[key]) && isPlainObject(override[key])) {
+      merged[key] = mergePlainObjects(merged[key], override[key]);
+      continue;
+    }
+
+    merged[key] = stableClone(override[key]);
+  }
+
+  return stableClone(merged);
+}
+
 function comparePlugins(left, right) {
   const leftPriority = PLUGIN_PRIORITY.has(left) ? PLUGIN_PRIORITY.get(left) : Number.MAX_SAFE_INTEGER;
   const rightPriority = PLUGIN_PRIORITY.has(right) ? PLUGIN_PRIORITY.get(right) : Number.MAX_SAFE_INTEGER;
@@ -164,6 +191,12 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
   const customTemplatePreset = getCustomTemplatePreset(normalizedPreferences.customTemplate);
   const plugins = buildDeterministicPluginList(normalizedPreferences);
   const models = buildDeterministicModelMap(normalizedPreferences, modelCatalog);
+  const templateBundle =
+    normalizedPreferences.variant === "custom" ? customTemplatePreset?.bundle || {} : {};
+  const advancedOverrides = mergePlainObjects(
+    templateBundle.advancedOverrides || {},
+    normalizedPreferences.advancedOverrides[normalizedPreferences.variant] || {}
+  );
 
   const bundle = {
     variant: normalizedPreferences.variant,
@@ -174,7 +207,7 @@ export function buildOpenCodeSyncBundle({ preferences, modelCatalog } = {}) {
     models,
     mcpServers: stableClone(normalizedPreferences.mcpServers),
     envVars: stableClone(normalizedPreferences.envVars),
-    advancedOverrides: stableClone(normalizedPreferences.advancedOverrides[normalizedPreferences.variant] || {}),
+    advancedOverrides,
   };
 
   const metadata = buildMetadata({
