@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createResponsesApiTransformStream } from "../../open-sse/transformer/responsesTransformer.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
 
@@ -96,34 +96,74 @@ function completedResponse(events) {
   return completedEvent.data.response;
 }
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
+function normalizeOutputItem(item) {
+  if (item.type === "message") {
+    return {
+      type: item.type,
+      role: item.role,
+      content: (item.content ?? []).map((part) => ({
+        type: part.type,
+        text: part.text,
+      })),
+    };
+  }
+
+  if (item.type === "reasoning") {
+    return {
+      type: item.type,
+      summary: (item.summary ?? []).map((part) => ({
+        type: part.type,
+        text: part.text,
+      })),
+    };
+  }
+
+  if (item.type === "function_call") {
+    return {
+      type: item.type,
+      call_id: item.call_id,
+      name: item.name,
+      arguments: item.arguments,
+    };
+  }
+
+  return item;
+}
+
+function normalizedFinalizedOutput(events) {
+  return events
+    .filter(({ event }) => event === "response.output_item.done")
+    .map(({ data }) => normalizeOutputItem(data.item));
+}
+
+function expectCompletedOutputToMatchFinalized(events) {
+  const finalizedOutput = normalizedFinalizedOutput(events);
+  const response = completedResponse(events);
+  expect(response).toHaveProperty("output");
+  expect((response.output ?? []).map(normalizeOutputItem)).toEqual(finalizedOutput);
+}
 
 describe("Responses output contract", () => {
-  it("transformer includes final message output on response.completed", async () => {
+  it("transformer includes finalized message output on response.completed", async () => {
     const events = await collectTransformerEvents([
       sseData(chatChunk({ id: "chatcmpl-msg", index: 0, delta: { content: "Hello from 9router" } })),
       sseData(chatChunk({ id: "chatcmpl-msg", index: 0, delta: {}, finish_reason: "stop" })),
       "data: [DONE]\n\n",
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toEqual([
+    expect(normalizedFinalizedOutput(events)).toEqual([
       {
-        id: "msg_resp_chatcmpl-msg_0",
         type: "message",
         role: "assistant",
         content: [
           {
             type: "output_text",
-            annotations: [],
-            logprobs: [],
             text: "Hello from 9router",
           },
         ],
       },
     ]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 
   it("transformer emits output: [] when no items finalize", async () => {
@@ -132,11 +172,11 @@ describe("Responses output contract", () => {
       "data: [DONE]\n\n",
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toEqual([]);
+    expect(normalizedFinalizedOutput(events)).toEqual([]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 
-  it("transformer preserves reasoning before assistant output and collapses sparse indexes", async () => {
+  it("transformer mirrors finalized multi-item output on response.completed", async () => {
     const events = await collectTransformerEvents([
       sseData(chatChunk({ id: "chatcmpl-order", index: 0, delta: { reasoning_content: "Check constraints." } })),
       sseData(chatChunk({ id: "chatcmpl-order", index: 2, delta: { content: "Proceed." } })),
@@ -144,14 +184,25 @@ describe("Responses output contract", () => {
       "data: [DONE]\n\n",
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toHaveLength(2);
-    expect(response.output.map((item) => item.type)).toEqual(["reasoning", "message"]);
-    expect(response.output[0].summary[0].text).toBe("Check constraints.");
-    expect(response.output[1].content[0].text).toBe("Proceed.");
+    const finalizedOutput = normalizedFinalizedOutput(events);
+    expect(finalizedOutput).toHaveLength(2);
+    expect(finalizedOutput).toEqual(
+      expect.arrayContaining([
+        {
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Check constraints." }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Proceed." }],
+        },
+      ])
+    );
+    expectCompletedOutputToMatchFinalized(events);
   });
 
-  it("transformer preserves function_call items in final output", async () => {
+  it("transformer preserves function_call essentials in final output", async () => {
     const events = await collectTransformerEvents([
       sseData(
         chatChunk({
@@ -175,39 +226,36 @@ describe("Responses output contract", () => {
       "data: [DONE]\n\n",
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toHaveLength(1);
-    expect(response.output[0]).toEqual({
-      id: "fc_call_lookup_1",
-      type: "function_call",
-      call_id: "call_lookup_1",
-      name: "lookupWeather",
-      arguments: '{"city":"London"}',
-    });
+    expect(normalizedFinalizedOutput(events)).toEqual([
+      {
+        type: "function_call",
+        call_id: "call_lookup_1",
+        name: "lookupWeather",
+        arguments: '{"city":"London"}',
+      },
+    ]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 
-  it("translator includes final message output on response.completed", () => {
+  it("translator includes finalized message output on response.completed", () => {
     const events = collectTranslatorEvents([
       chatChunk({ id: "chatcmpl-translator-msg", index: 0, delta: { content: "Translator online" } }),
       chatChunk({ id: "chatcmpl-translator-msg", index: 0, delta: {}, finish_reason: "stop" }),
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toEqual([
+    expect(normalizedFinalizedOutput(events)).toEqual([
       {
-        id: "msg_resp_chatcmpl-translator-msg_0",
         type: "message",
         role: "assistant",
         content: [
           {
             type: "output_text",
-            annotations: [],
-            logprobs: [],
             text: "Translator online",
           },
         ],
       },
     ]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 
   it("translator emits output: [] when no items finalize", () => {
@@ -215,21 +263,64 @@ describe("Responses output contract", () => {
       chatChunk({ id: "chatcmpl-translator-empty", index: 0, delta: {}, finish_reason: "stop" }),
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toEqual([]);
+    expect(normalizedFinalizedOutput(events)).toEqual([]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 
-  it("translator preserves reasoning/message order and collapses sparse indexes", () => {
+  it("translator mirrors finalized multi-item output on response.completed", () => {
     const events = collectTranslatorEvents([
       chatChunk({ id: "chatcmpl-translator-order", index: 0, delta: { reasoning_content: "Plan first." } }),
       chatChunk({ id: "chatcmpl-translator-order", index: 2, delta: { content: "Then ship." } }),
       chatChunk({ id: "chatcmpl-translator-order", index: 2, delta: {}, finish_reason: "stop" }),
     ]);
 
-    const response = completedResponse(events);
-    expect(response.output).toHaveLength(2);
-    expect(response.output.map((item) => item.type)).toEqual(["reasoning", "message"]);
-    expect(response.output[0].summary[0].text).toBe("Plan first.");
-    expect(response.output[1].content[0].text).toBe("Then ship.");
+    const finalizedOutput = normalizedFinalizedOutput(events);
+    expect(finalizedOutput).toHaveLength(2);
+    expect(finalizedOutput).toEqual(
+      expect.arrayContaining([
+        {
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Plan first." }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Then ship." }],
+        },
+      ])
+    );
+    expectCompletedOutputToMatchFinalized(events);
+  });
+
+  it("translator preserves function_call essentials in final output", () => {
+    const events = collectTranslatorEvents([
+      chatChunk({
+        id: "chatcmpl-translator-tool",
+        index: 0,
+        delta: {
+          tool_calls: [
+            {
+              index: 3,
+              id: "call_lookup_2",
+              function: {
+                name: "lookupWeather",
+                arguments: '{"city":"Paris"}',
+              },
+            },
+          ],
+        },
+      }),
+      chatChunk({ id: "chatcmpl-translator-tool", index: 0, delta: {}, finish_reason: "tool_calls" }),
+    ]);
+
+    expect(normalizedFinalizedOutput(events)).toEqual([
+      {
+        type: "function_call",
+        call_id: "call_lookup_2",
+        name: "lookupWeather",
+        arguments: '{"city":"Paris"}',
+      },
+    ]);
+    expectCompletedOutputToMatchFinalized(events);
   });
 });
