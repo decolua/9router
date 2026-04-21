@@ -231,9 +231,23 @@ function isSensitiveKey(key) {
     return false;
   }
 
-  return ["secret", "token", "apikey", "api_key", "password", "authorization"].some((fragment) =>
-    loweredKey.includes(fragment)
-  );
+  if (loweredKey.includes("secret") || loweredKey.includes("password") || loweredKey.includes("authorization")) {
+    return true;
+  }
+
+  if (loweredKey === "apikey" || loweredKey === "api_key" || loweredKey.endsWith("apikey") || loweredKey.endsWith("api_key")) {
+    return true;
+  }
+
+  if (["token", "accesstoken", "refreshtoken", "idtoken", "sessiontoken", "bearertoken"].includes(loweredKey)) {
+    return true;
+  }
+
+  if (loweredKey.endsWith("token") && !loweredKey.endsWith("tokens")) {
+    return true;
+  }
+
+  return false;
 }
 
 export function sanitizeSensitiveConfig(value, key = "") {

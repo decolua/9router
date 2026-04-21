@@ -136,7 +136,7 @@ describe("sanitizeSensitiveConfig", () => {
       sanitizeSensitiveConfig({
         apiKey: "top-secret",
         nested: {
-          tokenValue: "abc",
+          accessToken: "abc",
           safe: "ok",
         },
         entries: [{ secret: true, value: "hidden" }],
@@ -144,10 +144,24 @@ describe("sanitizeSensitiveConfig", () => {
     ).toEqual({
       apiKey: "********",
       nested: {
-        tokenValue: "********",
+        accessToken: "********",
         safe: "ok",
       },
       entries: [{ secret: true, value: "********" }],
+    });
+  });
+
+  it("preserves non-secret token count fields", () => {
+    expect(
+      sanitizeSensitiveConfig({
+        maxTokens: 2048,
+        tokenLimit: 4096,
+        tokenizer: "cl100k",
+      })
+    ).toEqual({
+      maxTokens: 2048,
+      tokenLimit: 4096,
+      tokenizer: "cl100k",
     });
   });
 });

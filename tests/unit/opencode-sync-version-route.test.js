@@ -207,4 +207,32 @@ describe("/api/opencode/sync/version", () => {
     expect(response.body).toEqual({ error: "Duplicate MCP server name: DUP" });
     expect(touchOpenCodeTokenLastUsedAt).not.toHaveBeenCalled();
   });
+
+  it("returns version metadata even when token lastUsedAt update fails", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    touchOpenCodeTokenLastUsedAt.mockRejectedValue(new Error("db write failed"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
+        }),
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      revision: expect.any(String),
+      hash: expect.any(String),
+    });
+  });
 });

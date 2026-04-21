@@ -87,7 +87,13 @@ async function generateAuthenticatedSyncBundle(request) {
   ]);
 
   const bundle = buildOpenCodeSyncBundle({ preferences, modelCatalog });
-  await touchOpenCodeTokenLastUsedAt(tokenRecord.id);
+
+  try {
+    await touchOpenCodeTokenLastUsedAt(tokenRecord.id);
+  } catch (error) {
+    console.warn("Failed to update OpenCode sync token lastUsedAt:", error?.message || error);
+  }
+
   return bundle;
 }
 

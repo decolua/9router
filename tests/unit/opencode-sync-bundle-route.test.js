@@ -214,4 +214,29 @@ describe("/api/opencode/sync/bundle", () => {
     expect(response.body).toEqual({ error: "Invalid MCP server URL for Remote" });
     expect(touchOpenCodeTokenLastUsedAt).not.toHaveBeenCalled();
   });
+
+  it("returns bundle even when token lastUsedAt update fails", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    touchOpenCodeTokenLastUsedAt.mockRejectedValue(new Error("db write failed"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
+        }),
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/bundle", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.bundle.defaultModel).toBe("gpt-4o-mini-free");
+  });
 });
