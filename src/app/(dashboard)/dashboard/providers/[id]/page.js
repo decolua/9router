@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
 import Pagination from "@/shared/components/Pagination";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
-import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
+import { getConnectionFilterStatus, normalizeConnectionFilterStatus } from "@/lib/connectionStatus";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
@@ -22,6 +22,7 @@ import AddCustomModelModal from "./AddCustomModelModal";
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const providerId = params.id;
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,11 +49,12 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const { copied, copy } = useCopyToClipboard();
+  const searchQuery = searchParams.get("searchQuery") || "";
+  const rawStatusFilter = searchParams.get("statusFilter");
+  const statusFilter = normalizeConnectionFilterStatus(rawStatusFilter || "all");
 
   const providerInfo = providerNode
     ? {
@@ -80,19 +82,42 @@ export default function ProviderDetailPage() {
     ? (providerNode?.prefix || providerId)
     : providerAlias;
 
+  const updateQueryParams = useCallback((updates) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    });
+
+    const query = params.toString();
+    router.replace(
+      query ? `/dashboard/providers/${providerId}?${query}` : `/dashboard/providers/${providerId}`,
+      { scroll: false },
+    );
+  }, [providerId, router, searchParams]);
+
+  useEffect(() => {
+    if (!rawStatusFilter) return;
+
+    const normalizedStatusFilter = normalizeConnectionFilterStatus(rawStatusFilter);
+    if (normalizedStatusFilter === rawStatusFilter) return;
+
+    updateQueryParams({
+      statusFilter: normalizedStatusFilter === "all" ? null : normalizedStatusFilter,
+    });
+  }, [rawStatusFilter, updateQueryParams]);
+
   const filteredConnections = useMemo(() => {
     let result = connections;
 
     if (statusFilter !== "all") {
       result = result.filter(connection => {
-        if (connection.isActive === false) return statusFilter === "disabled";
-
-        const effectiveStatus = getConnectionEffectiveStatus(connection);
-
-        if (!effectiveStatus) return statusFilter === "unknown";
-        if (statusFilter === "unknown") return effectiveStatus === "unknown";
-        
-        return effectiveStatus === statusFilter;
+        const filterStatus = getConnectionFilterStatus(connection);
+        return filterStatus === statusFilter;
       });
     }
 
@@ -533,13 +558,14 @@ export default function ProviderDetailPage() {
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
   const handleSearchChange = (value) => {
-    setSearchQuery(value);
     setCurrentPage(1);
+    updateQueryParams({ searchQuery: value.trim() ? value : null });
   };
 
   const handleStatusFilterChange = (e) => {
-    setStatusFilter(e.target.value);
+    const nextValue = normalizeConnectionFilterStatus(e.target.value);
     setCurrentPage(1);
+    updateQueryParams({ statusFilter: nextValue === "all" ? null : nextValue });
   };
 
   const connectionsList = (
@@ -575,8 +601,10 @@ export default function ProviderDetailPage() {
             onChange={handleStatusFilterChange}
             options={[
               { value: "all", label: "All Statuses" },
-              { value: "active", label: "Active" },
-              { value: "error", label: "Error" },
+              { value: "eligible", label: "Eligible" },
+              { value: "cooldown", label: "Cooldown" },
+              { value: "blocked_quota", label: "Quota blocked" },
+              { value: "blocked_auth", label: "Auth blocked" },
               { value: "unknown", label: "Unknown" },
               { value: "disabled", label: "Disabled" },
             ]}

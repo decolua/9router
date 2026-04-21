@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
-import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
+import { getConnectionStatusBadgeMeta } from "@/lib/connectionStatus";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -82,12 +82,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 
   useEffect(() => {
     const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
-        .sort()[0] || null;
-      setIsCooldown(!!until);
+      setIsCooldown(Boolean(modelLockUntil && new Date(modelLockUntil).getTime() > Date.now()));
     };
 
     checkCooldown();
@@ -97,15 +92,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     };
   }, [modelLockUntil]);
 
-  // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = getConnectionEffectiveStatus(connection);
-
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
-    return "default";
-  };
+  const statusBadge = getConnectionStatusBadgeMeta(connection);
 
   return (
     <div className={`group flex items-center justify-between p-2 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
@@ -133,8 +120,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex items-center gap-2 mt-1">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+            <Badge variant={statusBadge.variant} size="sm" dot>
+              {statusBadge.label}
             </Badge>
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">

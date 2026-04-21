@@ -4,6 +4,17 @@ const mockConnections = [];
 const updateProviderConnection = vi.fn(async (id, data) => ({ id, ...data }));
 const getProviderConnectionById = vi.fn(async (id) => mockConnections.find((conn) => conn.id === id) || null);
 const getUsageForProvider = vi.fn(async () => ({ ok: true }));
+const writeConnectionHotState = vi.fn(async ({ patch }) => patch);
+const projectLegacyConnectionState = vi.fn((snapshot = {}) => ({
+  testStatus: snapshot.routingStatus === "blocked_quota" ? "unavailable" : "active",
+  lastTested: snapshot.lastCheckedAt || null,
+  lastError: snapshot.reasonDetail ?? snapshot.lastError ?? null,
+  lastErrorType: snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : snapshot.lastErrorType ?? null,
+  lastErrorAt: snapshot.lastErrorAt ?? null,
+  rateLimitedUntil: snapshot.nextRetryAt ?? snapshot.rateLimitedUntil ?? null,
+  errorCode: snapshot.errorCode ?? (snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : null),
+}));
+const runUsageRefreshJob = vi.fn(async (_connectionId, handler) => handler());
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -20,6 +31,11 @@ vi.mock("@/lib/localDb", () => ({
   updateProviderConnection,
 }));
 
+vi.mock("@/lib/providerHotState", () => ({
+  writeConnectionHotState,
+  projectLegacyConnectionState,
+}));
+
 vi.mock("open-sse/services/usage.js", () => ({
   getUsageForProvider,
 }));
@@ -33,12 +49,20 @@ vi.mock("open-sse/executors/index.js", () => ({
   }),
 }));
 
+vi.mock("../../src/lib/usageRefreshQueue.js", () => ({
+  runUsageRefreshJob,
+}));
+
 describe("usage request status sync", () => {
   beforeEach(() => {
     mockConnections.length = 0;
     updateProviderConnection.mockClear();
     getProviderConnectionById.mockClear();
     getUsageForProvider.mockClear();
+    writeConnectionHotState.mockClear();
+    projectLegacyConnectionState.mockClear();
+    runUsageRefreshJob.mockClear();
+    runUsageRefreshJob.mockImplementation(async (_connectionId, handler) => handler());
     vi.resetModules();
   });
 
@@ -58,6 +82,14 @@ describe("usage request status sync", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-1",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "eligible",
+        quotaState: "ok",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-1", expect.objectContaining({
       testStatus: "active",
       lastError: null,
@@ -94,6 +126,15 @@ describe("usage request status sync", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-weekly-exhausted",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked_quota",
+        quotaState: "exhausted",
+        nextRetryAt: "2026-04-25T00:00:00.000Z",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith(
       "conn-weekly-exhausted",
       expect.objectContaining({ testStatus: "unavailable" })
@@ -128,9 +169,44 @@ describe("usage request status sync", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-weekly-active",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "eligible",
+        quotaState: "ok",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith(
       "conn-weekly-active",
       expect.objectContaining({ testStatus: "active" })
     );
+  });
+
+  it("preserves queue overload status codes from the usage refresh queue", async () => {
+    mockConnections.push({
+      id: "conn-overloaded",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh",
+      testStatus: "unknown",
+    });
+
+    runUsageRefreshJob.mockRejectedValueOnce(Object.assign(
+      new Error("Usage refresh queue is overloaded. Please retry shortly."),
+      { status: 503 },
+    ));
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(new Request("http://localhost/api/usage/conn-overloaded"), {
+      params: Promise.resolve({ connectionId: "conn-overloaded" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Usage refresh queue is overloaded. Please retry shortly.",
+    });
+    expect(getUsageForProvider).not.toHaveBeenCalled();
   });
 });

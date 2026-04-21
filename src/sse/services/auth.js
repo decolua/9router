@@ -1,8 +1,31 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { getEligibleConnections } from "@/lib/providerHotState";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+
+function sortByPriority(connections = []) {
+  return [...connections].sort((a, b) => (a.priority || 999) - (b.priority || 999));
+}
+
+function sortByRecencyDesc(connections = []) {
+  return [...connections].sort((a, b) => {
+    if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+    if (!a.lastUsedAt) return 1;
+    if (!b.lastUsedAt) return -1;
+    return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
+  });
+}
+
+function sortByRecencyAsc(connections = []) {
+  return [...connections].sort((a, b) => {
+    if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+    if (!a.lastUsedAt) return -1;
+    if (!b.lastUsedAt) return 1;
+    return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+  });
+}
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -50,7 +73,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return true;
     });
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
+    const eligibleConnections = sortByPriority(await getEligibleConnections(providerId, availableConnections));
+    const selectionPool = eligibleConnections.length > 0 ? eligibleConnections : availableConnections;
+
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
@@ -89,14 +115,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
+      const byRecency = sortByRecencyDesc(selectionPool);
       const current = byRecency[0];
       const currentCount = current?.consecutiveUseCount || 0;
 
@@ -110,12 +129,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-        });
+        const sortedByOldest = sortByRecencyAsc(selectionPool);
 
         connection = sortedByOldest[0];
 
@@ -127,7 +141,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      connection = selectionPool[0];
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});

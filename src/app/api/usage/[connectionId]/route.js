@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { projectLegacyConnectionState, writeConnectionHotState } from "@/lib/providerHotState";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { runUsageRefreshJob } from "../../../../lib/usageRefreshQueue.js";
@@ -19,25 +20,47 @@ function isAuthExpiredMessage(usage) {
 async function syncUsageStatus(connection, updates = {}) {
   if (!connection?.id) return;
 
+  const lastCheckedAt = updates.lastCheckedAt || updates.lastTested || new Date().toISOString();
+  const hotPatch = {
+    ...updates,
+    lastCheckedAt,
+    version: updates.version || Date.now(),
+  };
+  const snapshot = await writeConnectionHotState({
+    connectionId: connection.id,
+    provider: connection.provider,
+    patch: hotPatch,
+  });
+  const legacy = projectLegacyConnectionState(snapshot || hotPatch);
+
   await updateProviderConnection(connection.id, {
-    testStatus: updates.testStatus,
-    lastTested: updates.lastTested || new Date().toISOString(),
-    lastError: updates.lastError ?? null,
-    lastErrorType: updates.lastErrorType ?? null,
-    lastErrorAt: updates.lastErrorAt ?? null,
-    rateLimitedUntil: updates.rateLimitedUntil ?? null,
-    errorCode: updates.errorCode ?? null,
+    testStatus: legacy.testStatus,
+    lastTested: legacy.lastTested || lastCheckedAt,
+    lastError: legacy.lastError ?? null,
+    lastErrorType: legacy.lastErrorType ?? null,
+    lastErrorAt: legacy.lastErrorAt ?? null,
+    rateLimitedUntil: legacy.rateLimitedUntil ?? null,
+    errorCode: legacy.errorCode ?? null,
   });
 }
 
 function getUsageStatusUpdates(connection, usage) {
+  const lastCheckedAt = new Date().toISOString();
+  const serializedUsage = JSON.stringify(usage || {});
   const base = {
-    testStatus: "active",
+    routingStatus: "eligible",
+    healthStatus: "healthy",
+    quotaState: "ok",
+    authState: "ok",
+    reasonCode: "unknown",
+    reasonDetail: null,
     lastError: null,
     lastErrorType: null,
     lastErrorAt: null,
     rateLimitedUntil: null,
     errorCode: null,
+    lastCheckedAt,
+    usageSnapshot: serializedUsage,
   };
 
   if (connection?.provider !== "codex") {
@@ -55,12 +78,18 @@ function getUsageStatusUpdates(connection, usage) {
   if ((weeklyQuota.remaining ?? 0) <= 0) {
     return {
       ...base,
-      testStatus: "unavailable",
+      routingStatus: "blocked_quota",
+      healthStatus: "degraded",
+      quotaState: "exhausted",
       lastError: "Codex weekly quota exhausted",
       lastErrorType: "quota_exhausted",
       lastErrorAt: new Date().toISOString(),
       rateLimitedUntil: weeklyQuota.resetAt || null,
       errorCode: "weekly_quota_exhausted",
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Codex weekly quota exhausted",
+      resetAt: weeklyQuota.resetAt || null,
+      nextRetryAt: weeklyQuota.resetAt || null,
     };
   }
 
@@ -161,7 +190,12 @@ async function getQueuedUsageResult(connectionId, handler) {
 
   usageRequestCache.set(connectionId, { promise });
 
-  promise.finally(() => {
+  promise.then(() => {
+    const entry = usageRequestCache.get(connectionId);
+    if (entry?.promise === promise) {
+      usageRequestCache.delete(connectionId);
+    }
+  }, () => {
     const entry = usageRequestCache.get(connectionId);
     if (entry?.promise === promise) {
       usageRequestCache.delete(connectionId);
@@ -238,6 +272,7 @@ export async function GET(request, { params }) {
     return Response.json(usage);
     });
   } catch (error) {
+    const status = Number.isInteger(error?.status) ? error.status : 500;
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
     if (connection?.id) {
@@ -247,6 +282,6 @@ export async function GET(request, { params }) {
         lastErrorType: "usage_request_failed",
       });
     }
-    return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ error: error.message }, { status });
   }
 }

@@ -3,20 +3,89 @@ import {
   getProviderConnections,
   updateProviderConnection,
 } from "@/lib/localDb";
+import {
+  getConnectionProviderCooldownUntil,
+  getConnectionStatusDetails,
+} from "@/lib/connectionStatus";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
-function getActiveModelLocks(connection) {
-  const now = Date.now();
-  return Object.entries(connection)
-    .filter(([key, value]) => key.startsWith(MODEL_LOCK_PREFIX) && value)
-    .map(([key, value]) => ({
-      key,
-      model: key.slice(MODEL_LOCK_PREFIX.length) || "__all",
-      until: value,
-      active: new Date(value).getTime() > now,
-    }))
-    .filter((lock) => lock.active);
+function getFutureTimestamp(value) {
+  const timestamp = new Date(value).getTime();
+  if (!value || !Number.isFinite(timestamp) || timestamp <= Date.now()) return null;
+  return new Date(timestamp).toISOString();
+}
+
+function getConnectionName(connection) {
+  return connection.name || connection.email || connection.id;
+}
+
+function getAvailabilityEntries(connection) {
+  const statusDetails = getConnectionStatusDetails(connection);
+  const providerCooldownUntil = getConnectionProviderCooldownUntil(connection);
+
+  const modelEntries = (statusDetails.activeModelLocks || []).map((lock) => ({
+    provider: connection.provider,
+    model: lock.model,
+    status: "cooldown",
+    until: lock.until,
+    connectionId: connection.id,
+    connectionName: getConnectionName(connection),
+    lastError: connection.lastError || connection.reasonDetail || null,
+  }));
+
+  const entries = [...modelEntries];
+
+  if (statusDetails.status === "unavailable") {
+    entries.unshift({
+      provider: connection.provider,
+      model: "__all",
+      status: providerCooldownUntil ? "cooldown" : "unavailable",
+      until: providerCooldownUntil || undefined,
+      connectionId: connection.id,
+      connectionName: getConnectionName(connection),
+      lastError: connection.lastError || connection.reasonDetail || null,
+    });
+  }
+
+  return entries;
+}
+
+function buildCooldownClearPatch(connection, model) {
+  const patch = {};
+
+  if (model === "__all") {
+    for (const key of Object.keys(connection || {})) {
+      if (key.startsWith(MODEL_LOCK_PREFIX)) patch[key] = null;
+    }
+    patch.rateLimitedUntil = null;
+    patch.nextRetryAt = null;
+    patch.resetAt = null;
+
+    if (connection?.routingStatus === "blocked_quota" || connection?.routingStatus === "cooldown") {
+      patch.routingStatus = null;
+    }
+
+    if (["exhausted", "cooldown", "blocked"].includes(connection?.quotaState)) {
+      patch.quotaState = null;
+    }
+
+    return patch;
+  }
+
+  patch[`${MODEL_LOCK_PREFIX}${model}`] = null;
+  return patch;
+}
+
+function hasProviderWideCooldownState(connection) {
+  return Boolean(
+    getFutureTimestamp(connection?.nextRetryAt)
+    || getFutureTimestamp(connection?.rateLimitedUntil)
+    || getFutureTimestamp(connection?.resetAt)
+    || connection?.routingStatus === "blocked_quota"
+    || connection?.routingStatus === "cooldown"
+    || ["exhausted", "cooldown", "blocked"].includes(connection?.quotaState),
+  );
 }
 
 export async function GET() {
@@ -25,29 +94,7 @@ export async function GET() {
     const models = [];
 
     for (const connection of connections) {
-      const locks = getActiveModelLocks(connection);
-      for (const lock of locks) {
-        models.push({
-          provider: connection.provider,
-          model: lock.model,
-          status: "cooldown",
-          until: lock.until,
-          connectionId: connection.id,
-          connectionName: connection.name || connection.email || connection.id,
-          lastError: connection.lastError || null,
-        });
-      }
-
-      if (locks.length === 0 && connection.testStatus === "unavailable") {
-        models.push({
-          provider: connection.provider,
-          model: "__all",
-          status: "unavailable",
-          connectionId: connection.id,
-          connectionName: connection.name || connection.email || connection.id,
-          lastError: connection.lastError || null,
-        });
-      }
+      models.push(...getAvailabilityEntries(connection));
     }
 
     return NextResponse.json({
@@ -76,19 +123,33 @@ export async function POST(request) {
 
     await Promise.all(
       connections
-        .filter((connection) => connection[lockKey])
-        .map((connection) =>
-          updateProviderConnection(connection.id, {
-            [lockKey]: null,
-            ...(connection.testStatus === "unavailable"
+        .filter((connection) => {
+          const statusDetails = getConnectionStatusDetails(connection);
+          if (model === "__all") {
+            return hasProviderWideCooldownState(connection) || (statusDetails.activeModelLocks || []).length > 0;
+          }
+          return (statusDetails.activeModelLocks || []).some((lock) => lock.key === lockKey);
+        })
+        .map((connection) => {
+          const clearPatch = buildCooldownClearPatch(connection, model);
+          const clearedConnection = { ...connection, ...clearPatch };
+          const clearedStatusDetails = getConnectionStatusDetails(clearedConnection);
+          const shouldReactivate = model === "__all" && clearedStatusDetails.status === "active";
+
+          return updateProviderConnection(connection.id, {
+            ...clearPatch,
+            ...(shouldReactivate
               ? {
                   testStatus: "active",
                   lastError: null,
                   lastErrorAt: null,
                   backoffLevel: 0,
+                  reasonCode: null,
+                  reasonDetail: null,
                 }
               : {}),
-          }),
+          });
+        },
         ),
     );
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
@@ -12,14 +13,53 @@ import Select from "@/shared/components/Select";
 import Pagination from "@/shared/components/Pagination";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
-import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
-import { createSingleFlight } from "./refreshQueue";
+import { getConnectionFilterStatus, normalizeConnectionFilterStatus } from "@/lib/connectionStatus";
+import { createSingleFlight, runWithConcurrency } from "./refreshQueue";
 
 const DEFAULT_PAGE_SIZE = 24;
+const QUOTA_REFRESH_CONCURRENCY = 4;
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 
+function getSupportedOAuthConnections(connections = []) {
+  return connections.filter(
+    (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth",
+  );
+}
+
+function filterVisibleConnections(connections = [], searchQuery = "", statusFilter = "all") {
+  const query = searchQuery.trim().toLowerCase();
+
+  return connections.filter((conn) => {
+    const status = getConnectionFilterStatus(conn);
+    const matchesSearch = !query || [conn.provider, conn.name, conn.displayName, conn.email, conn.connectionName, conn.id]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(query));
+    const matchesStatus = statusFilter === "all" || status === statusFilter;
+
+    return matchesSearch && matchesStatus;
+  });
+}
+
+function sortConnectionsByProvider(connections = []) {
+  return [...connections].sort((a, b) => {
+    const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
+    const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
+    if (orderA !== orderB) return orderA - orderB;
+    return a.provider.localeCompare(b.provider);
+  });
+}
+
+function getPaginatedConnections(connections = [], currentPage = 1, pageSize = DEFAULT_PAGE_SIZE) {
+  const totalPages = Math.max(1, Math.ceil(connections.length / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  return connections.slice((safePage - 1) * pageSize, safePage * pageSize);
+}
+
 export default function ProviderLimits() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -34,9 +74,10 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const searchQuery = searchParams.get("searchQuery") || "";
+  const rawStatusFilter = searchParams.get("statusFilter");
+  const statusFilter = normalizeConnectionFilterStatus(rawStatusFilter || "all");
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -45,6 +86,34 @@ export default function ProviderLimits() {
   if (!runRefreshSingleFlightRef.current) {
     runRefreshSingleFlightRef.current = createSingleFlight();
   }
+
+  const updateQueryParams = useCallback((updates) => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") {
+        params.delete(key);
+      } else {
+        params.set(key, value);
+      }
+    });
+
+    const query = params.toString();
+    router.replace(query ? `/dashboard/usage?${query}` : "/dashboard/usage", {
+      scroll: false,
+    });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (!rawStatusFilter) return;
+
+    const normalizedStatusFilter = normalizeConnectionFilterStatus(rawStatusFilter);
+    if (normalizedStatusFilter === rawStatusFilter) return;
+
+    updateQueryParams({
+      statusFilter: normalizedStatusFilter === "all" ? null : normalizedStatusFilter,
+    });
+  }, [rawStatusFilter, updateQueryParams]);
 
   // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
@@ -142,6 +211,45 @@ export default function ProviderLimits() {
       setLastUpdated(new Date());
     },
     [fetchQuota],
+  );
+
+  const refreshConnectionBatch = useCallback(
+    async (connectionBatch = []) => runWithConcurrency(
+      connectionBatch,
+      QUOTA_REFRESH_CONCURRENCY,
+      async (conn) => fetchQuota(conn.id, conn.provider),
+    ),
+    [fetchQuota],
+  );
+
+  const refreshConnectionsPrioritized = useCallback(
+    async (connectionList = [], options = {}) => {
+      const { prioritizeVisiblePage = false } = options;
+      const supportedConnections = getSupportedOAuthConnections(connectionList);
+      if (supportedConnections.length === 0) return;
+
+      if (!prioritizeVisiblePage) {
+        await refreshConnectionBatch(supportedConnections);
+        return;
+      }
+
+      const sortedVisible = sortConnectionsByProvider(
+        filterVisibleConnections(supportedConnections, searchQuery, statusFilter),
+      );
+      const visiblePageConnections = getPaginatedConnections(
+        sortedVisible,
+        currentPage,
+        DEFAULT_PAGE_SIZE,
+      );
+      const prioritizedIds = new Set(visiblePageConnections.map((conn) => conn.id));
+      const prioritizedConnections = [
+        ...visiblePageConnections,
+        ...supportedConnections.filter((conn) => !prioritizedIds.has(conn.id)),
+      ];
+
+      await refreshConnectionBatch(prioritizedConnections);
+    },
+    [currentPage, refreshConnectionBatch, searchQuery, statusFilter],
   );
 
   const handleDeleteConnection = useCallback(async (id) => {
@@ -244,15 +352,7 @@ export default function ProviderLimits() {
       try {
         const conns = await fetchConnections();
 
-        const oauthConnections = conns.filter(
-          (conn) =>
-            USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-            conn.authType === "oauth",
-        );
-
-        await Promise.all(
-          oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-        );
+        await refreshConnectionsPrioritized(conns, { prioritizeVisiblePage: true });
 
         setLastUpdated(new Date());
       } catch (error) {
@@ -261,7 +361,7 @@ export default function ProviderLimits() {
         setRefreshingAll(false);
       }
     });
-  }, [fetchConnections, fetchQuota]);
+  }, [fetchConnections, refreshConnectionsPrioritized]);
 
   // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
@@ -270,11 +370,7 @@ export default function ProviderLimits() {
       const conns = await fetchConnections();
       setConnectionsLoading(false);
 
-      const oauthConnections = conns.filter(
-        (conn) =>
-          USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) &&
-          conn.authType === "oauth",
-      );
+      const oauthConnections = getSupportedOAuthConnections(conns);
 
       // Mark all as loading before fetching
       const loadingState = {};
@@ -284,9 +380,7 @@ export default function ProviderLimits() {
       setLoading(loadingState);
 
       await runRefreshSingleFlightRef.current(async () => {
-        await Promise.all(
-          oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-        );
+        await refreshConnectionsPrioritized(conns, { prioritizeVisiblePage: true });
       });
       setLastUpdated(new Date());
     };
@@ -370,36 +464,13 @@ export default function ProviderLimits() {
     return "Just now";
   }, [lastUpdated]);
 
-  const getEffectiveStatus = useCallback(
-    (conn) => getConnectionEffectiveStatus(conn),
-    [],
-  );
-
   const supportedConnections = connections.filter(
     (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth",
   );
 
-  const visibleConnections = supportedConnections.filter((conn) => {
-    const query = searchQuery.trim().toLowerCase();
-    const status = getEffectiveStatus(conn);
-    const matchesSearch = !query || [conn.provider, conn.name, conn.displayName, conn.email, conn.connectionName, conn.id]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(query));
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "active" && (status === "active" || status === "success")) ||
-      (statusFilter === "quota-exhausted" && status === "unavailable") ||
-      (statusFilter === "revoked-invalid" && (status === "expired" || status === "error"));
+  const visibleConnections = filterVisibleConnections(supportedConnections, searchQuery, statusFilter);
 
-    return matchesSearch && matchesStatus;
-  });
-
-  const sortedConnections = [...visibleConnections].sort((a, b) => {
-    const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
-    const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
-    if (orderA !== orderB) return orderA - orderB;
-    return a.provider.localeCompare(b.provider);
-  });
+  const sortedConnections = sortConnectionsByProvider(visibleConnections);
 
   const totalPages = Math.max(1, Math.ceil(sortedConnections.length / DEFAULT_PAGE_SIZE));
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -479,8 +550,9 @@ export default function ProviderLimits() {
             icon="search"
             value={searchQuery}
             onChange={(e) => {
-              setSearchQuery(e.target.value);
+              const value = e.target.value;
               setCurrentPage(1);
+              updateQueryParams({ searchQuery: value.trim() ? value : null });
             }}
             placeholder="Search by name, provider, email, or id"
             className="min-w-0"
@@ -490,15 +562,19 @@ export default function ProviderLimits() {
             label="Status"
             value={statusFilter}
             onChange={(e) => {
-              setStatusFilter(e.target.value);
+              const nextValue = normalizeConnectionFilterStatus(e.target.value);
               setCurrentPage(1);
+              updateQueryParams({ statusFilter: nextValue === "all" ? null : nextValue });
             }}
             placeholder="All"
             options={[
               { value: "all", label: "All" },
-              { value: "active", label: "Active" },
-              { value: "quota-exhausted", label: "Quota exhausted" },
-              { value: "revoked-invalid", label: "Revoked/invalid" },
+              { value: "eligible", label: "Eligible" },
+              { value: "cooldown", label: "Cooldown" },
+              { value: "blocked_quota", label: "Quota blocked" },
+              { value: "blocked_auth", label: "Auth blocked" },
+              { value: "disabled", label: "Disabled" },
+              { value: "unknown", label: "Unknown" },
             ]}
             className="min-w-0"
           />
