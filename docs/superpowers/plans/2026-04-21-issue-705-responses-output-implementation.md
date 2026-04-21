@@ -4,7 +4,7 @@
 
 **Goal:** Make both 9router Responses-format emitters always include a dense, deterministic `response.output` array on terminal `response.completed`, so Hermes-Agent and other strict clients can parse streamed Responses payloads without crashing.
 
-**Architecture:** Keep the fix local to the two response-producing implementations. Persist the exact finalized items already emitted in `response.output_item.done`, sort them by numeric `output_index`, collapse sparse keys into a dense array, and attach that array to terminal `response.completed`. Back the change with a focused contract test file that exercises transformer and translator parity.
+**Architecture:** Keep the fix local to the two response-producing implementations. Persist the exact finalized items already emitted in `response.output_item.done`, sort them by numeric `output_index`, preserve stable finalization order for same-index items, collapse sparse keys into a dense array, and attach that array to terminal `response.completed`. Back the change with a focused contract test file that exercises transformer and translator parity.
 
 **Tech Stack:** Node.js, Web Streams API, Vitest, Next.js build pipeline, OpenAI Responses SSE translation helpers.
 
@@ -22,7 +22,7 @@
 
 - `tests/unit/responses-output-contract.test.js`
   - New focused contract test file.
-  - Covers transformer and translator message output, empty output, multi-item ordering, sparse-index collapse, and function-call preservation.
+  - Covers transformer and translator message output, empty output, multi-item ordering, same-index preservation, sparse-index collapse, and function-call preservation.
 
 - `.gitignore`
   - Already updated to allow `docs/superpowers/plans/*.md`; no further changes expected during implementation unless test artifacts unexpectedly appear.
@@ -345,7 +345,7 @@ Update the transformer state and helpers near the top of `createResponsesApiTran
     funcCallIds: {},
     funcArgsDone: {},
     funcItemDone: {},
-    completedOutputItems: new Map(),
+    completedOutputItems: [],
     buffer: "",
     completedSent: false
   };
@@ -357,17 +357,24 @@ Update the transformer state and helpers near the top of `createResponsesApiTran
 
   const recordCompletedItem = (outputIndex, item) => {
     const normalized = normalizeOutputIndex(outputIndex);
-    if (state.completedOutputItems.has(normalized)) {
-      console.warn(`[Responses API] duplicate completed output_index ${normalized}; replacing previous item`);
-    }
-    state.completedOutputItems.set(normalized, item);
+    state.completedOutputItems.push({
+      output_index: normalized,
+      item,
+      seq: state.seq
+    });
     return normalized;
   };
 
   const buildDenseOutput = () =>
-    Array.from(state.completedOutputItems.entries())
-      .sort(([left], [right]) => left - right)
-      .map(([, item]) => item);
+    state.completedOutputItems
+      .slice()
+      .sort((left, right) => {
+        if (left.output_index !== right.output_index) {
+          return left.output_index - right.output_index;
+        }
+        return left.seq - right.seq;
+      })
+      .map(({ item }) => item);
 ```
 
 Update each completion helper so it persists the exact same item object it emits in `response.output_item.done`:
@@ -555,9 +562,19 @@ Add helper functions near the top of the file, below `openaiToOpenAIResponsesRes
 
 ```js
 function ensureCompletedOutputState(state) {
-  if (!(state.completedOutputItems instanceof Map)) {
-    state.completedOutputItems = new Map();
+  if (Array.isArray(state.completedOutputItems)) {
+    return state.completedOutputItems;
   }
+
+  if (state.completedOutputItems instanceof Map) {
+    state.completedOutputItems = Array.from(state.completedOutputItems.entries()).map(
+      ([output_index, item], seq) => ({ output_index, item, seq })
+    );
+    return state.completedOutputItems;
+  }
+
+  state.completedOutputItems = [];
+  return state.completedOutputItems;
 }
 
 function normalizeOutputIndex(outputIndex) {
@@ -566,20 +583,26 @@ function normalizeOutputIndex(outputIndex) {
 }
 
 function recordCompletedItem(state, outputIndex, item) {
-  ensureCompletedOutputState(state);
+  const completedOutputItems = ensureCompletedOutputState(state);
   const normalized = normalizeOutputIndex(outputIndex);
-  if (state.completedOutputItems.has(normalized)) {
-    console.warn(`[Responses API] duplicate completed output_index ${normalized}; replacing previous item`);
-  }
-  state.completedOutputItems.set(normalized, item);
+  completedOutputItems.push({
+    output_index: normalized,
+    item,
+    seq: state.seq
+  });
   return normalized;
 }
 
 function buildDenseOutput(state) {
-  ensureCompletedOutputState(state);
-  return Array.from(state.completedOutputItems.entries())
-    .sort(([left], [right]) => left - right)
-    .map(([, item]) => item);
+  return ensureCompletedOutputState(state)
+    .slice()
+    .sort((left, right) => {
+      if (left.output_index !== right.output_index) {
+        return left.output_index - right.output_index;
+      }
+      return left.seq - right.seq;
+    })
+    .map(({ item }) => item);
 }
 ```
 
@@ -830,4 +853,4 @@ Expected:
 
 - Spec coverage: this plan maps directly to the approved design’s two implementation targets and its verification requirements.
 - Placeholder scan: no red-flag placeholders remain; every step includes exact files, commands, and code snippets.
-- Type consistency: both implementations use the same `Map<number, object>` / dense-ordering policy and the same terminal field name `response.output`.
+- Type consistency: both implementations use the same append-only finalized-item record policy / dense-ordering policy and the same terminal field name `response.output`.

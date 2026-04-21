@@ -65,40 +65,46 @@ Expected code changes in this PR are confined to the two response-producing impl
 
 ## Design
 
-### 1. Accumulate final output items by `output_index`
+### 1. Accumulate finalized output items for terminal `response.output`
 
-Both implementations already construct completed output items when they emit `response.output_item.done`. The fix will persist those completed items in state, keyed by `output_index`.
+Both implementations already construct completed output items when they emit `response.output_item.done`. The fix persists those finalized items in state using an append-only record structure rather than a one-item-per-index map.
 
-State addition in both implementations:
+State contract in both implementations:
 
-- use a `Map<number, object>` for completed output items
-- update it whenever `response.output_item.done` is emitted for:
+- use an array of finalized item records rather than `Map<number, object>`
+- append one record whenever `response.output_item.done` is emitted for:
   - assistant messages
   - reasoning items
   - function calls
+- each record must preserve:
+  - the normalized `output_index`
+  - the exact finalized `item` object already emitted in `response.output_item.done`
+  - a stable sequence key so same-index items remain ordered by finalization/emission order
 
-This is a hard constraint, not an implementation preference: deterministic dense ordering is required.
+This is a hard constraint, not an implementation preference: deterministic dense ordering is required, and same-index finalized items must not be discarded.
 
-### 2. Define sparse-index and collision behaviour explicitly
+### 2. Define sparse-index and duplicate-index behaviour explicitly
 
-The implementation must not assume upstream indexes are perfectly dense.
+The implementation must not assume upstream indexes are perfectly dense, and it must not assume `output_index` is unique across finalized items.
 
 Rules:
 
-- collect completed items in a `Map<number, object>` keyed by `output_index`
-- sort keys ascending before constructing the terminal array
+- collect finalized items in append-only record order
+- construct the terminal `response.output` by sorting those records by ascending numeric `output_index`
+- preserve original finalization/emission order within the same `output_index`
 - emit a dense final `output` array with no `undefined` holes
 - if indexes are sparse (for example `0, 2`), collapse them into dense output order rather than filling missing positions with placeholders or holes
-- if the same `output_index` is finalized more than once, last-write-wins and a warning should be logged
+- if multiple finalized items share the same `output_index`, preserve all of them in terminal `response.output`; do not collapse them into a single entry via key replacement
 
-This is a defensive posture against malformed or retried upstream event sequences. It is not a user-visible feature.
+This is a defensive posture against malformed or mixed upstream event sequences. It is not a user-visible feature.
 
 ### 3. Construct terminal `response.output`
 
 When `sendCompleted()` runs:
 
-- build an ordered dense `output` array from the accumulated completed items
+- build an ordered dense `output` array from the accumulated finalized item records
 - sort by ascending numeric `output_index`
+- preserve original finalization/emission order for items sharing the same `output_index`
 - collapse sparse indexes into a dense array
 - if no items were completed, emit `output: []`
 
@@ -180,7 +186,7 @@ Terminal `response.output` must be dense, deterministic, and free of `undefined`
 
 - items are ordered by ascending numeric `output_index`
 - sparse upstream indexes are collapsed into dense array order
-- duplicate indexes resolve by last-write-wins, with a warning log
+- items sharing the same `output_index` are preserved and remain in original finalization/emission order
 
 ### Rule A — message output
 
@@ -276,7 +282,7 @@ Method:
 - produce a finalized function/tool call item
 - assert terminal `response.output` includes that finalized function-call item
 
-### Test 7 — duplicate or sparse indexes are handled defensively
+### Test 7 — same-index and sparse-index cases are handled defensively
 
 Targets:
 
@@ -284,9 +290,9 @@ Targets:
 
 Method:
 
-- simulate sparse indexes or duplicate finalization for the same index
+- simulate sparse indexes and multiple finalized items on the same `output_index`
 - assert the final array contains no holes
-- assert collisions resolve deterministically via last-write-wins
+- assert all same-index finalized items are preserved in deterministic stable order
 
 ## Risks and Mitigations
 
@@ -303,6 +309,14 @@ Mitigation:
 
 - collapse sparse keys into a dense final array
 - never emit holes or placeholder `undefined` entries
+
+### Risk: same-index finalized items are collapsed or overwritten
+
+Mitigation:
+
+- store finalized items as append-only records rather than one item per `output_index`
+- sort by numeric `output_index` and stable finalization sequence
+- cover same-index reasoning/message scenarios in focused regression tests
 
 ### Risk: completed items diverge from already emitted `response.output_item.done`
 
