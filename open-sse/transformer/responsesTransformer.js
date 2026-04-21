@@ -72,12 +72,29 @@ export function createResponsesApiTransformStream(logger = null) {
     funcCallIds: {},
     funcArgsDone: {},
     funcItemDone: {},
+    completedOutputItems: new Map(),
     buffer: "",
     completedSent: false
   };
 
   const encoder = new TextEncoder();
   const nextSeq = () => ++state.seq;
+  const normalizeOutputIndex = (outputIndex) => {
+    const normalized = Number(outputIndex);
+    return Number.isInteger(normalized) && normalized >= 0 ? normalized : 0;
+  };
+  const recordCompletedItem = (outputIndex, item) => {
+    const normalized = normalizeOutputIndex(outputIndex);
+    if (state.completedOutputItems.has(normalized)) {
+      console.warn(`[Responses API] duplicate completed output_index ${normalized}; replacing previous item`);
+    }
+    state.completedOutputItems.set(normalized, item);
+    return normalized;
+  };
+  const buildDenseOutput = () =>
+    Array.from(state.completedOutputItems.entries())
+      .sort(([left], [right]) => left - right)
+      .map(([, item]) => item);
   
   const emit = (controller, eventType, data) => {
     data.sequence_number = nextSeq();
@@ -145,28 +162,33 @@ export function createResponsesApiTransformStream(logger = null) {
         part: { type: "summary_text", text: state.reasoningBuf }
       });
 
+      const item = {
+        id: state.reasoningId,
+        type: "reasoning",
+        summary: [{ type: "summary_text", text: state.reasoningBuf }]
+      };
+
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
         output_index: state.reasoningIndex,
-        item: {
-          id: state.reasoningId,
-          type: "reasoning",
-          summary: [{ type: "summary_text", text: state.reasoningBuf }]
-        }
+        item
       });
+
+      recordCompletedItem(state.reasoningIndex, item);
     }
   };
 
   const closeMessage = (controller, idx) => {
     if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
       state.msgItemDone[idx] = true;
+      const normalizedIndex = normalizeOutputIndex(idx);
       const fullText = state.msgTextBuf[idx] || "";
-      const msgId = `msg_${state.responseId}_${idx}`;
+      const msgId = `msg_${state.responseId}_${normalizedIndex}`;
 
       emit(controller, "response.output_text.done", {
         type: "response.output_text.done",
         item_id: msgId,
-        output_index: parseInt(idx),
+        output_index: normalizedIndex,
         content_index: 0,
         text: fullText,
         logprobs: []
@@ -175,48 +197,56 @@ export function createResponsesApiTransformStream(logger = null) {
       emit(controller, "response.content_part.done", {
         type: "response.content_part.done",
         item_id: msgId,
-        output_index: parseInt(idx),
+        output_index: normalizedIndex,
         content_index: 0,
         part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
       });
 
+      const item = {
+        id: msgId,
+        type: "message",
+        content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
+        role: "assistant"
+      };
+
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
-        output_index: parseInt(idx),
-        item: {
-          id: msgId,
-          type: "message",
-          content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-          role: "assistant"
-        }
+        output_index: normalizedIndex,
+        item
       });
+
+      recordCompletedItem(normalizedIndex, item);
     }
   };
 
   const closeToolCall = (controller, idx) => {
     const callId = state.funcCallIds[idx];
     if (callId && !state.funcItemDone[idx]) {
+      const normalizedIndex = normalizeOutputIndex(idx);
       const args = state.funcArgsBuf[idx] || "{}";
       
       emit(controller, "response.function_call_arguments.done", {
         type: "response.function_call_arguments.done",
         item_id: `fc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: normalizedIndex,
         arguments: args
       });
 
+      const item = {
+        id: `fc_${callId}`,
+        type: "function_call",
+        arguments: args,
+        call_id: callId,
+        name: state.funcNames[idx] || ""
+      };
+
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
-        output_index: parseInt(idx),
-        item: {
-          id: `fc_${callId}`,
-          type: "function_call",
-          arguments: args,
-          call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
+        output_index: normalizedIndex,
+        item
       });
 
+      recordCompletedItem(normalizedIndex, item);
       state.funcItemDone[idx] = true;
       state.funcArgsDone[idx] = true;
     }
@@ -233,7 +263,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          output: buildDenseOutput()
         }
       });
     }
