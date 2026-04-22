@@ -183,6 +183,80 @@ describe("usage request status sync", () => {
     );
   });
 
+  it("exports canonical usage refresh logic that scheduler code can reuse", async () => {
+    const { applyCanonicalUsageRefresh } = await import("../../src/lib/usageStatus.js");
+
+    await applyCanonicalUsageRefresh({ id: "conn-reuse", provider: "codex" }, {
+      plan: "free",
+      limitReached: true,
+      quotas: {
+        weekly: {
+          used: 100,
+          total: 100,
+          remaining: 0,
+          resetAt: "2026-04-25T00:00:00.000Z",
+        },
+      },
+    });
+
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-reuse",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked_quota",
+        quotaState: "exhausted",
+        errorCode: "weekly_quota_exhausted",
+      }),
+    }));
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-reuse",
+      expect.objectContaining({ testStatus: "unavailable" })
+    );
+  });
+
+  it("applies immediate live Codex quota exhaustion updates without polling usage again", async () => {
+    const { applyLiveQuotaUpdate, getCodexLiveQuotaSignal } = await import("../../src/lib/usageStatus.js");
+
+    const signal = getCodexLiveQuotaSignal(
+      { id: "conn-live", provider: "codex" },
+      { statusCode: 429, errorText: "You have exceeded your current quota. Limit reached." }
+    );
+
+    expect(signal).toEqual(expect.objectContaining({
+      kind: "quota_exhausted",
+      reasonCode: "quota_exhausted",
+    }));
+
+    await applyLiveQuotaUpdate({ id: "conn-live", provider: "codex" }, signal);
+
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-live",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked_quota",
+        quotaState: "exhausted",
+        errorCode: "codex_live_quota_exhausted",
+        reasonDetail: "Codex quota exhausted",
+      }),
+    }));
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-live",
+      expect.objectContaining({ testStatus: "unavailable" })
+    );
+    expect(getUsageForProvider).not.toHaveBeenCalled();
+  });
+
+  it("does not treat generic Codex 429 throttling as quota exhaustion", async () => {
+    const { getCodexLiveQuotaSignal } = await import("../../src/lib/usageStatus.js");
+
+    const signal = getCodexLiveQuotaSignal(
+      { id: "conn-throttle", provider: "codex" },
+      { statusCode: 429, errorText: "Rate limit exceeded. Too many requests, please retry later." }
+    );
+
+    expect(signal).toBeNull();
+  });
+
   it("preserves queue overload status codes from the usage refresh queue", async () => {
     mockConnections.push({
       id: "conn-overloaded",

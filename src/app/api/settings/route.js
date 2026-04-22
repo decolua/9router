@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { getQuotaRefreshScheduler } from "@/lib/quotaRefreshScheduler";
 import { readRuntimeConfig } from "@/lib/runtimeConfig";
 import bcrypt from "bcryptjs";
 
@@ -66,6 +67,15 @@ export async function PATCH(request) {
     }
 
     const settings = await updateSettings(body);
+
+    if (
+      Object.prototype.hasOwnProperty.call(body, "quotaScheduler")
+      && body.quotaScheduler
+      && typeof body.quotaScheduler === "object"
+      && !Array.isArray(body.quotaScheduler)
+    ) {
+      await getQuotaRefreshScheduler().refreshSchedule("settings_update");
+    }
 
     // Apply outbound proxy settings immediately (no restart required)
     if (

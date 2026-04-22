@@ -329,6 +329,41 @@ describe("providerHotState", () => {
     ]);
   });
 
+  it("keeps model-specific locks out of provider-wide eligibility indexes", async () => {
+    const modelRetryAt = new Date(Date.now() + 45_000).toISOString();
+
+    await setConnectionHotState("conn-model-locked", "provider-model-scoped", {
+      testStatus: "active",
+      modelLock_gpt4: modelRetryAt,
+    });
+
+    expect(await getEligibleConnectionIds("provider-model-scoped")).toEqual(["conn-model-locked"]);
+    expect(await getEligibleConnections("provider-model-scoped", [
+      {
+        id: "conn-model-locked",
+        priority: 1,
+        testStatus: "active",
+      },
+    ])).toEqual([
+      {
+        id: "conn-model-locked",
+        priority: 1,
+        testStatus: "active",
+      },
+    ]);
+
+    expect(__getProviderHotStateSnapshotForTests("provider-model-scoped")).toMatchObject({
+      eligibleConnectionIds: ["conn-model-locked"],
+      retryAt: null,
+      connections: {
+        "conn-model-locked": {
+          testStatus: "active",
+          modelLock_gpt4: modelRetryAt,
+        },
+      },
+    });
+  });
+
   it("treats untouched healthy connections as eligible while still excluding centrally blocked ones", async () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 

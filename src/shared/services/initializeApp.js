@@ -1,4 +1,5 @@
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { getQuotaRefreshScheduler } from "@/lib/quotaRefreshScheduler";
 import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import * as mitmManager from "@/mitm/manager";
@@ -93,6 +94,9 @@ export async function initializeApp() {
 
     // Network monitor: detect sleep/wake + network changes → restart tunnel
     startNetworkMonitor();
+
+    // Start quota scheduler scaffold once per process/hot reload lifecycle
+    await getQuotaRefreshScheduler().start();
 
     // Auto-start MITM if it was enabled before restart
     autoStartMitm();
