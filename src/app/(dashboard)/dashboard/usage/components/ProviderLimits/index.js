@@ -144,8 +144,8 @@ export default function ProviderLimits() {
           <h1 className="text-2xl font-bold tracking-tight">Hạn mức & Quota</h1>
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-75", isSilentRefreshing ? "animate-ping bg-primary" : "bg-emerald-500")}></span>
-              <span className={cn("relative inline-flex rounded-full h-2 w-2", isSilentRefreshing ? "bg-primary" : "bg-emerald-500")}></span>
+              <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-75 bg-emerald-500", isSilentRefreshing && "animate-ping")}></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span className="text-[11px] font-medium text-muted-foreground uppercase">
               Làm mới sau {countdown}s

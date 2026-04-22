@@ -431,7 +431,11 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
-    setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
+    setSelectedConnectionIds((prev) => {
+      const next = prev.filter((id) => connections.some((conn) => conn.id === id));
+      if (next.length === prev.length) return prev;
+      return next;
+    });
   }, [connections]);
 
   const selectedProxySummary = (() => {

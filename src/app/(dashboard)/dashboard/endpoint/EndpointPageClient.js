@@ -180,10 +180,9 @@ export default function APIPageClient({ initialData }) {
   }'`;
 
   return (
-    <TooltipProvider>
-      <div className="flex flex-col gap-8 max-w-7xl mx-auto py-8 px-4 pb-12">
-        
-        {/* Active Gateway Hero */}
+    <div className="flex flex-col gap-8 max-w-7xl mx-auto py-8 px-4 pb-12">
+      
+      {/* Active Gateway Hero */}
         <section>
           <Card className="shadow-none border-border bg-muted/10 overflow-hidden">
             <CardHeader className="pb-4 pt-6 px-6">
@@ -362,7 +361,6 @@ export default function APIPageClient({ initialData }) {
         </Dialog>
 
       </div>
-    </TooltipProvider>
   );
 }
 

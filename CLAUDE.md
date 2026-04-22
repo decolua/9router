@@ -34,7 +34,7 @@ Typical setup uses Wrangler KV + D1 migration:
 
 ## Big-picture architecture
 
-9Router is a local-first AI router exposing an OpenAI-compatible endpoint (`/v1`) plus a web dashboard.
+8Router is a local-first AI router exposing an OpenAI-compatible endpoint (`/v1`) plus a web dashboard.
 
 Request flow:
 1. Client tools call `http://localhost:20128/v1`.

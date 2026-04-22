@@ -46,9 +46,9 @@ function QuotaRow({ quota }) {
       
       <Progress 
         value={remaining} 
-        className="h-1 bg-muted/30"
+        className="h-0.5 bg-muted/20"
         indicatorClassName={cn(
-          "transition-all duration-700 ease-out opacity-75",
+          "transition-all duration-700 ease-out opacity-50",
           isCritical ? "bg-destructive" : isLow ? "bg-amber-500" : "bg-primary"
         )}
       />
