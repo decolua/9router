@@ -1,7 +1,7 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { getEligibleConnections } from "@/lib/providerHotState";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { applyLiveQuotaUpdate, getCodexLiveQuotaSignal, getConnectionRecoveryPatch } from "../../lib/usageStatus.js";
+import { applyLiveQuotaUpdate, getCodexLiveQuotaSignal, getConnectionAuthBlockedPatch, getConnectionRecoveryPatch } from "../../lib/usageStatus.js";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
@@ -220,25 +220,30 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const lastCheckedAt = new Date().toISOString();
 
   const liveQuotaSignal = getCodexLiveQuotaSignal(conn, {
     statusCode: status,
     errorText,
     errorCode: status,
   });
+  const authBlockedPatch = !liveQuotaSignal && (status === 401 || status === 403)
+    ? getConnectionAuthBlockedPatch(reason, { lastCheckedAt, statusCode: status })
+    : null;
 
   if (liveQuotaSignal) {
     await applyLiveQuotaUpdate(conn, liveQuotaSignal);
   }
 
   const connectionPatch = {
+    ...(authBlockedPatch || {}),
     ...lockUpdate,
-    testStatus: "unavailable",
-    lastErrorAt: new Date().toISOString(),
+    testStatus: authBlockedPatch?.testStatus || "unavailable",
+    lastErrorAt: authBlockedPatch?.lastErrorAt || lastCheckedAt,
     backoffLevel: newBackoffLevel ?? backoffLevel
   };
 
-  if (!liveQuotaSignal) {
+  if (!liveQuotaSignal && !authBlockedPatch) {
     connectionPatch.lastError = reason;
     connectionPatch.errorCode = status;
   }

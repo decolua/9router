@@ -398,6 +398,39 @@ describe("providerHotState", () => {
     ]);
   });
 
+  it("does not fallback-admit DB-only revoked accounts when their per-connection hot row is missing", async () => {
+    await setConnectionHotState("conn-other", "provider-revoked-gap", {
+      routingStatus: "eligible",
+      authState: "ok",
+      testStatus: "active",
+    });
+
+    expect(await getEligibleConnections("provider-revoked-gap", [
+      {
+        id: "conn-revoked",
+        provider: "provider-revoked-gap",
+        priority: 1,
+        testStatus: "active",
+        routingStatus: "blocked_auth",
+        authState: "revoked",
+        lastError: "Token revoked",
+      },
+      {
+        id: "conn-other",
+        provider: "provider-revoked-gap",
+        priority: 2,
+        testStatus: "active",
+      },
+    ])).toEqual([
+      {
+        id: "conn-other",
+        provider: "provider-revoked-gap",
+        priority: 2,
+        testStatus: "active",
+      },
+    ]);
+  });
+
   it("uses a tri-state eligibility contract for unavailable vs empty centralized state", async () => {
     expect(await getEligibleConnections("provider-missing", [
       { id: "conn-a", priority: 1, testStatus: "active" },

@@ -693,13 +693,11 @@ export default function ProviderDetailPage() {
             value={statusFilter}
             onChange={handleStatusFilterChange}
             options={[
-              { value: "all", label: "All Statuses" },
+              { value: "all", label: "All statuses" },
               { value: "eligible", label: "Eligible" },
-              { value: "cooldown", label: "Cooldown" },
-              { value: "blocked_quota", label: "Quota blocked" },
-              { value: "blocked_auth", label: "Auth blocked" },
-              { value: "unknown", label: "Unknown" },
+              { value: "blocked", label: "Blocked" },
               { value: "disabled", label: "Disabled" },
+              { value: "unknown", label: "Unknown" },
             ]}
           />
 

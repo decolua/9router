@@ -143,6 +143,8 @@ export default function ProviderLimits() {
   const [schedulerStatusError, setSchedulerStatusError] = useState("");
   const [refreshActionError, setRefreshActionError] = useState("");
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [refreshingConnectionIds, setRefreshingConnectionIds] = useState({});
+  const [connectionRefreshErrors, setConnectionRefreshErrors] = useState({});
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -353,6 +355,47 @@ export default function ProviderLimits() {
     }
   }, [refreshSharedState]);
 
+  const refreshConnectionUsage = useCallback(async (connectionId) => {
+    if (!connectionId) return;
+
+    setRefreshingConnectionIds((prev) => ({
+      ...prev,
+      [connectionId]: true,
+    }));
+    setConnectionRefreshErrors((prev) => {
+      if (!prev[connectionId]) return prev;
+
+      const next = { ...prev };
+      delete next[connectionId];
+      return next;
+    });
+
+    try {
+      const response = await fetch(`/api/usage/${connectionId}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to refresh usage");
+      }
+
+      await refreshSharedState({ silentStatus: true });
+    } catch (error) {
+      console.error(`Error refreshing usage for connection ${connectionId}:`, error);
+      setConnectionRefreshErrors((prev) => ({
+        ...prev,
+        [connectionId]: error.message || "Failed to refresh usage",
+      }));
+    } finally {
+      setRefreshingConnectionIds((prev) => {
+        const next = { ...prev };
+        delete next[connectionId];
+        return next;
+      });
+    }
+  }, [refreshSharedState]);
+
   const supportedConnections = useMemo(
     () => getSupportedOAuthConnections(connections),
     [connections],
@@ -523,9 +566,7 @@ export default function ProviderLimits() {
             options={[
               { value: "all", label: "All" },
               { value: "eligible", label: "Eligible" },
-              { value: "cooldown", label: "Cooldown" },
-              { value: "blocked_quota", label: "Quota blocked" },
-              { value: "blocked_auth", label: "Auth blocked" },
+              { value: "blocked", label: "Blocked" },
               { value: "disabled", label: "Disabled" },
               { value: "unknown", label: "Unknown" },
             ]}
@@ -564,6 +605,8 @@ export default function ProviderLimits() {
           const quota = getStoredQuotaPresentation(conn);
           const isInactive = conn.isActive === false;
           const rowBusy = deletingId === conn.id || togglingId === conn.id;
+          const isRefreshingConnection = Boolean(refreshingConnectionIds[conn.id]);
+          const connectionRefreshError = connectionRefreshErrors[conn.id] || "";
 
           return (
             <Card
@@ -602,6 +645,19 @@ export default function ProviderLimits() {
                     >
                       shared state
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => refreshConnectionUsage(conn.id)}
+                      disabled={rowBusy || isRefreshingConnection}
+                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Refresh quota"
+                    >
+                      <span
+                        className={`material-symbols-outlined text-[18px] ${isRefreshingConnection ? "animate-spin" : ""}`}
+                      >
+                        refresh
+                      </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -645,6 +701,11 @@ export default function ProviderLimits() {
               </div>
 
               <div className="px-3 py-3">
+                {connectionRefreshError && (
+                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+                    {connectionRefreshError}
+                  </div>
+                )}
                 {quota.message ? (
                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-text-muted">
                     {quota.message}
@@ -655,7 +716,7 @@ export default function ProviderLimits() {
                   <div className="rounded-xl border border-dashed border-black/10 dark:border-white/10 bg-surface/70 px-3 py-4 text-center">
                     <p className="text-xs font-medium text-text-primary">Waiting for backend quota snapshot</p>
                     <p className="mt-1 text-xs text-text-muted">
-                      This page no longer polls provider APIs directly. Use Refresh All to request a backend sweep.
+                      Use the reload icon to refresh just this account, or Refresh All to request a backend sweep.
                     </p>
                   </div>
                 )}

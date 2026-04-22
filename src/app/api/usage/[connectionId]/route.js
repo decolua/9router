@@ -7,6 +7,8 @@ import { getExecutor } from "open-sse/executors/index.js";
 import { runUsageRefreshJob } from "../../../../lib/usageRefreshQueue.js";
 import {
   applyCanonicalUsageRefresh,
+  getConnectionAuthBlockedPatch,
+  isConfirmedAuthBlockedError,
   isAuthExpiredMessage,
   syncUsageStatus,
 } from "../../../../lib/usageStatus.js";
@@ -150,11 +152,16 @@ export async function GET(request, { params }) {
       connection = result.connection;
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
-      await syncUsageStatus(connection, {
-        testStatus: "error",
-        lastError: refreshError.message,
-        lastErrorType: "refresh_failed",
-      });
+      const lastCheckedAt = new Date().toISOString();
+      await syncUsageStatus(
+        connection,
+        getConnectionAuthBlockedPatch(refreshError.message, { lastCheckedAt }) || {
+          testStatus: "error",
+          lastError: refreshError.message,
+          lastErrorType: "refresh_failed",
+          lastCheckedAt,
+        }
+      );
       return Response.json({
         error: `Credential refresh failed: ${refreshError.message}`
       }, { status: 401 });
@@ -173,11 +180,16 @@ export async function GET(request, { params }) {
         usage = await getUsageForProvider(connection);
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
-        await syncUsageStatus(connection, {
-          testStatus: "error",
-          lastError: retryError.message,
-          lastErrorType: "auth_expired",
-        });
+        const lastCheckedAt = new Date().toISOString();
+        await syncUsageStatus(
+          connection,
+          getConnectionAuthBlockedPatch(retryError.message, { lastCheckedAt }) || {
+            testStatus: "error",
+            lastError: retryError.message,
+            lastErrorType: "auth_expired",
+            lastCheckedAt,
+          }
+        );
         shouldMarkActive = false;
       }
     }
@@ -193,11 +205,16 @@ export async function GET(request, { params }) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
     if (connection?.id) {
-      await syncUsageStatus(connection, {
-        testStatus: "error",
-        lastError: error.message,
-        lastErrorType: "usage_request_failed",
-      });
+      const lastCheckedAt = new Date().toISOString();
+      await syncUsageStatus(
+        connection,
+        getConnectionAuthBlockedPatch(error, { lastCheckedAt, statusCode: status }) || {
+          testStatus: "error",
+          lastError: error.message,
+          lastErrorType: isConfirmedAuthBlockedError(error, { statusCode: status }) ? "auth_invalid" : "usage_request_failed",
+          lastCheckedAt,
+        }
+      );
     }
     return Response.json({ error: error.message }, { status });
   }

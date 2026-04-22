@@ -29,25 +29,6 @@ const resolveConnectionProxyConfig = vi.fn(async () => ({
 }));
 const applyLiveQuotaUpdate = vi.fn(async () => null);
 const getCodexLiveQuotaSignal = vi.fn(() => null);
-const getConnectionRecoveryPatch = vi.fn(() => ({
-  routingStatus: "eligible",
-  healthStatus: "healthy",
-  quotaState: "ok",
-  authState: "ok",
-  reasonCode: "unknown",
-  reasonDetail: null,
-  nextRetryAt: null,
-  resetAt: null,
-  testStatus: "active",
-  lastError: null,
-  lastErrorType: null,
-  lastErrorAt: null,
-  rateLimitedUntil: null,
-  errorCode: null,
-  backoffLevel: 0,
-  lastCheckedAt: "2026-04-22T00:00:00.000Z",
-  lastTested: "2026-04-22T00:00:00.000Z",
-}));
 
 vi.mock("@/lib/localDb", () => ({
   getProviderConnections,
@@ -66,11 +47,14 @@ vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig,
 }));
 
-vi.mock("../../src/lib/usageStatus.js", () => ({
-  applyLiveQuotaUpdate,
-  getCodexLiveQuotaSignal,
-  getConnectionRecoveryPatch,
-}));
+vi.mock("../../src/lib/usageStatus.js", async () => {
+  const actual = await vi.importActual("../../src/lib/usageStatus.js");
+  return {
+    ...actual,
+    applyLiveQuotaUpdate,
+    getCodexLiveQuotaSignal,
+  };
+});
 
 vi.mock("@/shared/constants/providers.js", () => ({
   resolveProviderId: (provider) => provider,
@@ -102,7 +86,6 @@ describe("auth account selection", () => {
     resolveConnectionProxyConfig.mockClear();
     applyLiveQuotaUpdate.mockClear();
     getCodexLiveQuotaSignal.mockClear();
-    getConnectionRecoveryPatch.mockClear();
     getProviderConnections.mockResolvedValue(mockConnections);
     getSettings.mockResolvedValue({
       fallbackStrategy: "fill-first",
@@ -501,6 +484,119 @@ describe("auth account selection", () => {
       lastError: "Rate limit exceeded. Too many requests.",
       errorCode: 429,
     }));
+  });
+
+  it("writes canonical blocked-auth state for confirmed live 401 failures", async () => {
+    mockConnections.push({
+      id: "conn-auth-blocked",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Revoked account",
+      accessToken: "token",
+      testStatus: "active",
+      routingStatus: "eligible",
+      authState: "ok",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 45000, newBackoffLevel: 3 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce(null);
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-auth-blocked", 401, "401 Unauthorized: token revoked", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 45000 });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-blocked", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+      reasonDetail: "401 Unauthorized: token revoked",
+      testStatus: "expired",
+      lastError: "401 Unauthorized: token revoked",
+      lastErrorType: "auth_invalid",
+      errorCode: "auth_invalid",
+      backoffLevel: 3,
+    }));
+    expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
+  });
+
+  it("writes canonical blocked-auth state for confirmed live 401 failures with empty messages", async () => {
+    mockConnections.push({
+      id: "conn-auth-empty",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Empty auth failure",
+      accessToken: "token",
+      testStatus: "active",
+      routingStatus: "eligible",
+      authState: "ok",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 20000, newBackoffLevel: 1 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce(null);
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-auth-empty", 401, "", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 20000 });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-empty", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      quotaState: "ok",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Provider error",
+      testStatus: "expired",
+      lastError: "Provider error",
+      lastErrorType: "auth_invalid",
+      errorCode: "auth_invalid",
+      backoffLevel: 1,
+    }));
+    expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
+  });
+
+  it("writes canonical blocked-auth state for confirmed live 403 failures with atypical messages", async () => {
+    mockConnections.push({
+      id: "conn-auth-atypical",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Atypical auth failure",
+      accessToken: "token",
+      testStatus: "active",
+      routingStatus: "eligible",
+      authState: "ok",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 25000, newBackoffLevel: 2 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce(null);
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-auth-atypical", 403, "Request failed", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 25000 });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-atypical", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      quotaState: "ok",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Request failed",
+      testStatus: "expired",
+      lastError: "Request failed",
+      lastErrorType: "auth_invalid",
+      errorCode: "auth_invalid",
+      backoffLevel: 2,
+    }));
+    expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
   });
 
   it("uses fresh shared state before reactivating an account after clearing a model lock", async () => {

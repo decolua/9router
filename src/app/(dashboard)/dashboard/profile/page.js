@@ -10,6 +10,9 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [quotaForm, setQuotaForm] = useState({ enabled: true, cadenceMinutes: "15" });
+  const [quotaStatus, setQuotaStatus] = useState({ type: "", message: "" });
+  const [quotaLoading, setQuotaLoading] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -30,6 +33,10 @@ export default function ProfilePage() {
       .then((res) => res.json())
       .then((data) => {
         setSettings(data);
+        setQuotaForm({
+          enabled: data?.quotaScheduler?.enabled !== false,
+          cadenceMinutes: String(Math.max(15, Math.round((data?.quotaScheduler?.cadenceMs || 900000) / 60000))),
+        });
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -42,6 +49,59 @@ export default function ProfilePage() {
         setLoading(false);
       });
   }, []);
+
+  const updateQuotaScheduler = async (updates, successMessage = "Quota scheduler updated") => {
+    setQuotaLoading(true);
+    setQuotaStatus({ type: "", message: "" });
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quotaScheduler: updates,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+        setQuotaForm({
+          enabled: data?.quotaScheduler?.enabled !== false,
+          cadenceMinutes: String(Math.max(15, Math.round((data?.quotaScheduler?.cadenceMs || 900000) / 60000))),
+        });
+        setQuotaStatus({ type: "success", message: successMessage });
+      } else {
+        setQuotaStatus({ type: "error", message: data.error || "Failed to update quota scheduler" });
+      }
+    } catch (err) {
+      setQuotaStatus({ type: "error", message: "An error occurred" });
+    } finally {
+      setQuotaLoading(false);
+    }
+  };
+
+  const updateQuotaSchedulerEnabled = async (enabled) => {
+    setQuotaForm((prev) => ({ ...prev, enabled }));
+    await updateQuotaScheduler(
+      { enabled },
+      enabled ? "Quota scheduler enabled" : "Quota scheduler disabled"
+    );
+  };
+
+  const applyQuotaCadence = async (e) => {
+    e.preventDefault();
+    const minutes = Number.parseInt(quotaForm.cadenceMinutes, 10);
+    if (!Number.isFinite(minutes) || minutes < 15) {
+      setQuotaStatus({ type: "error", message: "Scheduler interval must be at least 15 minutes" });
+      return;
+    }
+
+    await updateQuotaScheduler(
+      { cadenceMs: minutes * 60 * 1000 },
+      "Quota scheduler interval updated"
+    );
+  };
 
   const updateOutboundProxy = async (e) => {
     e.preventDefault();
@@ -647,6 +707,67 @@ export default function ProfilePage() {
               onChange={updateObservabilityEnabled}
               disabled={loading}
             />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+              <span className="material-symbols-outlined text-[20px]">schedule</span>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Quota Scheduler</h3>
+              <p className="text-sm text-text-muted">Control automatic quota refresh checks for supported accounts.</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Enable scheduler</p>
+                <p className="text-sm text-text-muted">Automatically refresh quota status in the background.</p>
+              </div>
+              <Toggle
+                checked={quotaForm.enabled}
+                onChange={updateQuotaSchedulerEnabled}
+                disabled={loading || quotaLoading}
+              />
+            </div>
+
+            <form onSubmit={applyQuotaCadence} className="flex flex-col gap-3 pt-4 border-t border-border/50">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div className="flex-1">
+                  <Input
+                    type="number"
+                    min="15"
+                    step="1"
+                    label="Scheduler interval (minutes)"
+                    value={quotaForm.cadenceMinutes}
+                    onChange={(e) => {
+                      setQuotaForm((prev) => ({ ...prev, cadenceMinutes: e.target.value }));
+                      if (quotaStatus.message) setQuotaStatus({ type: "", message: "" });
+                    }}
+                    disabled={loading || quotaLoading}
+                    hint="Minimum 15 minutes. Changes are saved via the settings API."
+                    className="w-full md:max-w-xs"
+                  />
+                </div>
+
+                <Button type="submit" variant="primary" loading={quotaLoading}>
+                  Save interval
+                </Button>
+              </div>
+
+              <div className="rounded-lg border border-border/60 bg-bg px-3 py-2 text-sm text-text-muted">
+                Current cadence: every {Math.max(15, Math.round((settings?.quotaScheduler?.cadenceMs || 900000) / 60000))} minutes
+              </div>
+            </form>
+
+            {quotaStatus.message && (
+              <p className={`text-sm ${quotaStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
+                {quotaStatus.message}
+              </p>
+            )}
           </div>
         </Card>
 

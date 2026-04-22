@@ -543,6 +543,12 @@ function parseKiroQuotaData(data) {
   const quotaInfo = {};
   const resetAt = parseResetTime(data.nextDateReset || data.resetDate);
 
+  const getSafeRemaining = (used, total) => {
+    if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) return null;
+    if (typeof used !== "number" || !Number.isFinite(used) || used < 0) return null;
+    return total - used;
+  };
+
   usageList.forEach((breakdown) => {
     const resourceType = breakdown.resourceType?.toLowerCase() || "unknown";
     const used = breakdown.currentUsageWithPrecision || 0;
@@ -551,7 +557,7 @@ function parseKiroQuotaData(data) {
     quotaInfo[resourceType] = {
       used,
       total,
-      remaining: total - used,
+      remaining: getSafeRemaining(used, total),
       resetAt,
       unlimited: false,
     };
@@ -564,7 +570,7 @@ function parseKiroQuotaData(data) {
       quotaInfo[`${resourceType}_freetrial`] = {
         used: freeUsed,
         total: freeTotal,
-        remaining: freeTotal - freeUsed,
+        remaining: getSafeRemaining(freeUsed, freeTotal),
         resetAt: parseResetTime(breakdown.freeTrialInfo.freeTrialExpiry || resetAt),
         unlimited: false,
       };

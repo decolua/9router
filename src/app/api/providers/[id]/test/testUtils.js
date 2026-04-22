@@ -14,7 +14,7 @@ import {
   KILOCODE_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
-import { getConnectionRecoveryPatch } from "../../../../../lib/usageStatus.js";
+import { getConnectionAuthBlockedPatch, getConnectionRecoveryPatch } from "../../../../../lib/usageStatus.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -556,14 +556,18 @@ export async function testSingleConnection(id) {
   }
 
   const latencyMs = Date.now() - start;
+  const lastCheckedAt = new Date().toISOString();
+  const authBlockedPatch = !result.valid
+    ? getConnectionAuthBlockedPatch(result.error, { lastCheckedAt })
+    : null;
 
   const updateData = {
     ...(result.valid
-      ? getConnectionRecoveryPatch()
-      : {
+      ? getConnectionRecoveryPatch({ lastCheckedAt })
+      : authBlockedPatch || {
           testStatus: "error",
           lastError: result.error,
-          lastErrorAt: new Date().toISOString(),
+          lastErrorAt: lastCheckedAt,
         }),
   };
 

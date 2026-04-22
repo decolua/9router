@@ -238,6 +238,16 @@ function isConnectionEligible(state = {}) {
   return !getConnectionRetryAt(state);
 }
 
+function isFallbackEligibleConnection(state = {}) {
+  const testStatus = state?.testStatus || null;
+  const hasLegacyEligibleStatus = testStatus === "active"
+    || testStatus === "success"
+    || testStatus === "unknown";
+
+  if (!hasLegacyEligibleStatus) return false;
+  return isConnectionEligible(state);
+}
+
 function recalculateProviderIndexes(providerState) {
   const eligibleConnectionIds = new Set();
   const retryCandidates = [];
@@ -599,9 +609,7 @@ export async function getEligibleConnections(providerId, connections = []) {
     if (eligibleConnectionIds.has(connection.id)) return true;
     if (providerState.connections.has(connection.id)) return false;
 
-    return connection.testStatus === "active"
-      || connection.testStatus === "success"
-      || connection.testStatus === "unknown";
+    return isFallbackEligibleConnection(connection);
   });
 }
 

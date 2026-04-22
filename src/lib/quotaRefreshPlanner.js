@@ -1,11 +1,18 @@
 export const QUOTA_SCHEDULER_DEFAULTS = {
-  enabled: false,
-  cadenceMs: 300000,
+  enabled: true,
+  cadenceMs: 900000,
   successTtlMs: 900000,
   errorTtlMs: 300000,
   exhaustedTtlMs: 60000,
   batchSize: 25,
 };
+
+const MIN_QUOTA_SCHEDULER_CADENCE_MS = 900000;
+
+function normalizeCadenceMs(value) {
+  if (!Number.isFinite(value)) return QUOTA_SCHEDULER_DEFAULTS.cadenceMs;
+  return Math.max(MIN_QUOTA_SCHEDULER_CADENCE_MS, value);
+}
 
 const DUE_REASON_PRIORITY = {
   quota_reset_due: 0,
@@ -33,12 +40,15 @@ function toIso(value) {
 }
 
 function getMergedSchedulerSettings(schedulerSettings = {}) {
-  return {
+  const merged = {
     ...QUOTA_SCHEDULER_DEFAULTS,
     ...(schedulerSettings && typeof schedulerSettings === "object" && !Array.isArray(schedulerSettings)
       ? schedulerSettings
       : {}),
   };
+
+  merged.cadenceMs = normalizeCadenceMs(merged.cadenceMs);
+  return merged;
 }
 
 function isQuotaBlockedState(quotaState) {

@@ -12,6 +12,27 @@ describe("quotaRefreshPlanner", () => {
   const now = "2026-04-21T12:00:00.000Z";
   const enabledSettings = { ...QUOTA_SCHEDULER_DEFAULTS, enabled: true };
 
+  it("enables quota refresh by default for supported connections", () => {
+    expect(QUOTA_SCHEDULER_DEFAULTS).toMatchObject({
+      enabled: true,
+      cadenceMs: 900000,
+      successTtlMs: 900000,
+      errorTtlMs: 300000,
+      exhaustedTtlMs: 60000,
+      batchSize: 25,
+    });
+
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-default", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: {},
+      hotState: {},
+      now,
+    })).toMatchObject({
+      due: true,
+      reason: "never_checked",
+    });
+  });
+
   it("detects quota refresh support for active OAuth Codex connections", () => {
     expect(isQuotaRefreshSupported({ provider: "codex", authType: "oauth", isActive: true })).toBe(true);
     expect(isQuotaRefreshSupported({ provider: "codex", authType: "apiKey", isActive: true })).toBe(false);
@@ -129,7 +150,7 @@ describe("quotaRefreshPlanner", () => {
     })).toMatchObject({
       due: false,
       reason: "fresh_error",
-      nextEligibleAt: "2026-04-21T12:01:00.000Z",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
 
     expect(getQuotaRefreshDecision({
@@ -137,7 +158,7 @@ describe("quotaRefreshPlanner", () => {
       schedulerSettings: enabledSettings,
       hotState: {
         healthStatus: "failed",
-        lastCheckedAt: "2026-04-21T11:54:00.000Z",
+        lastCheckedAt: "2026-04-21T11:44:00.000Z",
       },
       now,
     })).toMatchObject({
@@ -165,7 +186,7 @@ describe("quotaRefreshPlanner", () => {
     })).toMatchObject({
       due: false,
       reason: "fresh_success",
-      nextEligibleAt: "2026-04-21T12:06:00.000Z",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
 
     expect(getQuotaRefreshDecision({
@@ -179,7 +200,7 @@ describe("quotaRefreshPlanner", () => {
     })).toMatchObject({
       due: false,
       reason: "fresh_error",
-      nextEligibleAt: "2026-04-21T12:06:00.000Z",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
   });
 
@@ -208,7 +229,7 @@ describe("quotaRefreshPlanner", () => {
     })).toMatchObject({
       due: false,
       reason: "fresh_unknown",
-      nextEligibleAt: "2026-04-21T12:01:00.000Z",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
 
     expect(getQuotaRefreshDecision({

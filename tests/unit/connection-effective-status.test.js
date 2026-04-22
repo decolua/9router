@@ -77,10 +77,14 @@ describe("getConnectionEffectiveStatus", () => {
 
   it("normalizes supported filter values and falls back invalid values to all", () => {
     expect(normalizeConnectionFilterStatus("active")).toBe("eligible");
-    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("blocked_quota");
-    expect(normalizeConnectionFilterStatus("revoked-invalid")).toBe("blocked_auth");
+    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("revoked-invalid")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("eligible")).toBe("eligible");
-    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("blocked_quota");
+    expect(normalizeConnectionFilterStatus("blocked_health")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("blocked_auth")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("cooldown")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("blocked")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("definitely-invalid")).toBe("all");
   });
 
@@ -89,6 +93,7 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible", authState: "expired" })).toBe("blocked_auth");
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible", healthStatus: "failed" })).toBe("blocked_health");
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "cooldown" })).toBe("cooldown");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "exhausted" })).toBe("blocked_quota");
     expect(getConnectionCentralizedStatus({ quotaState: "cooldown" })).toBe("cooldown");
     expect(getConnectionCentralizedStatus({ quotaState: "exhausted" })).toBe("blocked_quota");
     expect(getConnectionCentralizedStatus({ authState: "invalid" })).toBe("blocked_auth");
@@ -103,9 +108,40 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionCentralizedStatus({ routingStatus: "blocked_health" })).toBe("blocked_health");
   });
 
-  it("collapses health failures into the auth-blocked filter bucket for current UI filters", () => {
-    expect(getConnectionFilterStatus({ healthStatus: "failed" })).toBe("blocked_auth");
-    expect(getConnectionFilterStatus({ routingStatus: "blocked_health" })).toBe("blocked_auth");
+  it("maps revoked and invalid auth failures into the simplified blocked filter bucket", () => {
+    expect(getConnectionFilterStatus({ authState: "invalid" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ authState: "revoked" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ routingStatus: "blocked_auth", authState: "invalid" })).toBe("blocked");
+  });
+
+  it("collapses auth, health, quota, and cooldown blockers into the simplified blocked filter bucket", () => {
+    expect(getConnectionFilterStatus({ authState: "expired" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ healthStatus: "failed" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ routingStatus: "blocked_health" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ routingStatus: "blocked_quota" })).toBe("blocked");
+    expect(getConnectionFilterStatus({ routingStatus: "cooldown" })).toBe("blocked");
+  });
+
+  it("does not classify exhausted quota connections as eligible even when routing status is stale", () => {
+    expect(getConnectionFilterStatus({
+      routingStatus: "eligible",
+      quotaState: "exhausted",
+      usageSnapshot: JSON.stringify({
+        quotas: {
+          session: {
+            used: 100,
+            total: 100,
+            remaining: 0,
+          },
+        },
+      }),
+    })).toBe("blocked");
+  });
+
+  it("preserves non-blocked filter buckets for eligible, disabled, and unknown states", () => {
+    expect(getConnectionFilterStatus({ routingStatus: "eligible" })).toBe("eligible");
+    expect(getConnectionFilterStatus({ isActive: false, routingStatus: "eligible" })).toBe("disabled");
+    expect(getConnectionFilterStatus({})).toBe("unknown");
   });
 
   it("provides coherent badge labels and variants for centralized statuses", () => {

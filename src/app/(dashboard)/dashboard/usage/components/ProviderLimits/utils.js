@@ -135,11 +135,16 @@ export function parseQuotaData(provider, data) {
       case "kiro":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            const hasValidRemainingPercentage = Number.isFinite(quota.remainingPercentage)
+              && quota.remainingPercentage >= 0
+              && quota.remainingPercentage <= 100;
+
             normalizedQuotas.push({
               name: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
+              ...(hasValidRemainingPercentage ? { remainingPercentage: quota.remainingPercentage } : {}),
             });
           });
         }

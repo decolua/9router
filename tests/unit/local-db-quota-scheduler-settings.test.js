@@ -32,10 +32,16 @@ async function createTempDataDir() {
   return dir;
 }
 
-async function loadLocalDb() {
-  process.env.DATA_DIR = await createTempDataDir();
+async function loadLocalDb(initialData) {
+  const dataDir = await createTempDataDir();
+  process.env.DATA_DIR = dataDir;
   delete process.env.REDIS_URL;
   delete process.env.REDIS_HOST;
+
+  if (initialData) {
+    await fs.writeFile(path.join(dataDir, "db.json"), JSON.stringify(initialData, null, 2));
+  }
+
   vi.resetModules();
   return import("../../src/lib/localDb.js");
 }
@@ -58,12 +64,37 @@ describe("localDb quota scheduler settings", () => {
 
     await expect(localDb.getSettings()).resolves.toMatchObject({
       quotaScheduler: {
-        enabled: false,
-        cadenceMs: 300000,
+        enabled: true,
+        cadenceMs: 900000,
         successTtlMs: 900000,
         errorTtlMs: 300000,
         exhaustedTtlMs: 60000,
         batchSize: 25,
+      },
+    });
+  });
+
+  it("preserves an explicit disabled scheduler choice after updates", async () => {
+    const localDb = await loadLocalDb();
+
+    const updated = await localDb.updateSettings({
+      quotaScheduler: {
+        enabled: false,
+      },
+    });
+
+    expect(updated.quotaScheduler).toMatchObject({
+      enabled: false,
+      cadenceMs: 900000,
+      successTtlMs: 900000,
+      errorTtlMs: 300000,
+      exhaustedTtlMs: 60000,
+      batchSize: 25,
+    });
+
+    await expect(localDb.getSettings()).resolves.toMatchObject({
+      quotaScheduler: {
+        enabled: false,
       },
     });
   });
@@ -80,11 +111,25 @@ describe("localDb quota scheduler settings", () => {
 
     expect(updated.quotaScheduler).toMatchObject({
       enabled: true,
-      cadenceMs: 300000,
+      cadenceMs: 900000,
       successTtlMs: 900000,
       errorTtlMs: 300000,
       exhaustedTtlMs: 60000,
       batchSize: 10,
+    });
+  });
+
+  it("clamps quota scheduler cadence to a minimum of 15 minutes", async () => {
+    const localDb = await loadLocalDb();
+
+    const updated = await localDb.updateSettings({
+      quotaScheduler: {
+        cadenceMs: 300000,
+      },
+    });
+
+    expect(updated.quotaScheduler).toMatchObject({
+      cadenceMs: 900000,
     });
   });
 });

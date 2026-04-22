@@ -90,17 +90,19 @@ function getCentralizedStatus(connection = {}) {
 const CONNECTION_FILTER_STATUSES = new Set([
   "all",
   "eligible",
-  "cooldown",
-  "blocked_quota",
-  "blocked_auth",
+  "blocked",
   "disabled",
   "unknown",
 ]);
 
 const LEGACY_CONNECTION_FILTER_STATUS_MAP = {
   active: "eligible",
-  "quota-exhausted": "blocked_quota",
-  "revoked-invalid": "blocked_auth",
+  "quota-exhausted": "blocked",
+  "revoked-invalid": "blocked",
+  cooldown: "blocked",
+  blocked_quota: "blocked",
+  blocked_auth: "blocked",
+  blocked_health: "blocked",
 };
 
 export function normalizeConnectionFilterStatus(value) {
@@ -223,7 +225,20 @@ export function getConnectionCentralizedStatus(connection = {}) {
 
 export function getConnectionFilterStatus(connection = {}) {
   const status = getConnectionCentralizedStatus(connection);
-  return status === "blocked_health" ? "blocked_auth" : status;
+
+  switch (status) {
+    case "eligible":
+      return "eligible";
+    case "cooldown":
+    case "blocked_quota":
+    case "blocked_auth":
+    case "blocked_health":
+      return "blocked";
+    case "disabled":
+      return "disabled";
+    default:
+      return "unknown";
+  }
 }
 
 export function getConnectionStatusBadgeMeta(connection = {}) {

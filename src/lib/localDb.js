@@ -6,6 +6,7 @@ import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
+import { normalizeQuotaSchedulerSettings } from "./quotaRefreshPlanner.js";
 import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -38,14 +39,7 @@ const DEFAULT_SETTINGS = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
-  quotaScheduler: {
-    enabled: false,
-    cadenceMs: 300000,
-    successTtlMs: 900000,
-    errorTtlMs: 300000,
-    exhaustedTtlMs: 60000,
-    batchSize: 25,
-  },
+  quotaScheduler: normalizeQuotaSchedulerSettings(),
 };
 
 function mergeSettingsWithDefaults(settings = {}) {
@@ -55,10 +49,11 @@ function mergeSettingsWithDefaults(settings = {}) {
   };
 
   merged.quotaScheduler = {
-    ...DEFAULT_SETTINGS.quotaScheduler,
-    ...(settings?.quotaScheduler && typeof settings.quotaScheduler === "object" && !Array.isArray(settings.quotaScheduler)
-      ? settings.quotaScheduler
-      : {}),
+    ...normalizeQuotaSchedulerSettings(
+      settings?.quotaScheduler && typeof settings.quotaScheduler === "object" && !Array.isArray(settings.quotaScheduler)
+        ? settings.quotaScheduler
+        : {}
+    ),
   };
 
   return merged;
@@ -526,14 +521,16 @@ export async function updateProviderConnection(id, data) {
 
   if (hasHotStateUpdates) {
     const hotStateResult = await setConnectionHotState(id, providerId, hotStatePatch);
+    const persistedHotState = hotStateResult?.state || hotStatePatch;
     const projectedLegacyState = projectLegacyConnectionState({
       ...current,
-      ...hotStateResult?.state,
+      ...persistedHotState,
     });
 
     db.data.providerConnections[index] = {
       ...db.data.providerConnections[index],
       ...dbPatch,
+      ...persistedHotState,
       ...projectedLegacyState,
       updatedAt: new Date().toISOString(),
     };

@@ -79,4 +79,46 @@ describe("parseQuotaData for codex", () => {
     });
     expect(warnSpy).toHaveBeenCalled();
   });
+
+  it("preserves only valid Kiro remaining percentages and avoids inventing invalid ones", () => {
+    const validResult = parseQuotaData("kiro", {
+      quotas: {
+        agentic_request: {
+          used: 80,
+          total: 100,
+          resetAt: "2026-04-25T00:00:00.000Z",
+          remainingPercentage: 20,
+        },
+      },
+    });
+
+    expect(validResult).toEqual([
+      expect.objectContaining({
+        name: "agentic_request",
+        used: 80,
+        total: 100,
+        remainingPercentage: 20,
+      }),
+    ]);
+
+    const invalidResult = parseQuotaData("kiro", {
+      quotas: {
+        agentic_request: {
+          used: 80,
+          total: 0,
+          resetAt: "2026-04-25T00:00:00.000Z",
+          remainingPercentage: NaN,
+        },
+      },
+    });
+
+    expect(invalidResult).toEqual([
+      expect.objectContaining({
+        name: "agentic_request",
+        used: 80,
+        total: 0,
+      }),
+    ]);
+    expect(invalidResult[0]).not.toHaveProperty("remainingPercentage");
+  });
 });

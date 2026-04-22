@@ -190,6 +190,8 @@ describe("localDb hot-state lifecycle", () => {
       persistedDb.providerConnections.find((connection) => connection.id === created.id)
     ).toMatchObject({
       id: created.id,
+      routingStatus: "blocked_auth",
+      authState: "expired",
       testStatus: "expired",
       lastError: "Authentication expired",
     });
@@ -201,6 +203,8 @@ describe("localDb hot-state lifecycle", () => {
     expect(recovered).toMatchObject({
       id: created.id,
       provider: "provider-redis-fallback",
+      routingStatus: "blocked_auth",
+      authState: "expired",
       testStatus: "expired",
       lastError: "Authentication expired",
     });

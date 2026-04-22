@@ -69,6 +69,26 @@ vi.mock("../../src/lib/usageStatus.js", () => ({
     lastCheckedAt: "2026-04-22T00:00:00.000Z",
     lastTested: "2026-04-22T00:00:00.000Z",
   }),
+  getConnectionAuthBlockedPatch: (error, { lastCheckedAt } = {}) => {
+    if (!["Token invalid or revoked", "Token expired", "Token expired and refresh failed"].includes(error)) {
+      return null;
+    }
+
+    return {
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+      reasonDetail: error,
+      lastError: error,
+      lastErrorType: "auth_invalid",
+      lastErrorAt: lastCheckedAt || "2026-04-22T00:00:00.000Z",
+      testStatus: "expired",
+      nextRetryAt: null,
+      resetAt: null,
+      rateLimitedUntil: null,
+      errorCode: "auth_invalid",
+    };
+  },
 }));
 
 describe("provider test recovery", () => {
@@ -124,6 +144,34 @@ describe("provider test recovery", () => {
       reasonDetail: null,
       nextRetryAt: null,
       resetAt: null,
+    }));
+  });
+
+  it("marks canonical auth-blocked state when provider test reports invalid or revoked token", async () => {
+    connectionById.set("conn-auth-fail", {
+      id: "conn-auth-fail",
+      provider: "github",
+      authType: "oauth",
+      accessToken: "bad-token",
+      routingStatus: "eligible",
+      authState: "ok",
+      testStatus: "active",
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 401 })));
+
+    const { testSingleConnection } = await import("../../src/app/api/providers/[id]/test/testUtils.js");
+    const result = await testSingleConnection("conn-auth-fail");
+
+    expect(result).toMatchObject({ valid: false, error: "Token invalid or revoked" });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-fail", expect.objectContaining({
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token invalid or revoked",
+      testStatus: "expired",
+      lastError: "Token invalid or revoked",
+      lastErrorType: "auth_invalid",
     }));
   });
 });
