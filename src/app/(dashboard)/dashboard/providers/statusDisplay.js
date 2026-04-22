@@ -1,3 +1,13 @@
+import { getConnectionStatusDetails } from "../../../../lib/connectionStatus.js";
+
+export function getDashboardConnectionStatus(connection) {
+  const details = getConnectionStatusDetails(connection);
+  if (details.source?.startsWith("legacy-")) {
+    return "unknown";
+  }
+  return details.status;
+}
+
 export function getStatusDisplayItems(connected, error, total, errorCode) {
   const items = [];
   if (connected > 0) {

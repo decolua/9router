@@ -75,12 +75,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     const centralizedEligibleConnections = await getEligibleConnections(providerId, availableConnections);
-    const eligibleConnections = Array.isArray(centralizedEligibleConnections)
+    const hasCentralizedEligibility = Array.isArray(centralizedEligibleConnections);
+    const selectionPool = hasCentralizedEligibility
       ? sortByPriority(centralizedEligibleConnections)
       : null;
-    const selectionPool = eligibleConnections;
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${hasCentralizedEligibility ? selectionPool.length : "unavailable"}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);

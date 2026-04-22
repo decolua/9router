@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
-import { getConnectionStatusBadgeMeta, getConnectionStatusDetails, getConnectionCooldownUntil } from "@/lib/connectionStatus";
+import { getConnectionStatusDetails, getConnectionCooldownUntil } from "@/lib/connectionStatus";
+import { getDashboardConnectionStatus } from "../statusDisplay";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -70,8 +71,22 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
-  const statusBadge = getConnectionStatusBadgeMeta(connection);
   const statusDetails = getConnectionStatusDetails(connection);
+  const dashboardStatus = getDashboardConnectionStatus(connection);
+  const statusBadge = (() => {
+    switch (dashboardStatus) {
+      case "eligible":
+        return { status: dashboardStatus, label: "Eligible", variant: "success" };
+      case "exhausted":
+        return { status: dashboardStatus, label: "Exhausted", variant: "warning" };
+      case "blocked":
+        return { status: dashboardStatus, label: "Blocked", variant: "error" };
+      case "disabled":
+        return { status: dashboardStatus, label: "Disabled", variant: "default" };
+      default:
+        return { status: "unknown", label: "Unknown", variant: "default" };
+    }
+  })();
   const modelLockUntil = statusDetails.activeModelLocks.length > 0
     ? statusDetails.activeModelLocks.map((lock) => lock.until).sort()[0]
     : getConnectionCooldownUntil(connection);
@@ -109,13 +124,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         baseReason = connection.routingStatus ? `routing: ${connection.routingStatus}` : "routing constrained";
         break;
       case "legacy-unavailable-cooldown":
-        baseReason = "legacy cooldown";
-        break;
       case "legacy-unavailable-stale":
-        baseReason = "legacy unavailable";
-        break;
       case "legacy-testStatus":
-        baseReason = connection.testStatus ? `legacy: ${connection.testStatus}` : "legacy status";
+        baseReason = "status unavailable";
         break;
       case "isActive":
         baseReason = "manually disabled";

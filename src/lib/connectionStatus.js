@@ -24,7 +24,6 @@ export function getConnectionActiveModelLocks(connection = {}) {
 export function getConnectionCooldownUntil(connection = {}) {
   const timestamps = [
     getFutureTimestamp(connection?.nextRetryAt),
-    getFutureTimestamp(connection?.rateLimitedUntil),
     getFutureTimestamp(connection?.resetAt),
     ...getConnectionActiveModelLocks(connection).map((lock) => lock.until),
   ].filter(Boolean);
@@ -36,7 +35,6 @@ export function getConnectionCooldownUntil(connection = {}) {
 export function getConnectionProviderCooldownUntil(connection = {}) {
   const timestamps = [
     getFutureTimestamp(connection?.nextRetryAt),
-    getFutureTimestamp(connection?.rateLimitedUntil),
     getFutureTimestamp(connection?.resetAt),
   ].filter(Boolean);
 
@@ -106,21 +104,7 @@ const CONNECTION_FILTER_STATUSES = new Set([
   "unknown",
 ]);
 
-const LEGACY_CONNECTION_FILTER_STATUS_MAP = {
-  active: "eligible",
-  "quota-exhausted": "exhausted",
-  "revoked-invalid": "blocked",
-  cooldown: "exhausted",
-  blocked_quota: "exhausted",
-  blocked_auth: "blocked",
-  blocked_health: "blocked",
-};
-
 export function normalizeConnectionFilterStatus(value) {
-  if (LEGACY_CONNECTION_FILTER_STATUS_MAP[value]) {
-    return LEGACY_CONNECTION_FILTER_STATUS_MAP[value];
-  }
-
   return CONNECTION_FILTER_STATUSES.has(value) ? value : "all";
 }
 
@@ -160,24 +144,6 @@ export function getConnectionStatusDetails(connection) {
   }
 
   switch (connection?.testStatus) {
-    case "active":
-    case "success":
-      return {
-        status: "eligible",
-        source: "legacy-testStatus",
-        hasActiveModelLock: activeModelLocks.length > 0,
-        cooldownUntil,
-        activeModelLocks,
-      };
-    case "expired":
-    case "error":
-      return {
-        status: "blocked",
-        source: "legacy-testStatus",
-        hasActiveModelLock: activeModelLocks.length > 0,
-        cooldownUntil,
-        activeModelLocks,
-      };
     case "unavailable":
       return {
         status: cooldownUntil ? "exhausted" : "unknown",

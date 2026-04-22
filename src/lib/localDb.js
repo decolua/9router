@@ -5,7 +5,7 @@ import path from "node:path";
 import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
-import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
+import { getConnectionEffectiveStatus, getConnectionStatusDetails } from "@/lib/connectionStatus.js";
 import { normalizeQuotaSchedulerSettings } from "./quotaRefreshPlanner.js";
 import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
 import {
@@ -101,7 +101,11 @@ export function getConnectionStatusSummary(connections = []) {
   };
 
   for (const connection of connections || []) {
-    const status = getConnectionEffectiveStatus(connection);
+    const details = getConnectionStatusDetails(connection);
+    const status = details.source?.startsWith("legacy-")
+      ? "unknown"
+      : details.status;
+
     if (status === "eligible") summary.connected += 1;
     else if (status === "blocked" || status === "exhausted") summary.error += 1;
     else summary.unknown += 1;

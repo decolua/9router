@@ -23,6 +23,9 @@ function getConnectionName(connection) {
 function getAvailabilityEntries(connection) {
   const statusDetails = getConnectionStatusDetails(connection);
   const providerCooldownUntil = getConnectionProviderCooldownUntil(connection);
+  const providerSurfaceStatus = statusDetails.source?.startsWith("legacy-")
+    ? "unknown"
+    : statusDetails.status;
 
   const modelEntries = (statusDetails.activeModelLocks || []).map((lock) => ({
     provider: connection.provider,
@@ -36,12 +39,12 @@ function getAvailabilityEntries(connection) {
 
   const entries = [...modelEntries];
 
-  if (["blocked", "exhausted"].includes(statusDetails.status)) {
+  if (["blocked", "exhausted"].includes(providerSurfaceStatus)) {
     entries.unshift({
       provider: connection.provider,
       model: "__all",
-      status: statusDetails.status,
-      until: statusDetails.status === "exhausted" ? (providerCooldownUntil || undefined) : undefined,
+      status: providerSurfaceStatus,
+      until: providerSurfaceStatus === "exhausted" ? (providerCooldownUntil || undefined) : undefined,
       connectionId: connection.id,
       connectionName: getConnectionName(connection),
       lastError: connection.lastError || connection.reasonDetail || null,
@@ -80,8 +83,8 @@ function buildCooldownClearPatch(connection, model) {
 function hasProviderWideCooldownState(connection) {
   return Boolean(
     getFutureTimestamp(connection?.nextRetryAt)
-    || getFutureTimestamp(connection?.rateLimitedUntil)
     || getFutureTimestamp(connection?.resetAt)
+    || getFutureTimestamp(connection?.rateLimitedUntil)
     || connection?.routingStatus === "blocked_quota"
     || connection?.routingStatus === "cooldown"
     || connection?.routingStatus === "exhausted"

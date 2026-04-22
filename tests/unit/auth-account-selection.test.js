@@ -299,6 +299,44 @@ describe("auth account selection", () => {
     expect(credentials).toBeNull();
   });
 
+  it("does not fall back to legacy testStatus when centralized eligibility is unavailable", async () => {
+    mockConnections.push(
+      {
+        id: "conn-legacy-active",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Legacy active",
+        accessToken: "legacy-active-token",
+        testStatus: "active",
+      },
+      {
+        id: "conn-legacy-unknown",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "Legacy unknown",
+        accessToken: "legacy-unknown-token",
+        testStatus: "unknown",
+      },
+      {
+        id: "conn-legacy-unavailable",
+        provider: "codex",
+        isActive: true,
+        priority: 3,
+        displayName: "Legacy unavailable",
+        accessToken: "legacy-unavailable-token",
+        testStatus: "unavailable",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce(null);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
+
+    expect(credentials).toBeNull();
+  });
+
   it("applies immediate canonical exhausted state for Codex live quota failures before persisting model lock state", async () => {
     mockConnections.push({
       id: "conn-live",

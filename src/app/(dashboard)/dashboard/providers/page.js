@@ -24,10 +24,9 @@ import {
 import Link from "next/link";
 import { getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
-import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import { getConnectionErrorTag } from "./errorTag";
-import { getStatusDisplayItems } from "./statusDisplay";
+import { getDashboardConnectionStatus, getStatusDisplayItems } from "./statusDisplay";
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
@@ -244,14 +243,14 @@ export default function ProvidersPage() {
         total: summary.total,
         errorCode: providerConnections
           .filter((c) => {
-            const status = getConnectionEffectiveStatus(c);
+            const status = getDashboardConnectionStatus(c);
             return status === "blocked" || status === "exhausted";
           })
           .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]
           ? getConnectionErrorTag(
               providerConnections
                 .filter((c) => {
-                  const status = getConnectionEffectiveStatus(c);
+                  const status = getDashboardConnectionStatus(c);
                   return status === "blocked" || status === "exhausted";
                 })
                 .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0],
@@ -259,14 +258,14 @@ export default function ProvidersPage() {
           : null,
         errorTime: providerConnections
           .filter((c) => {
-            const status = getConnectionEffectiveStatus(c);
+            const status = getDashboardConnectionStatus(c);
             return status === "blocked" || status === "exhausted";
           })
           .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]?.lastErrorAt
           ? getRelativeTime(
               providerConnections
                 .filter((c) => {
-                  const status = getConnectionEffectiveStatus(c);
+                  const status = getDashboardConnectionStatus(c);
                   return status === "blocked" || status === "exhausted";
                 })
                 .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0].lastErrorAt,
@@ -276,7 +275,7 @@ export default function ProvidersPage() {
       };
     }
 
-    const getEffectiveStatus = (conn) => getConnectionEffectiveStatus(conn);
+    const getEffectiveStatus = (conn) => getDashboardConnectionStatus(conn);
 
     const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
