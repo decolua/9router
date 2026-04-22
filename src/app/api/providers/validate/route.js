@@ -15,6 +15,10 @@ export async function POST(request) {
 
     let isValid = false;
     let error = null;
+    // Allow opencode without API key (free tier)
+    if (provider === "opencode" && !apiKey) {
+      return NextResponse.json({ valid: true, error: null });
+    }
 
     // Validate with each provider
     try {
@@ -165,6 +169,7 @@ export async function POST(request) {
         case "hyperbolic":
         case "ollama":
         case "ollama-local":
+        case "opencode":
         case "assemblyai":
         case "nanobanana":
         case "chutes":
@@ -184,6 +189,7 @@ export async function POST(request) {
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
             ollama: "https://ollama.com/api/tags",
             "ollama-local": "http://localhost:11434/api/tags",
+            opencode: "https://opencode.ai/zen/v1/models",
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",
