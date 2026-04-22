@@ -1,3 +1,13 @@
+# v0.3.97 (2026-04-22)
+
+## Features
+- Add OpenCode Go provider and support for custom models
+- Add Text To Image provider
+- Support custom host URL for remote Ollama servers
+
+## Fixes
+- Fix copy to clipboard issue
+
 # v0.3.96 (2026-04-17)
 
 ## Features
