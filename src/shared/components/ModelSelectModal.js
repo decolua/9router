@@ -64,7 +64,6 @@ export default function ModelSelectModal({
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
-  // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
 
@@ -73,8 +72,8 @@ export default function ModelSelectModal({
 
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
-      ...activeConnectionIds,  // Only connected providers
-      ...NO_AUTH_PROVIDER_IDS, // No-auth providers always visible
+      ...activeConnectionIds,
+      ...NO_AUTH_PROVIDER_IDS,
     ]);
 
     // Sort by PROVIDER_ORDER
@@ -99,7 +98,6 @@ export default function ModelSelectModal({
           }));
 
         if (aliasModels.length > 0) {
-          // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
 
@@ -111,14 +109,11 @@ export default function ModelSelectModal({
           };
         }
       } else if (isCustomProvider) {
-        // Find connection object to get prefix synchronously without waiting for providerNodes fetch
         const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = connection?.name || matchedNode?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
 
-        // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
-        // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
@@ -127,8 +122,6 @@ export default function ModelSelectModal({
             value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
           }));
 
-        // Always show compatible providers that are connected, even with no aliases.
-        // When no aliases exist, show a placeholder so users know it's available.
         const modelsToShow = nodeModels.length > 0 ? nodeModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
@@ -148,8 +141,6 @@ export default function ModelSelectModal({
         const hardcodedModels = getModelsByProviderId(providerId);
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
-        // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
-        // Otherwise only show aliases where aliasName === modelId ("Add Model" button pattern)
         const hasHardcoded = hardcodedModels.length > 0;
         const customModels = Object.entries(modelAliases)
           .filter(([aliasName, fullModel]) =>
@@ -361,4 +352,3 @@ ModelSelectModal.propTypes = {
   title: PropTypes.string,
   modelAliases: PropTypes.object,
 };
-

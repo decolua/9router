@@ -1,4 +1,4 @@
-export const OPENCODE_SYNC_PLUGIN = "opencode-cliproxyapi-sync@latest";
+export const OPENCODE_SYNC_PLUGIN = "opencode-9router-sync@latest";
 export const OPENAGENT_PRESET_PLUGIN = "oh-my-openagent@latest";
 export const SLIM_PRESET_PLUGIN = "oh-my-opencode-slim@latest";
 

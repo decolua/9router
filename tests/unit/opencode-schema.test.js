@@ -37,6 +37,15 @@ describe("normalizeOpenCodePreferences", () => {
     expect(prefs.envVars).toEqual([]);
   });
 
+  it("defaults missing model selection mode to exclude for persisted records", () => {
+    const prefs = normalizeOpenCodePreferences({
+      includedModels: ["openai/gpt-4.1-free"],
+    });
+
+    expect(prefs.modelSelectionMode).toBe("exclude");
+    expect(prefs.includedModels).toEqual(["openai/gpt-4.1-free"]);
+  });
+
   it("drops duplicate plugin and env-var keys deterministically", () => {
     const prefs = normalizeOpenCodePreferences({
       customPlugins: ["foo@latest", "foo@latest", "bar@latest"],

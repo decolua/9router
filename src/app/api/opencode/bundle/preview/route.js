@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getOpenCodePreferences } from "@/models";
 import { buildOpenCodeSyncPreview } from "@/lib/opencodeSync/generator.js";
-import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { load9RouterModelCatalog } from "@/lib/opencodeSync/modelCatalog.js";
 
 const VALIDATION_ERROR_CODES = new Set(["OPENCODE_VALIDATION_ERROR"]);
 
@@ -12,7 +12,7 @@ function getCatalogModelId(model, fallbackId = "") {
   if (typeof model === "string") return model.trim();
   if (!model || typeof model !== "object" || Array.isArray(model)) return fallbackId;
 
-  for (const key of ["id", "key", "model", "name"]) {
+  for (const key of ["id", "key", "model"]) {
     if (typeof model[key] === "string" && model[key].trim()) {
       return model[key].trim();
     }
@@ -25,55 +25,65 @@ function isValidationError(error) {
   return VALIDATION_ERROR_CODES.has(error?.code) || error?.name === "OpenCodeValidationError";
 }
 
-function filterOpenCodeModels(models) {
+function buildCatalogModels(models) {
   if (Array.isArray(models)) {
-    return models.filter((model) => getCatalogModelId(model).endsWith("-free"));
+    return models
+      .map((model) => {
+        const id = getCatalogModelId(model);
+        if (!id) return null;
+
+        return {
+          id,
+          name: typeof model?.name === "string" && model.name.trim() ? model.name.trim() : id,
+          provider: typeof model?.provider === "string" && model.provider.trim() ? model.provider.trim() : id.split("/")[0] || "",
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => left.id.localeCompare(right.id));
   }
 
   if (!models || typeof models !== "object") {
-    return {};
+    return [];
   }
 
-  return Object.keys(models).reduce((result, key) => {
-    const model = models[key];
-    const modelId = getCatalogModelId(model, key);
+  return Object.keys(models)
+    .map((key) => {
+      const model = models[key];
+      const id = getCatalogModelId(model, key);
+      if (!id) return null;
 
-    if (!modelId.endsWith("-free")) {
-      return result;
-    }
-
-    result[key] = model;
-    return result;
-  }, {});
+      return {
+        id,
+        name: typeof model?.name === "string" && model.name.trim() ? model.name.trim() : id,
+        provider: typeof model?.provider === "string" && model.provider.trim() ? model.provider.trim() : id.split("/")[0] || "",
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.id.localeCompare(right.id));
 }
 
-async function loadOpenCodeModelCatalog() {
-  const fetcher = FREE_PROVIDERS.opencode?.modelsFetcher;
+function buildPublicPreviewResponse(preview, modelCatalog) {
+  const publicArtifacts = preview?.publicArtifacts ?? {};
 
-  if (!fetcher?.url) {
-    return {};
-  }
-
-  const response = await fetch(fetcher.url);
-  if (!response.ok) {
-    throw new Error(`Failed to load OpenCode model catalog: ${response.status}`);
-  }
-
-  const json = await response.json();
-  const rawModels = json?.data ?? json?.models ?? json;
-  const filteredModels = filterOpenCodeModels(rawModels);
-
-  return filteredModels;
+  return {
+    version: preview?.hash ?? "",
+    opencode: publicArtifacts.opencode ?? null,
+    ohMyOpencode: publicArtifacts.ohMyOpencode ?? null,
+    ohMyOpenCodeSlim: publicArtifacts.ohMyOpenCodeSlim ?? null,
+    catalogModels: buildCatalogModels(modelCatalog),
+  };
 }
 
 export async function GET() {
   try {
     const [preferences, modelCatalog] = await Promise.all([
       getOpenCodePreferences(),
-      loadOpenCodeModelCatalog(),
+      load9RouterModelCatalog(),
     ]);
 
-    return NextResponse.json(buildOpenCodeSyncPreview({ preferences, modelCatalog }));
+    const preview = buildOpenCodeSyncPreview({ preferences, modelCatalog });
+
+    return NextResponse.json(buildPublicPreviewResponse(preview, modelCatalog));
   } catch (error) {
     if (isValidationError(error)) {
       return NextResponse.json({ error: error.message }, { status: 400 });

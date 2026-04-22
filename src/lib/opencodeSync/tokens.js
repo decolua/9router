@@ -1,7 +1,5 @@
 import crypto from "crypto";
 
-const VALID_TOKEN_MODES = new Set(["device", "shared"]);
-
 function isPlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
 }
@@ -25,25 +23,16 @@ function normalizeMetadata(value) {
     }, {});
 }
 
-export function validateSyncTokenMode(mode) {
-  const normalizedMode = normalizeString(mode);
-  if (!VALID_TOKEN_MODES.has(normalizedMode)) {
-    throw new Error("Invalid token mode");
-  }
-  return normalizedMode;
-}
-
 export function hashSyncToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export function createSyncToken({ name, mode, metadata } = {}) {
+export function createSyncToken({ name, metadata } = {}) {
   const normalizedName = normalizeString(name);
   if (!normalizedName) {
     throw new Error("Token name is required");
   }
 
-  const normalizedMode = validateSyncTokenMode(mode);
   const now = new Date().toISOString();
   const rawToken = `ocs_${crypto.randomBytes(32).toString("base64url")}`;
   const tokenHash = hashSyncToken(rawToken);
@@ -53,7 +42,6 @@ export function createSyncToken({ name, mode, metadata } = {}) {
     record: {
       id: crypto.randomUUID(),
       name: normalizedName,
-      mode: normalizedMode,
       metadata: normalizeMetadata(metadata),
       tokenHash,
       createdAt: now,
@@ -98,7 +86,6 @@ export function toPublicTokenRecord(record) {
   const publicRecord = {
     id: record.id,
     name: record.name,
-    mode: record.mode,
     metadata: record.metadata,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -140,10 +127,6 @@ export function normalizeSyncTokenPatch(input) {
       throw new Error("Invalid token metadata");
     }
     updates.metadata = normalizeMetadata(input.metadata);
-  }
-
-  if (Object.hasOwn(input, "mode")) {
-    throw new Error("Token mode cannot be updated");
   }
 
   return updates;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, Input, Select } from "@/shared/components";
+import { Badge, Button, Card, Input, Select } from "@/shared/components";
 
 function createEmptyServer() {
   return {
@@ -95,79 +95,103 @@ export default function McpServersCard({ preferences, saving = false, error = ""
   return (
     <Card
       title="MCP servers"
-      subtitle="Attach local command-based or remote MCP endpoints to the generated bundle."
+      subtitle="Optional: attach local command-based or remote MCP servers so they appear in the generated config when you need them."
       icon="dns"
+      className="rounded-[24px] border-black/5 shadow-[0_16px_42px_rgba(0,0,0,0.04)] dark:border-white/5"
       action={
         <Button variant="secondary" size="sm" onClick={saveServers} loading={saving}>
           Save MCP servers
         </Button>
       }
     >
-      <div className="space-y-4">
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            label="Server name"
-            value={draft.name}
-            onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-            placeholder="filesystem"
-          />
-          <Select
-            label="Type"
-            value={draft.type}
-            onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
-            options={[
-              { value: "local", label: "Local command" },
-              { value: "remote", label: "Remote URL" },
-            ]}
-          />
-          {draft.type === "remote" ? (
-            <Input
-              label="Remote URL"
-              value={draft.url}
-              onChange={(event) => setDraft((current) => ({ ...current, url: event.target.value }))}
-              placeholder="https://example.com/mcp"
-              className="md:col-span-2"
-            />
-          ) : (
-            <>
-              <Input
-                label="Command"
-                value={draft.command}
-                onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))}
-                placeholder="npx"
-              />
-              <Input
-                label="Args"
-                value={draft.args}
-                onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))}
-                placeholder="@modelcontextprotocol/server-filesystem, /workspace"
-                hint="Comma-separated for a small inline editor."
-              />
-            </>
-          )}
+      <div className="space-y-6">
+        <div className="rounded-[24px] border border-primary/10 bg-gradient-to-br from-primary/[0.05] via-transparent to-transparent px-5 py-[1.125rem]">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-text-main">Connected MCP endpoints</p>
+              <p className="text-xs leading-5 text-text-muted">Mix local command runners and remote URLs without overcrowding the main setup flow.</p>
+            </div>
+            <Badge size="sm">{draftServers.length} configured</Badge>
+          </div>
         </div>
 
-        <div className="flex justify-end">
-          <Button onClick={addServer} loading={saving}>
-            Add MCP server
-          </Button>
-        </div>
+        <Card.Section className="rounded-[24px] border border-black/5 bg-white/[0.78] px-5 py-5 dark:border-white/5 dark:bg-white/[0.02]">
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-text-main">Add a server</p>
+              <p className="mt-1 text-xs leading-5 text-text-muted">Create the next MCP entry, then save the whole list once it feels complete.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Server name"
+              value={draft.name}
+              onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+              placeholder="filesystem"
+            />
+            <Select
+              label="Type"
+              value={draft.type}
+              onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value }))}
+              options={[
+                { value: "local", label: "Local command" },
+                { value: "remote", label: "Remote URL" },
+              ]}
+            />
+            {draft.type === "remote" ? (
+              <Input
+                label="Remote URL"
+                value={draft.url}
+                onChange={(event) => setDraft((current) => ({ ...current, url: event.target.value }))}
+                placeholder="https://example.com/mcp"
+                className="md:col-span-2"
+              />
+            ) : (
+              <>
+                <Input
+                  label="Command"
+                  value={draft.command}
+                  onChange={(event) => setDraft((current) => ({ ...current, command: event.target.value }))}
+                  placeholder="npx"
+                />
+                <Input
+                  label="Args"
+                  value={draft.args}
+                  onChange={(event) => setDraft((current) => ({ ...current, args: event.target.value }))}
+                  placeholder="@modelcontextprotocol/server-filesystem, /workspace"
+                  hint="Comma-separated for a small inline editor."
+                />
+              </>
+            )}
+          </div>
+
+          <div className="mt-5 flex justify-end">
+            <Button onClick={addServer} loading={saving}>
+              Add MCP server
+            </Button>
+          </div>
+        </Card.Section>
 
         {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
         {localError ? <p className="text-sm text-red-600 dark:text-red-400">{localError}</p> : null}
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           {draftServers.length === 0 ? (
-            <p className="text-sm text-text-muted">No MCP servers configured.</p>
+            <div className="rounded-[22px] border border-dashed border-black/8 bg-black/[0.015] px-5 py-6 text-sm text-text-muted dark:border-white/10 dark:bg-white/[0.015]">No MCP servers configured yet.</div>
           ) : (
             draftServers.map((draftServer, index) => {
 
               return (
-                <Card.Section key={`${draftServer.name || "server"}-${index}`} className="space-y-3">
-                  <div className="flex items-center justify-between gap-3">
+                <Card.Section key={`${draftServer.name || "server"}-${index}`} className="space-y-5 rounded-[24px] border border-black/5 bg-white/[0.75] px-5 py-5 dark:border-white/5 dark:bg-white/[0.02]">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-text-main">{draftServer.name || `Server ${index + 1}`}</div>
-                      <div className="text-xs text-text-muted">{draftServer.type === "remote" ? "Remote URL" : "Local command"}</div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                        <span>{draftServer.type === "remote" ? "Remote URL" : "Local command"}</span>
+                        <span className="inline-block h-1 w-1 rounded-full bg-text-muted/50" />
+                        <span>{draftServer.type === "remote" ? "Network-based" : "Runs locally"}</span>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
@@ -178,7 +202,7 @@ export default function McpServersCard({ preferences, saving = false, error = ""
                     </Button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <Input
                       label="Name"
                       value={draftServer.name}

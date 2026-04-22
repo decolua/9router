@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const getOpenCodePreferences = vi.fn();
 const listOpenCodeTokens = vi.fn();
 const touchOpenCodeTokenLastUsedAt = vi.fn();
+const load9RouterModelCatalog = vi.fn();
 
 vi.mock("next/server", () => ({
   NextResponse: {
@@ -20,14 +21,8 @@ vi.mock("@/models", () => ({
   touchOpenCodeTokenLastUsedAt,
 }));
 
-vi.mock("@/shared/constants/providers.js", () => ({
-  FREE_PROVIDERS: {
-    opencode: {
-      modelsFetcher: {
-        url: "https://example.test/models",
-      },
-    },
-  },
+vi.mock("@/lib/opencodeSync/modelCatalog.js", () => ({
+  load9RouterModelCatalog,
 }));
 
 vi.mock("@/lib/opencodeSync/tokens.js", async () => {
@@ -88,19 +83,13 @@ describe("/api/opencode/sync/version", () => {
     expect(response.body).toEqual({ error: "Unauthorized" });
   });
 
-  it("returns sync metadata when auth token is valid", async () => {
+  it("returns sync version only when auth token is valid", async () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue(preferences);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
-        }),
-      })
-    );
+    load9RouterModelCatalog.mockResolvedValue({
+      "gpt-4o-mini-free": { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    });
 
     const response = await GET(
       new Request("http://localhost/api/opencode/sync/version", {
@@ -110,13 +99,13 @@ describe("/api/opencode/sync/version", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      revision: expect.any(String),
-      hash: expect.any(String),
-      generatedAt: expect.any(String),
-      schemaVersion: 1,
+      version: expect.any(String),
     });
-    expect(response.body.revision).toHaveLength(12);
-    expect(response.body.hash).toHaveLength(64);
+    expect(response.body.version).toHaveLength(64);
+    expect(response.body).not.toHaveProperty("revision");
+    expect(response.body).not.toHaveProperty("hash");
+    expect(response.body).not.toHaveProperty("generatedAt");
+    expect(response.body).not.toHaveProperty("schemaVersion");
     expect(touchOpenCodeTokenLastUsedAt).toHaveBeenCalledWith(record.id);
   });
 
@@ -124,18 +113,10 @@ describe("/api/opencode/sync/version", () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue(preferences);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: {
-            "gpt-4o-mini-free": { name: "GPT-4o mini free" },
-            "gpt-4o": { name: "GPT-4o" },
-          },
-        }),
-      })
-    );
+    load9RouterModelCatalog.mockResolvedValue({
+      "gpt-4o-mini-free": { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+      "gpt-4o": { id: "gpt-4o", name: "GPT-4o" },
+    });
 
     const response = await GET(
       new Request("http://localhost/api/opencode/sync/version", {
@@ -144,27 +125,104 @@ describe("/api/opencode/sync/version", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      revision: expect.any(String),
-      hash: expect.any(String),
-      generatedAt: expect.any(String),
-      schemaVersion: 1,
+    expect(response.body).toEqual({
+      version: expect.any(String),
     });
   });
 
-  it("returns 500 when upstream catalog JSON is invalid", async () => {
+  it("ignores name-only catalog entries when computing the sync version", async () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue(preferences);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => {
-          throw new SyntaxError("Unexpected token");
-        },
+
+    load9RouterModelCatalog.mockResolvedValueOnce([
+      { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    ]);
+    const cleanResponse = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
       })
     );
+
+    load9RouterModelCatalog.mockResolvedValue([
+      { name: "gpt-4o-mini-free" },
+      { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    ]);
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(cleanResponse.status).toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      version: expect.any(String),
+    });
+    expect(response.body.version).toHaveLength(64);
+    expect(response.body.version).toBe(cleanResponse.body.version);
+  });
+
+  it("returns the same version when only non-public metadata changes", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    load9RouterModelCatalog.mockResolvedValue({
+      "gpt-4o-mini-free": { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    });
+
+    getOpenCodePreferences.mockResolvedValueOnce({
+      ...preferences,
+      updatedAt: "2026-04-21T10:00:00.000Z",
+    });
+    const first = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    getOpenCodePreferences.mockResolvedValueOnce({
+      ...preferences,
+      updatedAt: "2026-04-21T11:00:00.000Z",
+    });
+    const second = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(second.status).toBe(200);
+    expect(second.body.version).toBe(first.body.version);
+  });
+
+  it("returns 400 when selected models collide after artifact normalization", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue({
+      ...preferences,
+      defaultModel: null,
+      includedModels: ["openai/gpt-4o-mini-free", "anthropic/gpt-4o-mini-free"],
+    });
+    load9RouterModelCatalog.mockResolvedValue({
+      "openai/gpt-4o-mini-free": { id: "openai/gpt-4o-mini-free", name: "GPT-4o mini free (OpenAI)" },
+      "anthropic/gpt-4o-mini-free": { id: "anthropic/gpt-4o-mini-free", name: "GPT-4o mini free (Anthropic)" },
+    });
+
+    const response = await GET(
+      new Request("http://localhost/api/opencode/sync/version", {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('Multiple selected models normalize to the same artifact model id "gpt-4o-mini-free"');
+  });
+
+  it("returns 500 when loading the 9router catalog fails", async () => {
+    const { token, record } = createSyncToken({ name: "Device", mode: "device" });
+    listOpenCodeTokens.mockResolvedValue([record]);
+    getOpenCodePreferences.mockResolvedValue(preferences);
+    load9RouterModelCatalog.mockRejectedValue(new Error("boom"));
 
     const response = await GET(
       new Request("http://localhost/api/opencode/sync/version", {
@@ -187,15 +245,9 @@ describe("/api/opencode/sync/version", () => {
         { name: " DUP ", type: "remote", url: "https://example.test/mcp" },
       ],
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
-        }),
-      })
-    );
+    load9RouterModelCatalog.mockResolvedValue({
+      "gpt-4o-mini-free": { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    });
 
     const response = await GET(
       new Request("http://localhost/api/opencode/sync/version", {
@@ -208,20 +260,14 @@ describe("/api/opencode/sync/version", () => {
     expect(touchOpenCodeTokenLastUsedAt).not.toHaveBeenCalled();
   });
 
-  it("returns version metadata even when token lastUsedAt update fails", async () => {
+  it("returns version payload even when token lastUsedAt update fails", async () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue(preferences);
     touchOpenCodeTokenLastUsedAt.mockRejectedValue(new Error("db write failed"));
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "gpt-4o-mini-free", name: "GPT-4o mini free" }],
-        }),
-      })
-    );
+    load9RouterModelCatalog.mockResolvedValue({
+      "gpt-4o-mini-free": { id: "gpt-4o-mini-free", name: "GPT-4o mini free" },
+    });
 
     const response = await GET(
       new Request("http://localhost/api/opencode/sync/version", {
@@ -230,9 +276,8 @@ describe("/api/opencode/sync/version", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      revision: expect.any(String),
-      hash: expect.any(String),
+    expect(response.body).toEqual({
+      version: expect.any(String),
     });
   });
 });
