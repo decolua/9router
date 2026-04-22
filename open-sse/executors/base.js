@@ -1,4 +1,5 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { resolveOllamaLocalHost } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
@@ -34,6 +35,9 @@ export class BaseExecutor {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
+    }
+    if (this.provider === "ollama-local") {
+      return `${resolveOllamaLocalHost(credentials)}/api/chat`;
     }
     const baseUrls = this.getBaseUrls();
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;

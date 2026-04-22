@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
@@ -58,7 +58,7 @@ export default function ProviderDetailPage() {
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
       }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId]);
+    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
@@ -1012,6 +1012,9 @@ export default function ProviderDetailPage() {
         providerName={providerInfo.name}
         isCompatible={isCompatible}
         isAnthropic={isAnthropicCompatible}
+        authType={providerInfo?.authType}
+        authHint={providerInfo?.authHint}
+        website={providerInfo?.website}
         proxyPools={proxyPools}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddApiKeyModal(false)}

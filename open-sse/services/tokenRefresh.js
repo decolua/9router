@@ -206,7 +206,7 @@ export async function refreshCodexToken(refreshToken, log) {
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: PROVIDERS.codex.clientId,
-      scope: "openid profile email offline_access",
+      scope: "openid profile email",
     }),
   });
 
