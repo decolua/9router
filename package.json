@@ -3,6 +3,9 @@
   "version": "0.3.96",
   "description": "8Router web dashboard",
   "private": true,
+  "bin": {
+    "8router": "./bin/8router.js"
+  },
   "scripts": {
     "dev": "next dev --webpack --port 20128",
     "build": "NODE_ENV=production next build --webpack",
