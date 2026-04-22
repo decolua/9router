@@ -243,8 +243,6 @@ export async function clearAccountError(connectionId, currentConnection, model =
   }
 
   await updateProviderConnection(connectionId, clearObj);
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.info("AUTH", `Account ${connName} cleared lock for model=${model || "__all"}`);
 }
 
 /**
