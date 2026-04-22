@@ -163,7 +163,7 @@ const PROVIDER_MODELS_CONFIG = {
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),
   ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
-  "ollama-local": createOpenAIModelsConfig("http://localhost:11434/api/tags"),
+  // ollama-local: url resolved dynamically below via providerSpecificData.baseUrl
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
@@ -377,6 +377,34 @@ export async function GET(request, { params }) {
         connectionId: connection.id,
         models: [],
         warning,
+      });
+    }
+
+    // Handle ollama-local: resolve URL from providerSpecificData.baseUrl if provided,
+    // otherwise fall back to default localhost address.
+    if (connection.provider === "ollama-local") {
+      const baseUrl = connection.providerSpecificData?.baseUrl;
+      const url = baseUrl
+        ? `${baseUrl.replace(/\/$/, "")}/api/tags`
+        : "http://localhost:11434/api/tags";
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`Error fetching models from ollama-local:`, errorText);
+        return NextResponse.json(
+          { error: `Failed to fetch models: ${response.status}` },
+          { status: response.status }
+        );
+      }
+      const data = await response.json();
+      const models = parseOpenAIStyleModels(data);
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models,
       });
     }
 
