@@ -8,6 +8,11 @@ import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
 import { normalizeQuotaSchedulerSettings } from "./quotaRefreshPlanner.js";
 import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
+import {
+  createDefaultOpenCodePreferences,
+  normalizeOpenCodePreferences,
+  validateOpenCodePreferences,
+} from "@/lib/opencodeSync/schema.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -819,6 +824,49 @@ export async function getSettings() {
   return mergeSettingsWithDefaults(db.data.settings || { cloudEnabled: false });
 }
 
+export async function mutateOpenCodeTokens(mutator) {
+  if (typeof mutator !== "function") {
+    throw new Error("Token mutator is required");
+  }
+
+  const db = await getDb();
+  await withFileLock(db, async () => {
+    await db.read();
+    db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+    const current = [...(db.data.opencodeSync.tokens || [])];
+    const result = mutator(current);
+
+    if (!result || typeof result !== "object" || !Array.isArray(result.tokens)) {
+      throw new Error("Invalid token mutation result");
+    }
+
+    db.data.opencodeSync.tokens = [...result.tokens];
+    await db.write();
+  });
+
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+  return db.data.opencodeSync.tokens;
+}
+
+export async function touchOpenCodeTokenLastUsedAt(tokenId, usedAt = new Date().toISOString()) {
+  const normalizedId = typeof tokenId === "string" ? tokenId.trim() : "";
+  if (!normalizedId) {
+    throw new Error("Token id is required");
+  }
+
+  return mutateOpenCodeTokens((tokens) => ({
+    tokens: tokens.map((token) =>
+      token?.id === normalizedId
+        ? {
+            ...token,
+            lastUsedAt: usedAt,
+            updatedAt: usedAt,
+          }
+        : token
+    ),
+  }));
+}
+
 export async function updateSettings(updates) {
   const db = await getDb();
   db.data.settings = mergeSettingsWithDefaults({
@@ -958,4 +1006,49 @@ export async function resetAllPricing() {
   db.data.pricing = {};
   await safeWrite(db);
   return db.data.pricing;
+}
+
+// --- OpenCode Sync ---
+
+function normalizeOpenCodeSyncDomain(value) {
+  const current = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    preferences: normalizeOpenCodePreferences(current.preferences),
+    tokens: Array.isArray(current.tokens) ? current.tokens : [],
+  };
+}
+
+export async function getOpenCodePreferences() {
+  const db = await getDb();
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+  db.data.opencodeSync.preferences = normalizeOpenCodePreferences(db.data.opencodeSync.preferences);
+  return db.data.opencodeSync.preferences;
+}
+
+export async function updateOpenCodePreferences(updates) {
+  const db = await getDb();
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+
+  const current = normalizeOpenCodePreferences(db.data.opencodeSync.preferences);
+  db.data.opencodeSync.preferences = validateOpenCodePreferences({
+    ...current,
+    ...(updates && typeof updates === "object" && !Array.isArray(updates) ? updates : {}),
+  });
+
+  await safeWrite(db);
+  return db.data.opencodeSync.preferences;
+}
+
+export async function listOpenCodeTokens() {
+  const db = await getDb();
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+  return db.data.opencodeSync.tokens;
+}
+
+export async function replaceOpenCodeTokens(tokens) {
+  const db = await getDb();
+  db.data.opencodeSync = normalizeOpenCodeSyncDomain(db.data.opencodeSync);
+  db.data.opencodeSync.tokens = Array.isArray(tokens) ? [...tokens] : [];
+  await safeWrite(db);
+  return db.data.opencodeSync.tokens;
 }

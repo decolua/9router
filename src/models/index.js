@@ -35,4 +35,10 @@ export {
   deleteApiKey,
   validateApiKey,
   isCloudEnabled,
+  getOpenCodePreferences,
+  updateOpenCodePreferences,
+  listOpenCodeTokens,
+  replaceOpenCodeTokens,
+  mutateOpenCodeTokens,
+  touchOpenCodeTokenLastUsedAt,
 } from "@/lib/localDb";

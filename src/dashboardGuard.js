@@ -18,6 +18,7 @@ const PROTECTED_API_PATHS = [
   "/api/keys",
   "/api/providers/client",
   "/api/provider-nodes/validate",
+  "/api/opencode",
 ];
 
 function isLocalRequest(request) {
@@ -121,7 +122,3 @@ export async function proxy(request) {
 
   return NextResponse.next();
 }
-
-export const config = {
-  matcher: ["/", "/dashboard/:path*"],
-};

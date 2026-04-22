@@ -108,6 +108,13 @@ const getPageInfo = (pathname) => {
       icon: "terminal",
       breadcrumbs: [],
     };
+  if (pathname.includes("/opencode"))
+    return {
+      title: "OpenCode",
+      description: "Configure the OpenCode control plane and preview the local sync bundle",
+      icon: "extension",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/proxy-pools"))
     return {
       title: "Proxy Pools",
