@@ -36,6 +36,7 @@ const DEFAULT_SETTINGS = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+  rtkEnabled: false,
 };
 
 function cloneDefaultData() {
@@ -44,6 +45,7 @@ function cloneDefaultData() {
     providerNodes: [],
     proxyPools: [],
     modelAliases: {},
+    customModels: [],
     mitmAlias: {},
     combos: [],
     apiKeys: [],
@@ -512,6 +514,33 @@ export async function setModelAlias(alias, model) {
 export async function deleteModelAlias(alias) {
   const db = await getDb();
   delete db.data.modelAliases[alias];
+  await safeWrite(db);
+}
+
+// Custom models — user-added models with explicit type (llm/image/tts/embedding/...)
+export async function getCustomModels() {
+  const db = await getDb();
+  return db.data.customModels || [];
+}
+
+export async function addCustomModel({ providerAlias, id, type = "llm", name }) {
+  const db = await getDb();
+  if (!db.data.customModels) db.data.customModels = [];
+  const exists = db.data.customModels.some(
+    (m) => m.providerAlias === providerAlias && m.id === id && (m.type || "llm") === type
+  );
+  if (exists) return false;
+  db.data.customModels.push({ providerAlias, id, type, name: name || id });
+  await safeWrite(db);
+  return true;
+}
+
+export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
+  const db = await getDb();
+  if (!db.data.customModels) return;
+  db.data.customModels = db.data.customModels.filter(
+    (m) => !(m.providerAlias === providerAlias && m.id === id && (m.type || "llm") === type)
+  );
   await safeWrite(db);
 }
 

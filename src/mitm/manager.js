@@ -12,7 +12,7 @@ const IS_MAC = process.platform === "darwin";
 const { generateCert } = require("./cert/generate");
 const { installCert, uninstallCert } = require("./cert/install");
 const { isCertExpired } = require("./cert/rootCA");
-const { MITM_DIR } = require("./paths");
+const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -48,7 +48,7 @@ let mitmRestartCount = 0;
 let mitmLastStartTime = 0;
 let mitmIsRestarting = false;
 
-function resolveServerPath() {
+function resolveBundledServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
   const sibling = path.join(__dirname, "server.js");
   if (fs.existsSync(sibling)) return sibling;
@@ -59,7 +59,38 @@ function resolveServerPath() {
   return fromCwd;
 }
 
-const SERVER_PATH = resolveServerPath();
+// Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
+// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+function ensureRuntimeServer(bundledPath) {
+  try {
+    if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
+
+    // Dev mode: source file has relative requires (./logger, ./config...),
+    // only the bundled file inside node_modules is self-contained + safe to copy.
+    if (!bundledPath.includes(`${path.sep}node_modules${path.sep}`)) {
+      return bundledPath;
+    }
+
+    const runtimeDir = path.join(DATA_DIR, "runtime", "mitm");
+    const runtimeServer = path.join(runtimeDir, "server.js");
+
+    // Skip copy if sizes match (bundle unchanged since last run)
+    if (fs.existsSync(runtimeServer)) {
+      try {
+        if (fs.statSync(bundledPath).size === fs.statSync(runtimeServer).size) return runtimeServer;
+      } catch { /* recopy */ }
+    }
+
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.copyFileSync(bundledPath, runtimeServer);
+    return runtimeServer;
+  } catch (e) {
+    try { log(`[MITM] runtime copy failed: ${e.message}`); } catch { /* ignore */ }
+    return bundledPath;
+  }
+}
+
+const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 

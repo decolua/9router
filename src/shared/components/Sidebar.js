@@ -7,11 +7,12 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "tts"];
+const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts"];
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
@@ -41,6 +42,9 @@ export default function Sidebar({ onClose }) {
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const { copied, copy } = useCopyToClipboard(2000);
+
+  const INSTALL_CMD = "npm install -g 9router@latest";
 
   useEffect(() => {
     fetch("/api/settings")
@@ -100,14 +104,18 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-0.5">
+            <button
+              onClick={() => copy(INSTALL_CMD)}
+              title="Click to copy install command"
+              className="flex flex-col gap-0.5 text-left hover:opacity-80 transition-opacity cursor-pointer rounded p-1 -m-1"
+            >
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
               <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
+                {copied ? "✓ copied!" : INSTALL_CMD}
               </code>
-            </div>
+            </button>
           )}
         </div>
 

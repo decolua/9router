@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
@@ -31,8 +32,10 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       .replace(/\{\{model\}\}/g, modelValue || "provider/model-id");
   };
 
+  const { copy: copyToClipboard } = useCopyToClipboard();
+
   const handleCopy = async (text, field) => {
-    await navigator.clipboard.writeText(replaceVars(text));
+    await copyToClipboard(replaceVars(text), `toolcard-${field}`);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
   };
