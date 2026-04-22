@@ -4,9 +4,14 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, onSave, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
+  const isCookie = authType === "cookie";
+  const credentialLabel = isCookie ? "Cookie Value" : "API Key";
+  const credentialPlaceholder = isCookie
+    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    : "";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -87,7 +92,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   if (!provider) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} API Key`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -114,10 +119,11 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         {!isOllamaLocal && (
           <div className="flex gap-2">
             <Input
-              label="API Key"
-              type="password"
+              label={credentialLabel}
+              type={isCookie ? "text" : "password"}
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+              placeholder={credentialPlaceholder}
               className="flex-1"
             />
             <div className="pt-6">
@@ -126,6 +132,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               </Button>
             </div>
           </div>
+        )}
+        {isCookie && authHint && (
+          <p className="text-xs text-text-muted">
+            {authHint}
+            {website && (
+              <>
+                {" "}
+                <a href={website} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                  Open {website.replace(/^https?:\/\//, "")}
+                </a>
+              </>
+            )}
+          </p>
         )}
         {isOllamaLocal && (
           <p className="text-xs text-text-muted">
@@ -192,6 +211,9 @@ AddApiKeyModal.propTypes = {
   providerName: PropTypes.string,
   isCompatible: PropTypes.bool,
   isAnthropic: PropTypes.bool,
+  authType: PropTypes.string,
+  authHint: PropTypes.string,
+  website: PropTypes.string,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     name: PropTypes.string,
