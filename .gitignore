@@ -68,3 +68,25 @@ README1.md
 deploy*.sh
 ecosystem.config.*
 .worktrees/
+
+# Taskplane runtime artifacts (machine-specific, do not commit)
+.pi/batch-state.json
+.pi/batch-history.json
+.pi/lane-state-*
+.pi/merge-result-*
+.pi/merge-request-*
+.pi/worker-conversation-*
+.pi/orch-logs/
+.pi/orch-abort-signal
+.pi/settings.json
+.taskplane-tasks/
+
+# Pi project-local packages (if using pi install -l)
+.pi/npm/
+
+# AI assistant artifacts
+context-snapshot.json
+.a5c/
+.claude/
+.pi/agents/supervisor.md
+.pi/taskplane.json
