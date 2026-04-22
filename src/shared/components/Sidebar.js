@@ -12,7 +12,7 @@ import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "tts"];
+const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts"];
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },

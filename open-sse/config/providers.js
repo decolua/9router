@@ -337,6 +337,11 @@ export const PROVIDERS = {
     headers: { "x-opencode-client": "desktop" },
     noAuth: true
   },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   "grok-web": {
     baseUrl: "https://grok.com/rest/app-chat/conversations/new",
     format: "grok-web",

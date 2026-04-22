@@ -141,6 +141,18 @@ export const PROVIDER_MODELS = {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
   ],
+  "opencode-go": [  // OpenCode Go subscription (API key)
+    { id: "kimi-k2.6", name: "Kimi K2.6" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "glm-5.1", name: "GLM 5.1" },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "qwen3.5-plus", name: "Qwen 3.5 Plus" },
+    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus" },
+    { id: "mimo-v2-pro", name: "MiMo V2 Pro" },
+    { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
+    { id: "minimax-m2.7", name: "MiniMax M2.7", targetFormat: "claude" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5", targetFormat: "claude" },
+  ],
   oc: [  // OpenCode
     // { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
     // { id: "qwen3.6-plus-free", name: "Qwen 3.6 Plus" },
@@ -192,6 +204,10 @@ export const PROVIDER_MODELS = {
     { id: "tts-1", name: "TTS-1", type: "tts" },
     { id: "tts-1-hd", name: "TTS-1 HD", type: "tts" },
     { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
+    // Image models
+    { id: "gpt-image-1", name: "GPT Image 1", type: "image" },
+    { id: "dall-e-3", name: "DALL-E 3", type: "image" },
+    { id: "dall-e-2", name: "DALL-E 2", type: "image" },
   ],
   anthropic: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
@@ -219,6 +235,10 @@ export const PROVIDER_MODELS = {
     { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
+    // Image models (Nano Banana)
+    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image (Nano Banana 2)", type: "image" },
+    { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image (Nano Banana Pro)", type: "image" },
+    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", type: "image" },
   ],
   openrouter: [
     // Embedding models
@@ -233,6 +253,11 @@ export const PROVIDER_MODELS = {
     { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
     { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
     { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
+    // Image models
+    { id: "openai/dall-e-3", name: "DALL-E 3 (via OpenRouter)", type: "image" },
+    { id: "openai/gpt-image-1", name: "GPT Image 1 (via OpenRouter)", type: "image" },
+    { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image" },
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image" },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -256,6 +281,8 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+    // Image models
+    { id: "minimax-image-01", name: "MiniMax Image 01", type: "image" },
   ],
   blackbox: [
     { id: "gpt-4o", name: "GPT-4o" },
@@ -424,6 +451,24 @@ export const PROVIDER_MODELS = {
 
   // TTS entries are loaded from ttsModels.js via buildTtsProviderModels()
   ...buildTtsProviderModels(),
+
+  // Image providers
+  nanobanana: [
+    { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image" },
+    { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image" },
+  ],
+  sdwebui: [
+    { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image" },
+    { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+  ],
+  comfyui: [
+    { id: "flux-dev", name: "FLUX Dev", type: "image" },
+    { id: "sdxl", name: "SDXL", type: "image" },
+  ],
+  huggingface: [
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell", type: "image" },
+    { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+  ],
 };
 
 // Helper functions
