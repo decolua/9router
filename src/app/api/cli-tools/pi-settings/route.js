@@ -11,8 +11,8 @@ import { getSafeExecCwd } from "../_lib/safeExec";
 const execAsync = promisify(exec);
 const SAFE_EXEC_CWD = getSafeExecCwd();
 
-const getAuthDir = () => path.join(os.homedir(), ".pi", "agent");
-const getAuthPath = () => path.join(getAuthDir(), "auth.json");
+const getConfigDir = () => path.join(os.homedir(), ".pi", "agent");
+const getConfigPath = () => path.join(getConfigDir(), "models.json");
 
 // Check if pi CLI is installed
 const checkPiInstalled = async () => {
@@ -22,9 +22,9 @@ const checkPiInstalled = async () => {
     await execAsync(command, { cwd: SAFE_EXEC_CWD, windowsHide: true });
     return true;
   } catch {
-    // Also check if auth file exists
+    // Also check if config file exists
     try {
-      await fs.access(getAuthPath());
+      await fs.access(getConfigPath());
       return true;
     } catch {
       return false;
@@ -32,9 +32,9 @@ const checkPiInstalled = async () => {
   }
 };
 
-const readAuthFile = async () => {
+const readConfig = async () => {
   try {
-    const content = await fs.readFile(getAuthPath(), "utf-8");
+    const content = await fs.readFile(getConfigPath(), "utf-8");
     return JSON.parse(content);
   } catch (error) {
     if (error.code === "ENOENT") return null;
@@ -43,9 +43,9 @@ const readAuthFile = async () => {
   }
 };
 
-const has9RouterConfig = (auth) => {
-  if (!auth) return false;
-  return !!auth["9router"];
+const has9RouterConfig = (config) => {
+  if (!config?.providers) return false;
+  return !!config.providers["9router"];
 };
 
 // GET - Check pi CLI and read current settings
@@ -56,23 +56,24 @@ export async function GET() {
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
-        auth: null,
+        config: null,
         message: "Pi CLI is not installed",
       });
     }
 
-    const auth = await readAuthFile();
-    const routerConfig = auth?.["9router"];
+    const config = await readConfig();
+    const providerConfig = config?.providers?.["9router"];
+    const models = providerConfig?.models || [];
 
     return NextResponse.json({
       installed: true,
-      auth,
-      has9Router: has9RouterConfig(auth),
-      authPath: getAuthPath(),
+      config,
+      has9Router: has9RouterConfig(config),
+      configPath: getConfigPath(),
       pi: {
-        baseURL: routerConfig?.baseURL || null,
-        apiKey: routerConfig?.apiKey ? "***" : null,
-        configured: !!routerConfig,
+        models: models.map(m => m.id),
+        baseURL: providerConfig?.baseUrl || null,
+        apiKey: providerConfig?.apiKey || null,
       },
     });
   } catch (error) {
@@ -81,45 +82,55 @@ export async function GET() {
   }
 }
 
-// POST - Apply 9Router config to pi auth.json
+// POST - Apply 9Router as custom provider in models.json
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey } = await request.json();
+    const { baseUrl, apiKey, models } = await request.json();
 
-    if (!baseUrl) {
-      return NextResponse.json({ error: "baseUrl is required" }, { status: 400 });
+    if (!baseUrl || !Array.isArray(models) || models.length === 0) {
+      return NextResponse.json({ error: "baseUrl and models array are required" }, { status: 400 });
     }
 
-    const authDir = getAuthDir();
-    const authPath = getAuthPath();
+    const configDir = getConfigDir();
+    const configPath = getConfigPath();
 
-    // Create directory with secure permissions
-    await fs.mkdir(authDir, { recursive: true, mode: 0o700 });
+    await fs.mkdir(configDir, { recursive: true });
 
-    // Read existing auth or start fresh
-    let auth = {};
+    // Read existing config or start fresh
+    let config = { providers: {} };
     try {
-      const existing = await fs.readFile(authPath, "utf-8");
-      auth = JSON.parse(existing);
-    } catch { /* No existing auth */ }
+      const existing = await fs.readFile(configPath, "utf-8");
+      config = JSON.parse(existing);
+      if (!config.providers) config.providers = {};
+    } catch { /* No existing config */ }
+
+    // Backup original if this is first time
+    const backupPath = `${configPath}.backup`;
+    try {
+      await fs.access(backupPath);
+    } catch {
+      if (config.providers && Object.keys(config.providers).length > 0) {
+        await fs.writeFile(backupPath, JSON.stringify(config, null, 2));
+      }
+    }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const keyToUse = apiKey || "sk_9router";
 
-    // Add/update 9router entry
-    auth["9router"] = {
-      type: "api_key",
-      baseURL: normalizedBaseUrl,
+    // Create 9router provider config
+    config.providers["9router"] = {
+      baseUrl: normalizedBaseUrl,
+      api: "openai-completions",
       apiKey: keyToUse,
+      models: models.map(modelId => ({ id: modelId })),
     };
 
-    // Write auth file with secure permissions (0600)
-    await fs.writeFile(authPath, JSON.stringify(auth, null, 2), { mode: 0o600 });
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
     return NextResponse.json({
       success: true,
-      message: "Pi auth.json updated successfully",
-      authPath,
+      message: "Pi configuration updated successfully",
+      configPath,
     });
   } catch (error) {
     console.log("Error applying pi settings:", error);
@@ -127,32 +138,25 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router config from pi auth.json
+// DELETE - Restore original config
 export async function DELETE() {
   try {
-    const authPath = getAuthPath();
+    const configPath = getConfigPath();
+    const backupPath = `${configPath}.backup`;
 
-    let auth = {};
     try {
-      const existing = await fs.readFile(authPath, "utf-8");
-      auth = JSON.parse(existing);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No auth file to restore" });
-      }
-      throw error;
+      await fs.access(backupPath);
+      const backup = await fs.readFile(backupPath, "utf-8");
+      await fs.writeFile(configPath, backup);
+      await fs.unlink(backupPath);
+
+      return NextResponse.json({
+        success: true,
+        message: "Original configuration restored",
+      });
+    } catch {
+      return NextResponse.json({ error: "No backup found" }, { status: 404 });
     }
-
-    // Remove 9router entry
-    delete auth["9router"];
-
-    // Write back
-    await fs.writeFile(authPath, JSON.stringify(auth, null, 2), { mode: 0o600 });
-
-    return NextResponse.json({
-      success: true,
-      message: "9Router config removed from pi auth.json",
-    });
   } catch (error) {
     console.log("Error restoring pi settings:", error);
     return NextResponse.json({ error: "Failed to restore pi settings" }, { status: 500 });
