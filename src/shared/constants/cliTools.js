@@ -114,6 +114,14 @@ export const CLI_TOOLS = {
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
   },
+  pi: {
+    id: "pi",
+    name: "Pi",
+    image: "/providers/pi.png",
+    color: "#6366F1",
+    description: "Pi Coding Agent",
+    configType: "custom",
+  },
   droid: {
     id: "droid",
     name: "Factory Droid",
