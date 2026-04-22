@@ -1,25 +1,22 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
-import Toggle from "@/shared/components/Toggle";
-import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
 import Select from "@/shared/components/Select";
 import Pagination from "@/shared/components/Pagination";
+import Toggle from "@/shared/components/Toggle";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { getConnectionFilterStatus, normalizeConnectionFilterStatus } from "@/lib/connectionStatus";
-import { createSingleFlight, runWithConcurrency } from "./refreshQueue";
+import { calculatePercentage, getStoredQuotaPresentation } from "./utils";
 
 const DEFAULT_PAGE_SIZE = 24;
-const QUOTA_REFRESH_CONCURRENCY = 4;
-
-const REFRESH_INTERVAL_MS = 60000; // 60 seconds
+const STATUS_POLL_INTERVAL_MS = 15000;
 
 function getSupportedOAuthConnections(connections = []) {
   return connections.filter(
@@ -50,11 +47,89 @@ function sortConnectionsByProvider(connections = []) {
   });
 }
 
-function getPaginatedConnections(connections = [], currentPage = 1, pageSize = DEFAULT_PAGE_SIZE) {
-  const totalPages = Math.max(1, Math.ceil(connections.length / pageSize));
-  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+function getRelativeTime(dateString) {
+  if (!dateString) return "Never";
 
-  return connections.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const timestamp = new Date(dateString).getTime();
+  if (!Number.isFinite(timestamp)) return "Unknown";
+
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffDays > 0) return `${diffDays}d ago`;
+  if (diffHours > 0) return `${diffHours}h ago`;
+  if (diffMinutes > 0) return `${diffMinutes}m ago`;
+  return "Just now";
+}
+
+function getSchedulerTone(status, enabled) {
+  if (!enabled) {
+    return {
+      icon: "pause_circle",
+      label: "Scheduler paused",
+      tone: "text-text-muted",
+      surface: "border-black/5 dark:border-white/10 bg-surface",
+    };
+  }
+
+  switch (status) {
+    case "running":
+      return {
+        icon: "progress_activity",
+        label: "Sweep running",
+        tone: "text-primary",
+        surface: "border-primary/20 bg-primary/5",
+      };
+    case "cancelling":
+      return {
+        icon: "sync",
+        label: "Restarting sweep",
+        tone: "text-amber-600 dark:text-amber-400",
+        surface: "border-amber-500/20 bg-amber-500/10",
+      };
+    case "error":
+      return {
+        icon: "error",
+        label: "Scheduler error",
+        tone: "text-red-500",
+        surface: "border-red-500/20 bg-red-500/10",
+      };
+    default:
+      return {
+        icon: "schedule",
+        label: "Watching shared state",
+        tone: "text-emerald-600 dark:text-emerald-400",
+        surface: "border-emerald-500/20 bg-emerald-500/10",
+      };
+  }
+}
+
+function getSchedulerMessage(status = {}) {
+  if (!status) return "Shared quota state is loaded from the backend scheduler.";
+
+  if (!status.enabled) {
+    return "Automatic quota sweeps are disabled. Stored state remains visible until the scheduler is re-enabled.";
+  }
+
+  if (status.status === "running") {
+    return "Backend sweep is updating shared quota state now. Cards will reflect changes on the next lightweight status refresh.";
+  }
+
+  if (status.status === "cancelling" || status.restartRequested) {
+    return "A manual refresh requested a restart. The backend will cancel the current sweep and begin a fresh one.";
+  }
+
+  if (status.status === "error") {
+    return status.error?.message || "The last scheduler run failed. Stored state is still shown while the backend recovers.";
+  }
+
+  if (status.lastRun?.finishedAt) {
+    return `Last backend sweep completed ${getRelativeTime(status.lastRun.finishedAt)}.`;
+  }
+
+  return "Quota cards show the latest backend-maintained shared state without browser fan-out polling.";
 }
 
 export default function ProviderLimits() {
@@ -62,14 +137,12 @@ export default function ProviderLimits() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [connections, setConnections] = useState([]);
-  const [quotaData, setQuotaData] = useState({});
-  const [loading, setLoading] = useState({});
-  const [errors, setErrors] = useState({});
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [refreshingAll, setRefreshingAll] = useState(false);
-  const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
+  const [schedulerStatusLoading, setSchedulerStatusLoading] = useState(true);
+  const [schedulerStatusError, setSchedulerStatusError] = useState("");
+  const [refreshActionError, setRefreshActionError] = useState("");
+  const [refreshingAll, setRefreshingAll] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -79,14 +152,6 @@ export default function ProviderLimits() {
   const searchQuery = searchParams.get("searchQuery") || "";
   const rawStatusFilter = searchParams.get("statusFilter");
   const statusFilter = normalizeConnectionFilterStatus(rawStatusFilter || "all");
-
-  const intervalRef = useRef(null);
-  const countdownRef = useRef(null);
-  const runRefreshSingleFlightRef = useRef(null);
-
-  if (!runRefreshSingleFlightRef.current) {
-    runRefreshSingleFlightRef.current = createSingleFlight();
-  }
 
   const updateQueryParams = useCallback((updates) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -117,142 +182,86 @@ export default function ProviderLimits() {
     });
   }, [rawStatusFilter, updateQueryParams]);
 
-  // Fetch all provider connections
   const fetchConnections = useCallback(async () => {
+    const response = await fetch("/api/providers/client", { cache: "no-store" });
+    if (!response.ok) throw new Error("Failed to fetch connections");
+
+    const data = await response.json();
+    const connectionList = data.connections || [];
+    setConnections(connectionList);
+    return connectionList;
+  }, []);
+
+  const fetchSchedulerStatus = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) {
+      setSchedulerStatusLoading(true);
+    }
+
     try {
-      const response = await fetch("/api/providers/client");
-      if (!response.ok) throw new Error("Failed to fetch connections");
+      const response = await fetch("/api/quota-refresh/status", { cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to load scheduler status");
+      }
 
       const data = await response.json();
-      const connectionList = data.connections || [];
-      setConnections(connectionList);
-      return connectionList;
+      setSchedulerStatus(data);
+      setSchedulerStatusError("");
+      return data;
+    } catch (error) {
+      console.error("Error fetching scheduler status:", error);
+      setSchedulerStatusError(error.message || "Failed to load scheduler status");
+      return null;
+    } finally {
+      if (!silent) {
+        setSchedulerStatusLoading(false);
+      }
+    }
+  }, []);
+
+  const refreshSharedState = useCallback(async ({ silentStatus = false } = {}) => {
+    try {
+      await fetchConnections();
     } catch (error) {
       console.error("Error fetching connections:", error);
       setConnections([]);
-      return [];
     }
-  }, []);
 
-  // Fetch quota for a specific connection
-  const fetchQuota = useCallback(async (connectionId, provider) => {
-    setLoading((prev) => ({ ...prev, [connectionId]: true }));
-    setErrors((prev) => ({ ...prev, [connectionId]: null }));
+    await fetchSchedulerStatus({ silent: silentStatus });
+  }, [fetchConnections, fetchSchedulerStatus]);
 
-    try {
-      console.log(
-        `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
-      );
-      const response = await fetch(`/api/usage/${connectionId}`);
+  useEffect(() => {
+    const initializeData = async () => {
+      setConnectionsLoading(true);
+      await refreshSharedState();
+      setConnectionsLoading(false);
+    };
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || response.statusText;
+    initializeData();
+  }, [refreshSharedState]);
 
-        // Handle different error types gracefully
-        if (response.status === 404) {
-          // Connection not found - skip silently
-          console.warn(
-            `[ProviderLimits] Connection not found for ${provider}, skipping`,
-          );
-          return;
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      refreshSharedState({ silentStatus: true }).catch(() => {});
+    }, STATUS_POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [refreshSharedState]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled && data?.proxyPools) {
+          setProxyPools(data.proxyPools);
         }
-
-        if (response.status === 401) {
-          // Auth error - show message instead of throwing
-          console.warn(
-            `[ProviderLimits] Auth error for ${provider}:`,
-            errorMsg,
-          );
-          setQuotaData((prev) => ({
-            ...prev,
-            [connectionId]: {
-              quotas: [],
-              message: errorMsg,
-            },
-          }));
-          return;
-        }
-
-        throw new Error(`HTTP ${response.status}: ${errorMsg}`);
-      }
-
-      const data = await response.json();
-      console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
-
-      // Parse quota data using provider-specific parser
-      const parsedQuotas = parseQuotaData(provider, data);
-
-      setQuotaData((prev) => ({
-        ...prev,
-        [connectionId]: {
-          quotas: parsedQuotas,
-          plan: data.plan || null,
-          message: data.message || null,
-          raw: data,
-        },
-      }));
-    } catch (error) {
-      console.error(
-        `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
-        error,
-      );
-      setErrors((prev) => ({
-        ...prev,
-        [connectionId]: error.message || "Failed to fetch quota",
-      }));
-    } finally {
-      setLoading((prev) => ({ ...prev, [connectionId]: false }));
-    }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  // Refresh quota for a specific provider
-  const refreshProvider = useCallback(
-    async (connectionId, provider) => {
-      await fetchQuota(connectionId, provider);
-      setLastUpdated(new Date());
-    },
-    [fetchQuota],
-  );
-
-  const refreshConnectionBatch = useCallback(
-    async (connectionBatch = []) => runWithConcurrency(
-      connectionBatch,
-      QUOTA_REFRESH_CONCURRENCY,
-      async (conn) => fetchQuota(conn.id, conn.provider),
-    ),
-    [fetchQuota],
-  );
-
-  const refreshConnectionsPrioritized = useCallback(
-    async (connectionList = [], options = {}) => {
-      const { prioritizeVisiblePage = false } = options;
-      const supportedConnections = getSupportedOAuthConnections(connectionList);
-      if (supportedConnections.length === 0) return;
-
-      if (!prioritizeVisiblePage) {
-        await refreshConnectionBatch(supportedConnections);
-        return;
-      }
-
-      const sortedVisible = sortConnectionsByProvider(
-        filterVisibleConnections(supportedConnections, searchQuery, statusFilter),
-      );
-      const visiblePageConnections = getPaginatedConnections(
-        sortedVisible,
-        currentPage,
-        DEFAULT_PAGE_SIZE,
-      );
-      const prioritizedIds = new Set(visiblePageConnections.map((conn) => conn.id));
-      const prioritizedConnections = [
-        ...visiblePageConnections,
-        ...supportedConnections.filter((conn) => !prioritizedIds.has(conn.id)),
-      ];
-
-      await refreshConnectionBatch(prioritizedConnections);
-    },
-    [currentPage, refreshConnectionBatch, searchQuery, statusFilter],
-  );
 
   const handleDeleteConnection = useCallback(async (id) => {
     if (!confirm("Delete this connection?")) return;
@@ -261,21 +270,6 @@ export default function ProviderLimits() {
       const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
       if (res.ok) {
         setConnections((prev) => prev.filter((c) => c.id !== id));
-        setQuotaData((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setLoading((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setErrors((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
       }
     } catch (error) {
       console.error("Error deleting connection:", error);
@@ -308,171 +302,71 @@ export default function ProviderLimits() {
     async (formData) => {
       if (!selectedConnection?.id) return;
       const connectionId = selectedConnection.id;
-      const provider = selectedConnection.provider;
+
       try {
         const res = await fetch(`/api/providers/${connectionId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
+
         if (res.ok) {
           await fetchConnections();
           setShowEditModal(false);
           setSelectedConnection(null);
-          if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
-            await fetchQuota(connectionId, provider);
-          }
         }
       } catch (error) {
         console.error("Error saving connection:", error);
       }
     },
-    [selectedConnection, fetchConnections, fetchQuota],
+    [fetchConnections, selectedConnection],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled && data?.proxyPools) {
-          setProxyPools(data.proxyPools);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Refresh all providers
   const refreshAll = useCallback(async () => {
-    return runRefreshSingleFlightRef.current(async () => {
-      setRefreshingAll(true);
-      setCountdown(60);
+    setRefreshingAll(true);
+    setRefreshActionError("");
 
-      try {
-        const conns = await fetchConnections();
-
-        await refreshConnectionsPrioritized(conns, { prioritizeVisiblePage: true });
-
-        setLastUpdated(new Date());
-      } catch (error) {
-        console.error("Error refreshing all providers:", error);
-      } finally {
-        setRefreshingAll(false);
-      }
-    });
-  }, [fetchConnections, refreshConnectionsPrioritized]);
-
-  // Initial load: fetch connections first so cards render immediately, then fetch quotas
-  useEffect(() => {
-    const initializeData = async () => {
-      setConnectionsLoading(true);
-      const conns = await fetchConnections();
-      setConnectionsLoading(false);
-
-      const oauthConnections = getSupportedOAuthConnections(conns);
-
-      // Mark all as loading before fetching
-      const loadingState = {};
-      oauthConnections.forEach((conn) => {
-        loadingState[conn.id] = true;
+    try {
+      const response = await fetch("/api/quota-refresh/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "dashboard_manual_refresh" }),
       });
-      setLoading(loadingState);
 
-      await runRefreshSingleFlightRef.current(async () => {
-        await refreshConnectionsPrioritized(conns, { prioritizeVisiblePage: true });
-      });
-      setLastUpdated(new Date());
-    };
+      const data = await response.json().catch(() => ({}));
 
-    initializeData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-refresh interval
-  useEffect(() => {
-    if (!autoRefresh) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (!response.ok) {
+        throw new Error(data.error || data.reason || "Failed to request backend refresh");
       }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
+
+      if (data?.snapshot) {
+        setSchedulerStatus(data.snapshot);
+        setSchedulerStatusError("");
       }
-      return;
+
+      await refreshSharedState({ silentStatus: true });
+    } catch (error) {
+      console.error("Error requesting backend refresh:", error);
+      setRefreshActionError(error.message || "Failed to request backend refresh");
+    } finally {
+      setRefreshingAll(false);
     }
+  }, [refreshSharedState]);
 
-    // Main refresh interval
-    intervalRef.current = setInterval(() => {
-      refreshAll();
-    }, REFRESH_INTERVAL_MS);
-
-    // Countdown interval
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) return 60;
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, [autoRefresh, refreshAll]);
-
-  // Pause auto-refresh when tab is hidden (Page Visibility API)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        if (countdownRef.current) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
-        }
-      } else if (autoRefresh) {
-        // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(refreshAll, REFRESH_INTERVAL_MS);
-        countdownRef.current = setInterval(() => {
-          setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
-        }, 1000);
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [autoRefresh, refreshAll]);
-
-  // Format last updated time
-  const formatLastUpdated = useCallback(() => {
-    if (!lastUpdated) return "Never";
-
-    const now = new Date();
-    const diffMs = now - lastUpdated;
-    const diffMinutes = Math.floor(diffMs / (1000 * 60));
-    const diffHours = Math.floor(diffMinutes / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffDays > 0) return `${diffDays}d ago`;
-    if (diffHours > 0) return `${diffHours}h ago`;
-    if (diffMinutes > 0) return `${diffMinutes}m ago`;
-    return "Just now";
-  }, [lastUpdated]);
-
-  const supportedConnections = connections.filter(
-    (conn) => USAGE_SUPPORTED_PROVIDERS.includes(conn.provider) && conn.authType === "oauth",
+  const supportedConnections = useMemo(
+    () => getSupportedOAuthConnections(connections),
+    [connections],
   );
 
-  const visibleConnections = filterVisibleConnections(supportedConnections, searchQuery, statusFilter);
+  const visibleConnections = useMemo(
+    () => filterVisibleConnections(supportedConnections, searchQuery, statusFilter),
+    [searchQuery, statusFilter, supportedConnections],
+  );
 
-  const sortedConnections = sortConnectionsByProvider(visibleConnections);
+  const sortedConnections = useMemo(
+    () => sortConnectionsByProvider(visibleConnections),
+    [visibleConnections],
+  );
 
   const totalPages = Math.max(1, Math.ceil(sortedConnections.length / DEFAULT_PAGE_SIZE));
   const currentPageSafe = Math.min(currentPage, totalPages);
@@ -481,25 +375,51 @@ export default function ProviderLimits() {
     currentPageSafe * DEFAULT_PAGE_SIZE,
   );
 
-  // Calculate summary stats
-  const totalProviders = sortedConnections.length;
-  const activeWithLimits = Object.values(quotaData).filter(
-    (data) => data?.quotas?.length > 0,
+  const quotaCards = useMemo(
+    () => supportedConnections.map((conn) => ({
+      connection: conn,
+      quota: getStoredQuotaPresentation(conn),
+    })),
+    [supportedConnections],
+  );
+
+  const visibleQuotaCards = useMemo(() => {
+    const quotaCardsById = new Map(quotaCards.map((card) => [card.connection.id, card]));
+
+    return filterVisibleConnections(
+      quotaCards.map(({ connection }) => connection),
+      searchQuery,
+      statusFilter,
+    )
+      .map((connection) => quotaCardsById.get(connection.id))
+      .filter(Boolean);
+  }, [quotaCards, searchQuery, statusFilter]);
+
+  const activeWithLimits = visibleQuotaCards.filter(
+    ({ quota }) => quota.quotas.length > 0,
   ).length;
 
-  // Count low quotas (remaining < 30%)
-  const lowQuotasCount = Object.values(quotaData).reduce((count, data) => {
-    if (!data?.quotas) return count;
-
-    const hasLowQuota = data.quotas.some((quota) => {
-      const percentage = calculatePercentage(quota.used, quota.total);
-      return percentage < 30 && quota.total > 0;
+  const lowQuotasCount = visibleQuotaCards.reduce((count, { quota }) => {
+    const hasLowQuota = quota.quotas.some((entry) => {
+      const percentage = calculatePercentage(entry.used, entry.total);
+      return percentage < 30 && entry.total > 0;
     });
 
     return count + (hasLowQuota ? 1 : 0);
   }, 0);
 
-  // Empty state
+  const schedulerTone = getSchedulerTone(schedulerStatus?.status, schedulerStatus?.enabled);
+  const schedulerMessage = getSchedulerMessage(schedulerStatus);
+  const schedulerLastUpdated = schedulerStatus?.lastRun?.finishedAt
+    || schedulerStatus?.currentRun?.startedAt
+    || schedulerStatus?.nextScheduledAt
+    || null;
+  const refreshButtonLabel = schedulerStatus?.status === "running"
+    ? "Restart Sweep"
+    : schedulerStatus?.restartRequested
+      ? "Restart Requested"
+      : "Refresh All";
+
   if (!connectionsLoading && supportedConnections.length === 0) {
     return (
       <Card padding="lg">
@@ -511,8 +431,7 @@ export default function ProviderLimits() {
             No Providers Connected
           </h3>
           <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            Connect to providers with OAuth to track your API quota limits and
-            usage.
+            Connect to providers with OAuth to observe backend-maintained API quota state.
           </p>
         </div>
       </Card>
@@ -521,16 +440,48 @@ export default function ProviderLimits() {
 
   return (
     <div className="space-y-6">
-      {/* Header Controls */}
       <div className="rounded-2xl border border-black/5 dark:border-white/10 bg-white/70 dark:bg-white/5 backdrop-blur-sm shadow-sm px-4 py-4 space-y-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-text-primary">
-              Provider Limits
-            </h2>
-            <p className="mt-1 text-sm text-text-muted">
-              Last updated: {formatLastUpdated()}
-            </p>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-3 min-w-0">
+            <div>
+              <h2 className="text-xl font-semibold text-text-primary">
+                Provider Limits
+              </h2>
+              <p className="mt-1 text-sm text-text-muted">
+                Read-only observer of backend-maintained shared quota state.
+              </p>
+            </div>
+
+            <div className={`inline-flex max-w-full items-start gap-3 rounded-2xl border px-3 py-3 ${schedulerTone.surface}`}>
+              <span className={`material-symbols-outlined text-[18px] shrink-0 mt-0.5 ${schedulerTone.tone} ${schedulerStatus?.status === "running" ? "animate-spin" : schedulerStatus?.restartRequested ? "animate-pulse" : ""}`}>
+                {schedulerTone.icon}
+              </span>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className={`text-sm font-medium ${schedulerTone.tone}`}>
+                    {schedulerTone.label}
+                  </span>
+                  {schedulerLastUpdated && (
+                    <span className="text-xs text-text-muted">
+                      updated {getRelativeTime(schedulerLastUpdated)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs leading-5 text-text-muted">
+                  {schedulerMessage}
+                </p>
+                {(schedulerStatus?.nextScheduledAt || schedulerStatus?.currentRun?.trigger) && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-muted">
+                    {schedulerStatus?.currentRun?.trigger && (
+                      <span>Trigger: {schedulerStatus.currentRun.trigger}</span>
+                    )}
+                    {schedulerStatus?.nextScheduledAt && (
+                      <span>Next sweep {getRelativeTime(schedulerStatus.nextScheduledAt)}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
@@ -546,7 +497,7 @@ export default function ProviderLimits() {
           </div>
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto_auto] lg:items-end">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto] lg:items-end">
           <Input
             label="Search accounts"
             icon="search"
@@ -582,46 +533,35 @@ export default function ProviderLimits() {
           />
 
           <Button
-            type="button"
             variant="secondary"
             size="md"
-            onClick={() => setAutoRefresh((prev) => !prev)}
-            className="w-full lg:w-auto"
-            title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
-          >
-            <span
-              className={`material-symbols-outlined text-[18px] ${
-                autoRefresh ? "text-primary" : "text-text-muted"
-              }`}
-            >
-              {autoRefresh ? "toggle_on" : "toggle_off"}
-            </span>
-            Auto-refresh
-            {autoRefresh && <span className="text-xs text-text-muted">({countdown}s)</span>}
-          </Button>
-
-          <Button
-            variant="secondary"
-            size="md"
-            icon="refresh"
+            icon={schedulerStatus?.status === "running" ? "sync" : "refresh"}
             onClick={refreshAll}
             disabled={refreshingAll}
             loading={refreshingAll}
             className="w-full lg:w-auto"
+            title="Request backend quota refresh sweep"
           >
-            Refresh All
+            {refreshButtonLabel}
           </Button>
         </div>
+
+        {(schedulerStatusError || refreshActionError) && (
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-300">
+            {refreshActionError || schedulerStatusError}
+          </div>
+        )}
+
+        {schedulerStatusLoading && !schedulerStatus && (
+          <div className="rounded-xl border border-black/5 dark:border-white/10 bg-surface px-3 py-2 text-xs text-text-muted">
+            Loading scheduler status…
+          </div>
+        )}
       </div>
 
-      {/* Provider cards: 2 columns, compact */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {paginatedConnections.map((conn) => {
-          const quota = quotaData[conn.id];
-          const isLoading = loading[conn.id];
-          const error = errors[conn.id];
-
-          // Use table layout for all providers
+          const quota = getStoredQuotaPresentation(conn);
           const isInactive = conn.isActive === false;
           const rowBusy = deletingId === conn.id || togglingId === conn.id;
 
@@ -640,9 +580,7 @@ export default function ProviderLimits() {
                         alt={conn.provider}
                         size={32}
                         className="object-contain"
-                        fallbackText={
-                          conn.provider?.slice(0, 2).toUpperCase() || "PR"
-                        }
+                        fallbackText={conn.provider?.slice(0, 2).toUpperCase() || "PR"}
                       />
                     </div>
                     <div className="min-w-0">
@@ -658,19 +596,12 @@ export default function ProviderLimits() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => refreshProvider(conn.id, conn.provider)}
-                      disabled={isLoading || rowBusy}
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                      title="Refresh quota"
+                    <div
+                      className="inline-flex items-center rounded-lg border border-black/5 dark:border-white/10 bg-surface px-2 py-1 text-[11px] text-text-muted"
+                      title="Quota data is maintained by the backend scheduler"
                     >
-                      <span
-                        className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
-                      >
-                        refresh
-                      </span>
-                    </button>
+                      shared state
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
@@ -700,19 +631,13 @@ export default function ProviderLimits() {
                     </button>
                     <div
                       className="inline-flex items-center pl-0.5"
-                      title={
-                        (conn.isActive ?? true)
-                          ? "Disable connection"
-                          : "Enable connection"
-                      }
+                      title={(conn.isActive ?? true) ? "Disable connection" : "Enable connection"}
                     >
                       <Toggle
                         size="sm"
                         checked={conn.isActive ?? true}
                         disabled={rowBusy}
-                        onChange={(nextActive) =>
-                          handleToggleConnectionActive(conn.id, nextActive)
-                        }
+                        onChange={(nextActive) => handleToggleConnectionActive(conn.id, nextActive)}
                       />
                     </div>
                   </div>
@@ -720,25 +645,19 @@ export default function ProviderLimits() {
               </div>
 
               <div className="px-3 py-3">
-                {isLoading ? (
-                  <div className="text-center py-5 text-text-muted">
-                    <span className="material-symbols-outlined text-[28px] animate-spin">
-                      progress_activity
-                    </span>
+                {quota.message ? (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-3 text-xs text-text-muted">
+                    {quota.message}
                   </div>
-                ) : error ? (
-                  <div className="text-center py-5">
-                    <span className="material-symbols-outlined text-[28px] text-red-500">
-                      error
-                    </span>
-                    <p className="mt-1.5 text-xs text-text-muted">{error}</p>
-                  </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-5">
-                    <p className="text-xs text-text-muted">{quota.message}</p>
-                  </div>
+                ) : quota.quotas?.length > 0 ? (
+                  <QuotaTable quotas={quota.quotas} compact />
                 ) : (
-                  <QuotaTable quotas={quota?.quotas} compact />
+                  <div className="rounded-xl border border-dashed border-black/10 dark:border-white/10 bg-surface/70 px-3 py-4 text-center">
+                    <p className="text-xs font-medium text-text-primary">Waiting for backend quota snapshot</p>
+                    <p className="mt-1 text-xs text-text-muted">
+                      This page no longer polls provider APIs directly. Use Refresh All to request a backend sweep.
+                    </p>
+                  </div>
                 )}
               </div>
             </Card>

@@ -10,12 +10,43 @@ const getSettings = vi.fn(async () => ({
   providerStrategies: {},
 }));
 const getEligibleConnections = vi.fn(async () => null);
+const writeConnectionHotState = vi.fn(async ({ patch }) => patch);
+const projectLegacyConnectionState = vi.fn((snapshot = {}) => ({
+  testStatus: snapshot.routingStatus === "blocked_quota" ? "unavailable" : "active",
+  lastTested: snapshot.lastCheckedAt || null,
+  lastError: snapshot.reasonDetail ?? snapshot.lastError ?? null,
+  lastErrorType: snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : snapshot.lastErrorType ?? null,
+  lastErrorAt: snapshot.lastErrorAt ?? null,
+  rateLimitedUntil: snapshot.nextRetryAt ?? snapshot.rateLimitedUntil ?? null,
+  errorCode: snapshot.errorCode ?? (snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : null),
+}));
 const resolveConnectionProxyConfig = vi.fn(async () => ({
   connectionProxyEnabled: false,
   connectionProxyUrl: "",
   connectionNoProxy: false,
   proxyPoolId: null,
   vercelRelayUrl: "",
+}));
+const applyLiveQuotaUpdate = vi.fn(async () => null);
+const getCodexLiveQuotaSignal = vi.fn(() => null);
+const getConnectionRecoveryPatch = vi.fn(() => ({
+  routingStatus: "eligible",
+  healthStatus: "healthy",
+  quotaState: "ok",
+  authState: "ok",
+  reasonCode: "unknown",
+  reasonDetail: null,
+  nextRetryAt: null,
+  resetAt: null,
+  testStatus: "active",
+  lastError: null,
+  lastErrorType: null,
+  lastErrorAt: null,
+  rateLimitedUntil: null,
+  errorCode: null,
+  backoffLevel: 0,
+  lastCheckedAt: "2026-04-22T00:00:00.000Z",
+  lastTested: "2026-04-22T00:00:00.000Z",
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -27,10 +58,18 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/lib/providerHotState", () => ({
   getEligibleConnections,
+  writeConnectionHotState,
+  projectLegacyConnectionState,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig,
+}));
+
+vi.mock("../../src/lib/usageStatus.js", () => ({
+  applyLiveQuotaUpdate,
+  getCodexLiveQuotaSignal,
+  getConnectionRecoveryPatch,
 }));
 
 vi.mock("@/shared/constants/providers.js", () => ({
@@ -58,7 +97,12 @@ describe("auth account selection", () => {
     updateProviderConnection.mockClear();
     getSettings.mockClear();
     getEligibleConnections.mockClear();
+    writeConnectionHotState.mockClear();
+    projectLegacyConnectionState.mockClear();
     resolveConnectionProxyConfig.mockClear();
+    applyLiveQuotaUpdate.mockClear();
+    getCodexLiveQuotaSignal.mockClear();
+    getConnectionRecoveryPatch.mockClear();
     getProviderConnections.mockResolvedValue(mockConnections);
     getSettings.mockResolvedValue({
       fallbackStrategy: "fill-first",
@@ -73,6 +117,7 @@ describe("auth account selection", () => {
       proxyPoolId: null,
       vercelRelayUrl: "",
     });
+    getCodexLiveQuotaSignal.mockReturnValue(null);
     vi.resetModules();
   });
 
@@ -269,5 +314,270 @@ describe("auth account selection", () => {
     const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
 
     expect(credentials.connectionId).toBe("conn-first");
+  });
+
+  it("filters legacy blocked and account-wide cooldown state when centralized eligibility is unavailable", async () => {
+    const futureCooldown = new Date(Date.now() + 60_000).toISOString();
+    mockConnections.push(
+      {
+        id: "conn-unavailable",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Unavailable",
+        accessToken: "unavailable-token",
+        testStatus: "unavailable",
+      },
+      {
+        id: "conn-error",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "Error",
+        accessToken: "error-token",
+        testStatus: "error",
+      },
+      {
+        id: "conn-expired",
+        provider: "codex",
+        isActive: true,
+        priority: 3,
+        displayName: "Expired",
+        accessToken: "expired-token",
+        testStatus: "expired",
+      },
+      {
+        id: "conn-rate-limited",
+        provider: "codex",
+        isActive: true,
+        priority: 4,
+        displayName: "Rate limited",
+        accessToken: "rate-limited-token",
+        testStatus: "active",
+        rateLimitedUntil: futureCooldown,
+      },
+      {
+        id: "conn-account-locked",
+        provider: "codex",
+        isActive: true,
+        priority: 5,
+        displayName: "Account locked",
+        accessToken: "account-locked-token",
+        testStatus: "active",
+        modelLock___all: futureCooldown,
+      },
+      {
+        id: "conn-healthy",
+        provider: "codex",
+        isActive: true,
+        priority: 6,
+        displayName: "Healthy",
+        accessToken: "healthy-token",
+        testStatus: "active",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce(null);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
+
+    expect(credentials.connectionId).toBe("conn-healthy");
+    expect(credentials.accessToken).toBe("healthy-token");
+  });
+
+  it("keeps fallback model-lock filtering model-aware while excluding account-wide locks", async () => {
+    const futureCooldown = new Date(Date.now() + 60_000).toISOString();
+    mockConnections.push(
+      {
+        id: "conn-other-model-lock",
+        provider: "codex",
+        isActive: true,
+        priority: 1,
+        displayName: "Other model lock",
+        accessToken: "other-model-token",
+        testStatus: "active",
+        modelLock_gpt5: futureCooldown,
+      },
+      {
+        id: "conn-all-models-lock",
+        provider: "codex",
+        isActive: true,
+        priority: 2,
+        displayName: "All models lock",
+        accessToken: "all-models-token",
+        testStatus: "active",
+        modelLock___all: futureCooldown,
+      },
+      {
+        id: "conn-second-choice",
+        provider: "codex",
+        isActive: true,
+        priority: 3,
+        displayName: "Second choice",
+        accessToken: "second-token",
+        testStatus: "active",
+      },
+    );
+    getEligibleConnections.mockResolvedValueOnce(null);
+
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("codex", null, "gpt4");
+
+    expect(credentials.connectionId).toBe("conn-other-model-lock");
+    expect(credentials.accessToken).toBe("other-model-token");
+  });
+
+  it("applies an immediate Codex live quota update before persisting model lock state", async () => {
+    mockConnections.push({
+      id: "conn-live",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Live quota",
+      accessToken: "token",
+      testStatus: "active",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 30000, newBackoffLevel: 2 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce({
+      kind: "quota_exhausted",
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Codex quota exhausted",
+      errorCode: "codex_live_quota_exhausted",
+    });
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-live", 429, "You have exceeded your current quota", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 30000 });
+    expect(getCodexLiveQuotaSignal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "conn-live", provider: "codex" }),
+      expect.objectContaining({ statusCode: 429, errorText: "You have exceeded your current quota" })
+    );
+    expect(applyLiveQuotaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "conn-live", provider: "codex" }),
+      expect.objectContaining({ kind: "quota_exhausted" })
+    );
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-live", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      testStatus: "unavailable",
+    }));
+    expect(updateProviderConnection).not.toHaveBeenCalledWith("conn-live", expect.objectContaining({
+      lastError: "You have exceeded your current quota",
+      errorCode: 429,
+    }));
+  });
+
+  it("does not apply live quota update for generic Codex 429 throttling", async () => {
+    mockConnections.push({
+      id: "conn-throttle",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Generic throttle",
+      accessToken: "token",
+      testStatus: "active",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 15000, newBackoffLevel: 1 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce(null);
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-throttle", 429, "Rate limit exceeded. Too many requests.", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 15000 });
+    expect(getCodexLiveQuotaSignal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "conn-throttle", provider: "codex" }),
+      expect.objectContaining({ statusCode: 429, errorText: "Rate limit exceeded. Too many requests." })
+    );
+    expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-throttle", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      testStatus: "unavailable",
+      lastError: "Rate limit exceeded. Too many requests.",
+      errorCode: 429,
+    }));
+  });
+
+  it("uses fresh shared state before reactivating an account after clearing a model lock", async () => {
+    const futureLock = new Date(Date.now() + 60_000).toISOString();
+    const staleSelectedConnection = {
+      id: "conn-stale",
+      provider: "codex",
+      displayName: "Stale snapshot",
+      testStatus: "unavailable",
+      lastError: "Old model locked",
+      modelLock_gpt4: futureLock,
+    };
+
+    const freshSharedConnection = {
+      ...staleSelectedConnection,
+      modelLock_gpt5: futureLock,
+    };
+
+    getProviderConnections
+      .mockResolvedValueOnce([freshSharedConnection]);
+
+    const { clearAccountError } = await import("../../src/sse/services/auth.js");
+    await clearAccountError("conn-stale", { _connection: staleSelectedConnection }, "gpt4");
+
+    expect(getProviderConnections).toHaveBeenCalledWith({ provider: "codex" });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-stale", {
+      modelLock_gpt4: null,
+    });
+    expect(updateProviderConnection).not.toHaveBeenCalledWith("conn-stale", expect.objectContaining({
+      testStatus: "active",
+      lastError: null,
+    }));
+  });
+
+  it("clears centralized blocked state alongside legacy fields after successful recovery", async () => {
+    const expiredLock = new Date(Date.now() - 60_000).toISOString();
+    const staleSelectedConnection = {
+      id: "conn-recover",
+      provider: "codex",
+      displayName: "Recover me",
+      testStatus: "unavailable",
+      lastError: "Quota exhausted",
+      routingStatus: "blocked_quota",
+      quotaState: "exhausted",
+      authState: "ok",
+      healthStatus: "degraded",
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Codex quota exhausted",
+      nextRetryAt: "2026-04-25T00:00:00.000Z",
+      resetAt: "2026-04-25T00:00:00.000Z",
+      errorCode: "weekly_quota_exhausted",
+      backoffLevel: 2,
+      modelLock_gpt4: expiredLock,
+    };
+
+    getProviderConnections.mockResolvedValueOnce([staleSelectedConnection]);
+
+    const { clearAccountError } = await import("../../src/sse/services/auth.js");
+    await clearAccountError("conn-recover", { _connection: staleSelectedConnection }, "gpt4");
+
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-recover", expect.objectContaining({
+      modelLock_gpt4: null,
+      testStatus: "active",
+      lastError: null,
+      lastErrorAt: null,
+      lastErrorType: null,
+      rateLimitedUntil: null,
+      errorCode: null,
+      backoffLevel: 0,
+      routingStatus: "eligible",
+      quotaState: "ok",
+      authState: "ok",
+      healthStatus: "healthy",
+      reasonCode: "unknown",
+      reasonDetail: null,
+      nextRetryAt: null,
+      resetAt: null,
+    }));
   });
 });

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus.js";
-import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
+import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
@@ -38,7 +38,31 @@ const DEFAULT_SETTINGS = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+  quotaScheduler: {
+    enabled: false,
+    cadenceMs: 300000,
+    successTtlMs: 900000,
+    errorTtlMs: 300000,
+    exhaustedTtlMs: 60000,
+    batchSize: 25,
+  },
 };
+
+function mergeSettingsWithDefaults(settings = {}) {
+  const merged = {
+    ...DEFAULT_SETTINGS,
+    ...(settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {}),
+  };
+
+  merged.quotaScheduler = {
+    ...DEFAULT_SETTINGS.quotaScheduler,
+    ...(settings?.quotaScheduler && typeof settings.quotaScheduler === "object" && !Array.isArray(settings.quotaScheduler)
+      ? settings.quotaScheduler
+      : {}),
+  };
+
+  return merged;
+}
 
 function cloneDefaultData() {
   return {
@@ -112,6 +136,12 @@ function ensureDbShape(data) {
           }
           changed = true;
         }
+      }
+
+      const mergedSettings = mergeSettingsWithDefaults(next.settings);
+      if (JSON.stringify(mergedSettings) !== JSON.stringify(next.settings)) {
+        next.settings = mergedSettings;
+        changed = true;
       }
     }
 
@@ -486,28 +516,36 @@ export async function updateProviderConnection(id, data) {
 
   const providerId = db.data.providerConnections[index].provider;
   const current = db.data.providerConnections[index];
+  const hotStatePatch = extractHotState(data);
+  const hasHotStateUpdates = Object.keys(hotStatePatch).length > 0;
+  const dbPatch = Object.fromEntries(
+    Object.entries(data || {}).filter(([key]) => !(key in hotStatePatch))
+  );
   const shouldStoreHotState = isHotOnlyUpdate(data);
   const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
 
-   if (shouldStoreHotState) {
-    const hotStateResult = await setConnectionHotState(id, providerId, data);
-    const projectedLegacyState = projectLegacyConnectionState(hotStateResult?.state || data);
-    const dbCompatiblePatch = {
-      ...data,
+  if (hasHotStateUpdates) {
+    const hotStateResult = await setConnectionHotState(id, providerId, hotStatePatch);
+    const projectedLegacyState = projectLegacyConnectionState({
+      ...current,
+      ...hotStateResult?.state,
+    });
+
+    db.data.providerConnections[index] = {
+      ...db.data.providerConnections[index],
+      ...dbPatch,
       ...projectedLegacyState,
       updatedAt: new Date().toISOString(),
     };
 
-    db.data.providerConnections[index] = {
-      ...db.data.providerConnections[index],
-      ...dbCompatiblePatch,
-    };
-
-    if (!canUseRedisForHotState || !hotStateResult?.storedInRedis) {
-      await safeWrite(db);
-    }
+    await safeWrite(db);
 
     if (data.priority !== undefined) await reorderProviderConnections(providerId);
+
+    if (current && data.isActive === false) {
+      await deleteConnectionHotState(id, providerId);
+    }
+
     return db.data.providerConnections[index];
   }
 
@@ -752,12 +790,19 @@ export async function cleanupProviderConnections() {
 
 export async function getSettings() {
   const db = await getDb();
-  return db.data.settings || { cloudEnabled: false };
+  return mergeSettingsWithDefaults(db.data.settings || { cloudEnabled: false });
 }
 
 export async function updateSettings(updates) {
   const db = await getDb();
-  db.data.settings = { ...db.data.settings, ...updates };
+  db.data.settings = mergeSettingsWithDefaults({
+    ...db.data.settings,
+    ...updates,
+    quotaScheduler: {
+      ...(db.data.settings?.quotaScheduler || {}),
+      ...(updates?.quotaScheduler || {}),
+    },
+  });
   await safeWrite(db);
   return db.data.settings;
 }
@@ -782,6 +827,8 @@ export async function importDb(payload) {
         : {}),
     },
   };
+
+  nextData.settings = mergeSettingsWithDefaults(nextData.settings);
 
   const { data: normalized } = ensureDbShape(nextData);
   const db = await getDb();

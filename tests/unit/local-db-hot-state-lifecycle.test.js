@@ -27,6 +27,40 @@ async function loadModulesWithTempDataDir() {
   return { dataDir, localDb, providerHotState };
 }
 
+async function readDbJson(dataDir) {
+  const raw = await fs.readFile(path.join(dataDir, "db.json"), "utf8");
+  return JSON.parse(raw);
+}
+
+function createFakeRedisClient() {
+  const hashes = new Map();
+
+  return {
+    isReady: true,
+    async hGetAll(key) {
+      return { ...(hashes.get(key) || {}) };
+    },
+    async hSet(key, payload) {
+      hashes.set(key, {
+        ...(hashes.get(key) || {}),
+        ...(payload || {}),
+      });
+    },
+    async hDel(key, field) {
+      const current = { ...(hashes.get(key) || {}) };
+      delete current[field];
+      if (Object.keys(current).length === 0) hashes.delete(key);
+      else hashes.set(key, current);
+    },
+    async expire() {
+      return true;
+    },
+    async del(key) {
+      hashes.delete(key);
+    },
+  };
+}
+
 afterEach(async () => {
   delete process.env.DATA_DIR;
   delete process.env.REDIS_URL;
@@ -127,5 +161,95 @@ describe("localDb hot-state lifecycle", () => {
     await expect(localDb.deleteProviderConnectionsByProvider("provider-delete")).resolves.toBe(2);
     expect(providerHotState.__getProviderHotStateSnapshotForTests("provider-delete")).toBeNull();
     await expect(localDb.getProviderConnections({ provider: "provider-delete" })).resolves.toEqual([]);
+  });
+
+  it("durably persists projected legacy fallback fields for redis-backed hot-only updates", async () => {
+    const { dataDir, localDb, providerHotState } = await loadModulesWithTempDataDir();
+
+    process.env.REDIS_URL = "redis://example.test:6379";
+    providerHotState.__setRedisClientForTests(createFakeRedisClient());
+
+    const created = await localDb.createProviderConnection({
+      provider: "provider-redis-fallback",
+      name: "Redis fallback",
+      apiKey: "secret",
+      isActive: true,
+      priority: 1,
+      testStatus: "active",
+    });
+
+    await localDb.updateProviderConnection(created.id, {
+      routingStatus: "blocked_auth",
+      authState: "expired",
+      testStatus: "expired",
+      lastError: "Authentication expired",
+    });
+
+    const persistedDb = await readDbJson(dataDir);
+    expect(
+      persistedDb.providerConnections.find((connection) => connection.id === created.id)
+    ).toMatchObject({
+      id: created.id,
+      testStatus: "expired",
+      lastError: "Authentication expired",
+    });
+
+    providerHotState.__resetProviderHotStateForTests();
+    delete process.env.REDIS_URL;
+
+    const recovered = await localDb.getProviderConnectionById(created.id);
+    expect(recovered).toMatchObject({
+      id: created.id,
+      provider: "provider-redis-fallback",
+      testStatus: "expired",
+      lastError: "Authentication expired",
+    });
+  });
+
+  it("writes mixed updates to both centralized hot state and persisted db fields", async () => {
+    const { dataDir, localDb, providerHotState } = await loadModulesWithTempDataDir();
+
+    process.env.REDIS_URL = "redis://example.test:6379";
+    providerHotState.__setRedisClientForTests(createFakeRedisClient());
+
+    const created = await localDb.createProviderConnection({
+      provider: "provider-mixed-update",
+      name: "Before mixed update",
+      apiKey: "old-secret",
+      isActive: true,
+      priority: 1,
+      testStatus: "active",
+    });
+
+    await localDb.updateProviderConnection(created.id, {
+      apiKey: "new-secret",
+      name: "After mixed update",
+      routingStatus: "blocked_quota",
+      quotaState: "exhausted",
+      nextRetryAt: "2026-04-22T12:00:00.000Z",
+      testStatus: "unavailable",
+    });
+
+    expect(providerHotState.__getProviderHotStateSnapshotForTests("provider-mixed-update")).toMatchObject({
+      connections: {
+        [created.id]: expect.objectContaining({
+          routingStatus: "blocked_quota",
+          quotaState: "exhausted",
+          nextRetryAt: "2026-04-22T12:00:00.000Z",
+          testStatus: "unavailable",
+        }),
+      },
+    });
+
+    const persistedDb = await readDbJson(dataDir);
+    expect(
+      persistedDb.providerConnections.find((connection) => connection.id === created.id)
+    ).toMatchObject({
+      id: created.id,
+      name: "After mixed update",
+      apiKey: "new-secret",
+      testStatus: "unavailable",
+      rateLimitedUntil: "2026-04-22T12:00:00.000Z",
+    });
   });
 });

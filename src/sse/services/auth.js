@@ -1,9 +1,25 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { getEligibleConnections } from "@/lib/providerHotState";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { applyLiveQuotaUpdate, getCodexLiveQuotaSignal, getConnectionRecoveryPatch } from "../../lib/usageStatus.js";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+
+const FALLBACK_BLOCKED_TEST_STATUSES = new Set(["unavailable", "error", "expired"]);
+
+function isFutureTimestamp(value) {
+  const timestamp = new Date(value).getTime();
+  return Boolean(value) && Number.isFinite(timestamp) && timestamp > Date.now();
+}
+
+function isFallbackConnectionBlocked(connection) {
+  if (!connection || typeof connection !== "object") return true;
+  if (FALLBACK_BLOCKED_TEST_STATUSES.has(connection.testStatus)) return true;
+  if (isFutureTimestamp(connection.rateLimitedUntil)) return true;
+  if (isFutureTimestamp(connection.modelLock___all)) return true;
+  return false;
+}
 
 function sortByPriority(connections = []) {
   return [...connections].sort((a, b) => (a.priority || 999) - (b.priority || 999));
@@ -66,7 +82,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out excluded/current-model-locked connections for centralized eligibility.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
@@ -77,15 +93,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const eligibleConnections = Array.isArray(centralizedEligibleConnections)
       ? sortByPriority(centralizedEligibleConnections)
       : null;
-    const selectionPool = eligibleConnections === null ? availableConnections : eligibleConnections;
+    const fallbackAvailableConnections = availableConnections.filter(c => !isFallbackConnectionBlocked(c));
+    const selectionPool = eligibleConnections === null ? fallbackAvailableConnections : eligibleConnections;
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, fallbackAvailable: ${fallbackAvailableConnections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      const fallbackBlocked = !excluded && !locked && isFallbackConnectionBlocked(c);
+      if (excluded || locked || fallbackBlocked) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""} ${fallbackBlocked ? `fallbackBlocked(status=${c.testStatus || "unknown"}, rateLimitedUntil=${c.rateLimitedUntil || "none"}, accountLock=${c.modelLock___all || "none"})` : ""}`);
       }
     });
 
@@ -203,14 +221,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
-  await updateProviderConnection(connectionId, {
+  const liveQuotaSignal = getCodexLiveQuotaSignal(conn, {
+    statusCode: status,
+    errorText,
+    errorCode: status,
+  });
+
+  if (liveQuotaSignal) {
+    await applyLiveQuotaUpdate(conn, liveQuotaSignal);
+  }
+
+  const connectionPatch = {
     ...lockUpdate,
     testStatus: "unavailable",
-    lastError: reason,
-    errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
-  });
+  };
+
+  if (!liveQuotaSignal) {
+    connectionPatch.lastError = reason;
+    connectionPatch.errorCode = status;
+  }
+
+  await updateProviderConnection(connectionId, connectionPatch);
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
@@ -234,11 +267,24 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
  */
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
-  const conn = currentConnection._connection || currentConnection;
+  const selectedConn = currentConnection._connection || currentConnection;
+  const provider = selectedConn?.provider || currentConnection?.provider || null;
+  const freshConnections = provider ? await getProviderConnections({ provider }) : [];
+  const conn = freshConnections.find(c => c.id === connectionId) || selectedConn;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
+  const hasCentralizedBlockedState = [
+    conn.routingStatus && conn.routingStatus !== "eligible",
+    conn.quotaState && conn.quotaState !== "ok",
+    conn.authState && conn.authState !== "ok",
+    conn.healthStatus && conn.healthStatus !== "healthy",
+    conn.reasonCode && conn.reasonCode !== "unknown",
+    conn.reasonDetail,
+    conn.nextRetryAt,
+    conn.resetAt,
+  ].some(Boolean);
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  if (!conn.testStatus && !conn.lastError && !hasCentralizedBlockedState && allLockKeys.length === 0) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -248,7 +294,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError && !hasCentralizedBlockedState) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {
@@ -259,9 +305,9 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
 
-  // Only reset error state if no active locks remain
+  // Only reset full router-visible blocked state if no active locks remain
   if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
+    Object.assign(clearObj, getConnectionRecoveryPatch());
   }
 
   await updateProviderConnection(connectionId, clearObj);

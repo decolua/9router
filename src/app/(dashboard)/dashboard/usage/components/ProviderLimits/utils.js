@@ -202,3 +202,45 @@ export function parseQuotaData(provider, data) {
 
   return normalizedQuotas;
 }
+
+export function parseStoredUsageSnapshot(connection = {}) {
+  const snapshot = connection?.usageSnapshot;
+  if (!snapshot) return null;
+
+  if (typeof snapshot === "object") {
+    return snapshot;
+  }
+
+  if (typeof snapshot !== "string") {
+    return null;
+  }
+
+  try {
+    return JSON.parse(snapshot);
+  } catch (error) {
+    console.warn(`Failed to parse usage snapshot for ${connection?.provider || "provider"}/${connection?.id || "unknown"}:`, error);
+    return null;
+  }
+}
+
+export function getStoredQuotaPresentation(connection = {}) {
+  const raw = parseStoredUsageSnapshot(connection);
+
+  if (!raw) {
+    return {
+      quotas: [],
+      plan: null,
+      message: null,
+      raw: null,
+      hasSnapshot: false,
+    };
+  }
+
+  return {
+    quotas: parseQuotaData(connection.provider, raw),
+    plan: raw.plan || null,
+    message: raw.message || null,
+    raw,
+    hasSnapshot: true,
+  };
+}

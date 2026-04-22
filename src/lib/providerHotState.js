@@ -185,6 +185,10 @@ function isFutureTimestamp(value) {
   return Boolean(value) && Number.isFinite(new Date(value).getTime()) && new Date(value).getTime() > Date.now();
 }
 
+function isAccountWideModelLockKey(key) {
+  return key === "modelLock___all";
+}
+
 function getConnectionRetryAt(state = {}) {
   const timestamps = [];
 
@@ -197,7 +201,7 @@ function getConnectionRetryAt(state = {}) {
   }
 
   for (const [key, value] of Object.entries(state || {})) {
-    if (key.startsWith("modelLock_") && isFutureTimestamp(value)) {
+    if (isAccountWideModelLockKey(key) && isFutureTimestamp(value)) {
       timestamps.push(value);
     }
   }
