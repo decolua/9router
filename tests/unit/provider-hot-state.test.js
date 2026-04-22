@@ -96,6 +96,7 @@ describe("providerHotState", () => {
     });
 
     await setConnectionHotState("conn-ready", "provider-b", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastUsedAt: "2026-04-21T10:15:00.000Z",
     });
@@ -191,6 +192,7 @@ describe("providerHotState", () => {
     });
 
     await setConnectionHotState("shared-conn", "provider-right", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastUsedAt: "2026-04-21T10:20:00.000Z",
     });
@@ -245,6 +247,7 @@ describe("providerHotState", () => {
 
   it("keeps unscoped hot-state access for non-colliding connection IDs", async () => {
     await setConnectionHotState("unique-conn", "provider-solo", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastUsedAt: "2026-04-21T11:00:00.000Z",
     });
@@ -272,14 +275,17 @@ describe("providerHotState", () => {
     const earlierRetryAt = new Date(Date.now() + 30_000).toISOString();
 
     await setConnectionHotState("conn-a", "provider-c", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastUsedAt: "2026-04-21T10:00:00.000Z",
     });
     await setConnectionHotState("conn-b", "provider-c", {
+      routingStatus: "eligible",
       testStatus: "unavailable",
       rateLimitedUntil: laterRetryAt,
     });
     await setConnectionHotState("conn-c", "provider-c", {
+      routingStatus: "eligible",
       testStatus: "unavailable",
       rateLimitedUntil: earlierRetryAt,
     });
@@ -290,6 +296,7 @@ describe("providerHotState", () => {
     });
 
     await setConnectionHotState("conn-b", "provider-c", {
+      routingStatus: "eligible",
       testStatus: "active",
       rateLimitedUntil: null,
       lastError: null,
@@ -312,9 +319,12 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-eligible", "provider-d", {
+      routingStatus: "eligible",
       testStatus: "active",
     });
     await setConnectionHotState("conn-blocked", "provider-d", {
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
       testStatus: "unavailable",
       rateLimitedUntil: retryAt,
     });
@@ -333,6 +343,7 @@ describe("providerHotState", () => {
     const modelRetryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-model-locked", "provider-model-scoped", {
+      routingStatus: "eligible",
       testStatus: "active",
       modelLock_gpt4: modelRetryAt,
     });
@@ -364,7 +375,7 @@ describe("providerHotState", () => {
     });
   });
 
-  it("treats untouched healthy connections as eligible while still excluding centrally blocked ones", async () => {
+  it("does not fallback-admit untouched healthy connections when provider hot state exists", async () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-mixed", {
@@ -376,12 +387,10 @@ describe("providerHotState", () => {
     expect(await getEligibleConnections("provider-mixed", [
       { id: "conn-blocked", priority: 1 },
       { id: "conn-untouched", priority: 2, testStatus: "active" },
-    ])).toEqual([
-      { id: "conn-untouched", priority: 2, testStatus: "active" },
-    ]);
+    ])).toEqual([]);
   });
 
-  it("treats untouched unknown-status connections as eligible while still excluding centrally blocked ones", async () => {
+  it("does not fallback-admit untouched unknown-status connections when provider hot state exists", async () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-unknown", {
@@ -393,9 +402,7 @@ describe("providerHotState", () => {
     expect(await getEligibleConnections("provider-unknown", [
       { id: "conn-blocked", priority: 1, testStatus: "unknown" },
       { id: "conn-untouched", priority: 2, testStatus: "unknown" },
-    ])).toEqual([
-      { id: "conn-untouched", priority: 2, testStatus: "unknown" },
-    ]);
+    ])).toEqual([]);
   });
 
   it("does not fallback-admit DB-only revoked accounts when their per-connection hot row is missing", async () => {
@@ -428,6 +435,34 @@ describe("providerHotState", () => {
         priority: 2,
         testStatus: "active",
       },
+    ]);
+  });
+
+  it("excludes canonical unknown and exhausted routing statuses from eligibility indexes", async () => {
+    await setConnectionHotState("conn-eligible", "provider-statuses", {
+      routingStatus: "eligible",
+      authState: "ok",
+      quotaState: "ok",
+      healthStatus: "healthy",
+      testStatus: "active",
+    });
+    await setConnectionHotState("conn-unknown", "provider-statuses", {
+      routingStatus: "unknown",
+      testStatus: "active",
+    });
+    await setConnectionHotState("conn-exhausted", "provider-statuses", {
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      testStatus: "active",
+    });
+
+    expect(await getEligibleConnectionIds("provider-statuses")).toEqual(["conn-eligible"]);
+    expect(await getEligibleConnections("provider-statuses", [
+      { id: "conn-eligible", priority: 1 },
+      { id: "conn-unknown", priority: 2 },
+      { id: "conn-exhausted", priority: 3 },
+    ])).toEqual([
+      { id: "conn-eligible", priority: 1 },
     ]);
   });
 
@@ -512,6 +547,67 @@ describe("providerHotState", () => {
     });
   });
 
+  it("does not let legacy active testStatus override canonical blocked routing", async () => {
+    await setConnectionHotState("conn-canonical-blocked", "provider-canonical-projection", {
+      routingStatus: "blocked_health",
+      reasonCode: "upstream_unhealthy",
+      testStatus: "active",
+      reasonDetail: "Provider health check failed",
+    });
+
+    expect(await getConnectionHotState("conn-canonical-blocked", "provider-canonical-projection")).toMatchObject({
+      id: "conn-canonical-blocked",
+      routingStatus: "blocked_health",
+      testStatus: "error",
+      lastErrorType: "upstream_unhealthy",
+    });
+  });
+
+  it("projects canonical exhausted routing state to legacy unavailable status", async () => {
+    await setConnectionHotState("conn-exhausted-projection", "provider-canonical", {
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      nextRetryAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+
+    expect(await getConnectionHotState("conn-exhausted-projection", "provider-canonical")).toMatchObject({
+      id: "conn-exhausted-projection",
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      testStatus: "unavailable",
+    });
+  });
+
+  it("projects canonical blocked auth_invalid reason to legacy expired status", async () => {
+    await setConnectionHotState("conn-blocked-auth", "provider-canonical", {
+      routingStatus: "blocked",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token expired",
+    });
+
+    expect(await getConnectionHotState("conn-blocked-auth", "provider-canonical")).toMatchObject({
+      id: "conn-blocked-auth",
+      routingStatus: "blocked",
+      reasonCode: "auth_invalid",
+      testStatus: "expired",
+    });
+  });
+
+  it("projects canonical blocked non-auth reason to legacy error status", async () => {
+    await setConnectionHotState("conn-blocked-upstream", "provider-canonical", {
+      routingStatus: "blocked",
+      reasonCode: "upstream_unhealthy",
+      reasonDetail: "Provider health check failed",
+    });
+
+    expect(await getConnectionHotState("conn-blocked-upstream", "provider-canonical")).toMatchObject({
+      id: "conn-blocked-upstream",
+      routingStatus: "blocked",
+      reasonCode: "upstream_unhealthy",
+      testStatus: "error",
+    });
+  });
+
   it("preserves different-key updates when workers patch the same connection concurrently", async () => {
     process.env.REDIS_URL = "redis://example.test:6379";
 
@@ -549,6 +645,7 @@ describe("providerHotState", () => {
     });
 
     const firstWrite = setConnectionHotState("conn-shared", "provider-shared", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastError: "worker-a",
     });
@@ -564,6 +661,7 @@ describe("providerHotState", () => {
 
     expect(await getConnectionHotState("conn-shared", "provider-shared")).toMatchObject({
       id: "conn-shared",
+      routingStatus: "eligible",
       testStatus: "active",
       lastError: "worker-a",
       backoffLevel: 3,
@@ -578,6 +676,7 @@ describe("providerHotState", () => {
       isReady: true,
       async hGetAll() {
         return {
+          "__conn__:conn-mixed:routingStatus": JSON.stringify("eligible"),
           "__conn__:conn-mixed:testStatus": JSON.stringify("active"),
           "__conn__:conn-mixed:lastError": JSON.stringify("new-format"),
           "__conn__:conn-mixed:lastErrorAt": JSON.stringify("2026-04-21T11:00:00.000Z"),
@@ -610,6 +709,7 @@ describe("providerHotState", () => {
 
   it("hydrates mixed legacy and per-key Redis state independent of field insertion order", async () => {
     const firstHydration = __hydrateProviderHotStateForTests("provider-order-a", {
+      "__conn__:Y29ubjptaXhlZA==:cm91dGluZ1N0YXR1cw==": JSON.stringify("eligible"),
       "__conn__:Y29ubjptaXhlZA==:dGVzdFN0YXR1cw==": JSON.stringify("active"),
       "__conn__:Y29ubjptaXhlZA==:bGFzdEVycm9y": JSON.stringify("new-format"),
       "conn:mixed": JSON.stringify({
@@ -626,6 +726,7 @@ describe("providerHotState", () => {
         backoffLevel: 1,
       }),
       "__conn__:Y29ubjptaXhlZA==:bGFzdEVycm9y": JSON.stringify("new-format"),
+      "__conn__:Y29ubjptaXhlZA==:cm91dGluZ1N0YXR1cw==": JSON.stringify("eligible"),
       "__conn__:Y29ubjptaXhlZA==:dGVzdFN0YXR1cw==": JSON.stringify("active"),
     });
 
@@ -895,11 +996,13 @@ describe("providerHotState", () => {
     });
 
     const firstWrite = setConnectionHotState("conn-a", "provider-race", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastError: "worker-a",
     });
 
     const secondWrite = setConnectionHotState("conn-b", "provider-race", {
+      routingStatus: "eligible",
       testStatus: "active",
       lastError: "worker-b",
     });

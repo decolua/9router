@@ -2,6 +2,13 @@ import { getSettings } from "@/lib/localDb";
 import { normalizeQuotaSchedulerSettings } from "@/lib/quotaRefreshPlanner";
 import { createQuotaRefreshState, QUOTA_REFRESH_RUN_STATES } from "@/lib/quotaRefreshState";
 
+const DEFAULT_QUOTA_EXHAUSTED_THRESHOLD_PERCENT = 10;
+
+function normalizeQuotaExhaustedThresholdPercent(value) {
+  if (!Number.isFinite(value)) return DEFAULT_QUOTA_EXHAUSTED_THRESHOLD_PERCENT;
+  return Math.min(100, Math.max(0, value));
+}
+
 const appGlobal = global.__appSingleton ??= {};
 
 export class QuotaRefreshScheduler {
@@ -19,6 +26,11 @@ export class QuotaRefreshScheduler {
     this.logger = logger;
     this.state = createQuotaRefreshState({ now: () => this.now().toISOString() });
     this.settings = normalizeQuotaSchedulerSettings({});
+    this.quotaExhaustedThresholdPercent = DEFAULT_QUOTA_EXHAUSTED_THRESHOLD_PERCENT;
+    this.resolvedConfig = {
+      quotaScheduler: { ...this.settings },
+      quotaExhaustedThresholdPercent: this.quotaExhaustedThresholdPercent,
+    };
     this.timerId = null;
     this.started = false;
     this.startPromise = null;
@@ -27,6 +39,13 @@ export class QuotaRefreshScheduler {
   async loadSettings() {
     const settings = await this.getSettingsFn();
     this.settings = normalizeQuotaSchedulerSettings(settings?.quotaScheduler || {});
+    this.quotaExhaustedThresholdPercent = normalizeQuotaExhaustedThresholdPercent(
+      settings?.quotaExhaustedThresholdPercent
+    );
+    this.resolvedConfig = {
+      quotaScheduler: { ...this.settings },
+      quotaExhaustedThresholdPercent: this.quotaExhaustedThresholdPercent,
+    };
     return this.settings;
   }
 
@@ -35,6 +54,10 @@ export class QuotaRefreshScheduler {
       started: this.started,
       enabled: this.settings.enabled,
       settings: { ...this.settings },
+      resolvedConfig: {
+        quotaScheduler: { ...this.resolvedConfig.quotaScheduler },
+        quotaExhaustedThresholdPercent: this.resolvedConfig.quotaExhaustedThresholdPercent,
+      },
       hasScheduledTimer: this.timerId !== null,
       ...this.getStateSnapshot(),
     };

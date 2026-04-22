@@ -22,84 +22,12 @@ import {
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import Link from "next/link";
-import { getErrorCode, getRelativeTime } from "@/shared/utils";
+import { getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getConnectionEffectiveStatus } from "@/lib/connectionStatus";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
-
-function getStatusDisplay(connected, error, total, errorCode) {
-  const parts = [];
-  if (connected > 0) {
-    parts.push(
-      <Badge key="connected" variant="success" size="sm" dot>
-        {connected} Connected
-      </Badge>,
-    );
-  }
-  if (error > 0) {
-    const errText = errorCode
-      ? `${error} Error (${errorCode})`
-      : `${error} Error`;
-    parts.push(
-      <Badge key="error" variant="error" size="sm" dot>
-        {errText}
-      </Badge>,
-    );
-  }
-  if (total > 0 && connected === 0 && error === 0) {
-    parts.push(
-      <Badge key="saved" variant="default" size="sm">
-        {total} Saved
-      </Badge>,
-    );
-  }
-  if (parts.length === 0) {
-    return <span className="text-text-muted">No connections</span>;
-  }
-  return parts;
-}
-
-function getConnectionErrorTag(connection) {
-  if (!connection) return null;
-
-  const explicitType = connection.lastErrorType;
-  if (explicitType === "runtime_error") return "RUNTIME";
-  if (
-    explicitType === "upstream_auth_error" ||
-    explicitType === "auth_missing" ||
-    explicitType === "token_refresh_failed" ||
-    explicitType === "token_expired"
-  )
-    return "AUTH";
-  if (explicitType === "upstream_rate_limited") return "429";
-  if (explicitType === "upstream_unavailable") return "5XX";
-  if (explicitType === "network_error") return "NET";
-
-  const numericCode = Number(connection.errorCode);
-  if (Number.isFinite(numericCode) && numericCode >= 400)
-    return String(numericCode);
-
-  const fromMessage = getErrorCode(connection.lastError);
-  if (fromMessage === "401" || fromMessage === "403") return "AUTH";
-  if (fromMessage && fromMessage !== "ERR") return fromMessage;
-
-  const msg = (connection.lastError || "").toLowerCase();
-  if (
-    msg.includes("runtime") ||
-    msg.includes("not runnable") ||
-    msg.includes("not installed")
-  )
-    return "RUNTIME";
-  if (
-    msg.includes("invalid api key") ||
-    msg.includes("token invalid") ||
-    msg.includes("revoked") ||
-    msg.includes("unauthorized")
-  )
-    return "AUTH";
-
-  return "ERR";
-}
+import { getConnectionErrorTag } from "./errorTag";
+import { getStatusDisplayItems } from "./statusDisplay";
 
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
@@ -316,30 +244,30 @@ export default function ProvidersPage() {
         total: summary.total,
         errorCode: providerConnections
           .filter((c) => {
-            const status = c.testStatus;
-            return status === "error" || status === "expired" || status === "unavailable";
+            const status = getConnectionEffectiveStatus(c);
+            return status === "blocked" || status === "exhausted";
           })
           .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]
           ? getConnectionErrorTag(
               providerConnections
                 .filter((c) => {
-                  const status = c.testStatus;
-                  return status === "error" || status === "expired" || status === "unavailable";
+                  const status = getConnectionEffectiveStatus(c);
+                  return status === "blocked" || status === "exhausted";
                 })
                 .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0],
             )
           : null,
         errorTime: providerConnections
           .filter((c) => {
-            const status = c.testStatus;
-            return status === "error" || status === "expired" || status === "unavailable";
+            const status = getConnectionEffectiveStatus(c);
+            return status === "blocked" || status === "exhausted";
           })
           .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0]?.lastErrorAt
           ? getRelativeTime(
               providerConnections
                 .filter((c) => {
-                  const status = c.testStatus;
-                  return status === "error" || status === "expired" || status === "unavailable";
+                  const status = getConnectionEffectiveStatus(c);
+                  return status === "blocked" || status === "exhausted";
                 })
                 .sort((a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0))[0].lastErrorAt,
             )
@@ -352,14 +280,12 @@ export default function ProvidersPage() {
 
     const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
-      return status === "active" || status === "success";
+      return status === "eligible";
     }).length;
 
     const errorConns = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
-      return (
-        status === "error" || status === "expired" || status === "unavailable"
-      );
+      return status === "blocked" || status === "exhausted";
     });
 
     const error = errorConns.length;
@@ -964,7 +890,11 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>
-                     {getStatusDisplay(connected, error, stats.total, errorCode)}
+                     {getStatusDisplayItems(connected, error, stats.total, errorCode).map((item) => (
+                      <Badge key={item.key} variant={item.variant} size="sm" dot={item.dot}>
+                        {item.label}
+                      </Badge>
+                    ))}
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
@@ -1090,7 +1020,11 @@ function ApiKeyProviderCard({
                   </Badge>
                 ) : (
                   <>
-                     {getStatusDisplay(connected, error, stats.total, errorCode)}
+                     {getStatusDisplayItems(connected, error, stats.total, errorCode).map((item) => (
+                      <Badge key={item.key} variant={item.variant} size="sm" dot={item.dot}>
+                        {item.label}
+                      </Badge>
+                    ))}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
                         {provider.apiType === "responses"

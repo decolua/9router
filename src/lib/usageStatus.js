@@ -12,11 +12,13 @@ const AUTH_BLOCKED_PATTERNS = [
   "sign in again",
   "unauthorized",
   "unauthenticated",
-  "forbidden",
   "revoked",
-  "expired",
-  "401",
-  "403",
+  "invalid grant",
+  "invalid_client",
+  "invalid_token",
+  "oauth",
+  "access token",
+  "authentication",
 ];
 const CODEX_LIVE_QUOTA_PATTERNS = [
   "exceeded your current quota",
@@ -35,6 +37,23 @@ export function isAuthExpiredMessage(usage) {
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
 }
 
+function getLegacyTestStatusFromCanonical(snapshot = {}) {
+  switch (snapshot?.routingStatus) {
+    case "eligible":
+      return "active";
+    case "exhausted":
+      return "unavailable";
+    case "blocked":
+      return snapshot?.reasonCode && String(snapshot.reasonCode).startsWith("auth_")
+        ? "expired"
+        : "error";
+    case "disabled":
+      return "unavailable";
+    default:
+      return null;
+  }
+}
+
 export async function syncUsageStatus(connection, updates = {}) {
   if (!connection?.id) return null;
 
@@ -49,19 +68,24 @@ export async function syncUsageStatus(connection, updates = {}) {
     provider: connection.provider,
     patch: hotPatch,
   });
-  const legacy = projectLegacyConnectionState(snapshot || hotPatch);
+  const merged = snapshot || hotPatch;
+  const legacy = projectLegacyConnectionState(merged);
+
+  const explicitLegacyTestStatus = hotPatch.testStatus === "blocked"
+    ? null
+    : hotPatch.testStatus;
 
   await updateProviderConnection(connection.id, {
-    testStatus: legacy.testStatus,
+    testStatus: explicitLegacyTestStatus || getLegacyTestStatusFromCanonical(merged) || legacy.testStatus,
     lastTested: legacy.lastTested || lastCheckedAt,
-    lastError: legacy.lastError ?? null,
-    lastErrorType: legacy.lastErrorType ?? null,
-    lastErrorAt: legacy.lastErrorAt ?? null,
-    rateLimitedUntil: legacy.rateLimitedUntil ?? null,
-    errorCode: legacy.errorCode ?? null,
+    lastError: hotPatch.lastError ?? legacy.lastError ?? null,
+    lastErrorType: hotPatch.lastErrorType ?? legacy.lastErrorType ?? null,
+    lastErrorAt: hotPatch.lastErrorAt ?? legacy.lastErrorAt ?? null,
+    rateLimitedUntil: hotPatch.rateLimitedUntil ?? legacy.rateLimitedUntil ?? null,
+    errorCode: hotPatch.errorCode ?? legacy.errorCode ?? null,
   });
 
-  return snapshot || hotPatch;
+  return merged;
 }
 
 function getHealthyUsageStatusUpdates(usage) {
@@ -108,7 +132,7 @@ export function getConnectionRecoveryPatch({ lastCheckedAt = new Date().toISOStr
 }
 
 export function isConfirmedAuthBlockedError(error, { statusCode = null } = {}) {
-  if (statusCode === 401 || statusCode === 403) {
+  if (statusCode === 401) {
     return true;
   }
 
@@ -116,10 +140,18 @@ export function isConfirmedAuthBlockedError(error, { statusCode = null } = {}) {
     ? error
     : error?.message || error?.error || error?.cause?.message || "";
 
-  if (!message) return false;
+  if (!message) {
+    return false;
+  }
 
   const normalized = String(message).toLowerCase();
-  return AUTH_BLOCKED_PATTERNS.some((pattern) => normalized.includes(pattern));
+  const hasAuthEvidence = AUTH_BLOCKED_PATTERNS.some((pattern) => normalized.includes(pattern));
+
+  if (statusCode === 403) {
+    return hasAuthEvidence;
+  }
+
+  return hasAuthEvidence;
 }
 
 export function getConnectionAuthBlockedPatch(error, { lastCheckedAt = new Date().toISOString(), statusCode = null } = {}) {
@@ -134,7 +166,7 @@ export function getConnectionAuthBlockedPatch(error, { lastCheckedAt = new Date(
   const reasonDetail = message || "Provider error";
 
   return {
-    routingStatus: "blocked_auth",
+    routingStatus: "blocked",
     healthStatus: "healthy",
     quotaState: "ok",
     authState: "invalid",
@@ -142,7 +174,7 @@ export function getConnectionAuthBlockedPatch(error, { lastCheckedAt = new Date(
     reasonDetail,
     nextRetryAt: null,
     resetAt: null,
-    testStatus: "expired",
+    testStatus: "blocked",
     lastError: reasonDetail,
     lastErrorType: "auth_invalid",
     lastErrorAt: lastCheckedAt,
@@ -203,12 +235,22 @@ function getCodexExhaustedQuota(usage = {}) {
   return null;
 }
 
-function getConfiguredMinimumRemainingQuotaPercent(connection = {}) {
+function getConfiguredMinimumRemainingQuotaPercent(connection = {}, options = {}) {
+  const explicitOptionThreshold = options?.globalExhaustedThreshold;
+  if (explicitOptionThreshold !== undefined && explicitOptionThreshold !== null && explicitOptionThreshold !== "") {
+    const parsed = Number(explicitOptionThreshold);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.min(100, parsed));
+    }
+  }
+
   const rawValue = connection?.providerSpecificData?.minimumRemainingQuotaPercent;
-  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
+  if (rawValue === null || rawValue === undefined || rawValue === "") {
+    return 10;
+  }
 
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return null;
+  if (!Number.isFinite(parsed)) return 10;
 
   return Math.max(0, Math.min(100, parsed));
 }
@@ -235,9 +277,20 @@ function getSafeRemainingPercent(quota = {}) {
   return remainingPercent;
 }
 
-function getKiroQuotaSignal(connection, usage = {}) {
+function getKiroQuotaSignal(connection, usage = {}, options = {}) {
   const quotas = usage?.quotas;
-  if (!quotas || typeof quotas !== "object") return null;
+  if (!quotas || typeof quotas !== "object") {
+    if (usage?.limitReached === true || usage?.revoked === true) {
+      return {
+        kind: "exhausted",
+        quotaName: null,
+        resetAt: null,
+      };
+    }
+    return null;
+  }
+
+  const minimumRemainingQuotaPercent = getConfiguredMinimumRemainingQuotaPercent(connection, options);
 
   for (const [quotaName, quota] of Object.entries(quotas)) {
     if (!quota || typeof quota !== "object") continue;
@@ -260,15 +313,8 @@ function getKiroQuotaSignal(connection, usage = {}) {
       };
     }
 
-    const minimumRemainingQuotaPercent = getConfiguredMinimumRemainingQuotaPercent(connection);
-    if (minimumRemainingQuotaPercent === null) {
-      continue;
-    }
-
     const remainingPercent = getSafeRemainingPercent(quota);
-    if (remainingPercent === null) {
-      continue;
-    }
+    if (remainingPercent === null) continue;
 
     if (remainingPercent <= minimumRemainingQuotaPercent) {
       return {
@@ -295,61 +341,66 @@ function getKiroQuotaSignal(connection, usage = {}) {
 export function getUsageStatusUpdates(connection, usage, options = {}) {
   const base = getHealthyUsageStatusUpdates(usage);
   const liveSignal = options.liveSignal || null;
+  const nowIso = options.observedAt || new Date().toISOString();
 
   if (liveSignal?.kind === "quota_exhausted" && connection?.provider === "codex") {
     return {
       ...base,
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       healthStatus: "degraded",
       quotaState: "exhausted",
       lastError: liveSignal.reasonDetail || "Codex quota exhausted",
       lastErrorType: liveSignal.reasonCode || "quota_exhausted",
-      lastErrorAt: options.observedAt || new Date().toISOString(),
+      lastErrorAt: nowIso,
       rateLimitedUntil: liveSignal.resetAt || null,
       errorCode: liveSignal.errorCode || "codex_live_quota_exhausted",
       reasonCode: liveSignal.reasonCode || "quota_exhausted",
       reasonDetail: liveSignal.reasonDetail || "Codex quota exhausted",
       resetAt: liveSignal.resetAt || null,
       nextRetryAt: liveSignal.resetAt || null,
+      testStatus: "unavailable",
     };
   }
 
   if (connection?.provider !== "codex") {
     if (connection?.provider === "kiro") {
-      const kiroQuotaSignal = getKiroQuotaSignal(connection, usage);
+      const kiroQuotaSignal = getKiroQuotaSignal(connection, usage, options);
 
       if (kiroQuotaSignal?.kind === "exhausted") {
         return {
           ...base,
-          routingStatus: "blocked_quota",
+          routingStatus: "exhausted",
           healthStatus: "degraded",
           quotaState: "exhausted",
           lastError: "Kiro quota exhausted",
           lastErrorType: "quota_exhausted",
-          lastErrorAt: new Date().toISOString(),
+          lastErrorAt: nowIso,
           rateLimitedUntil: kiroQuotaSignal.resetAt || null,
           errorCode: "quota_exhausted",
           reasonCode: "quota_exhausted",
           reasonDetail: "Kiro quota exhausted",
           resetAt: kiroQuotaSignal.resetAt || null,
           nextRetryAt: kiroQuotaSignal.resetAt || null,
+          testStatus: "unavailable",
         };
       }
 
       if (kiroQuotaSignal?.kind === "threshold") {
         return {
           ...base,
-          routingStatus: "blocked_quota",
-          quotaState: "blocked",
+          routingStatus: "exhausted",
+          healthStatus: "degraded",
+          quotaState: "exhausted",
           lastError: `Kiro remaining quota is at or below ${kiroQuotaSignal.minimumRemainingQuotaPercent}%`,
           lastErrorType: "quota_threshold",
-          lastErrorAt: new Date().toISOString(),
+          lastErrorAt: nowIso,
           rateLimitedUntil: kiroQuotaSignal.resetAt || null,
           errorCode: "quota_threshold",
           reasonCode: "quota_threshold",
           reasonDetail: `Kiro remaining quota is at or below ${kiroQuotaSignal.minimumRemainingQuotaPercent}%`,
           resetAt: kiroQuotaSignal.resetAt || null,
           nextRetryAt: kiroQuotaSignal.resetAt || null,
+          testStatus: "unavailable",
         };
       }
     }
@@ -374,18 +425,47 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
 
     return {
       ...base,
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       healthStatus: "degraded",
       quotaState: "exhausted",
       lastError: reasonDetail,
       lastErrorType: "quota_exhausted",
-      lastErrorAt: new Date().toISOString(),
+      lastErrorAt: nowIso,
       rateLimitedUntil: exhaustedQuota?.resetAt || null,
       errorCode,
       reasonCode: "quota_exhausted",
       reasonDetail,
       resetAt: exhaustedQuota?.resetAt || null,
       nextRetryAt: exhaustedQuota?.resetAt || null,
+      testStatus: "unavailable",
+    };
+  }
+
+  const thresholds = Object.values(usage?.quotas || {});
+  const minimumRemainingQuotaPercent = getConfiguredMinimumRemainingQuotaPercent(connection, options);
+  const thresholdQuota = thresholds.find((quota) => {
+    if (!quota || typeof quota !== "object") return false;
+    const remainingPercent = getSafeRemainingPercent(quota);
+    if (remainingPercent === null) return false;
+    return remainingPercent <= minimumRemainingQuotaPercent;
+  });
+
+  if (thresholdQuota) {
+    return {
+      ...base,
+      routingStatus: "exhausted",
+      healthStatus: "degraded",
+      quotaState: "exhausted",
+      lastError: `Remaining quota is at or below ${minimumRemainingQuotaPercent}%`,
+      lastErrorType: "quota_threshold",
+      lastErrorAt: nowIso,
+      rateLimitedUntil: thresholdQuota.resetAt || null,
+      errorCode: "quota_threshold",
+      reasonCode: "quota_threshold",
+      reasonDetail: `Remaining quota is at or below ${minimumRemainingQuotaPercent}%`,
+      resetAt: thresholdQuota.resetAt || null,
+      nextRetryAt: thresholdQuota.resetAt || null,
+      testStatus: "unavailable",
     };
   }
 

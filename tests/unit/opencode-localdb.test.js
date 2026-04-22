@@ -20,8 +20,9 @@ describe("localDb opencode sync helpers", () => {
     const { getDb, getOpenCodePreferences } = await import("../../src/lib/localDb.js");
     const db = await getDb();
 
-    expect(db.data.opencodeSync).toBeDefined();
+    expect(db.data.opencodeSync).toBeUndefined();
     expect(await getOpenCodePreferences()).toMatchObject({ variant: "openagent" });
+    expect(db.data.opencodeSync).toBeDefined();
   });
 
   it("normalizes preferences and keeps tokens through import/export", async () => {

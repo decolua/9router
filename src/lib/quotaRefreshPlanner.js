@@ -8,10 +8,21 @@ export const QUOTA_SCHEDULER_DEFAULTS = {
 };
 
 const MIN_QUOTA_SCHEDULER_CADENCE_MS = 900000;
+const MIN_QUOTA_SCHEDULER_BATCH_SIZE = 1;
+
+function normalizeBoolean(value, fallback) {
+  if (value === undefined) return fallback;
+  return value === true;
+}
+
+function normalizeNonNegativeInteger(value, fallback, minimum = 0) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(minimum, Math.trunc(value));
+}
 
 function normalizeCadenceMs(value) {
-  if (!Number.isFinite(value)) return QUOTA_SCHEDULER_DEFAULTS.cadenceMs;
-  return Math.max(MIN_QUOTA_SCHEDULER_CADENCE_MS, value);
+  const normalized = normalizeNonNegativeInteger(value, QUOTA_SCHEDULER_DEFAULTS.cadenceMs, MIN_QUOTA_SCHEDULER_CADENCE_MS);
+  return Math.max(MIN_QUOTA_SCHEDULER_CADENCE_MS, normalized);
 }
 
 const DUE_REASON_PRIORITY = {
@@ -47,23 +58,47 @@ function getMergedSchedulerSettings(schedulerSettings = {}) {
       : {}),
   };
 
+  merged.enabled = normalizeBoolean(merged.enabled, QUOTA_SCHEDULER_DEFAULTS.enabled);
   merged.cadenceMs = normalizeCadenceMs(merged.cadenceMs);
+  merged.successTtlMs = normalizeNonNegativeInteger(merged.successTtlMs, QUOTA_SCHEDULER_DEFAULTS.successTtlMs);
+  merged.errorTtlMs = normalizeNonNegativeInteger(merged.errorTtlMs, QUOTA_SCHEDULER_DEFAULTS.errorTtlMs);
+  merged.exhaustedTtlMs = normalizeNonNegativeInteger(merged.exhaustedTtlMs, QUOTA_SCHEDULER_DEFAULTS.exhaustedTtlMs);
+  merged.batchSize = normalizeNonNegativeInteger(
+    merged.batchSize,
+    QUOTA_SCHEDULER_DEFAULTS.batchSize,
+    MIN_QUOTA_SCHEDULER_BATCH_SIZE
+  );
+
   return merged;
 }
 
-function isQuotaBlockedState(quotaState) {
-  return quotaState === "exhausted" || quotaState === "cooldown" || quotaState === "blocked";
+function isQuotaBlockedState(hotState = {}) {
+  const routingStatus = hotState?.routingStatus || null;
+  const quotaState = hotState?.quotaState || null;
+  const reasonCode = hotState?.reasonCode || null;
+
+  return routingStatus === "exhausted"
+    || routingStatus === "blocked_quota"
+    || routingStatus === "cooldown"
+    || (routingStatus === "blocked" && reasonCode === "quota_exhausted")
+    || quotaState === "exhausted"
+    || quotaState === "cooldown"
+    || quotaState === "blocked";
 }
 
 function isErrorState(hotState = {}) {
+  const routingStatus = hotState?.routingStatus || null;
+  const reasonCode = hotState?.reasonCode || null;
   const healthStatus = hotState?.healthStatus || null;
   const testStatus = hotState?.testStatus || null;
 
-  return ["error", "failed", "down", "unhealthy"].includes(healthStatus) || testStatus === "error";
+  return routingStatus === "blocked_health"
+    || (routingStatus === "blocked" && reasonCode !== "quota_exhausted")
+    || ["error", "failed", "down", "unhealthy"].includes(healthStatus)
+    || (!routingStatus && testStatus === "error");
 }
 
 function getRetryGate(hotState = {}) {
-  const quotaState = hotState?.quotaState || null;
   const resetAtTs = toTimestamp(hotState?.resetAt);
   const retryCandidates = [hotState.nextRetryAt, hotState.rateLimitedUntil, hotState.resetAt]
     .map(toTimestamp)
@@ -71,7 +106,7 @@ function getRetryGate(hotState = {}) {
 
   if (retryCandidates.length === 0) return null;
 
-  if (isQuotaBlockedState(quotaState)) {
+  if (isQuotaBlockedState(hotState)) {
     if (resetAtTs !== null) return resetAtTs;
     return Math.max(...retryCandidates);
   }
@@ -81,9 +116,10 @@ function getRetryGate(hotState = {}) {
 
 function getDecisionTtlMs(hotState = {}, schedulerSettings) {
   const quotaState = hotState?.quotaState || null;
+  const routingStatus = hotState?.routingStatus || null;
   const testStatus = hotState?.testStatus || null;
 
-  if (isQuotaBlockedState(quotaState)) {
+  if (isQuotaBlockedState(hotState)) {
     return schedulerSettings.exhaustedTtlMs;
   }
 
@@ -91,7 +127,7 @@ function getDecisionTtlMs(hotState = {}, schedulerSettings) {
     return Math.max(schedulerSettings.errorTtlMs, schedulerSettings.cadenceMs);
   }
 
-  if (quotaState === "ok" || testStatus === "active") {
+  if (routingStatus === "eligible" || quotaState === "ok" || (!routingStatus && testStatus === "active")) {
     return Math.max(schedulerSettings.successTtlMs, schedulerSettings.cadenceMs);
   }
 
@@ -99,10 +135,11 @@ function getDecisionTtlMs(hotState = {}, schedulerSettings) {
 }
 
 function isSuccessLikeState(hotState = {}) {
+  const routingStatus = hotState?.routingStatus || null;
   const quotaState = hotState?.quotaState || null;
   const testStatus = hotState?.testStatus || null;
 
-  return quotaState === "ok" || testStatus === "active";
+  return routingStatus === "eligible" || quotaState === "ok" || (!routingStatus && testStatus === "active");
 }
 
 function getFreshReason(hotState = {}) {
@@ -137,14 +174,12 @@ export function getQuotaRefreshDecision({ connection = {}, schedulerSettings = {
 
   const lastCheckedTs = toTimestamp(hotState?.lastCheckedAt);
   const retryGateTs = getRetryGate(hotState);
-  const quotaState = hotState?.quotaState || null;
-  const errorState = isErrorState(hotState);
 
   if (lastCheckedTs === null) {
     return { due: true, reason: "never_checked", nextEligibleAt: null, lastCheckedAt: null };
   }
 
-  if (isQuotaBlockedState(quotaState) && retryGateTs !== null) {
+  if (isQuotaBlockedState(hotState) && retryGateTs !== null) {
     if (retryGateTs > nowTs) {
       return {
         due: false,

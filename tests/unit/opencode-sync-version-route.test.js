@@ -195,7 +195,7 @@ describe("/api/opencode/sync/version", () => {
     expect(second.body.version).toBe(first.body.version);
   });
 
-  it("returns 400 when selected models collide after artifact normalization", async () => {
+  it("returns version when same model slugs exist across providers", async () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue({
@@ -214,8 +214,8 @@ describe("/api/opencode/sync/version", () => {
       })
     );
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toContain('Multiple selected models normalize to the same artifact model id "gpt-4o-mini-free"');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ version: expect.any(String) });
   });
 
   it("returns 500 when loading the 9router catalog fails", async () => {

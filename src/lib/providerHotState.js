@@ -211,6 +211,11 @@ function getConnectionRetryAt(state = {}) {
 }
 
 function isConnectionEligible(state = {}) {
+  const routingStatus = state?.routingStatus || null;
+  if (routingStatus !== "eligible") {
+    return false;
+  }
+
   const authState = state?.authState || null;
   if (authState === "expired" || authState === "invalid" || authState === "revoked") {
     return false;
@@ -226,26 +231,7 @@ function isConnectionEligible(state = {}) {
     return false;
   }
 
-  const routingStatus = state?.routingStatus || null;
-  if (["blocked_auth", "blocked_health", "blocked_quota", "cooldown", "disabled"].includes(routingStatus)) {
-    return false;
-  }
-
-  const testStatus = state?.testStatus || null;
-  if (testStatus === "unavailable" || testStatus === "error" || testStatus === "expired") {
-    return false;
-  }
   return !getConnectionRetryAt(state);
-}
-
-function isFallbackEligibleConnection(state = {}) {
-  const testStatus = state?.testStatus || null;
-  const hasLegacyEligibleStatus = testStatus === "active"
-    || testStatus === "success"
-    || testStatus === "unknown";
-
-  if (!hasLegacyEligibleStatus) return false;
-  return isConnectionEligible(state);
 }
 
 function recalculateProviderIndexes(providerState) {
@@ -604,13 +590,7 @@ export async function getEligibleConnections(providerId, connections = []) {
   const eligibleConnectionIds = providerState.eligibleConnectionIds;
   if (!(eligibleConnectionIds instanceof Set)) return null;
 
-  return connections.filter((connection) => {
-    if (!connection?.id) return false;
-    if (eligibleConnectionIds.has(connection.id)) return true;
-    if (providerState.connections.has(connection.id)) return false;
-
-    return isFallbackEligibleConnection(connection);
-  });
+  return connections.filter((connection) => connection?.id && eligibleConnectionIds.has(connection.id));
 }
 
 export function projectProviderHotState(connection = {}, providerState = null) {
@@ -628,12 +608,16 @@ export function projectProviderHotState(connection = {}, providerState = null) {
 
     const legacyProjection = projectLegacyConnectionState({
       ...projected,
-      testStatus: connectionHotState?.testStatus,
+      testStatus: connectionHotState?.routingStatus ? undefined : connectionHotState?.testStatus,
     });
 
     Object.assign(projected, legacyProjection);
 
-    if (!projected.testStatus || projected.testStatus === "active" || projected.testStatus === "success" || projected.testStatus === "unknown") {
+    if (
+      !projected.testStatus
+      || (projected.routingStatus && projected.testStatus === "unknown")
+      || (!projected.routingStatus && ["active", "success", "unknown"].includes(projected.testStatus))
+    ) {
       projected.testStatus = "unavailable";
     }
   }
@@ -746,9 +730,14 @@ export function projectLegacyConnectionState(snapshot = {}) {
 
   if (!explicitTestStatus) {
     if (routingStatus === "eligible") testStatus = "active";
-    else if (routingStatus === "blocked_quota" || routingStatus === "cooldown") testStatus = "unavailable";
+    else if (routingStatus === "exhausted" || routingStatus === "blocked_quota" || routingStatus === "cooldown") testStatus = "unavailable";
     else if (routingStatus === "blocked_auth") testStatus = "expired";
     else if (routingStatus === "blocked_health") testStatus = "error";
+    else if (routingStatus === "blocked") {
+      const reasonCode = typeof snapshot.reasonCode === "string" ? snapshot.reasonCode : "";
+      const isAuthBlocked = reasonCode === "auth_invalid" || reasonCode.startsWith("auth_");
+      testStatus = isAuthBlocked ? "expired" : "error";
+    }
   }
 
   let lastError = snapshot.lastError ?? null;

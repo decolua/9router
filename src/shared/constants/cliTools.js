@@ -1,3 +1,5 @@
+import { getConnectionEffectiveStatus } from "../../lib/connectionStatus.js";
+
 // MITM Tools — IDE tools intercepted via MITM proxy
 export const MITM_TOOLS = {
   antigravity: {
@@ -243,7 +245,8 @@ export const CLI_TOOLS = {
 export const getProviderModelsForMapping = (providers) => {
   const result = [];
   providers.forEach(conn => {
-    if (conn.isActive && (conn.testStatus === "active" || conn.testStatus === "success")) {
+    const status = getConnectionEffectiveStatus(conn);
+    if (conn.isActive && status === "eligible") {
       result.push({
         connectionId: conn.id,
         provider: conn.provider,

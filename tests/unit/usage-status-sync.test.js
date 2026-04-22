@@ -3,16 +3,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockConnections = [];
 const updateProviderConnection = vi.fn(async (id, data) => ({ id, ...data }));
 const getProviderConnectionById = vi.fn(async (id) => mockConnections.find((conn) => conn.id === id) || null);
+const getProviderConnections = vi.fn(async ({ provider } = {}) => {
+  if (!provider) return [...mockConnections];
+  return mockConnections.filter((conn) => conn.provider === provider);
+});
 const getUsageForProvider = vi.fn(async () => ({ ok: true }));
 const writeConnectionHotState = vi.fn(async ({ patch }) => patch);
 const needsRefresh = vi.fn(() => false);
 const refreshCredentials = vi.fn(async () => null);
 const projectLegacyConnectionState = vi.fn((snapshot = {}) => ({
   testStatus:
-    snapshot.routingStatus === "blocked_quota"
+    snapshot.routingStatus === "exhausted"
       ? "unavailable"
-      : snapshot.routingStatus === "blocked_auth"
-        ? "expired"
+      : snapshot.routingStatus === "blocked"
+        ? (snapshot.reasonCode && snapshot.reasonCode.startsWith("auth_") ? "expired" : "error")
         : "active",
   lastTested: snapshot.lastCheckedAt || null,
   lastError: snapshot.reasonDetail ?? snapshot.lastError ?? null,
@@ -35,6 +39,7 @@ vi.mock("next/server", () => ({
 
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionById,
+  getProviderConnections,
   updateProviderConnection,
 }));
 
@@ -60,11 +65,14 @@ vi.mock("../../src/lib/usageRefreshQueue.js", () => ({
   runUsageRefreshJob,
 }));
 
+vi.mock("@/lib/connectionStatus", async () => await import("../../src/lib/connectionStatus.js"));
+
 describe("usage request status sync", () => {
   beforeEach(() => {
     mockConnections.length = 0;
     updateProviderConnection.mockClear();
     getProviderConnectionById.mockClear();
+    getProviderConnections.mockClear();
     getUsageForProvider.mockClear();
     writeConnectionHotState.mockClear();
     projectLegacyConnectionState.mockClear();
@@ -141,7 +149,7 @@ describe("usage request status sync", () => {
       connectionId: "conn-weekly-exhausted",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
+        routingStatus: "exhausted",
         quotaState: "exhausted",
         nextRetryAt: "2026-04-25T00:00:00.000Z",
       }),
@@ -190,7 +198,7 @@ describe("usage request status sync", () => {
       connectionId: "conn-session-exhausted",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
+        routingStatus: "exhausted",
         quotaState: "exhausted",
         nextRetryAt: "2026-04-25T00:00:00.000Z",
         reasonDetail: "Codex session quota exhausted",
@@ -265,7 +273,7 @@ describe("usage request status sync", () => {
       connectionId: "conn-reuse",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
+        routingStatus: "exhausted",
         quotaState: "exhausted",
         errorCode: "weekly_quota_exhausted",
       }),
@@ -274,6 +282,33 @@ describe("usage request status sync", () => {
       "conn-reuse",
       expect.objectContaining({ testStatus: "unavailable" })
     );
+  });
+
+  it("marks codex as exhausted when remaining falls below the default global threshold", async () => {
+    const { applyCanonicalUsageRefresh } = await import("../../src/lib/usageStatus.js");
+
+    await applyCanonicalUsageRefresh({ id: "conn-threshold-default", provider: "codex" }, {
+      plan: "pro",
+      quotas: {
+        weekly: {
+          used: 91,
+          total: 100,
+          remaining: 9,
+          resetAt: "2026-04-25T00:00:00.000Z",
+        },
+      },
+    });
+
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-threshold-default",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "exhausted",
+        quotaState: "exhausted",
+        reasonCode: "quota_threshold",
+        nextRetryAt: "2026-04-25T00:00:00.000Z",
+      }),
+    }));
   });
 
   it("blocks Kiro connections when a valid remaining percent falls at or below the configured threshold", async () => {
@@ -301,8 +336,8 @@ describe("usage request status sync", () => {
       connectionId: "conn-kiro-threshold",
       provider: "kiro",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
-        quotaState: "blocked",
+        routingStatus: "exhausted",
+        quotaState: "exhausted",
         reasonCode: "quota_threshold",
         nextRetryAt: "2026-04-25T00:00:00.000Z",
       }),
@@ -374,7 +409,7 @@ describe("usage request status sync", () => {
       connectionId: "conn-kiro-exhausted",
       provider: "kiro",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
+        routingStatus: "exhausted",
         quotaState: "exhausted",
         reasonCode: "quota_exhausted",
       }),
@@ -404,7 +439,7 @@ describe("usage request status sync", () => {
       connectionId: "conn-live",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_quota",
+        routingStatus: "exhausted",
         quotaState: "exhausted",
         errorCode: "codex_live_quota_exhausted",
         reasonDetail: "Codex quota exhausted",
@@ -481,11 +516,11 @@ describe("usage request status sync", () => {
       connectionId: "conn-refresh-auth-fail",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "invalid",
         reasonCode: "auth_invalid",
         reasonDetail: "Token expired and refresh failed",
-        testStatus: "expired",
+        testStatus: "blocked",
         lastErrorType: "auth_invalid",
       }),
     }));
@@ -522,16 +557,19 @@ describe("usage request status sync", () => {
       params: Promise.resolve({ connectionId: "conn-usage-auth-fail" }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({
+      error: "Credential refresh failed: Token expired and refresh failed",
+    });
     expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
       connectionId: "conn-usage-auth-fail",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "invalid",
         reasonCode: "auth_invalid",
         reasonDetail: "Token expired and refresh failed",
-        testStatus: "expired",
+        testStatus: "blocked",
         lastErrorType: "auth_invalid",
       }),
     }));
@@ -572,11 +610,11 @@ describe("usage request status sync", () => {
       connectionId: "conn-reauthorize-required",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "invalid",
         reasonCode: "auth_invalid",
         reasonDetail: "Failed to refresh credentials. Please re-authorize the connection.",
-        testStatus: "expired",
+        testStatus: "blocked",
         lastErrorType: "auth_invalid",
       }),
     }));
@@ -618,11 +656,11 @@ describe("usage request status sync", () => {
       connectionId: "conn-usage-throws-unauthorized",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "invalid",
         reasonCode: "auth_invalid",
         reasonDetail: "401 Unauthorized: token revoked",
-        testStatus: "expired",
+        testStatus: "blocked",
         lastErrorType: "auth_invalid",
       }),
     }));
@@ -664,11 +702,11 @@ describe("usage request status sync", () => {
       connectionId: "conn-usage-throws-generic-401",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "invalid",
         reasonCode: "auth_invalid",
         reasonDetail: "Request failed",
-        testStatus: "expired",
+        testStatus: "blocked",
         lastErrorType: "auth_invalid",
       }),
     }));
@@ -683,7 +721,7 @@ describe("usage request status sync", () => {
     );
   });
 
-  it("writes canonical blocked-auth state when usage fetch throws generic 403 error", async () => {
+  it("does not classify generic 403 usage errors as auth-blocked", async () => {
     mockConnections.push({
       id: "conn-usage-throws-generic-403",
       provider: "codex",
@@ -710,22 +748,225 @@ describe("usage request status sync", () => {
       connectionId: "conn-usage-throws-generic-403",
       provider: "codex",
       patch: expect.objectContaining({
-        routingStatus: "blocked_auth",
-        authState: "invalid",
-        reasonCode: "auth_invalid",
-        reasonDetail: "Request failed",
-        testStatus: "expired",
-        lastErrorType: "auth_invalid",
+        testStatus: "error",
+        lastError: "Request failed",
+        lastErrorType: "usage_request_failed",
       }),
     }));
     expect(updateProviderConnection).toHaveBeenCalledWith(
       "conn-usage-throws-generic-403",
       expect.objectContaining({
-        testStatus: "expired",
+        testStatus: "error",
         lastError: "Request failed",
+        lastErrorType: "usage_request_failed",
+      })
+    );
+  });
+
+  it("classifies 403 usage errors as auth-blocked when auth evidence is present", async () => {
+    mockConnections.push({
+      id: "conn-usage-throws-auth-403",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh",
+      routingStatus: "eligible",
+      authState: "ok",
+      testStatus: "active",
+    });
+
+    getUsageForProvider.mockRejectedValueOnce(Object.assign(
+      new Error("Access denied: invalid token"),
+      { status: 403 },
+    ));
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(new Request("http://localhost/api/usage/conn-usage-throws-auth-403"), {
+      params: Promise.resolve({ connectionId: "conn-usage-throws-auth-403" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-usage-throws-auth-403",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked",
+        authState: "invalid",
+        reasonCode: "auth_invalid",
+        reasonDetail: "Access denied: invalid token",
+        testStatus: "blocked",
+        lastErrorType: "auth_invalid",
+      }),
+    }));
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-usage-throws-auth-403",
+      expect.objectContaining({
+        testStatus: "expired",
+        lastError: "Access denied: invalid token",
         lastErrorType: "auth_invalid",
         errorCode: "auth_invalid",
       })
+    );
+  });
+
+  it("maps Codex 429 quota failures to canonical exhausted state", async () => {
+    mockConnections.push({
+      id: "conn-usage-throws-quota-429",
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "token",
+      refreshToken: "refresh",
+      routingStatus: "eligible",
+      quotaState: "ok",
+      testStatus: "active",
+    });
+
+    getUsageForProvider.mockRejectedValueOnce(Object.assign(
+      new Error("You have exceeded your current quota. Limit reached."),
+      { status: 429 },
+    ));
+
+    const { GET } = await import("../../src/app/api/usage/[connectionId]/route.js");
+    const response = await GET(new Request("http://localhost/api/usage/conn-usage-throws-quota-429"), {
+      params: Promise.resolve({ connectionId: "conn-usage-throws-quota-429" }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-usage-throws-quota-429",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "exhausted",
+        quotaState: "exhausted",
+        reasonCode: "quota_exhausted",
+        testStatus: "unavailable",
+      }),
+    }));
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-usage-throws-quota-429",
+      expect.objectContaining({
+        testStatus: "unavailable",
+        lastErrorType: "quota_exhausted",
+      })
+    );
+  });
+
+  it("returns canonical blocked model availability entries", async () => {
+    mockConnections.push({
+      id: "conn-availability-blocked",
+      provider: "codex",
+      name: "Blocked Conn",
+      routingStatus: "blocked",
+      authState: "invalid",
+      reasonDetail: "Token revoked",
+    });
+
+    const { GET } = await import("../../src/app/api/models/availability/route.js");
+    const response = await GET();
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.models).toContainEqual(expect.objectContaining({
+      provider: "codex",
+      model: "__all",
+      status: "blocked",
+      connectionId: "conn-availability-blocked",
+      connectionName: "Blocked Conn",
+      lastError: "Token revoked",
+    }));
+  });
+
+  it("returns canonical exhausted model availability entries with provider cooldown", async () => {
+    const until = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    mockConnections.push({
+      id: "conn-availability-exhausted",
+      provider: "codex",
+      email: "exhausted@example.com",
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      nextRetryAt: until,
+      reasonDetail: "Quota exhausted",
+    });
+
+    const { GET } = await import("../../src/app/api/models/availability/route.js");
+    const response = await GET();
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.models).toContainEqual(expect.objectContaining({
+      provider: "codex",
+      model: "__all",
+      status: "exhausted",
+      until,
+      connectionId: "conn-availability-exhausted",
+      connectionName: "exhausted@example.com",
+      lastError: "Quota exhausted",
+    }));
+  });
+
+  it("reactivates clearCooldown only when canonical status becomes eligible", async () => {
+    const lockUntil = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    mockConnections.push({
+      id: "conn-clear-eligible",
+      provider: "codex",
+      routingStatus: "eligible",
+      authState: "ok",
+      quotaState: "ok",
+      testStatus: "unavailable",
+      modelLock_gpt4: lockUntil,
+      lastError: "temporary lock",
+    });
+
+    const { POST } = await import("../../src/app/api/models/availability/route.js");
+    const response = await POST(new Request("http://localhost/api/models/availability", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "clearCooldown", provider: "codex", model: "__all" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-clear-eligible",
+      expect.objectContaining({
+        modelLock_gpt4: null,
+        testStatus: "active",
+        lastError: null,
+        reasonCode: null,
+        reasonDetail: null,
+      })
+    );
+  });
+
+  it("does not reactivate clearCooldown when canonical status remains blocked", async () => {
+    const lockUntil = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+    mockConnections.push({
+      id: "conn-clear-blocked",
+      provider: "codex",
+      routingStatus: "blocked",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token revoked",
+      testStatus: "blocked",
+      modelLock_gpt4: lockUntil,
+    });
+
+    const { POST } = await import("../../src/app/api/models/availability/route.js");
+    const response = await POST(new Request("http://localhost/api/models/availability", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "clearCooldown", provider: "codex", model: "__all" }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(updateProviderConnection).toHaveBeenCalledWith(
+      "conn-clear-blocked",
+      expect.objectContaining({
+        modelLock_gpt4: null,
+      })
+    );
+    expect(updateProviderConnection).not.toHaveBeenCalledWith(
+      "conn-clear-blocked",
+      expect.objectContaining({ testStatus: "active" })
     );
   });
 });

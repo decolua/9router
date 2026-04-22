@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
-import { getConnectionStatusBadgeMeta } from "@/lib/connectionStatus";
+import { getConnectionStatusBadgeMeta, getConnectionStatusDetails, getConnectionCooldownUntil } from "@/lib/connectionStatus";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -70,15 +70,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
+  const statusBadge = getConnectionStatusBadgeMeta(connection);
+  const statusDetails = getConnectionStatusDetails(connection);
+  const modelLockUntil = statusDetails.activeModelLocks.length > 0
+    ? statusDetails.activeModelLocks.map((lock) => lock.until).sort()[0]
+    : getConnectionCooldownUntil(connection);
+
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
-
-  // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => !!v)
-    .sort()[0] || null;
 
   useEffect(() => {
     const checkCooldown = () => {
@@ -92,7 +91,46 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     };
   }, [modelLockUntil]);
 
-  const statusBadge = getConnectionStatusBadgeMeta(connection);
+  const statusReasonLabel = (() => {
+    let baseReason = "status unavailable";
+
+    switch (statusDetails.source) {
+      case "authState":
+        baseReason = connection.authState ? `auth: ${connection.authState}` : "auth blocked";
+        break;
+      case "healthStatus":
+        baseReason = connection.healthStatus ? `health: ${connection.healthStatus}` : "health blocked";
+        break;
+      case "quotaState":
+        baseReason = connection.quotaState ? `quota: ${connection.quotaState}` : "quota limited";
+        break;
+      case "routingStatus":
+      case "routingStatus-legacy":
+        baseReason = connection.routingStatus ? `routing: ${connection.routingStatus}` : "routing constrained";
+        break;
+      case "legacy-unavailable-cooldown":
+        baseReason = "legacy cooldown";
+        break;
+      case "legacy-unavailable-stale":
+        baseReason = "legacy unavailable";
+        break;
+      case "legacy-testStatus":
+        baseReason = connection.testStatus ? `legacy: ${connection.testStatus}` : "legacy status";
+        break;
+      case "isActive":
+        baseReason = "manually disabled";
+        break;
+      default:
+        baseReason = "status unavailable";
+        break;
+    }
+
+    if (statusDetails.status === "exhausted" && statusDetails.cooldownUntil) {
+      return `${baseReason} · retry ${new Date(statusDetails.cooldownUntil).toLocaleTimeString()}`;
+    }
+
+    return baseReason;
+  })();
 
   return (
     <div className={`group flex items-center justify-between p-2 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
@@ -123,6 +161,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant={statusBadge.variant} size="sm" dot>
               {statusBadge.label}
             </Badge>
+            <span className="text-[11px] text-text-muted capitalize" title={`Status source: ${statusDetails.source}`}>
+              {statusReasonLabel}
+            </span>
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -161,7 +202,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       <div className="flex items-center gap-2">
         <div className="flex gap-1">
           {/* Proxy button with inline dropdown */}
-          {(proxyPools || []).length > 0 && (
+          {(hasAnyProxy || (proxyPools || []).length > 0) && (
             <div className="relative" ref={proxyDropdownRef}>
               <button
                 onClick={() => setShowProxyDropdown((v) => !v)}

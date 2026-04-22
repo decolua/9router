@@ -40,6 +40,46 @@ describe("quotaRefreshPlanner", () => {
     expect(isQuotaRefreshSupported({ provider: "codex", authType: "oauth", isActive: false })).toBe(false);
   });
 
+  it("normalizes invalid scheduler values to canonical types and bounds", () => {
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-1", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: {
+        enabled: "yes",
+        cadenceMs: 1000,
+        successTtlMs: -1,
+        errorTtlMs: Number.POSITIVE_INFINITY,
+        exhaustedTtlMs: "nope",
+        batchSize: 0,
+      },
+      hotState: {},
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "scheduler_disabled",
+    });
+
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-2", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: {
+        enabled: true,
+        cadenceMs: 1000,
+        successTtlMs: -100,
+        errorTtlMs: -1,
+        exhaustedTtlMs: -5,
+        batchSize: 0,
+      },
+      hotState: {
+        quotaState: "ok",
+        lastCheckedAt: "2026-04-21T11:59:59.900Z",
+      },
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "fresh_success",
+      nextEligibleAt: "2026-04-21T12:14:59.900Z",
+    });
+  });
+
   it("marks supported connections due when never checked", () => {
     expect(getQuotaRefreshDecision({
       connection: { id: "conn-1", provider: "codex", authType: "oauth", isActive: true },
@@ -68,12 +108,12 @@ describe("quotaRefreshPlanner", () => {
     })).toMatchObject({ due: false, reason: "unsupported" });
   });
 
-  it("respects future retry windows for exhausted quota", () => {
+  it("respects future retry windows for exhausted quota routing status", () => {
     expect(getQuotaRefreshDecision({
       connection: { id: "conn-1", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
       hotState: {
-        quotaState: "exhausted",
+        routingStatus: "exhausted",
         nextRetryAt: "2026-04-21T12:05:00.000Z",
         resetAt: "2026-04-21T12:10:00.000Z",
         lastCheckedAt: "2026-04-21T11:00:00.000Z",
@@ -105,12 +145,12 @@ describe("quotaRefreshPlanner", () => {
     });
   });
 
-  it("rechecks exhausted quota once reset time has passed", () => {
+  it("rechecks exhausted routing status once reset time has passed", () => {
     expect(getQuotaRefreshDecision({
       connection: { id: "conn-1", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
       hotState: {
-        quotaState: "exhausted",
+        routingStatus: "exhausted",
         resetAt: "2026-04-21T11:55:00.000Z",
         nextRetryAt: "2026-04-21T11:55:00.000Z",
         lastCheckedAt: "2026-04-21T11:50:00.000Z",
@@ -194,6 +234,72 @@ describe("quotaRefreshPlanner", () => {
       schedulerSettings: settings,
       hotState: {
         testStatus: "error",
+        lastCheckedAt: "2026-04-21T11:56:00.000Z",
+      },
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "fresh_error",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
+    });
+  });
+
+  it("prefers canonical blocked reasonCode routing over legacy testStatus", () => {
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-canonical-quota", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: enabledSettings,
+      hotState: {
+        routingStatus: "blocked",
+        reasonCode: "quota_exhausted",
+        testStatus: "active",
+        resetAt: "2026-04-21T12:10:00.000Z",
+        lastCheckedAt: "2026-04-21T11:50:00.000Z",
+      },
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "waiting_for_retry",
+      nextEligibleAt: "2026-04-21T12:10:00.000Z",
+    });
+
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-canonical-error", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: enabledSettings,
+      hotState: {
+        routingStatus: "blocked",
+        reasonCode: "upstream_unhealthy",
+        testStatus: "active",
+        lastCheckedAt: "2026-04-21T11:56:00.000Z",
+      },
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "fresh_error",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
+    });
+  });
+
+  it("uses legacy testStatus fallback only when routingStatus is absent", () => {
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-fallback-active", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: enabledSettings,
+      hotState: {
+        testStatus: "active",
+        lastCheckedAt: "2026-04-21T11:56:00.000Z",
+      },
+      now,
+    })).toMatchObject({
+      due: false,
+      reason: "fresh_success",
+      nextEligibleAt: "2026-04-21T12:11:00.000Z",
+    });
+
+    expect(getQuotaRefreshDecision({
+      connection: { id: "conn-no-fallback-when-canonical", provider: "codex", authType: "oauth", isActive: true },
+      schedulerSettings: enabledSettings,
+      hotState: {
+        routingStatus: "blocked_health",
+        testStatus: "active",
         lastCheckedAt: "2026-04-21T11:56:00.000Z",
       },
       now,

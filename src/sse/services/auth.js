@@ -1,25 +1,10 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { getEligibleConnections } from "@/lib/providerHotState";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { applyLiveQuotaUpdate, getCodexLiveQuotaSignal, getConnectionAuthBlockedPatch, getConnectionRecoveryPatch } from "../../lib/usageStatus.js";
+import { applyLiveQuotaUpdate, getCodexLiveQuotaSignal, getConnectionAuthBlockedPatch, getConnectionRecoveryPatch, isConfirmedAuthBlockedError, syncUsageStatus } from "../../lib/usageStatus.js";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
-
-const FALLBACK_BLOCKED_TEST_STATUSES = new Set(["unavailable", "error", "expired"]);
-
-function isFutureTimestamp(value) {
-  const timestamp = new Date(value).getTime();
-  return Boolean(value) && Number.isFinite(timestamp) && timestamp > Date.now();
-}
-
-function isFallbackConnectionBlocked(connection) {
-  if (!connection || typeof connection !== "object") return true;
-  if (FALLBACK_BLOCKED_TEST_STATUSES.has(connection.testStatus)) return true;
-  if (isFutureTimestamp(connection.rateLimitedUntil)) return true;
-  if (isFutureTimestamp(connection.modelLock___all)) return true;
-  return false;
-}
 
 function sortByPriority(connections = []) {
   return [...connections].sort((a, b) => (a.priority || 999) - (b.priority || 999));
@@ -93,17 +78,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const eligibleConnections = Array.isArray(centralizedEligibleConnections)
       ? sortByPriority(centralizedEligibleConnections)
       : null;
-    const fallbackAvailableConnections = availableConnections.filter(c => !isFallbackConnectionBlocked(c));
-    const selectionPool = eligibleConnections === null ? fallbackAvailableConnections : eligibleConnections;
+    const selectionPool = eligibleConnections;
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, fallbackAvailable: ${fallbackAvailableConnections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
+    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}, eligible: ${eligibleConnections === null ? "unavailable" : eligibleConnections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      const fallbackBlocked = !excluded && !locked && isFallbackConnectionBlocked(c);
-      if (excluded || locked || fallbackBlocked) {
+      if (excluded || locked) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""} ${fallbackBlocked ? `fallbackBlocked(status=${c.testStatus || "unknown"}, rateLimitedUntil=${c.rateLimitedUntil || "none"}, accountLock=${c.modelLock___all || "none"})` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
       }
     });
 
@@ -124,6 +107,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      return null;
+    }
+
+    if (!Array.isArray(selectionPool)) {
+      log.warn("AUTH", `${provider} | centralized eligibility unavailable`);
       return null;
     }
 
@@ -218,7 +206,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  const rawError = typeof errorText === "string" ? errorText : "";
+  const reason = rawError.slice(0, 100) || "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
   const lastCheckedAt = new Date().toISOString();
 
@@ -227,23 +216,89 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     errorText,
     errorCode: status,
   });
-  const authBlockedPatch = !liveQuotaSignal && (status === 401 || status === 403)
-    ? getConnectionAuthBlockedPatch(reason, { lastCheckedAt, statusCode: status })
+
+  const confirmedAuthFailure = (status === 401 || status === 403)
+    && isConfirmedAuthBlockedError(rawError || reason, { statusCode: status });
+  const authBlockedPatch = confirmedAuthFailure
+    ? (getConnectionAuthBlockedPatch(rawError || reason, { lastCheckedAt, statusCode: status })
+      || getConnectionAuthBlockedPatch(reason, { lastCheckedAt, statusCode: status }))
+    : null;
+
+  const normalizedReason = reason.toLowerCase();
+  const isRuntimeQuotaOrRateLimited = Boolean(liveQuotaSignal)
+    || status === 429
+    || normalizedReason.includes("rate limit")
+    || normalizedReason.includes("too many requests")
+    || normalizedReason.includes("quota")
+    || Boolean(conn?.rateLimitedUntil);
+
+  const exhaustedRetryAt = liveQuotaSignal?.resetAt || conn?.rateLimitedUntil || null;
+  const exhaustedReason = liveQuotaSignal?.reasonDetail || reason;
+  const exhaustedReasonCode = liveQuotaSignal?.reasonCode || "quota_exhausted";
+  const exhaustedErrorCode = liveQuotaSignal?.errorCode || "quota_exhausted";
+
+  const exhaustedPatch = !authBlockedPatch && isRuntimeQuotaOrRateLimited
+    ? {
+        routingStatus: "exhausted",
+        healthStatus: "degraded",
+        quotaState: "exhausted",
+        authState: "ok",
+        reasonCode: exhaustedReasonCode,
+        reasonDetail: exhaustedReason,
+        nextRetryAt: exhaustedRetryAt,
+        resetAt: exhaustedRetryAt,
+        testStatus: "unavailable",
+        lastError: exhaustedReason,
+        lastErrorType: exhaustedReasonCode,
+        lastErrorAt: lastCheckedAt,
+        rateLimitedUntil: exhaustedRetryAt,
+        errorCode: exhaustedErrorCode,
+        lastCheckedAt,
+        lastTested: lastCheckedAt,
+      }
+    : null;
+
+  const healthBlockedPatch = !authBlockedPatch && !exhaustedPatch && status >= 500
+    ? {
+        routingStatus: "blocked",
+        healthStatus: "unhealthy",
+        quotaState: "ok",
+        authState: "ok",
+        reasonCode: "upstream_unhealthy",
+        reasonDetail: reason,
+        testStatus: "error",
+        lastError: reason,
+        lastErrorType: "upstream_unhealthy",
+        lastErrorAt: lastCheckedAt,
+        rateLimitedUntil: null,
+        errorCode: "upstream_unhealthy",
+        lastCheckedAt,
+        lastTested: lastCheckedAt,
+      }
     : null;
 
   if (liveQuotaSignal) {
     await applyLiveQuotaUpdate(conn, liveQuotaSignal);
   }
 
+  const canonicalBlockedPatch = authBlockedPatch || exhaustedPatch || healthBlockedPatch;
+
+  if (canonicalBlockedPatch && !liveQuotaSignal) {
+    await syncUsageStatus({
+      id: connectionId,
+      provider: conn?.provider || provider,
+    }, canonicalBlockedPatch);
+  }
+
   const connectionPatch = {
-    ...(authBlockedPatch || {}),
+    ...(canonicalBlockedPatch || {}),
     ...lockUpdate,
-    testStatus: authBlockedPatch?.testStatus || "unavailable",
-    lastErrorAt: authBlockedPatch?.lastErrorAt || lastCheckedAt,
+    testStatus: canonicalBlockedPatch?.testStatus || "unavailable",
+    lastErrorAt: canonicalBlockedPatch?.lastErrorAt || lastCheckedAt,
     backoffLevel: newBackoffLevel ?? backoffLevel
   };
 
-  if (!liveQuotaSignal && !authBlockedPatch) {
+  if (!canonicalBlockedPatch) {
     connectionPatch.lastError = reason;
     connectionPatch.errorCode = status;
   }

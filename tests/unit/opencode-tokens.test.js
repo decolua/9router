@@ -5,7 +5,6 @@ import {
   normalizeSyncTokenPatch,
   touchSyncTokenRecord,
   toPublicTokenRecord,
-  validateSyncTokenMode,
   verifySyncToken,
 } from "../../src/lib/opencodeSync/tokens.js";
 
@@ -26,19 +25,18 @@ describe("opencode sync token helpers", () => {
     expect(toPublicTokenRecord(record)).toEqual({
       id: record.id,
       name: "Laptop",
-      mode: "device",
       metadata: { deviceName: "MacBook Pro", retries: 3 },
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       lastUsedAt: null,
     });
+    expect(toPublicTokenRecord(record)).not.toHaveProperty("mode");
   });
 
   it("does not leak unapproved fields in public records", () => {
     const publicRecord = toPublicTokenRecord({
       id: "token-1",
       name: "Laptop",
-      mode: "device",
       metadata: { deviceName: "MacBook" },
       tokenHash: "a".repeat(64),
       createdAt: "2026-04-21T00:00:00.000Z",
@@ -49,12 +47,12 @@ describe("opencode sync token helpers", () => {
     expect(publicRecord).toEqual({
       id: "token-1",
       name: "Laptop",
-      mode: "device",
       metadata: { deviceName: "MacBook" },
       createdAt: "2026-04-21T00:00:00.000Z",
       updatedAt: "2026-04-21T00:00:00.000Z",
       lastUsedAt: null,
     });
+    expect(publicRecord).not.toHaveProperty("mode");
   });
 
   it("updates token bookkeeping timestamps when touched", () => {
@@ -68,12 +66,6 @@ describe("opencode sync token helpers", () => {
     });
   });
 
-  it("validates allowed token modes", () => {
-    expect(validateSyncTokenMode("device")).toBe("device");
-    expect(validateSyncTokenMode(" shared ")).toBe("shared");
-    expect(() => validateSyncTokenMode("admin")).toThrow(/invalid token mode/i);
-  });
-
   it("normalizes sync-token patch payloads", () => {
     expect(
       normalizeSyncTokenPatch({
@@ -85,7 +77,7 @@ describe("opencode sync token helpers", () => {
       metadata: { platform: "macOS", retries: 2 },
     });
 
-    expect(() => normalizeSyncTokenPatch({ mode: "shared" })).toThrow(/cannot be updated/i);
+    expect(normalizeSyncTokenPatch({ mode: "shared" })).toEqual({});
     expect(() => normalizeSyncTokenPatch({ name: "   " })).toThrow(/token name is required/i);
     expect(() => normalizeSyncTokenPatch({ metadata: "bad" })).toThrow(/invalid token metadata/i);
   });

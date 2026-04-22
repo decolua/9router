@@ -270,7 +270,7 @@ describe("auth account selection", () => {
     expect(credentials).toBeNull();
   });
 
-  it("falls back to available accounts when centralized eligibility is unavailable", async () => {
+  it("returns null when centralized eligibility is unavailable", async () => {
     mockConnections.push(
       {
         id: "conn-first",
@@ -296,121 +296,10 @@ describe("auth account selection", () => {
     const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
     const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
 
-    expect(credentials.connectionId).toBe("conn-first");
+    expect(credentials).toBeNull();
   });
 
-  it("filters legacy blocked and account-wide cooldown state when centralized eligibility is unavailable", async () => {
-    const futureCooldown = new Date(Date.now() + 60_000).toISOString();
-    mockConnections.push(
-      {
-        id: "conn-unavailable",
-        provider: "codex",
-        isActive: true,
-        priority: 1,
-        displayName: "Unavailable",
-        accessToken: "unavailable-token",
-        testStatus: "unavailable",
-      },
-      {
-        id: "conn-error",
-        provider: "codex",
-        isActive: true,
-        priority: 2,
-        displayName: "Error",
-        accessToken: "error-token",
-        testStatus: "error",
-      },
-      {
-        id: "conn-expired",
-        provider: "codex",
-        isActive: true,
-        priority: 3,
-        displayName: "Expired",
-        accessToken: "expired-token",
-        testStatus: "expired",
-      },
-      {
-        id: "conn-rate-limited",
-        provider: "codex",
-        isActive: true,
-        priority: 4,
-        displayName: "Rate limited",
-        accessToken: "rate-limited-token",
-        testStatus: "active",
-        rateLimitedUntil: futureCooldown,
-      },
-      {
-        id: "conn-account-locked",
-        provider: "codex",
-        isActive: true,
-        priority: 5,
-        displayName: "Account locked",
-        accessToken: "account-locked-token",
-        testStatus: "active",
-        modelLock___all: futureCooldown,
-      },
-      {
-        id: "conn-healthy",
-        provider: "codex",
-        isActive: true,
-        priority: 6,
-        displayName: "Healthy",
-        accessToken: "healthy-token",
-        testStatus: "active",
-      },
-    );
-    getEligibleConnections.mockResolvedValueOnce(null);
-
-    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
-    const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
-
-    expect(credentials.connectionId).toBe("conn-healthy");
-    expect(credentials.accessToken).toBe("healthy-token");
-  });
-
-  it("keeps fallback model-lock filtering model-aware while excluding account-wide locks", async () => {
-    const futureCooldown = new Date(Date.now() + 60_000).toISOString();
-    mockConnections.push(
-      {
-        id: "conn-other-model-lock",
-        provider: "codex",
-        isActive: true,
-        priority: 1,
-        displayName: "Other model lock",
-        accessToken: "other-model-token",
-        testStatus: "active",
-        modelLock_gpt5: futureCooldown,
-      },
-      {
-        id: "conn-all-models-lock",
-        provider: "codex",
-        isActive: true,
-        priority: 2,
-        displayName: "All models lock",
-        accessToken: "all-models-token",
-        testStatus: "active",
-        modelLock___all: futureCooldown,
-      },
-      {
-        id: "conn-second-choice",
-        provider: "codex",
-        isActive: true,
-        priority: 3,
-        displayName: "Second choice",
-        accessToken: "second-token",
-        testStatus: "active",
-      },
-    );
-    getEligibleConnections.mockResolvedValueOnce(null);
-
-    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
-    const credentials = await getProviderCredentials("codex", null, "gpt4");
-
-    expect(credentials.connectionId).toBe("conn-other-model-lock");
-    expect(credentials.accessToken).toBe("other-model-token");
-  });
-
-  it("applies an immediate Codex live quota update before persisting model lock state", async () => {
+  it("applies immediate canonical exhausted state for Codex live quota failures before persisting model lock state", async () => {
     mockConnections.push({
       id: "conn-live",
       provider: "codex",
@@ -445,15 +334,17 @@ describe("auth account selection", () => {
     );
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-live", expect.objectContaining({
       modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Codex quota exhausted",
       testStatus: "unavailable",
-    }));
-    expect(updateProviderConnection).not.toHaveBeenCalledWith("conn-live", expect.objectContaining({
-      lastError: "You have exceeded your current quota",
-      errorCode: 429,
+      lastError: "Codex quota exhausted",
+      errorCode: "codex_live_quota_exhausted",
     }));
   });
 
-  it("does not apply live quota update for generic Codex 429 throttling", async () => {
+  it("writes canonical exhausted state for generic Codex 429 throttling", async () => {
     mockConnections.push({
       id: "conn-throttle",
       provider: "codex",
@@ -478,11 +369,23 @@ describe("auth account selection", () => {
       expect.objectContaining({ statusCode: 429, errorText: "Rate limit exceeded. Too many requests." })
     );
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-throttle",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "exhausted",
+        quotaState: "exhausted",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-throttle", expect.objectContaining({
       modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "exhausted",
+      quotaState: "exhausted",
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Rate limit exceeded. Too many requests.",
       testStatus: "unavailable",
       lastError: "Rate limit exceeded. Too many requests.",
-      errorCode: 429,
+      errorCode: "quota_exhausted",
     }));
   });
 
@@ -508,13 +411,21 @@ describe("auth account selection", () => {
     const result = await markAccountUnavailable("conn-auth-blocked", 401, "401 Unauthorized: token revoked", "codex", "gpt4");
 
     expect(result).toEqual({ shouldFallback: true, cooldownMs: 45000 });
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-auth-blocked",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked",
+        authState: "invalid",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-blocked", expect.objectContaining({
       modelLock_gpt4: "2026-04-25T00:00:00.000Z",
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "invalid",
       reasonCode: "auth_invalid",
       reasonDetail: "401 Unauthorized: token revoked",
-      testStatus: "expired",
+      testStatus: "blocked",
       lastError: "401 Unauthorized: token revoked",
       lastErrorType: "auth_invalid",
       errorCode: "auth_invalid",
@@ -545,14 +456,22 @@ describe("auth account selection", () => {
     const result = await markAccountUnavailable("conn-auth-empty", 401, "", "codex", "gpt4");
 
     expect(result).toEqual({ shouldFallback: true, cooldownMs: 20000 });
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-auth-empty",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked",
+        authState: "invalid",
+      }),
+    }));
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-empty", expect.objectContaining({
       modelLock_gpt4: "2026-04-25T00:00:00.000Z",
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "invalid",
       quotaState: "ok",
       reasonCode: "auth_invalid",
       reasonDetail: "Provider error",
-      testStatus: "expired",
+      testStatus: "blocked",
       lastError: "Provider error",
       lastErrorType: "auth_invalid",
       errorCode: "auth_invalid",
@@ -561,13 +480,13 @@ describe("auth account selection", () => {
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
   });
 
-  it("writes canonical blocked-auth state for confirmed live 403 failures with atypical messages", async () => {
+  it("writes canonical blocked-auth state for confirmed live 403 failures", async () => {
     mockConnections.push({
-      id: "conn-auth-atypical",
+      id: "conn-auth-403",
       provider: "codex",
       isActive: true,
       priority: 1,
-      displayName: "Atypical auth failure",
+      displayName: "Confirmed 403 auth failure",
       accessToken: "token",
       testStatus: "active",
       routingStatus: "eligible",
@@ -580,20 +499,65 @@ describe("auth account selection", () => {
     getCodexLiveQuotaSignal.mockReturnValueOnce(null);
 
     const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
-    const result = await markAccountUnavailable("conn-auth-atypical", 403, "Request failed", "codex", "gpt4");
+    const result = await markAccountUnavailable("conn-auth-403", 403, "Unauthorized: invalid token", "codex", "gpt4");
 
     expect(result).toEqual({ shouldFallback: true, cooldownMs: 25000 });
-    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-atypical", expect.objectContaining({
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-auth-403",
+      provider: "codex",
+      patch: expect.objectContaining({
+        routingStatus: "blocked",
+        authState: "invalid",
+      }),
+    }));
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-auth-403", expect.objectContaining({
       modelLock_gpt4: "2026-04-25T00:00:00.000Z",
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "invalid",
-      quotaState: "ok",
       reasonCode: "auth_invalid",
-      reasonDetail: "Request failed",
-      testStatus: "expired",
-      lastError: "Request failed",
-      lastErrorType: "auth_invalid",
+      reasonDetail: "Unauthorized: invalid token",
+      testStatus: "blocked",
+      lastError: "Unauthorized: invalid token",
       errorCode: "auth_invalid",
+      backoffLevel: 2,
+    }));
+    expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
+  });
+
+  it("writes canonical blocked-health state for live upstream 5xx failures", async () => {
+    mockConnections.push({
+      id: "conn-health-blocked",
+      provider: "codex",
+      isActive: true,
+      priority: 1,
+      displayName: "Unhealthy upstream",
+      accessToken: "token",
+      testStatus: "active",
+      routingStatus: "eligible",
+      healthStatus: "healthy",
+    });
+
+    const { buildModelLockUpdate, checkFallbackError } = await import("open-sse/services/accountFallback.js");
+    vi.mocked(checkFallbackError).mockReturnValueOnce({ shouldFallback: true, cooldownMs: 15000, newBackoffLevel: 2 });
+    vi.mocked(buildModelLockUpdate).mockReturnValueOnce({ modelLock_gpt4: "2026-04-25T00:00:00.000Z" });
+    getCodexLiveQuotaSignal.mockReturnValueOnce(null);
+
+    const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
+    const result = await markAccountUnavailable("conn-health-blocked", 503, "Provider health check failed", "codex", "gpt4");
+
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: 15000 });
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-health-blocked", expect.objectContaining({
+      modelLock_gpt4: "2026-04-25T00:00:00.000Z",
+      routingStatus: "blocked",
+      healthStatus: "unhealthy",
+      authState: "ok",
+      quotaState: "ok",
+      reasonCode: "upstream_unhealthy",
+      reasonDetail: "Provider health check failed",
+      testStatus: "error",
+      lastError: "Provider health check failed",
+      lastErrorType: "upstream_unhealthy",
+      errorCode: "upstream_unhealthy",
       backoffLevel: 2,
     }));
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();

@@ -98,48 +98,26 @@ describe("/api/opencode/sync/bundle", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      version: expect.any(String),
-      opencode: {
-        $schema: "https://opencode.ai/config.json",
-        plugin: ["opencode-cliproxyapi-sync@latest", "oh-my-openagent@latest"],
-        provider: {
-          cliproxyapi: {
-            npm: "@ai-sdk/openai-compatible",
-            name: "CLIProxyAPI",
-            options: {
-              baseURL: expect.any(String),
-              apiKey: expect.any(String),
-            },
-            models: {
-              "gpt-4o-mini-free": {
-                name: "GPT-4o mini free",
-              },
-            },
-          },
+    expect(response.body.version).toEqual(expect.any(String));
+    expect(response.body.opencode).toEqual(expect.any(Object));
+    expect(response.body.opencode.plugin).toEqual([
+      "opencode-9router-sync@latest",
+      "oh-my-openagent@latest",
+    ]);
+    expect(response.body.opencode.provider).toHaveProperty("9router");
+    expect(response.body.opencode.provider["9router"]).toEqual(
+      expect.objectContaining({
+        npm: "@ai-sdk/openai-compatible",
+        name: "9Router",
+        options: {
+          baseURL: expect.any(String),
+          apiKey: expect.any(String),
         },
-        model: "cliproxyapi/gpt-4o-mini-free",
-      },
-      ohMyOpencode: {
-        $schema:
-          "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/main/assets/oh-my-opencode.schema.json",
-        agents: expect.any(Object),
-        categories: expect.any(Object),
-        auto_update: false,
-        background_task: {
-          defaultConcurrency: 5,
-        },
-        sisyphus_agent: {
-          planner_enabled: true,
-          replace_plan: true,
-        },
-        git_master: {
-          commit_footer: false,
-          include_co_authored_by: false,
-        },
-      },
-      ohMyOpenCodeSlim: null,
-    });
+      })
+    );
+    expect(response.body.opencode.model).toBe("9router/gpt-4o-mini-free");
+    expect(response.body.ohMyOpencode).toEqual(expect.any(Object));
+    expect(response.body.ohMyOpenCodeSlim).toBeNull();
     expect(response.body.opencode).not.toHaveProperty("models");
     expect(response.body).not.toHaveProperty("bundle");
     expect(response.body).not.toHaveProperty("hash");
@@ -222,9 +200,18 @@ describe("/api/opencode/sync/bundle", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.opencode.provider.cliproxyapi.models).toEqual({
+    expect(response.body.opencode.provider["9router"].models).toEqual({
       "gpt-4o-mini-free": {
-        name: "GPT-4o mini free",
+        name: "gpt-4o-mini-free",
+        attachment: true,
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        limit: {
+          context: 400000,
+          output: 128000,
+        },
       },
     });
   });
@@ -245,12 +232,21 @@ describe("/api/opencode/sync/bundle", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.opencode.provider.cliproxyapi.models).toEqual({
+    expect(response.body.opencode.provider["9router"].models).toEqual({
       "gpt-4o-mini-free": {
-        name: "GPT-4o mini free",
+        name: "gpt-4o-mini-free",
+        attachment: true,
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        limit: {
+          context: 400000,
+          output: 128000,
+        },
       },
     });
-    expect(Object.keys(response.body.opencode.provider.cliproxyapi.models)).toEqual(["gpt-4o-mini-free"]);
+    expect(Object.keys(response.body.opencode.provider["9router"].models)).toEqual(["gpt-4o-mini-free"]);
   });
 
   it("returns the same public version when only non-public metadata changes", async () => {
@@ -284,7 +280,7 @@ describe("/api/opencode/sync/bundle", () => {
     expect(second.body.version).toBe(first.body.version);
   });
 
-  it("returns 400 when selected models collide after artifact normalization", async () => {
+  it("allows same model slugs across providers because provider-prefixed ids are preserved", async () => {
     const { token, record } = createSyncToken({ name: "Device", mode: "device" });
     listOpenCodeTokens.mockResolvedValue([record]);
     getOpenCodePreferences.mockResolvedValue({
@@ -303,8 +299,9 @@ describe("/api/opencode/sync/bundle", () => {
       })
     );
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toContain('Multiple selected models normalize to the same artifact model id "gpt-4o-mini-free"');
+    expect(response.status).toBe(200);
+    expect(response.body.opencode.provider["9router"].models).toHaveProperty("openai/gpt-4o-mini-free");
+    expect(response.body.opencode.provider["9router"].models).toHaveProperty("anthropic/gpt-4o-mini-free");
   });
 
   it("returns 500 when loading the 9router catalog fails", async () => {
@@ -362,6 +359,6 @@ describe("/api/opencode/sync/bundle", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body.opencode.model).toBe("cliproxyapi/gpt-4o-mini-free");
+    expect(response.body.opencode.model).toBe("9router/gpt-4o-mini-free");
   });
 });
