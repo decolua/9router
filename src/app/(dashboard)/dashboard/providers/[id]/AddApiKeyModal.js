@@ -6,16 +6,25 @@ import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
+  const isOllamaLocal = provider === "ollama-local";
 
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
+    ollamaHostUrl: "",
   });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const buildProviderSpecificData = () => {
+    if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
+      return { baseUrl: formData.ollamaHostUrl.trim() };
+    }
+    return undefined;
+  };
 
   const handleValidate = async () => {
     setValidating(true);
@@ -23,7 +32,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -35,7 +44,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleSubmit = async () => {
-    if (!provider || !formData.apiKey) return;
+    if (!provider) return;
+    if (!isOllamaLocal && !formData.apiKey) return;
+    if (!isOllamaLocal) {
+      // Non-ollama providers require a name
+      if (!formData.name) return;
+    }
 
     setSaving(true);
     try {
@@ -46,7 +60,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -58,12 +72,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       }
 
       await onSave({
-        name: formData.name,
+        name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
         apiKey: formData.apiKey,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: undefined
+        providerSpecificData: buildProviderSpecificData()
       });
     } finally {
       setSaving(false);
@@ -79,22 +93,45 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Production Key"
+          placeholder={isOllamaLocal ? "Ollama Local" : "Production Key"}
         />
-        <div className="flex gap-2">
-          <Input
-            label="API Key"
-            type="password"
-            value={formData.apiKey}
-            onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
-              {validating ? "Checking..." : "Check"}
-            </Button>
+        {isOllamaLocal && (
+          <div className="flex gap-2">
+            <Input
+              label="Ollama Host URL"
+              value={formData.ollamaHostUrl}
+              onChange={(e) => setFormData({ ...formData, ollamaHostUrl: e.target.value })}
+              placeholder="http://localhost:11434"
+              className="flex-1"
+            />
+            <div className="pt-6">
+              <Button onClick={handleValidate} disabled={validating || saving} variant="secondary">
+                {validating ? "Checking..." : "Check"}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
+        {!isOllamaLocal && (
+          <div className="flex gap-2">
+            <Input
+              label="API Key"
+              type="password"
+              value={formData.apiKey}
+              onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
+              className="flex-1"
+            />
+            <div className="pt-6">
+              <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+                {validating ? "Checking..." : "Check"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {isOllamaLocal && (
+          <p className="text-xs text-text-muted">
+            Leave blank to use <code>http://localhost:11434</code>. For remote Ollama, enter the full host URL (e.g. <code>http://192.168.1.10:11434</code>).
+          </p>
+        )}
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
             {validationResult === "success" ? "Valid" : "Invalid"}
@@ -137,7 +174,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey))}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

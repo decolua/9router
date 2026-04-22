@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { provider, apiKey } = body;
+    const { provider, apiKey, providerSpecificData } = body;
 
     if (!provider || (!apiKey && provider !== "ollama-local")) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
@@ -183,7 +184,7 @@ export async function POST(request) {
             siliconflow: "https://api.siliconflow.cn/v1/models",
             hyperbolic: "https://api.hyperbolic.xyz/v1/models",
             ollama: "https://ollama.com/api/tags",
-            "ollama-local": "http://localhost:11434/api/tags",
+            "ollama-local": `${resolveOllamaLocalHost({ providerSpecificData })}/api/tags`,
             assemblyai: "https://api.assemblyai.com/v1/account",
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",

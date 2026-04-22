@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
+import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -380,13 +381,8 @@ export async function GET(request, { params }) {
       });
     }
 
-    // Handle ollama-local: resolve URL from providerSpecificData.baseUrl if provided,
-    // otherwise fall back to default localhost address.
     if (connection.provider === "ollama-local") {
-      const baseUrl = connection.providerSpecificData?.baseUrl;
-      const url = baseUrl
-        ? `${baseUrl.replace(/\/$/, "")}/api/tags`
-        : "http://localhost:11434/api/tags";
+      const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
       const response = await fetch(url, {
         method: "GET",
         headers: { "Content-Type": "application/json" },
