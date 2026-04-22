@@ -17,6 +17,8 @@ export default defineConfig({
       "@": resolve(__dirname, "../src"),
       // Resolve open-sse/* imports to the actual local package
       "open-sse": resolve(__dirname, "../open-sse"),
+      // Resolve @/* imports to src directory
+      "@": resolve(__dirname, "../src"),
     },
   },
 });

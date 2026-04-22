@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { getQuotaRefreshScheduler } from "@/lib/quotaRefreshScheduler";
 import { readRuntimeConfig } from "@/lib/runtimeConfig";
+import { setRtkEnabled } from "open-sse/rtk/flag.js";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -84,6 +85,11 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "outboundNoProxy")
     ) {
       applyOutboundProxyEnv(settings);
+    }
+
+    // Sync RTK toggle immediately (sync cache for request hot path)
+    if (Object.prototype.hasOwnProperty.call(body, "rtkEnabled")) {
+      setRtkEnabled(settings.rtkEnabled);
     }
     const { password, ...safeSettings } = settings;
     return NextResponse.json(safeSettings);

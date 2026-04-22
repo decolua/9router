@@ -263,7 +263,7 @@ function EmbeddingExampleCard({ providerId }) {
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                  {running ? "progress_activity" : "play_arrow"}
+                  play_arrow
                 </span>
                 {running ? "Running..." : "Run"}
               </button>
@@ -699,7 +699,7 @@ function TtsExampleCard({ providerId }) {
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                    {running ? "progress_activity" : "play_arrow"}
+                    play_arrow
                   </span>
                   {running ? "Generating..." : "Run"}
                 </button>
@@ -823,6 +823,10 @@ function GenericExampleCard({ providerId, kind }) {
   const exConfig = KIND_EXAMPLE_CONFIG[kind];
   if (!kindConfig || !exConfig) return null;
 
+  // Get models for this kind (e.g., type="image")
+  const kindModels = getModelsByProviderId(providerId).filter((m) => m.type === kind);
+  const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
+
   const [input, setInput] = useState(exConfig.defaultInput);
   const [apiKey, setApiKey] = useState("");
   const [useTunnel, setUseTunnel] = useState(false);
@@ -848,9 +852,10 @@ function GenericExampleCard({ providerId, kind }) {
 
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
   const apiPath = kindConfig.endpoint.path;
+  const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";
 
   const requestBody = {
-    model: `${providerAlias}/model-name`,
+    model: modelFull,
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
   };
@@ -861,7 +866,7 @@ function GenericExampleCard({ providerId, kind }) {
   -d '${JSON.stringify(requestBody)}'`;
 
   const handleRun = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !modelFull) return;
     setRunning(true);
     setError("");
     setResult(null);
@@ -869,7 +874,7 @@ function GenericExampleCard({ providerId, kind }) {
     try {
       const headers = { "Content-Type": "application/json" };
       if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-      const body = { ...requestBody, model: `${providerAlias}/model-name` };
+      const body = { ...requestBody, model: modelFull };
       const res = await fetch(`/api${apiPath}`, {
         method: kindConfig.endpoint.method,
         headers,
@@ -892,6 +897,21 @@ function GenericExampleCard({ providerId, kind }) {
     <Card>
       <h2 className="text-lg font-semibold mb-4">Example</h2>
       <div className="flex flex-col gap-2.5">
+        {/* Model selector - only show if models available */}
+        {kindModels.length > 0 && (
+          <Row label="Model">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            >
+              {kindModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name || m.id}</option>
+              ))}
+            </select>
+          </Row>
+        )}
+
         {/* Endpoint */}
         <Row label="Endpoint">
           <div className="flex items-center gap-2">
@@ -953,13 +973,13 @@ function GenericExampleCard({ providerId, kind }) {
                 <span className="material-symbols-outlined text-[14px]">{copiedCurl ? "check" : "content_copy"}</span>
                 {copiedCurl ? "Copied" : "Copy"}
               </button>
-              <button
-                onClick={handleRun}
-                disabled={running || !input.trim()}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+            <button
+              onClick={handleRun}
+              disabled={running || !input.trim() || !modelFull}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
                 <span className="material-symbols-outlined text-[14px]" style={running ? { animation: "spin 1s linear infinite" } : undefined}>
-                  {running ? "progress_activity" : "play_arrow"}
+                  play_arrow
                 </span>
                 {running ? "Running..." : "Run"}
               </button>
@@ -990,6 +1010,13 @@ function GenericExampleCard({ providerId, kind }) {
           <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre opacity-70">
             {result ? resultJson : exConfig.defaultResponse}
           </pre>
+          {kind === "image" && result?.data?.data?.[0] && (
+            <img
+              src={result.data.data[0].b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result.data.data[0].url}
+              alt="Generated"
+              className="max-w-full rounded-lg border border-border mt-2"
+            />
+          )}
         </div>
       </div>
     </Card>

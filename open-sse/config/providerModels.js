@@ -78,39 +78,34 @@ export const PROVIDER_MODELS = {
     { id: "gpt-4o", name: "GPT-4o" },
     { id: "gpt-4o-mini", name: "GPT-4o mini" },
     { id: "gpt-4.1", name: "GPT-4.1" },
-    { id: "gpt-5", name: "GPT-5" },
     { id: "gpt-5-mini", name: "GPT-5 Mini" },
-    { id: "gpt-5-codex", name: "GPT-5 Codex" },
-    { id: "gpt-5.1", name: "GPT-5.1" },
-    { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
-    { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
-    { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
     { id: "gpt-5.2", name: "GPT-5.2" },
     { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
     { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
     { id: "gpt-5.4", name: "GPT-5.4" },
+    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
     // GitHub Copilot - Anthropic models
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    { id: "claude-opus-4.1", name: "Claude Opus 4.1" },
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+    { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
     // GitHub Copilot - Google models
     { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash" },
-    { id: "gemini-3-pro-preview", name: "Gemini 3 Pro" },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
     // GitHub Copilot - Other models
     { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
     { id: "oswe-vscode-prime", name: "Raptor Mini" },
+    { id: "goldeneye-free-auto", name: "GoldenEye" },
   ],
   kr: [  // Kiro AI
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
     { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
-    { id: "deepseek-3.1", name: "DeepSeek 3.1", strip: ["image", "audio"] },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
     { id: "glm-5", name: "GLM 5" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
@@ -145,6 +140,18 @@ export const PROVIDER_MODELS = {
     { id: "openai/o3", name: "o3" },
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat" },
     { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner" },
+  ],
+  "opencode-go": [  // OpenCode Go subscription (API key)
+    { id: "kimi-k2.6", name: "Kimi K2.6" },
+    { id: "kimi-k2.5", name: "Kimi K2.5" },
+    { id: "glm-5.1", name: "GLM 5.1" },
+    { id: "glm-5", name: "GLM 5" },
+    { id: "qwen3.5-plus", name: "Qwen 3.5 Plus" },
+    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus" },
+    { id: "mimo-v2-pro", name: "MiMo V2 Pro" },
+    { id: "mimo-v2-omni", name: "MiMo V2 Omni" },
+    { id: "minimax-m2.7", name: "MiniMax M2.7", targetFormat: "claude" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5", targetFormat: "claude" },
   ],
   oc: [  // OpenCode
     // { id: "nemotron-3-super-free", name: "Nemotron 3 Super" },
@@ -197,6 +204,10 @@ export const PROVIDER_MODELS = {
     { id: "tts-1", name: "TTS-1", type: "tts" },
     { id: "tts-1-hd", name: "TTS-1 HD", type: "tts" },
     { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
+    // Image models
+    { id: "gpt-image-1", name: "GPT Image 1", type: "image" },
+    { id: "dall-e-3", name: "DALL-E 3", type: "image" },
+    { id: "dall-e-2", name: "DALL-E 2", type: "image" },
   ],
   anthropic: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
@@ -224,6 +235,10 @@ export const PROVIDER_MODELS = {
     { id: "gemini-embedding-001", name: "Gemini Embedding 001", type: "embedding" },
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
+    // Image models (Nano Banana)
+    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image (Nano Banana 2)", type: "image" },
+    { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image (Nano Banana Pro)", type: "image" },
+    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", type: "image" },
   ],
   openrouter: [
     // Embedding models
@@ -238,6 +253,11 @@ export const PROVIDER_MODELS = {
     { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
     { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
     { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
+    // Image models
+    { id: "openai/dall-e-3", name: "DALL-E 3 (via OpenRouter)", type: "image" },
+    { id: "openai/gpt-image-1", name: "GPT Image 1 (via OpenRouter)", type: "image" },
+    { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image" },
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image" },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -261,6 +281,8 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+    // Image models
+    { id: "minimax-image-01", name: "MiniMax Image 01", type: "image" },
   ],
   blackbox: [
     { id: "gpt-4o", name: "GPT-4o" },
@@ -403,9 +425,50 @@ export const PROVIDER_MODELS = {
     { id: "qwen/qwen3-next-80b-a3b-instruct-maas", name: "Qwen3 Next 80B Instruct (Vertex)" },
     { id: "zai-org/glm-5-maas", name: "GLM-5 (Vertex)" },
   ],
+  "grok-web": [
+    { id: "grok-3", name: "Grok 3" },
+    { id: "grok-3-mini", name: "Grok 3 Mini (Thinking)" },
+    { id: "grok-3-thinking", name: "Grok 3 Thinking" },
+    { id: "grok-4", name: "Grok 4" },
+    { id: "grok-4-mini", name: "Grok 4 Mini (Thinking)" },
+    { id: "grok-4-thinking", name: "Grok 4 Thinking" },
+    { id: "grok-4-heavy", name: "Grok 4 Heavy (SuperGrok)" },
+    { id: "grok-4.1-mini", name: "Grok 4.1 Mini (Thinking)" },
+    { id: "grok-4.1-fast", name: "Grok 4.1 Fast" },
+    { id: "grok-4.1-expert", name: "Grok 4.1 Expert" },
+    { id: "grok-4.1-thinking", name: "Grok 4.1 Thinking" },
+    { id: "grok-4.2", name: "Grok 4.2 (4.20 Beta)" },
+  ],
+  "perplexity-web": [
+    { id: "pplx-auto", name: "Perplexity Auto (Free)" },
+    { id: "pplx-sonar", name: "Perplexity Sonar" },
+    { id: "pplx-gpt", name: "GPT-5.4 (via Perplexity)" },
+    { id: "pplx-gemini", name: "Gemini 3.1 Pro (via Perplexity)" },
+    { id: "pplx-sonnet", name: "Claude Sonnet 4.6 (via Perplexity)" },
+    { id: "pplx-opus", name: "Claude Opus 4.6 (via Perplexity)" },
+    { id: "pplx-nemotron", name: "Nemotron 3 Super (via Perplexity)" },
+  ],
 
   // TTS entries are loaded from ttsModels.js via buildTtsProviderModels()
   ...buildTtsProviderModels(),
+
+  // Image providers
+  nanobanana: [
+    { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image" },
+    { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image" },
+  ],
+  sdwebui: [
+    { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image" },
+    { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+  ],
+  comfyui: [
+    { id: "flux-dev", name: "FLUX Dev", type: "image" },
+    { id: "sdxl", name: "SDXL", type: "image" },
+  ],
+  huggingface: [
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell", type: "image" },
+    { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+  ],
 };
 
 // Helper functions

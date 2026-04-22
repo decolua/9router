@@ -447,9 +447,9 @@ export function encodeMcpTool(tool) {
 
 // ==================== REQUEST BUILDING ====================
 
-export function encodeRequest(messages, modelName, tools = [], reasoningEffort = null) {
+export function encodeRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
   const hasTools = tools?.length > 0;
-  const isAgentic = hasTools;
+  const isAgentic = hasTools || forceAgentMode;
   const formattedMessages = [];
   const messageIds = [];
   const normalizedMessages = [];
@@ -583,8 +583,8 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   );
 }
 
-export function buildChatRequest(messages, modelName, tools = [], reasoningEffort = null) {
-  return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort));
+export function buildChatRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
+  return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort, forceAgentMode));
 }
 
 /**
@@ -646,10 +646,10 @@ export function wrapConnectRPCFrame(payload, compress = false) {
   return frame;
 }
 
-export function generateCursorBody(messages, modelName, tools = [], reasoningEffort = null) {
-  log("BODY", `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}`);
+export function generateCursorBody(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
+  log("BODY", `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}, forceAgentMode=${forceAgentMode}`);
   
-  const protobuf = buildChatRequest(messages, modelName, tools, reasoningEffort);
+  const protobuf = buildChatRequest(messages, modelName, tools, reasoningEffort, forceAgentMode);
   const framed = wrapConnectRPCFrame(protobuf, false); // Cursor doesn't support compressed requests
   
   log("BODY", `Protobuf=${protobuf.length}B, Framed=${framed.length}B`);
