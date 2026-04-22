@@ -12,8 +12,12 @@ import Pagination from "@/shared/components/Pagination";
 import Toggle from "@/shared/components/Toggle";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
-import { getConnectionFilterStatus, normalizeConnectionFilterStatus } from "@/lib/connectionStatus";
-import { calculatePercentage, getStoredQuotaPresentation } from "./utils";
+import {
+  getConnectionCentralizedStatus,
+  getConnectionFilterStatus,
+  normalizeConnectionFilterStatus,
+} from "@/lib/connectionStatus";
+import { getStoredQuotaPresentation } from "./utils";
 
 const DEFAULT_PAGE_SIZE = 24;
 const STATUS_POLL_INTERVAL_MS = 15000;
@@ -44,6 +48,33 @@ function sortConnectionsByProvider(connections = []) {
     const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
     if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
+  });
+}
+
+function getCanonicalStatusCounts(connections = []) {
+  return connections.reduce((counts, connection) => {
+    const status = getConnectionCentralizedStatus(connection);
+
+    switch (status) {
+      case "eligible":
+      case "exhausted":
+      case "blocked":
+      case "unknown":
+      case "disabled":
+        counts[status] += 1;
+        break;
+      default:
+        counts.unknown += 1;
+        break;
+    }
+
+    return counts;
+  }, {
+    eligible: 0,
+    exhausted: 0,
+    blocked: 0,
+    unknown: 0,
+    disabled: 0,
   });
 }
 
@@ -442,14 +473,10 @@ export default function ProviderLimits() {
     ({ quota }) => quota.quotas.length > 0,
   ).length;
 
-  const lowQuotasCount = visibleQuotaCards.reduce((count, { quota }) => {
-    const hasLowQuota = quota.quotas.some((entry) => {
-      const percentage = calculatePercentage(entry.used, entry.total);
-      return percentage < 30 && entry.total > 0;
-    });
-
-    return count + (hasLowQuota ? 1 : 0);
-  }, 0);
+  const canonicalStatusCounts = useMemo(
+    () => getCanonicalStatusCounts(visibleConnections),
+    [visibleConnections],
+  );
 
   const schedulerTone = getSchedulerTone(schedulerStatus?.status, schedulerStatus?.enabled);
   const schedulerMessage = getSchedulerMessage(schedulerStatus);
@@ -535,7 +562,19 @@ export default function ProviderLimits() {
               {activeWithLimits} with quota data
             </span>
             <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
-              {lowQuotasCount} low quota
+              {canonicalStatusCounts.eligible} eligible
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {canonicalStatusCounts.exhausted} exhausted
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {canonicalStatusCounts.blocked} blocked
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {canonicalStatusCounts.disabled} disabled
+            </span>
+            <span className="inline-flex items-center rounded-full border border-black/5 dark:border-white/10 bg-surface px-3 py-1.5">
+              {canonicalStatusCounts.unknown} unknown
             </span>
           </div>
         </div>
@@ -566,6 +605,7 @@ export default function ProviderLimits() {
             options={[
               { value: "all", label: "All" },
               { value: "eligible", label: "Eligible" },
+              { value: "exhausted", label: "Exhausted" },
               { value: "blocked", label: "Blocked" },
               { value: "disabled", label: "Disabled" },
               { value: "unknown", label: "Unknown" },

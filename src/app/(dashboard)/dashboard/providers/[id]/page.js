@@ -143,10 +143,9 @@ export default function ProviderDetailPage() {
   const quotaSummary = useMemo(() => {
     if (connections.length === 0) {
       return {
-        blockedQuota: 0,
-        blockedHealth: 0,
-        coolingDown: 0,
         eligible: 0,
+        exhausted: 0,
+        blocked: 0,
         disabled: 0,
         unknown: 0,
         nextResetAt: null,
@@ -154,10 +153,9 @@ export default function ProviderDetailPage() {
     }
 
     const summary = {
-      blockedQuota: 0,
-      blockedHealth: 0,
-      coolingDown: 0,
       eligible: 0,
+      exhausted: 0,
+      blocked: 0,
       disabled: 0,
       unknown: 0,
       nextResetAt: null,
@@ -168,20 +166,12 @@ export default function ProviderDetailPage() {
       const cooldownUntil = getConnectionProviderCooldownUntil(connection);
 
       switch (status) {
-        case "blocked_quota":
-          summary.blockedQuota += 1;
-          break;
-        case "blocked_health":
-          summary.blockedHealth += 1;
-          break;
-        case "cooldown":
-          summary.coolingDown += 1;
-          break;
         case "eligible":
-          summary.eligible += 1;
-          break;
+        case "exhausted":
+        case "blocked":
         case "disabled":
-          summary.disabled += 1;
+        case "unknown":
+          summary[status] += 1;
           break;
         default:
           summary.unknown += 1;
@@ -189,7 +179,7 @@ export default function ProviderDetailPage() {
       }
 
       if (
-        ["cooldown", "blocked_quota"].includes(status)
+        status === "exhausted"
         && cooldownUntil
         && (!summary.nextResetAt || cooldownUntil < summary.nextResetAt)
       ) {
@@ -203,32 +193,32 @@ export default function ProviderDetailPage() {
   const quotaSummaryItems = useMemo(() => ([
     {
       key: "eligible",
-      label: "Ready",
+      label: "Eligible",
       value: quotaSummary.eligible,
       tone: "text-emerald-600 dark:text-emerald-400",
     },
     {
-      key: "coolingDown",
-      label: "Cooling down",
-      value: quotaSummary.coolingDown,
+      key: "exhausted",
+      label: "Exhausted",
+      value: quotaSummary.exhausted,
       tone: "text-amber-600 dark:text-amber-400",
     },
     {
-      key: "blockedQuota",
-      label: "Quota blocked",
-      value: quotaSummary.blockedQuota,
+      key: "blocked",
+      label: "Blocked",
+      value: quotaSummary.blocked,
       tone: "text-rose-600 dark:text-rose-400",
-    },
-    {
-      key: "blockedHealth",
-      label: "Health blocked",
-      value: quotaSummary.blockedHealth,
-      tone: "text-fuchsia-600 dark:text-fuchsia-400",
     },
     {
       key: "disabled",
       label: "Disabled",
       value: quotaSummary.disabled,
+      tone: "text-text-muted",
+    },
+    {
+      key: "unknown",
+      label: "Unknown",
+      value: quotaSummary.unknown,
       tone: "text-text-muted",
     },
   ]), [quotaSummary]);
@@ -695,6 +685,7 @@ export default function ProviderDetailPage() {
             options={[
               { value: "all", label: "All statuses" },
               { value: "eligible", label: "Eligible" },
+              { value: "exhausted", label: "Exhausted" },
               { value: "blocked", label: "Blocked" },
               { value: "disabled", label: "Disabled" },
               { value: "unknown", label: "Unknown" },

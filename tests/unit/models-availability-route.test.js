@@ -37,7 +37,7 @@ describe("models availability route", () => {
     vi.resetModules();
   });
 
-  it("derives cooldown and unavailable rows from centralized state", async () => {
+  it("derives canonical provider-wide and model-lock rows from centralized state", async () => {
     mockConnections.push(
       {
         id: "conn-cooldown",
@@ -55,10 +55,10 @@ describe("models availability route", () => {
         ["modelLock_gpt-4.1"]: "2026-04-24T00:00:00.000Z",
       },
       {
-        id: "conn-unavailable",
+        id: "conn-blocked",
         provider: "openai",
-        name: "Unavailable Conn",
-        routingStatus: "blocked_quota",
+        name: "Blocked Conn",
+        routingStatus: "blocked_health",
         lastError: "Probe failed",
       },
     );
@@ -72,7 +72,7 @@ describe("models availability route", () => {
         connectionId: "conn-cooldown",
         provider: "codex",
         model: "__all",
-        status: "cooldown",
+        status: "exhausted",
         until: "2026-04-25T00:00:00.000Z",
         lastError: "Quota exhausted",
       }),
@@ -84,17 +84,17 @@ describe("models availability route", () => {
         until: "2026-04-24T00:00:00.000Z",
       }),
       expect.objectContaining({
-        connectionId: "conn-unavailable",
+        connectionId: "conn-blocked",
         provider: "openai",
         model: "__all",
-        status: "unavailable",
+        status: "blocked",
         lastError: "Probe failed",
       }),
     ]);
     expect(response.body.unavailableCount).toBe(3);
   });
 
-  it("includes provider-wide and model-lock rows when both apply", async () => {
+  it("includes exhausted provider-wide and model-lock rows when both apply", async () => {
     mockConnections.push({
       id: "conn-both",
       provider: "codex",
@@ -112,7 +112,7 @@ describe("models availability route", () => {
       expect.objectContaining({
         connectionId: "conn-both",
         model: "__all",
-        status: "cooldown",
+        status: "exhausted",
         until: "2026-04-25T00:00:00.000Z",
       }),
       expect.objectContaining({
@@ -124,7 +124,7 @@ describe("models availability route", () => {
     ]);
   });
 
-  it("clears provider-wide cooldowns compatibly", async () => {
+  it("clears provider-wide cooldown fields without forced reactivation when status is not eligible", async () => {
     mockConnections.push({
       id: "conn-cooldown",
       provider: "codex",
@@ -146,17 +146,14 @@ describe("models availability route", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(updateProviderConnection).toHaveBeenCalledWith("conn-cooldown", expect.objectContaining({
+    expect(updateProviderConnection).toHaveBeenCalledWith("conn-cooldown", {
       rateLimitedUntil: null,
       nextRetryAt: null,
       resetAt: null,
       modelLock_gpt4: null,
       routingStatus: null,
       quotaState: null,
-      testStatus: "active",
-      reasonCode: null,
-      reasonDetail: null,
-    }));
+    });
   });
 
   it("does not reactivate provider-wide clears when a non-cooldown blocker remains", async () => {

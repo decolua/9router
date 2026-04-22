@@ -7,6 +7,8 @@ import { getExecutor } from "open-sse/executors/index.js";
 import { runUsageRefreshJob } from "../../../../lib/usageRefreshQueue.js";
 import {
   applyCanonicalUsageRefresh,
+  applyLiveQuotaUpdate,
+  getCodexLiveQuotaSignal,
   getConnectionAuthBlockedPatch,
   isConfirmedAuthBlockedError,
   isAuthExpiredMessage,
@@ -169,7 +171,6 @@ export async function GET(request, { params }) {
 
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection);
-    let shouldMarkActive = true;
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once
@@ -190,13 +191,13 @@ export async function GET(request, { params }) {
             lastCheckedAt,
           }
         );
-        shouldMarkActive = false;
+        return Response.json({
+          error: `Credential refresh failed: ${retryError.message}`,
+        }, { status: 401 });
       }
     }
 
-    if (shouldMarkActive) {
-      await applyCanonicalUsageRefresh(connection, usage);
-    }
+    await applyCanonicalUsageRefresh(connection, usage);
 
     return Response.json(usage);
     });
@@ -206,15 +207,25 @@ export async function GET(request, { params }) {
     console.warn(`[Usage] ${provider}: ${error.message}`);
     if (connection?.id) {
       const lastCheckedAt = new Date().toISOString();
-      await syncUsageStatus(
-        connection,
-        getConnectionAuthBlockedPatch(error, { lastCheckedAt, statusCode: status }) || {
-          testStatus: "error",
-          lastError: error.message,
-          lastErrorType: isConfirmedAuthBlockedError(error, { statusCode: status }) ? "auth_invalid" : "usage_request_failed",
-          lastCheckedAt,
-        }
-      );
+      const quotaSignal = getCodexLiveQuotaSignal(connection, {
+        statusCode: status,
+        errorText: error?.message || error?.error,
+        errorCode: error?.code || error?.errorCode,
+      });
+
+      if (quotaSignal) {
+        await applyLiveQuotaUpdate(connection, quotaSignal, { observedAt: lastCheckedAt });
+      } else {
+        await syncUsageStatus(
+          connection,
+          getConnectionAuthBlockedPatch(error, { lastCheckedAt, statusCode: status }) || {
+            testStatus: "error",
+            lastError: error.message,
+            lastErrorType: isConfirmedAuthBlockedError(error, { statusCode: status }) ? "auth_invalid" : "usage_request_failed",
+            lastCheckedAt,
+          }
+        );
+      }
     }
     return Response.json({ error: error.message }, { status });
   }

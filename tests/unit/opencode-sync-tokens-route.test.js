@@ -55,7 +55,6 @@ describe("/api/opencode/sync/tokens", () => {
         {
           id: "token-1",
           name: "Laptop",
-          mode: "device",
           metadata: { deviceName: "MacBook" },
           createdAt: "2026-04-21T00:00:00.000Z",
           updatedAt: "2026-04-21T00:00:00.000Z",
@@ -87,9 +86,9 @@ describe("/api/opencode/sync/tokens", () => {
     expect(response.body.token).toMatch(/^ocs_/);
     expect(response.body.record).toMatchObject({
       name: "Team iPad",
-      mode: "shared",
       metadata: { owner: "support", platform: "ios" },
     });
+    expect(response.body.record).not.toHaveProperty("mode");
     expect(mutateOpenCodeTokens).toHaveBeenCalledTimes(1);
     const persisted = mutateOpenCodeTokens.mock.results[0].value;
     const resolvedTokens = await persisted;

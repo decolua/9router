@@ -11,63 +11,79 @@ import {
 } from "../../src/lib/connectionStatus.js";
 
 describe("getConnectionEffectiveStatus", () => {
-  it("keeps unavailable when rateLimitedUntil is still active without model locks", () => {
+  it("keeps exhausted when rateLimitedUntil is still active without model locks", () => {
     const connection = {
       testStatus: "unavailable",
       rateLimitedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     };
 
-    expect(getConnectionEffectiveStatus(connection)).toBe("unavailable");
+    expect(getConnectionEffectiveStatus(connection)).toBe("exhausted");
   });
 
-  it("returns active after unavailable cooldown has fully expired", () => {
+  it("returns unknown after legacy unavailable cooldown has fully expired", () => {
     const connection = {
       testStatus: "unavailable",
       rateLimitedUntil: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
     };
 
-    expect(getConnectionEffectiveStatus(connection)).toBe("active");
+    expect(getConnectionEffectiveStatus(connection)).toBe("unknown");
   });
 
-  it("prefers centralized routing status over legacy test status", () => {
+  it("prefers canonical routing status over legacy test status", () => {
     const connection = {
       testStatus: "active",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       nextRetryAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     };
 
-    expect(getConnectionEffectiveStatus(connection)).toBe("unavailable");
+    expect(getConnectionEffectiveStatus(connection)).toBe("exhausted");
   });
 
-  it("maps centralized auth and health state to compatible UI statuses", () => {
-    expect(getConnectionEffectiveStatus({ authState: "expired", testStatus: "active" })).toBe("expired");
-    expect(getConnectionEffectiveStatus({ healthStatus: "failed", testStatus: "active" })).toBe("error");
+  it("maps auth and health blockers to canonical blocked status", () => {
+    expect(getConnectionEffectiveStatus({ authState: "expired", testStatus: "active" })).toBe("blocked");
+    expect(getConnectionEffectiveStatus({ healthStatus: "failed", testStatus: "active" })).toBe("blocked");
   });
 
   it("does not let eligible routing status mask active blockers", () => {
-    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", authState: "expired", testStatus: "active" })).toBe("expired");
-    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", healthStatus: "failed", testStatus: "active" })).toBe("error");
-    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", quotaState: "cooldown", testStatus: "active" })).toBe("unavailable");
+    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", authState: "expired", testStatus: "active" })).toBe("blocked");
+    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", healthStatus: "failed", testStatus: "active" })).toBe("blocked");
+    expect(getConnectionEffectiveStatus({ routingStatus: "eligible", quotaState: "cooldown", testStatus: "active" })).toBe("exhausted");
   });
 
-  it("reports cooldown details from centralized retry fields and model locks", () => {
+  it("reports exhaustion details from retry fields and model locks", () => {
     const connection = {
-      routingStatus: "cooldown",
+      routingStatus: "exhausted",
       nextRetryAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       modelLock_gpt4: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
     };
 
     const details = getConnectionStatusDetails(connection);
 
-    expect(details.status).toBe("unavailable");
+    expect(details.status).toBe("exhausted");
     expect(details.hasActiveModelLock).toBe(true);
     expect(details.activeModelLocks).toHaveLength(1);
     expect(details.cooldownUntil).toBe(connection.modelLock_gpt4);
   });
 
+  it("uses the earliest active model lock when expired and active locks coexist", () => {
+    const connection = {
+      routingStatus: "exhausted",
+      modelLock_expired: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      modelLock_gpt4: new Date(Date.now() + 3 * 60 * 1000).toISOString(),
+      modelLock_gpt4o: new Date(Date.now() + 6 * 60 * 1000).toISOString(),
+    };
+
+    const details = getConnectionStatusDetails(connection);
+
+    expect(details.status).toBe("exhausted");
+    expect(details.hasActiveModelLock).toBe(true);
+    expect(details.activeModelLocks.map((lock) => lock.key)).toEqual(["modelLock_gpt4", "modelLock_gpt4o"]);
+    expect(details.cooldownUntil).toBe(connection.modelLock_gpt4);
+  });
+
   it("tracks provider-wide cooldown separately from model locks", () => {
     const connection = {
-      routingStatus: "cooldown",
+      routingStatus: "exhausted",
       nextRetryAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       modelLock_gpt4: new Date(Date.now() + 2 * 60 * 1000).toISOString(),
     };
@@ -77,65 +93,39 @@ describe("getConnectionEffectiveStatus", () => {
 
   it("normalizes supported filter values and falls back invalid values to all", () => {
     expect(normalizeConnectionFilterStatus("active")).toBe("eligible");
-    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("exhausted");
     expect(normalizeConnectionFilterStatus("revoked-invalid")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("eligible")).toBe("eligible");
+    expect(normalizeConnectionFilterStatus("exhausted")).toBe("exhausted");
     expect(normalizeConnectionFilterStatus("blocked_health")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("blocked_auth")).toBe("blocked");
-    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("blocked");
-    expect(normalizeConnectionFilterStatus("cooldown")).toBe("blocked");
+    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("exhausted");
+    expect(normalizeConnectionFilterStatus("cooldown")).toBe("exhausted");
     expect(normalizeConnectionFilterStatus("blocked")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("definitely-invalid")).toBe("all");
   });
 
-  it("maps centralized and legacy connection states to centralized filter buckets", () => {
+  it("maps connection states to canonical top-level statuses", () => {
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible" })).toBe("eligible");
-    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", authState: "expired" })).toBe("blocked_auth");
-    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", healthStatus: "failed" })).toBe("blocked_health");
-    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "cooldown" })).toBe("cooldown");
-    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "exhausted" })).toBe("blocked_quota");
-    expect(getConnectionCentralizedStatus({ quotaState: "cooldown" })).toBe("cooldown");
-    expect(getConnectionCentralizedStatus({ quotaState: "exhausted" })).toBe("blocked_quota");
-    expect(getConnectionCentralizedStatus({ authState: "invalid" })).toBe("blocked_auth");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", authState: "expired" })).toBe("blocked");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", healthStatus: "failed" })).toBe("blocked");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "cooldown" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "exhausted" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ quotaState: "cooldown" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ quotaState: "exhausted" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ authState: "invalid" })).toBe("blocked");
     expect(getConnectionCentralizedStatus({ isActive: false, routingStatus: "eligible" })).toBe("disabled");
     expect(getConnectionCentralizedStatus({ testStatus: "active" })).toBe("eligible");
-    expect(getConnectionCentralizedStatus({ testStatus: "unavailable", rateLimitedUntil: new Date(Date.now() + 10_000).toISOString() })).toBe("cooldown");
-    expect(getConnectionCentralizedStatus({ quotaState: "exhausted", testStatus: "active" })).toBe("blocked_quota");
-    expect(getConnectionCentralizedStatus({ testStatus: "unavailable" })).toBe("eligible");
+    expect(getConnectionCentralizedStatus({ testStatus: "unavailable", rateLimitedUntil: new Date(Date.now() + 10_000).toISOString() })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ quotaState: "exhausted", testStatus: "active" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ testStatus: "unavailable" })).toBe("unknown");
   });
 
-  it("treats blocked_health as a first-class centralized status", () => {
-    expect(getConnectionCentralizedStatus({ routingStatus: "blocked_health" })).toBe("blocked_health");
-  });
-
-  it("maps revoked and invalid auth failures into the simplified blocked filter bucket", () => {
-    expect(getConnectionFilterStatus({ authState: "invalid" })).toBe("blocked");
-    expect(getConnectionFilterStatus({ authState: "revoked" })).toBe("blocked");
-    expect(getConnectionFilterStatus({ routingStatus: "blocked_auth", authState: "invalid" })).toBe("blocked");
-  });
-
-  it("collapses auth, health, quota, and cooldown blockers into the simplified blocked filter bucket", () => {
+  it("keeps blocked and exhausted as distinct filter buckets", () => {
     expect(getConnectionFilterStatus({ authState: "expired" })).toBe("blocked");
     expect(getConnectionFilterStatus({ healthStatus: "failed" })).toBe("blocked");
-    expect(getConnectionFilterStatus({ routingStatus: "blocked_health" })).toBe("blocked");
-    expect(getConnectionFilterStatus({ routingStatus: "blocked_quota" })).toBe("blocked");
-    expect(getConnectionFilterStatus({ routingStatus: "cooldown" })).toBe("blocked");
-  });
-
-  it("does not classify exhausted quota connections as eligible even when routing status is stale", () => {
-    expect(getConnectionFilterStatus({
-      routingStatus: "eligible",
-      quotaState: "exhausted",
-      usageSnapshot: JSON.stringify({
-        quotas: {
-          session: {
-            used: 100,
-            total: 100,
-            remaining: 0,
-          },
-        },
-      }),
-    })).toBe("blocked");
+    expect(getConnectionFilterStatus({ routingStatus: "exhausted" })).toBe("exhausted");
+    expect(getConnectionFilterStatus({ routingStatus: "blocked" })).toBe("blocked");
   });
 
   it("preserves non-blocked filter buckets for eligible, disabled, and unknown states", () => {
@@ -144,26 +134,36 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionFilterStatus({})).toBe("unknown");
   });
 
-  it("provides coherent badge labels and variants for centralized statuses", () => {
+  it("provides coherent badge labels and variants for canonical statuses", () => {
     expect(getConnectionStatusBadgeMeta({ routingStatus: "eligible" })).toEqual({
       status: "eligible",
       label: "Eligible",
       variant: "success",
     });
-    expect(getConnectionStatusBadgeMeta({ routingStatus: "cooldown" })).toEqual({
-      status: "cooldown",
-      label: "Cooldown",
+    expect(getConnectionStatusBadgeMeta({ routingStatus: "exhausted" })).toEqual({
+      status: "exhausted",
+      label: "Exhausted",
       variant: "warning",
     });
     expect(getConnectionStatusBadgeMeta({ authState: "expired" })).toEqual({
-      status: "blocked_auth",
-      label: "Auth blocked",
+      status: "blocked",
+      label: "Blocked",
       variant: "error",
     });
     expect(getConnectionStatusBadgeMeta({ healthStatus: "failed" })).toEqual({
-      status: "blocked_health",
-      label: "Health blocked",
+      status: "blocked",
+      label: "Blocked",
       variant: "error",
+    });
+    expect(getConnectionStatusBadgeMeta({ isActive: false, routingStatus: "eligible" })).toEqual({
+      status: "disabled",
+      label: "Disabled",
+      variant: "default",
+    });
+    expect(getConnectionStatusBadgeMeta({})).toEqual({
+      status: "unknown",
+      label: "Unknown",
+      variant: "default",
     });
   });
 });

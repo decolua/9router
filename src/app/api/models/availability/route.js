@@ -36,12 +36,12 @@ function getAvailabilityEntries(connection) {
 
   const entries = [...modelEntries];
 
-  if (statusDetails.status === "unavailable") {
+  if (["blocked", "exhausted"].includes(statusDetails.status)) {
     entries.unshift({
       provider: connection.provider,
       model: "__all",
-      status: providerCooldownUntil ? "cooldown" : "unavailable",
-      until: providerCooldownUntil || undefined,
+      status: statusDetails.status,
+      until: statusDetails.status === "exhausted" ? (providerCooldownUntil || undefined) : undefined,
       connectionId: connection.id,
       connectionName: getConnectionName(connection),
       lastError: connection.lastError || connection.reasonDetail || null,
@@ -62,7 +62,7 @@ function buildCooldownClearPatch(connection, model) {
     patch.nextRetryAt = null;
     patch.resetAt = null;
 
-    if (connection?.routingStatus === "blocked_quota" || connection?.routingStatus === "cooldown") {
+    if (["blocked_quota", "cooldown", "exhausted"].includes(connection?.routingStatus)) {
       patch.routingStatus = null;
     }
 
@@ -84,6 +84,7 @@ function hasProviderWideCooldownState(connection) {
     || getFutureTimestamp(connection?.resetAt)
     || connection?.routingStatus === "blocked_quota"
     || connection?.routingStatus === "cooldown"
+    || connection?.routingStatus === "exhausted"
     || ["exhausted", "cooldown", "blocked"].includes(connection?.quotaState),
   );
 }
@@ -134,7 +135,7 @@ export async function POST(request) {
           const clearPatch = buildCooldownClearPatch(connection, model);
           const clearedConnection = { ...connection, ...clearPatch };
           const clearedStatusDetails = getConnectionStatusDetails(clearedConnection);
-          const shouldReactivate = model === "__all" && clearedStatusDetails.status === "active";
+          const shouldReactivate = model === "__all" && clearedStatusDetails.status === "eligible";
 
           return updateProviderConnection(connection.id, {
             ...clearPatch,

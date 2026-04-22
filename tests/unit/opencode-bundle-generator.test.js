@@ -48,24 +48,42 @@ describe("buildOpenCodeSyncBundle", () => {
         "zeta-plugin@latest",
       ],
       provider: {
-        cliproxyapi: {
+        "9router": {
           npm: "@ai-sdk/openai-compatible",
-          name: "CLIProxyAPI",
+          name: "9Router",
           options: {
-            baseURL: expect.any(String),
-            apiKey: expect.any(String),
+            baseURL: "http://localhost:20129/v1",
+            apiKey: "sk_9router",
           },
           models: {
-            "claude-3.7-sonnet": {
-              name: "Claude 3.7 Sonnet",
+            "anthropic/claude-3.7-sonnet": {
+              name: "anthropic/claude-3.7-sonnet",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 32000,
+              },
             },
-            "gpt-4.1": {
-              name: "GPT-4.1",
+            "openai/gpt-4.1": {
+              name: "openai/gpt-4.1",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 64000,
+              },
             },
           },
         },
       },
-      model: "cliproxyapi/claude-3.7-sonnet",
+      model: "9router/anthropic/claude-3.7-sonnet",
     });
     expect(result.bundle.generatedArtifacts["opencode.json"]).not.toHaveProperty("models");
   });
@@ -103,17 +121,35 @@ describe("buildOpenCodeSyncBundle", () => {
         mode: "opinionated",
       },
     });
-    expect(result.bundle.generatedArtifacts["opencode.json"].provider.cliproxyapi.models).toEqual({
-      "claude-3.7-sonnet": {
-        name: "Claude 3.7 Sonnet",
+    expect(result.bundle.generatedArtifacts["opencode.json"].provider["9router"].models).toEqual({
+      "anthropic/claude-3.7-sonnet": {
+        name: "anthropic/claude-3.7-sonnet",
+        attachment: true,
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        limit: {
+          context: 200000,
+          output: 32000,
+        },
       },
-      "gpt-4.1": {
-        name: "GPT-4.1",
+      "openai/gpt-4.1": {
+        name: "openai/gpt-4.1",
+        attachment: true,
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        limit: {
+          context: 200000,
+          output: 64000,
+        },
       },
     });
   });
 
-  it("generates reference-like opencode artifact shape with cliproxyapi provider wiring", () => {
+  it("generates reference-like opencode artifact shape with 9router provider wiring", () => {
     const result = buildOpenCodeSyncBundle({
       preferences: {
         variant: "openagent",
@@ -129,24 +165,42 @@ describe("buildOpenCodeSyncBundle", () => {
       $schema: "https://opencode.ai/config.json",
       plugin: [OPENCODE_SYNC_PLUGIN, OPENAGENT_PRESET_PLUGIN],
       provider: {
-        cliproxyapi: {
+        "9router": {
           npm: "@ai-sdk/openai-compatible",
-          name: "CLIProxyAPI",
+          name: "9Router",
           options: {
-            baseURL: expect.any(String),
-            apiKey: expect.any(String),
+            baseURL: "http://localhost:20129/v1",
+            apiKey: "sk_9router",
           },
           models: {
-            "claude-3.7-sonnet": {
-              name: "Claude 3.7 Sonnet",
+            "anthropic/claude-3.7-sonnet": {
+              name: "anthropic/claude-3.7-sonnet",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 32000,
+              },
             },
-            "gpt-4.1": {
-              name: "GPT-4.1",
+            "openai/gpt-4.1": {
+              name: "openai/gpt-4.1",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 64000,
+              },
             },
           },
         },
       },
-      model: "cliproxyapi/gpt-4.1",
+      model: "9router/openai/gpt-4.1",
       mcp: {
         docs: {
           type: "remote",
@@ -300,13 +354,13 @@ describe("buildOpenCodeSyncBundle", () => {
         $schema: "https://unpkg.com/oh-my-opencode-slim@latest/oh-my-opencode-slim.schema.json",
         agents: {
           core: {
-            model: "cliproxyapi/gpt-4.1",
+            model: "9router/openai/gpt-4.1",
           },
           research: {
-            model: "cliproxyapi/claude-3.7-sonnet",
+            model: "9router/anthropic/claude-3.7-sonnet",
           },
           execution: {
-            model: "cliproxyapi/claude-3.7-sonnet",
+            model: "9router/anthropic/claude-3.7-sonnet",
           },
         },
       },
@@ -354,19 +408,19 @@ describe("buildOpenCodeSyncBundle", () => {
         $schema:
           "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/main/assets/oh-my-opencode.schema.json",
         agents: {
-          explorer: { model: "cliproxyapi/claude-3.7-sonnet" },
-          sisyphus: { model: "cliproxyapi/gpt-4.1" },
-          oracle: { model: "cliproxyapi/gpt-4.1" },
-          librarian: { model: "cliproxyapi/claude-3.7-sonnet" },
-          prometheus: { model: "cliproxyapi/gpt-4.1" },
-          atlas: { model: "cliproxyapi/claude-3.7-sonnet" },
+          explorer: { model: "9router/anthropic/claude-3.7-sonnet" },
+          sisyphus: { model: "9router/openai/gpt-4.1" },
+          oracle: { model: "9router/openai/gpt-4.1" },
+          librarian: { model: "9router/anthropic/claude-3.7-sonnet" },
+          prometheus: { model: "9router/openai/gpt-4.1" },
+          atlas: { model: "9router/anthropic/claude-3.7-sonnet" },
         },
         categories: {
-          deep: { model: "cliproxyapi/gpt-4.1" },
-          quick: { model: "cliproxyapi/claude-3.7-sonnet" },
-          "visual-engineering": { model: "cliproxyapi/claude-3.7-sonnet" },
-          writing: { model: "cliproxyapi/gpt-4.1" },
-          artistry: { model: "cliproxyapi/grok-3-mini" },
+          deep: { model: "9router/openai/gpt-4.1" },
+          quick: { model: "9router/anthropic/claude-3.7-sonnet" },
+          "visual-engineering": { model: "9router/anthropic/claude-3.7-sonnet" },
+          writing: { model: "9router/openai/gpt-4.1" },
+          artistry: { model: "9router/xai/grok-3-mini" },
         },
         auto_update: false,
         background_task: {
@@ -424,7 +478,7 @@ describe("buildOpenCodeSyncBundle", () => {
     expect(result.publicArtifacts.opencode.env).toEqual({
       OPENAI_API_KEY: "<set-locally>",
     });
-    expect(result.publicArtifacts.opencode.provider.cliproxyapi.options.apiKey).toBe("sk-cliproxyapi-placeholder");
+    expect(result.publicArtifacts.opencode.provider["9router"].options.apiKey).toBe("sk_9router");
   });
 
   it("redacts secret-like advanced override values from public openagent artifacts", () => {
@@ -602,20 +656,21 @@ describe("buildOpenCodeSyncBundle", () => {
     expect(second.revision).toBe(first.revision);
   });
 
-  it("fails when selected models collide after artifact normalization", () => {
-    expect(() =>
-      buildOpenCodeSyncBundle({
-        preferences: {
-          variant: "openagent",
-          modelSelectionMode: "include",
-          includedModels: ["openai/gpt-4.1", "anthropic/gpt-4.1"],
-        },
-        modelCatalog: {
-          "openai/gpt-4.1": { id: "openai/gpt-4.1", name: "GPT-4.1 OpenAI" },
-          "anthropic/gpt-4.1": { id: "anthropic/gpt-4.1", name: "GPT-4.1 Anthropic" },
-        },
-      })
-    ).toThrow('Multiple selected models normalize to the same artifact model id "gpt-4.1"');
+  it("allows same model slugs across providers because full ids are preserved", () => {
+    const result = buildOpenCodeSyncBundle({
+      preferences: {
+        variant: "openagent",
+        modelSelectionMode: "include",
+        includedModels: ["openai/gpt-4.1", "anthropic/gpt-4.1"],
+      },
+      modelCatalog: {
+        "openai/gpt-4.1": { id: "openai/gpt-4.1", name: "GPT-4.1 OpenAI" },
+        "anthropic/gpt-4.1": { id: "anthropic/gpt-4.1", name: "GPT-4.1 Anthropic" },
+      },
+    });
+
+    expect(result.bundle.generatedArtifacts["opencode.json"].provider["9router"].models).toHaveProperty("openai/gpt-4.1");
+    expect(result.bundle.generatedArtifacts["opencode.json"].provider["9router"].models).toHaveProperty("anthropic/gpt-4.1");
   });
 
   it("keeps hash stable when public artifacts are unchanged by MCP input ordering", () => {

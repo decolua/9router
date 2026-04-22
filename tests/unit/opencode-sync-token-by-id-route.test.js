@@ -64,9 +64,9 @@ describe("/api/opencode/sync/tokens/[id]", () => {
     expect(response.body.record).toMatchObject({
       id: "token-1",
       name: "Updated Laptop",
-      mode: "device",
       metadata: { deviceName: "MacBook Pro", platform: "macOS" },
     });
+    expect(response.body.record).not.toHaveProperty("mode");
     const persistedResult = await mutateOpenCodeTokens.mock.results[0].value;
     const persisted = persistedResult[0];
     expect(persisted.tokenHash).toBe(existingRecord.tokenHash);
@@ -108,7 +108,12 @@ describe("/api/opencode/sync/tokens/[id]", () => {
     expect(response.body).toEqual({ error: "Token not found" });
   });
 
-  it("rejects mode updates on PATCH", async () => {
+  it("ignores mode updates on PATCH and keeps mode internal-only", async () => {
+    mutateOpenCodeTokens.mockImplementation(async (mutator) => {
+      const result = mutator([existingRecord]);
+      return result.tokens;
+    });
+
     const response = await PATCH(
       new Request("http://localhost/api/opencode/sync/tokens/token-1", {
         method: "PATCH",
@@ -118,7 +123,10 @@ describe("/api/opencode/sync/tokens/[id]", () => {
       { params: { id: "token-1" } }
     );
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/cannot be updated/i);
+    expect(response.status).toBe(200);
+    expect(response.body.record).not.toHaveProperty("mode");
+    const persistedResult = await mutateOpenCodeTokens.mock.results[0].value;
+    const persisted = persistedResult[0];
+    expect(persisted.mode).toBe("device");
   });
 });

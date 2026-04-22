@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const tempDirs = [];
 
@@ -11,8 +11,10 @@ vi.mock("@/lib/dataDir.js", () => ({
   DATA_DIR: process.env.DATA_DIR,
 }));
 
+const mockGetConnectionEffectiveStatus = vi.fn((connection) => connection?.__status || "unknown");
+
 vi.mock("@/lib/connectionStatus.js", () => ({
-  getConnectionEffectiveStatus: () => "unknown",
+  getConnectionEffectiveStatus: mockGetConnectionEffectiveStatus,
 }));
 
 vi.mock("@/lib/quotaStateStore.js", () => ({
@@ -24,6 +26,12 @@ vi.mock("@/lib/quotaStateStore.js", () => ({
   isHotOnlyUpdate: vi.fn(() => false),
   isRedisHotStateReady: vi.fn(() => false),
   projectLegacyConnectionState: vi.fn((value) => value || {}),
+}));
+
+vi.mock("@/lib/opencodeSync/schema.js", () => ({
+  createDefaultOpenCodePreferences: vi.fn(() => ({})),
+  normalizeOpenCodePreferences: vi.fn((value) => (value && typeof value === "object" ? value : {})),
+  validateOpenCodePreferences: vi.fn((value) => (value && typeof value === "object" ? value : {})),
 }));
 
 async function createTempDataDir() {
@@ -46,6 +54,11 @@ async function loadLocalDb(initialData) {
   return import("../../src/lib/localDb.js");
 }
 
+beforeEach(() => {
+  mockGetConnectionEffectiveStatus.mockReset();
+  mockGetConnectionEffectiveStatus.mockImplementation((connection) => connection?.__status || "unknown");
+});
+
 afterEach(async () => {
   delete process.env.DATA_DIR;
   delete process.env.REDIS_URL;
@@ -63,6 +76,7 @@ describe("localDb quota scheduler settings", () => {
     const localDb = await loadLocalDb();
 
     await expect(localDb.getSettings()).resolves.toMatchObject({
+      quotaExhaustedThresholdPercent: 10,
       quotaScheduler: {
         enabled: true,
         cadenceMs: 900000,
@@ -71,6 +85,33 @@ describe("localDb quota scheduler settings", () => {
         exhaustedTtlMs: 60000,
         batchSize: 25,
       },
+    });
+  });
+
+  it("summarizes canonical statuses as connected/error/unknown buckets", async () => {
+    const localDb = await loadLocalDb();
+
+    mockGetConnectionEffectiveStatus
+      .mockReturnValueOnce("eligible")
+      .mockReturnValueOnce("exhausted")
+      .mockReturnValueOnce("blocked")
+      .mockReturnValueOnce("disabled")
+      .mockReturnValueOnce("unknown");
+
+    const summary = localDb.getConnectionStatusSummary([
+      { id: "conn-eligible" },
+      { id: "conn-exhausted" },
+      { id: "conn-blocked" },
+      { id: "conn-disabled", isActive: false },
+      { id: "conn-unknown" },
+    ]);
+
+    expect(summary).toEqual({
+      connected: 1,
+      error: 2,
+      unknown: 2,
+      total: 5,
+      allDisabled: false,
     });
   });
 
@@ -119,6 +160,40 @@ describe("localDb quota scheduler settings", () => {
     });
   });
 
+  it("persists explicit quota exhausted threshold updates", async () => {
+    const localDb = await loadLocalDb();
+
+    const updated = await localDb.updateSettings({
+      quotaExhaustedThresholdPercent: 15,
+    });
+
+    expect(updated).toMatchObject({
+      quotaExhaustedThresholdPercent: 15,
+    });
+
+    await expect(localDb.getSettings()).resolves.toMatchObject({
+      quotaExhaustedThresholdPercent: 15,
+    });
+  });
+
+  it("clamps quota exhausted threshold updates to valid percentage range", async () => {
+    const localDb = await loadLocalDb();
+
+    const high = await localDb.updateSettings({
+      quotaExhaustedThresholdPercent: 150,
+    });
+    expect(high).toMatchObject({
+      quotaExhaustedThresholdPercent: 100,
+    });
+
+    const low = await localDb.updateSettings({
+      quotaExhaustedThresholdPercent: -5,
+    });
+    expect(low).toMatchObject({
+      quotaExhaustedThresholdPercent: 0,
+    });
+  });
+
   it("clamps quota scheduler cadence to a minimum of 15 minutes", async () => {
     const localDb = await loadLocalDb();
 
@@ -131,5 +206,18 @@ describe("localDb quota scheduler settings", () => {
     expect(updated.quotaScheduler).toMatchObject({
       cadenceMs: 900000,
     });
+  });
+
+  it("isolates quota scheduler defaults from caller-side nested mutations", async () => {
+    const localDb = await loadLocalDb({ settings: {} });
+
+    const baseline = await localDb.getSettings();
+    const firstRead = await localDb.getSettings();
+    firstRead.quotaScheduler.enabled = false;
+    firstRead.quotaScheduler.batchSize = 999;
+    firstRead.quotaScheduler.successTtlMs = 123;
+
+    const secondRead = await localDb.getSettings();
+    expect(secondRead.quotaScheduler).toEqual(baseline.quotaScheduler);
   });
 });

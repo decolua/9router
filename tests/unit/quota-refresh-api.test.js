@@ -145,6 +145,39 @@ describe("quota refresh api routes", () => {
     });
   });
 
+  it("returns quota threshold from settings GET", async () => {
+    getSettings.mockResolvedValueOnce({
+      quotaExhaustedThresholdPercent: 17,
+      quotaScheduler: {
+        enabled: true,
+        cadenceMs: 900000,
+      },
+    });
+
+    const { GET } = await import("../../src/app/api/settings/route.js");
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      quotaExhaustedThresholdPercent: 17,
+      quotaScheduler: expect.objectContaining({ enabled: true, cadenceMs: 900000 }),
+    });
+  });
+
+  it("returns default quota threshold from settings GET on fresh setup", async () => {
+    getSettings.mockResolvedValueOnce({});
+
+    const { GET } = await import("../../src/app/api/settings/route.js");
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        quotaExhaustedThresholdPercent: 10,
+      })
+    );
+  });
+
   it("reschedules the live quota refresh scheduler after quota settings updates", async () => {
     updateSettings.mockResolvedValueOnce({
       quotaScheduler: {
@@ -155,8 +188,9 @@ describe("quota refresh api routes", () => {
         exhaustedTtlMs: 60000,
         batchSize: 10,
       },
+      quotaExhaustedThresholdPercent: 22,
     });
-    refreshSchedule.mockResolvedValueOnce({ started: true, enabled: true });
+    refreshSchedule.mockResolvedValue({ started: true, enabled: true });
 
     const { PATCH } = await import("../../src/app/api/settings/route.js");
     const response = await PATCH(new Request("http://localhost/api/settings", {
@@ -178,6 +212,33 @@ describe("quota refresh api routes", () => {
         cadenceMs: 15000,
         batchSize: 10,
       },
+    });
+    expect(getQuotaRefreshScheduler).toHaveBeenCalledTimes(1);
+    expect(refreshSchedule).toHaveBeenCalledWith("settings_update");
+  });
+
+  it("reschedules scheduler when only threshold changes", async () => {
+    updateSettings.mockResolvedValueOnce({
+      quotaExhaustedThresholdPercent: 35,
+      quotaScheduler: {
+        enabled: true,
+        cadenceMs: 900000,
+      },
+    });
+    refreshSchedule.mockResolvedValueOnce({ started: true, enabled: true });
+
+    const { PATCH } = await import("../../src/app/api/settings/route.js");
+    const response = await PATCH(new Request("http://localhost/api/settings", {
+      method: "PATCH",
+      body: JSON.stringify({
+        quotaExhaustedThresholdPercent: 35,
+      }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(updateSettings).toHaveBeenCalledWith({
+      quotaExhaustedThresholdPercent: 35,
     });
     expect(getQuotaRefreshScheduler).toHaveBeenCalledTimes(1);
     expect(refreshSchedule).toHaveBeenCalledWith("settings_update");

@@ -10,7 +10,11 @@ export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
-  const [quotaForm, setQuotaForm] = useState({ enabled: true, cadenceMinutes: "15" });
+  const [quotaForm, setQuotaForm] = useState({
+    enabled: true,
+    cadenceMinutes: "15",
+    exhaustedThresholdPercent: "10",
+  });
   const [quotaStatus, setQuotaStatus] = useState({ type: "", message: "" });
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
@@ -36,6 +40,11 @@ export default function ProfilePage() {
         setQuotaForm({
           enabled: data?.quotaScheduler?.enabled !== false,
           cadenceMinutes: String(Math.max(15, Math.round((data?.quotaScheduler?.cadenceMs || 900000) / 60000))),
+          exhaustedThresholdPercent: String(
+            Number.isFinite(data?.quotaExhaustedThresholdPercent)
+              ? data.quotaExhaustedThresholdPercent
+              : 10
+          ),
         });
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
@@ -55,12 +64,14 @@ export default function ProfilePage() {
     setQuotaStatus({ type: "", message: "" });
 
     try {
+      const payload = {
+        ...updates,
+      };
+
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quotaScheduler: updates,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -69,6 +80,11 @@ export default function ProfilePage() {
         setQuotaForm({
           enabled: data?.quotaScheduler?.enabled !== false,
           cadenceMinutes: String(Math.max(15, Math.round((data?.quotaScheduler?.cadenceMs || 900000) / 60000))),
+          exhaustedThresholdPercent: String(
+            Number.isFinite(data?.quotaExhaustedThresholdPercent)
+              ? data.quotaExhaustedThresholdPercent
+              : 10
+          ),
         });
         setQuotaStatus({ type: "success", message: successMessage });
       } else {
@@ -84,12 +100,12 @@ export default function ProfilePage() {
   const updateQuotaSchedulerEnabled = async (enabled) => {
     setQuotaForm((prev) => ({ ...prev, enabled }));
     await updateQuotaScheduler(
-      { enabled },
+      { quotaScheduler: { enabled } },
       enabled ? "Quota scheduler enabled" : "Quota scheduler disabled"
     );
   };
 
-  const applyQuotaCadence = async (e) => {
+  const applyQuotaSettings = async (e) => {
     e.preventDefault();
     const minutes = Number.parseInt(quotaForm.cadenceMinutes, 10);
     if (!Number.isFinite(minutes) || minutes < 15) {
@@ -97,9 +113,18 @@ export default function ProfilePage() {
       return;
     }
 
+    const threshold = Number.parseFloat(quotaForm.exhaustedThresholdPercent);
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 100) {
+      setQuotaStatus({ type: "error", message: "Quota exhausted threshold must be between 0 and 100" });
+      return;
+    }
+
     await updateQuotaScheduler(
-      { cadenceMs: minutes * 60 * 1000 },
-      "Quota scheduler interval updated"
+      {
+        quotaScheduler: { cadenceMs: minutes * 60 * 1000 },
+        quotaExhaustedThresholdPercent: threshold,
+      },
+      "Quota scheduler settings updated"
     );
   };
 
@@ -734,9 +759,9 @@ export default function ProfilePage() {
               />
             </div>
 
-            <form onSubmit={applyQuotaCadence} className="flex flex-col gap-3 pt-4 border-t border-border/50">
+            <form onSubmit={applyQuotaSettings} className="flex flex-col gap-3 pt-4 border-t border-border/50">
               <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                <div className="flex-1">
+                <div className="flex-1 grid gap-3 md:grid-cols-2 md:items-end">
                   <Input
                     type="number"
                     min="15"
@@ -749,12 +774,28 @@ export default function ProfilePage() {
                     }}
                     disabled={loading || quotaLoading}
                     hint="Minimum 15 minutes. Changes are saved via the settings API."
-                    className="w-full md:max-w-xs"
+                    className="w-full"
+                  />
+
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    label="Exhausted threshold (%)"
+                    value={quotaForm.exhaustedThresholdPercent}
+                    onChange={(e) => {
+                      setQuotaForm((prev) => ({ ...prev, exhaustedThresholdPercent: e.target.value }));
+                      if (quotaStatus.message) setQuotaStatus({ type: "", message: "" });
+                    }}
+                    disabled={loading || quotaLoading}
+                    hint="Global threshold to treat an account as exhausted."
+                    className="w-full"
                   />
                 </div>
 
                 <Button type="submit" variant="primary" loading={quotaLoading}>
-                  Save interval
+                  Save quota settings
                 </Button>
               </div>
 

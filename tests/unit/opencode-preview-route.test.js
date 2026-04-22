@@ -72,38 +72,56 @@ describe("/api/opencode/bundle/preview", () => {
         provider: "openai",
       },
     ]);
-    expect(response.body.opencode.plugin).toContain("opencode-cliproxyapi-sync@latest");
+    expect(response.body.opencode.plugin).toContain("opencode-9router-sync@latest");
     expect(response.body.opencode.plugin).toContain("team-plugin@latest");
-    expect(response.body.opencode.model).toBe("cliproxyapi/gpt-4.1-free");
+    expect(response.body.opencode.model).toBe("9router/openai/gpt-4.1-free");
     expect(response.body.opencode.env).toEqual({ OPENAI_API_KEY: "<set-locally>" });
     expect(response.body.ohMyOpencode).toEqual(expect.any(Object));
     expect(response.body.ohMyOpenCodeSlim).toBeNull();
     expect(response.body.opencode).toEqual({
       $schema: "https://opencode.ai/config.json",
       plugin: [
-        "opencode-cliproxyapi-sync@latest",
+        "opencode-9router-sync@latest",
         "oh-my-openagent@latest",
         "team-plugin@latest",
       ],
       provider: {
-        cliproxyapi: {
+        "9router": {
           npm: "@ai-sdk/openai-compatible",
-          name: "CLIProxyAPI",
+          name: "9Router",
           options: {
             baseURL: expect.any(String),
             apiKey: expect.any(String),
           },
           models: {
-            "gpt-4.1": {
-              name: "gpt-4.1",
+            "openai/gpt-4.1": {
+              name: "openai/gpt-4.1",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 64000,
+              },
             },
-            "gpt-4.1-free": {
-              name: "gpt-4.1-free",
+            "openai/gpt-4.1-free": {
+              name: "openai/gpt-4.1-free",
+              attachment: true,
+              modalities: {
+                input: ["text", "image"],
+                output: ["text"],
+              },
+              limit: {
+                context: 200000,
+                output: 64000,
+              },
             },
           },
         },
       },
-      model: "cliproxyapi/gpt-4.1-free",
+      model: "9router/openai/gpt-4.1-free",
       env: {
         OPENAI_API_KEY: "<set-locally>",
       },
@@ -169,9 +187,18 @@ describe("/api/opencode/bundle/preview", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.body.opencode.provider.cliproxyapi.models).toEqual({
-      "claude-3.7-sonnet-free": {
-        name: "Claude 3.7 Sonnet Free",
+    expect(response.body.opencode.provider["9router"].models).toEqual({
+      "anthropic/claude-3.7-sonnet-free": {
+        name: "anthropic/claude-3.7-sonnet-free",
+        attachment: true,
+        modalities: {
+          input: ["text", "image"],
+          output: ["text"],
+        },
+        limit: {
+          context: 200000,
+          output: 32000,
+        },
       },
     });
   });
@@ -224,35 +251,35 @@ describe("/api/opencode/bundle/preview", () => {
     expect(response.status).toBe(200);
     expect(response.body.opencode).toEqual(expect.any(Object));
     expect(response.body.ohMyOpencode).toEqual({
-        $schema:
-          "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/main/assets/oh-my-opencode.schema.json",
-        agents: {
-          explorer: { model: expect.stringMatching(/^cliproxyapi\//) },
-          sisyphus: { model: expect.stringMatching(/^cliproxyapi\//) },
-          oracle: { model: expect.stringMatching(/^cliproxyapi\//) },
-          librarian: { model: expect.stringMatching(/^cliproxyapi\//) },
-          prometheus: { model: expect.stringMatching(/^cliproxyapi\//) },
-          atlas: { model: expect.stringMatching(/^cliproxyapi\//) },
-        },
-        categories: {
-          deep: { model: expect.stringMatching(/^cliproxyapi\//) },
-          quick: { model: expect.stringMatching(/^cliproxyapi\//) },
-          "visual-engineering": { model: expect.stringMatching(/^cliproxyapi\//) },
-          writing: { model: expect.stringMatching(/^cliproxyapi\//) },
-          artistry: { model: expect.stringMatching(/^cliproxyapi\//) },
-        },
-        auto_update: false,
-        background_task: {
-          defaultConcurrency: 5,
-        },
-        sisyphus_agent: {
-          planner_enabled: true,
-          replace_plan: true,
-        },
-        git_master: {
-          commit_footer: false,
-          include_co_authored_by: false,
-        },
+      $schema:
+        "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/main/assets/oh-my-opencode.schema.json",
+      agents: {
+        explorer: { model: "9router/anthropic/claude-3.7-sonnet" },
+        sisyphus: { model: "9router/openai/gpt-4.1" },
+        oracle: { model: "9router/openai/gpt-4.1" },
+        librarian: { model: "9router/anthropic/claude-3.7-sonnet" },
+        prometheus: { model: "9router/openai/gpt-4.1" },
+        atlas: { model: "9router/anthropic/claude-3.7-sonnet" },
+      },
+      categories: {
+        deep: { model: "9router/openai/gpt-4.1" },
+        quick: { model: "9router/anthropic/claude-3.7-sonnet" },
+        "visual-engineering": { model: "9router/anthropic/claude-3.7-sonnet" },
+        writing: { model: "9router/openai/gpt-4.1" },
+        artistry: { model: "9router/xai/grok-3-mini" },
+      },
+      auto_update: false,
+      background_task: {
+        defaultConcurrency: 5,
+      },
+      sisyphus_agent: {
+        planner_enabled: true,
+        replace_plan: true,
+      },
+      git_master: {
+        commit_footer: false,
+        include_co_authored_by: false,
+      },
     });
   });
 
@@ -270,7 +297,7 @@ describe("/api/opencode/bundle/preview", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    expect(response.body.opencode.provider.cliproxyapi.options.apiKey).toBe("sk-cliproxyapi-placeholder");
+    expect(response.body.opencode.provider["9router"].options.apiKey).toBe("sk_9router");
     expect(response.body.opencode.env).toEqual({ OPENAI_API_KEY: "<set-locally>" });
   });
 

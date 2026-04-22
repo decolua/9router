@@ -44,15 +44,24 @@ const DEFAULT_SETTINGS = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
-  quotaScheduler: normalizeQuotaSchedulerSettings(),
+  quotaExhaustedThresholdPercent: 10,
   rtkEnabled: false,
 };
+
+function normalizeQuotaExhaustedThresholdPercent(value) {
+  if (!Number.isFinite(value)) return DEFAULT_SETTINGS.quotaExhaustedThresholdPercent;
+  return Math.min(100, Math.max(0, value));
+}
 
 function mergeSettingsWithDefaults(settings = {}) {
   const merged = {
     ...DEFAULT_SETTINGS,
     ...(settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {}),
   };
+
+  merged.quotaExhaustedThresholdPercent = normalizeQuotaExhaustedThresholdPercent(
+    settings?.quotaExhaustedThresholdPercent
+  );
 
   merged.quotaScheduler = {
     ...normalizeQuotaSchedulerSettings(
@@ -75,7 +84,7 @@ function cloneDefaultData() {
     mitmAlias: {},
     combos: [],
     apiKeys: [],
-    settings: { ...DEFAULT_SETTINGS },
+    settings: mergeSettingsWithDefaults({}),
     pricing: {},
   };
 }
@@ -93,8 +102,8 @@ export function getConnectionStatusSummary(connections = []) {
 
   for (const connection of connections || []) {
     const status = getConnectionEffectiveStatus(connection);
-    if (status === "active" || status === "success") summary.connected += 1;
-    else if (status === "error" || status === "expired" || status === "unavailable") summary.error += 1;
+    if (status === "eligible") summary.connected += 1;
+    else if (status === "blocked" || status === "exhausted") summary.error += 1;
     else summary.unknown += 1;
   }
 

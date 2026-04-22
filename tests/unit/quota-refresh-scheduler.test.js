@@ -26,8 +26,8 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/lib/quotaRefreshPlanner", () => ({
   normalizeQuotaSchedulerSettings: (settings = {}) => ({
-    enabled: settings.enabled ?? false,
-    cadenceMs: settings.cadenceMs ?? 300000,
+    enabled: settings.enabled ?? true,
+    cadenceMs: settings.cadenceMs ?? 900000,
     successTtlMs: settings.successTtlMs ?? 900000,
     errorTtlMs: settings.errorTtlMs ?? 300000,
     exhaustedTtlMs: settings.exhaustedTtlMs ?? 60000,
@@ -155,6 +155,7 @@ describe("quotaRefreshScheduler", () => {
     const { QuotaRefreshScheduler } = await import("../../src/lib/quotaRefreshScheduler.js");
     const scheduler = new QuotaRefreshScheduler({
       getSettingsFn: async () => ({
+        quotaExhaustedThresholdPercent: 32,
         quotaScheduler: {
           enabled: true,
           cadenceMs: 5000,
@@ -179,6 +180,13 @@ describe("quotaRefreshScheduler", () => {
         cadenceMs: 5000,
         enabled: true,
       }),
+      resolvedConfig: {
+        quotaScheduler: expect.objectContaining({
+          cadenceMs: 5000,
+          enabled: true,
+        }),
+        quotaExhaustedThresholdPercent: 32,
+      },
       nextScheduledAt: "2026-04-21T12:00:05.000Z",
     });
   });
@@ -199,6 +207,30 @@ describe("quotaRefreshScheduler", () => {
         started: false,
         enabled: false,
         nextScheduledAt: null,
+      }),
+    });
+  });
+
+  it("defaults scheduler to enabled when settings omit quotaScheduler", async () => {
+    const setTimeoutFn = vi.fn(() => ({ unref: vi.fn() }));
+
+    const { QuotaRefreshScheduler } = await import("../../src/lib/quotaRefreshScheduler.js");
+    const scheduler = new QuotaRefreshScheduler({
+      getSettingsFn: async () => ({}),
+      setTimeoutFn,
+      clearTimeoutFn: vi.fn(),
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+    });
+
+    await scheduler.start();
+
+    expect(setTimeoutFn).toHaveBeenCalledTimes(1);
+    await expect(scheduler.getStatusSnapshot()).resolves.toMatchObject({
+      started: true,
+      enabled: true,
+      settings: expect.objectContaining({
+        enabled: true,
+        cadenceMs: 900000,
       }),
     });
   });

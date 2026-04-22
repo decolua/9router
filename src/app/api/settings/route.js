@@ -6,19 +6,30 @@ import { readRuntimeConfig } from "@/lib/runtimeConfig";
 import { setRtkEnabled } from "open-sse/rtk/flag.js";
 import bcrypt from "bcryptjs";
 
+const DEFAULT_QUOTA_EXHAUSTED_THRESHOLD_PERCENT = 10;
+
+function resolveQuotaExhaustedThresholdPercent(value) {
+  if (!Number.isFinite(value)) return DEFAULT_QUOTA_EXHAUSTED_THRESHOLD_PERCENT;
+  return Math.min(100, Math.max(0, value));
+}
+
 export async function GET() {
   try {
     const settings = await getSettings();
     const { password, ...safeSettings } = settings;
-    
+    const quotaExhaustedThresholdPercent = resolveQuotaExhaustedThresholdPercent(
+      settings?.quotaExhaustedThresholdPercent
+    );
+
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
+
     const runtimeConfig = await readRuntimeConfig();
     const redis = runtimeConfig.redis || {};
 
-    return NextResponse.json({ 
-      ...safeSettings, 
+    return NextResponse.json({
+      ...safeSettings,
+      quotaExhaustedThresholdPercent,
       enableRequestLogs,
       enableTranslator,
       hasPassword: !!password,
@@ -69,12 +80,12 @@ export async function PATCH(request) {
 
     const settings = await updateSettings(body);
 
-    if (
+    const shouldRefreshQuotaScheduler = (
       Object.prototype.hasOwnProperty.call(body, "quotaScheduler")
-      && body.quotaScheduler
-      && typeof body.quotaScheduler === "object"
-      && !Array.isArray(body.quotaScheduler)
-    ) {
+      || Object.prototype.hasOwnProperty.call(body, "quotaExhaustedThresholdPercent")
+    );
+
+    if (shouldRefreshQuotaScheduler) {
       await getQuotaRefreshScheduler().refreshSchedule("settings_update");
     }
 
