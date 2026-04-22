@@ -114,10 +114,11 @@ export class GithubExecutor extends BaseExecutor {
     return !/gpt-5\.4/i.test(model);
   }
 
-  // GitHub Copilot /chat/completions doesn't support thinking/reasoning_effort.
-  // OpenClaw sends thinking: { type: "enabled" } for Claude models which causes 400.
-  supportsThinking() {
-    return false;
+  // GitHub Copilot /chat/completions rejects Claude-style thinking payloads
+  // (OpenClaw sends thinking: { type: "enabled" } → upstream 400).
+  // GPT-5 family on Copilot DOES honor reasoning_effort, so only strip for Claude. (#713)
+  supportsThinking(model) {
+    return !/claude/i.test(model);
   }
 
   transformRequest(model, body, stream, credentials) {
