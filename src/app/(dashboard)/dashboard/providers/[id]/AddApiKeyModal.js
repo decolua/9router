@@ -7,15 +7,29 @@ import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
 
+  const isAzure = provider === "azure";
+
   const [formData, setFormData] = useState({
     name: "",
     apiKey: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
   });
+  const [azureData, setAzureData] = useState({
+    azureEndpoint: "",
+    apiVersion: "2024-10-01-preview",
+    deployment: "",
+    organization: "",
+  });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  const validatePayload = () => {
+    const payload = { provider, apiKey: formData.apiKey };
+    if (isAzure) payload.providerSpecificData = azureData;
+    return payload;
+  };
 
   const handleValidate = async () => {
     setValidating(true);
@@ -23,7 +37,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+        body: JSON.stringify(validatePayload()),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -46,7 +60,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
+          body: JSON.stringify(validatePayload()),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -63,7 +77,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: undefined
+        providerSpecificData: isAzure ? {
+          azureEndpoint: azureData.azureEndpoint,
+          apiVersion: azureData.apiVersion,
+          deployment: azureData.deployment,
+          organization: azureData.organization,
+        } : undefined
       });
     } finally {
       setSaving(false);
@@ -108,6 +127,38 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             }
           </p>
         )}
+        {isAzure && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="Azure Endpoint"
+                value={azureData.azureEndpoint}
+                onChange={(e) => setAzureData({ ...azureData, azureEndpoint: e.target.value })}
+                placeholder="https://your-resource.openai.azure.com"
+              />
+              <Input
+                label="Deployment Name"
+                value={azureData.deployment}
+                onChange={(e) => setAzureData({ ...azureData, deployment: e.target.value })}
+                placeholder="gpt-4"
+              />
+              <Input
+                label="API Version"
+                value={azureData.apiVersion}
+                onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
+                placeholder="2024-10-01-preview"
+              />
+              <Input
+                label="Organization"
+                value={azureData.organization}
+                onChange={(e) => setAzureData({ ...azureData, organization: e.target.value })}
+                placeholder="Organization ID"
+              />
+            </div>
+          </div>
+        )}
+
         <Input
           label="Priority"
           type="number"
@@ -137,7 +188,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
+          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
