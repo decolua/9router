@@ -1,6 +1,6 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -105,6 +105,20 @@ export async function GET() {
       console.log("Could not fetch combos");
     }
 
+    let customModels = [];
+    try {
+      customModels = await getCustomModels();
+    } catch (e) {
+      console.log("Could not fetch custom models");
+    }
+
+    let modelAliases = {};
+    try {
+      modelAliases = await getModelAliases();
+    } catch (e) {
+      console.log("Could not fetch model aliases");
+    }
+
     // Build first active connection per provider (connections already sorted by priority)
     const activeConnectionByProvider = new Map();
     for (const conn of connections) {
@@ -145,6 +159,26 @@ export async function GET() {
             parent: null,
           });
         }
+      }
+
+      // Also include custom LLM models when no active connections are available.
+      for (const customModel of customModels) {
+        if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
+        const providerAlias = customModel.providerAlias;
+        if (!providerAlias) continue;
+
+        const modelId = String(customModel.id).trim();
+        if (!modelId) continue;
+
+        models.push({
+          id: `${providerAlias}/${modelId}`,
+          object: "model",
+          created: timestamp,
+          owned_by: providerAlias,
+          permission: [],
+          root: modelId,
+          parent: null,
+        });
       }
     } else {
       for (const [providerId, conn] of activeConnectionByProvider.entries()) {
@@ -193,7 +227,41 @@ export async function GET() {
           })
           .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-        for (const modelId of modelIds) {
+        const customModelIds = customModels
+          .filter((m) => {
+            if (!m?.id || (m.type && m.type !== "llm")) return false;
+            const alias = m.providerAlias;
+            return alias === staticAlias || alias === outputAlias || alias === providerId;
+          })
+          .map((m) => String(m.id).trim())
+          .filter((modelId) => modelId !== "");
+
+        const aliasModelIds = Object.values(modelAliases || {})
+          .filter((fullModel) => {
+            if (typeof fullModel !== "string" || !fullModel.includes("/")) return false;
+            return (
+              fullModel.startsWith(`${outputAlias}/`) ||
+              fullModel.startsWith(`${staticAlias}/`) ||
+              fullModel.startsWith(`${providerId}/`)
+            );
+          })
+          .map((fullModel) => {
+            if (fullModel.startsWith(`${outputAlias}/`)) {
+              return fullModel.slice(outputAlias.length + 1);
+            }
+            if (fullModel.startsWith(`${staticAlias}/`)) {
+              return fullModel.slice(staticAlias.length + 1);
+            }
+            if (fullModel.startsWith(`${providerId}/`)) {
+              return fullModel.slice(providerId.length + 1);
+            }
+            return fullModel;
+          })
+          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+
+        const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+
+        for (const modelId of mergedModelIds) {
           models.push({
             id: `${outputAlias}/${modelId}`,
             object: "model",
@@ -207,9 +275,17 @@ export async function GET() {
       }
     }
 
+    const dedupedModels = [];
+    const seenModelIds = new Set();
+    for (const model of models) {
+      if (!model?.id || seenModelIds.has(model.id)) continue;
+      seenModelIds.add(model.id);
+      dedupedModels.push(model);
+    }
+
     return Response.json({
       object: "list",
-      data: models,
+      data: dedupedModels,
     }, {
       headers: {
         "Access-Control-Allow-Origin": "*",
