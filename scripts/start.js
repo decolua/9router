@@ -30,7 +30,11 @@ async function main() {
     await writeRuntimeConfig(runtimeConfig);
   }
 
-  let redisUrl = args.redisUrl || getRedisUrlFromConfig(runtimeConfig) || env.REDIS_URL || "";
+  let redisUrl = resolveRedisUrl({
+    cliRedisUrl: args.redisUrl,
+    configRedisUrl: getRedisUrlFromConfig(runtimeConfig),
+    envRedisUrl: env.REDIS_URL,
+  });
   const redisStatus = await probeRedis(redisUrl);
 
   runtimeConfig = setRedisStatus(runtimeConfig, {
@@ -284,6 +288,10 @@ function parseArgs(argv) {
   return result;
 }
 
+function resolveRedisUrl({ cliRedisUrl = "", configRedisUrl = "", envRedisUrl = "" } = {}) {
+  return cliRedisUrl || configRedisUrl || envRedisUrl || "redis://127.0.0.1:6379";
+}
+
 async function probeRedis(redisUrl) {
   if (!redisUrl) {
     return { ready: false, error: "no redis url" };
@@ -368,7 +376,23 @@ async function askSecret(question) {
   }
 }
 
-main().catch((error) => {
-  console.error("[start] Failed to bootstrap server:", error);
-  exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("[start] Failed to bootstrap server:", error);
+    exit(1);
+  });
+}
+
+module.exports = {
+  askPassword,
+  askSecret,
+  askYesNo,
+  hasStandaloneRuntime,
+  isPortAvailable,
+  main,
+  normalizeRedisUrl,
+  parseArgs,
+  probeRedis,
+  resolveRedisUrl,
+  syncStandaloneAssets,
+};
