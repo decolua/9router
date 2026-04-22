@@ -117,7 +117,7 @@ export const CLI_TOOLS = {
   pi: {
     id: "pi",
     name: "Pi",
-    image: "/providers/pi.png",
+    image: "/providers/pi.svg",
     color: "#6366F1",
     description: "Pi Coding Agent",
     configType: "custom",
