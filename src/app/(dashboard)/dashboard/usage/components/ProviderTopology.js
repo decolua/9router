@@ -9,6 +9,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
 
 function getProviderConfig(providerId) {
   return AI_PROVIDERS[providerId] || { color: "#6b7280", name: providerId };
@@ -16,7 +17,7 @@ function getProviderConfig(providerId) {
 
 // Use local provider images from /public/providers/
 function getProviderImageUrl(providerId) {
-  return `/providers/${providerId}.png`;
+  return getProviderAssetPath(providerId);
 }
 
 // Custom provider node - rectangle with image + name

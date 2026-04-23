@@ -9,6 +9,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -548,12 +549,14 @@ export default function ProviderDetailPage() {
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getHeaderIconPath = () => {
     if (isOpenAICompatible && providerInfo.apiType) {
-      return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+      return getProviderAssetPath(
+        providerInfo.apiType === "responses" ? "oai-r" : "oai-cc",
+      );
     }
     if (isAnthropicCompatible) {
-      return "/providers/anthropic-m.png";
+      return getProviderAssetPath("anthropic-m");
     }
-    return `/providers/${providerInfo.id}.png`;
+    return getProviderAssetPath(providerInfo.id);
   };
 
   return (

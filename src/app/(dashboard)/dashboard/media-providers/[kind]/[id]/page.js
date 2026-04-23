@@ -8,6 +8,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
 import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/ConnectionsCard";
 import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
@@ -1051,7 +1052,7 @@ export default function MediaProviderDetailPage() {
         <div className="flex items-center gap-4">
           <div className="size-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${provider.color}15` }}>
             <ProviderIcon
-              src={`/providers/${provider.id}.png`}
+              src={getProviderAssetPath(provider.id)}
               alt={provider.name}
               size={48}
               className="object-contain rounded-lg max-w-[48px] max-h-[48px]"

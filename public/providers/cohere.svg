@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_레이어_2" data-name="레이어 2" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 19.51 20">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: none;
+      }
+
+      .cls-2 {
+        fill: #355146;
+      }
+
+      .cls-2, .cls-3 {
+        fill-rule: evenodd;
+      }
+
+      .cls-4 {
+        fill: #ff7759;
+      }
+
+      .cls-3 {
+        fill: #d18ee2;
+      }
+
+      .cls-5 {
+        clip-path: url(#clippath);
+      }
+    </style>
+    <clipPath id="clippath">
+      <rect class="cls-1" width="19.51" height="20"/>
+    </clipPath>
+  </defs>
+  <g id="_레이어_1-2" data-name="레이어 1">
+    <g class="cls-5">
+      <g>
+        <path class="cls-2" d="M6.32,11.91c.53,0,1.57-.03,3.01-.64,1.68-.71,5.03-2,7.44-3.32,1.69-.93,2.43-2.15,2.43-3.8,0-2.29-1.81-4.15-4.04-4.15H5.81C2.6,0,0,2.67,0,5.95s2.43,5.95,6.32,5.95"/>
+        <path class="cls-3" d="M7.9,16.01c0-1.61.95-3.06,2.4-3.68l2.95-1.25c2.98-1.27,6.26.98,6.26,4.29,0,2.56-2.03,4.64-4.53,4.64h-3.19c-2.15,0-3.89-1.79-3.89-3.99"/>
+        <path class="cls-4" d="M3.35,12.69c-1.85,0-3.35,1.54-3.35,3.43v.44c0,1.9,1.5,3.43,3.35,3.43s3.35-1.54,3.35-3.43v-.44c0-1.9-1.5-3.43-3.35-3.43"/>
+      </g>
+    </g>
+  </g>
+</svg>
