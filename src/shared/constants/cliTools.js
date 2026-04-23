@@ -212,6 +212,14 @@ export const CLI_TOOLS = {
 }`,
     },
   },
+  hermes: {
+    id: "hermes",
+    name: "Hermes Agent",
+    image: "/providers/hermes.png",
+    color: "#8B5CF6",
+    description: "Nous Research self-improving AI agent",
+    configType: "custom",
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",

@@ -3,7 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -54,11 +54,11 @@ export class KiroExecutor extends BaseExecutor {
       }, proxyOptions);
 
       // Check if should retry based on status code
-      const maxRetries = retryConfig[response.status] || 0;
+      const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
       if (!response.ok && maxRetries > 0 && retryAttempts < maxRetries) {
         retryAttempts++;
-        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-        await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+        log?.debug?.("RETRY", `${response.status} retry ${retryAttempts}/${maxRetries} after ${delayMs / 1000}s`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
         continue;
       }
 
