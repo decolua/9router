@@ -37,6 +37,14 @@ const DEFAULT_SETTINGS = {
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
   rtkEnabled: false,
+  tokenScheduler: {
+    enabled: true,
+    checkIntervalMs: 30 * 60 * 1000,
+    preRefreshWindowMs: 60 * 60 * 1000,
+    totalRecovered: 0,
+    totalFailed: 0,
+    recoveryLog: [],
+  },
 };
 
 function cloneDefaultData() {

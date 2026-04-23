@@ -17,6 +17,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import AutoLoginModal from "./AutoLoginModal";
+import TokenSchedulerPanel from "./TokenSchedulerPanel";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -970,6 +971,11 @@ export default function ProviderDetailPage() {
             </>
           )}
         </Card>
+      )}
+
+      {/* Token Scheduler — Antigravity only */}
+      {providerId === "antigravity" && connections.length > 0 && (
+        <TokenSchedulerPanel />
       )}
 
       {/* Models */}

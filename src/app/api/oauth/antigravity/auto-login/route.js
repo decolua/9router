@@ -3,6 +3,7 @@ import { createProviderConnection } from "@/models";
 import { ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
 import { generateAuthData, exchangeTokens } from "@/lib/oauth/providers";
 import { headlessGoogleLogin } from "@/lib/puppeteer/antigravityLogin";
+import { encryptCredentials } from "@/lib/crypto";
 
 export const runtime = "nodejs";
 
@@ -346,6 +347,16 @@ async function processAccount(account, workerId, browser, onLog = () => {}) {
     }
 
     onLog(account.index, result.email, "Creating provider connection...");
+
+    // Store encrypted credentials for auto-recovery if password was used
+    const providerSpecificData = {};
+    if (account.password) {
+      providerSpecificData.encryptedCredentials = encryptCredentials({
+        email,
+        password: account.password,
+      });
+    }
+
     const connection = await createProviderConnection({
       provider: "antigravity",
       authType: "oauth",
@@ -359,6 +370,7 @@ async function processAccount(account, workerId, browser, onLog = () => {}) {
       email,
       projectId,
       testStatus: "active",
+      providerSpecificData,
     });
 
     result.status = "success";
