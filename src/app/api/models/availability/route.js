@@ -20,31 +20,62 @@ function getConnectionName(connection) {
   return connection.name || connection.email || connection.id;
 }
 
-function getAvailabilityEntries(connection) {
+function getProviderWideAvailabilityState(connection) {
   const statusDetails = getConnectionStatusDetails(connection);
-  const providerCooldownUntil = getConnectionProviderCooldownUntil(connection);
-  const providerSurfaceStatus = statusDetails.source?.startsWith("legacy-")
-    ? "unknown"
-    : statusDetails.status;
+  const cooldownUntil = getConnectionProviderCooldownUntil(connection);
+  const providerStatus = statusDetails.status;
+  const hasModelLocks = (statusDetails.activeModelLocks || []).length > 0;
+  const hasTimedCooldown = Boolean(cooldownUntil);
+  const hasRoutingStatusLock = ["blocked", "exhausted"].includes(connection?.routingStatus);
+  const hasQuotaStateLock = ["blocked", "exhausted"].includes(connection?.quotaState);
+  const hasProviderStatusLock = providerStatus === "blocked" || providerStatus === "exhausted";
+  const hasProviderWideStatusEntry = hasProviderStatusLock;
+  const canClearAll = hasTimedCooldown || hasRoutingStatusLock || hasQuotaStateLock || hasModelLocks;
 
-  const modelEntries = (statusDetails.activeModelLocks || []).map((lock) => ({
+  return {
+    statusDetails,
+    providerStatus,
+    cooldownUntil,
+    hasModelLocks,
+    hasTimedCooldown,
+    hasRoutingStatusLock,
+    hasQuotaStateLock,
+    hasProviderWideStatusEntry,
+    canClearAll,
+    clearPatch: {
+      ...(hasRoutingStatusLock
+        ? { routingStatus: null }
+        : {}),
+      ...(hasQuotaStateLock
+        ? { quotaState: null }
+        : {}),
+      nextRetryAt: null,
+      resetAt: null,
+    },
+  };
+}
+
+function getAvailabilityEntries(connection) {
+  const availability = getProviderWideAvailabilityState(connection);
+
+  const modelEntries = (availability.statusDetails.activeModelLocks || []).map((lock) => ({
     provider: connection.provider,
     model: lock.model,
     status: "cooldown",
     until: lock.until,
     connectionId: connection.id,
     connectionName: getConnectionName(connection),
-    lastError: connection.lastError || connection.reasonDetail || null,
+    lastError: connection.reasonDetail || null,
   }));
 
   const entries = [...modelEntries];
 
-  if (["blocked", "exhausted"].includes(providerSurfaceStatus)) {
+  if (availability.hasProviderWideStatusEntry) {
     entries.unshift({
       provider: connection.provider,
       model: "__all",
-      status: providerSurfaceStatus,
-      until: providerSurfaceStatus === "exhausted" ? (providerCooldownUntil || undefined) : undefined,
+      status: availability.providerStatus,
+      until: availability.providerStatus === "exhausted" ? (availability.cooldownUntil || undefined) : undefined,
       connectionId: connection.id,
       connectionName: getConnectionName(connection),
       lastError: connection.reasonDetail || null,
@@ -58,35 +89,19 @@ function buildCooldownClearPatch(connection, model) {
   const patch = {};
 
   if (model === "__all") {
+    const availability = getProviderWideAvailabilityState(connection);
+
     for (const key of Object.keys(connection || {})) {
       if (key.startsWith(MODEL_LOCK_PREFIX)) patch[key] = null;
     }
-    patch.nextRetryAt = null;
-    patch.resetAt = null;
 
-    if (["exhausted", "blocked"].includes(connection?.routingStatus)) {
-      patch.routingStatus = null;
-    }
-
-    if (["exhausted", "blocked"].includes(connection?.quotaState)) {
-      patch.quotaState = null;
-    }
+    Object.assign(patch, availability.clearPatch);
 
     return patch;
   }
 
   patch[`${MODEL_LOCK_PREFIX}${model}`] = null;
   return patch;
-}
-
-function hasProviderWideCooldownState(connection) {
-  return Boolean(
-    getFutureTimestamp(connection?.nextRetryAt)
-    || getFutureTimestamp(connection?.resetAt)
-    || connection?.routingStatus === "exhausted"
-    || connection?.routingStatus === "blocked"
-    || ["exhausted", "blocked"].includes(connection?.quotaState),
-  );
 }
 
 export async function GET() {
@@ -125,11 +140,11 @@ export async function POST(request) {
     await Promise.all(
       connections
         .filter((connection) => {
-          const statusDetails = getConnectionStatusDetails(connection);
+          const availability = getProviderWideAvailabilityState(connection);
           if (model === "__all") {
-            return hasProviderWideCooldownState(connection) || (statusDetails.activeModelLocks || []).length > 0;
+            return availability.canClearAll;
           }
-          return (statusDetails.activeModelLocks || []).some((lock) => lock.key === lockKey);
+          return (availability.statusDetails.activeModelLocks || []).some((lock) => lock.key === lockKey);
         })
         .map((connection) => {
           const clearPatch = buildCooldownClearPatch(connection, model);

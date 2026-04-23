@@ -11,20 +11,6 @@ const getUsageForProvider = vi.fn(async () => ({ ok: true }));
 const writeConnectionHotState = vi.fn(async ({ patch }) => patch);
 const needsRefresh = vi.fn(() => false);
 const refreshCredentials = vi.fn(async () => null);
-const projectLegacyConnectionState = vi.fn((snapshot = {}) => ({
-  testStatus:
-    snapshot.routingStatus === "exhausted"
-      ? "unavailable"
-      : snapshot.routingStatus === "blocked"
-        ? (snapshot.reasonCode && snapshot.reasonCode.startsWith("auth_") ? "expired" : "error")
-        : "active",
-  lastTested: snapshot.lastCheckedAt || null,
-  lastError: snapshot.reasonDetail ?? snapshot.lastError ?? null,
-  lastErrorType: snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : snapshot.lastErrorType ?? null,
-  lastErrorAt: snapshot.lastErrorAt ?? null,
-  rateLimitedUntil: snapshot.nextRetryAt ?? snapshot.rateLimitedUntil ?? null,
-  errorCode: snapshot.errorCode ?? (snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : null),
-}));
 const runUsageRefreshJob = vi.fn(async (_connectionId, handler) => handler());
 
 vi.mock("next/server", () => ({
@@ -45,7 +31,6 @@ vi.mock("@/lib/localDb", () => ({
 
 vi.mock("@/lib/providerHotState", () => ({
   writeConnectionHotState,
-  projectLegacyConnectionState,
 }));
 
 vi.mock("open-sse/services/usage.js", () => ({
@@ -75,7 +60,6 @@ describe("usage request status sync", () => {
     getProviderConnections.mockClear();
     getUsageForProvider.mockClear();
     writeConnectionHotState.mockClear();
-    projectLegacyConnectionState.mockClear();
     needsRefresh.mockClear();
     refreshCredentials.mockClear();
     needsRefresh.mockImplementation(() => false);
@@ -310,6 +294,31 @@ describe("usage request status sync", () => {
     expect(updateProviderConnection).not.toHaveBeenCalled();
   });
 
+  it("never mirrors canonical status back into legacy fields", async () => {
+    writeConnectionHotState.mockResolvedValueOnce({
+      routingStatus: "blocked",
+      authState: "invalid",
+      testStatus: "expired",
+      rateLimitedUntil: "2099-01-01T00:00:00.000Z",
+    });
+
+    const { syncUsageStatus } = await import("../../src/lib/usageStatus.js");
+
+    const result = await syncUsageStatus({ id: "conn-1", provider: "codex" }, {
+      routingStatus: "blocked",
+      authState: "invalid",
+      testStatus: "expired",
+      rateLimitedUntil: "2099-01-01T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({
+      routingStatus: "blocked",
+      authState: "invalid",
+    });
+    expect(result).not.toHaveProperty("testStatus");
+    expect(result).not.toHaveProperty("rateLimitedUntil");
+  });
+
   it("marks codex as exhausted when remaining falls below the default global threshold", async () => {
     const { applyCanonicalUsageRefresh } = await import("../../src/lib/usageStatus.js");
 
@@ -401,6 +410,39 @@ describe("usage request status sync", () => {
       }),
     }));
     expect(updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("uses remaining and total to derive Kiro threshold exhaustion when used is absent", async () => {
+    const { applyCanonicalUsageRefresh } = await import("../../src/lib/usageStatus.js");
+
+    await applyCanonicalUsageRefresh(
+      {
+        id: "conn-kiro-remaining-total",
+        provider: "kiro",
+        providerSpecificData: { minimumRemainingQuotaPercent: 25 },
+      },
+      {
+        plan: "Kiro",
+        quotas: {
+          agentic_request: {
+            remaining: 20,
+            total: 100,
+            resetAt: "2026-04-25T00:00:00.000Z",
+          },
+        },
+      }
+    );
+
+    expect(writeConnectionHotState).toHaveBeenCalledWith(expect.objectContaining({
+      connectionId: "conn-kiro-remaining-total",
+      provider: "kiro",
+      patch: expect.objectContaining({
+        routingStatus: "exhausted",
+        quotaState: "exhausted",
+        reasonCode: "quota_threshold",
+        nextRetryAt: "2026-04-25T00:00:00.000Z",
+      }),
+    }));
   });
 
   it("still blocks Kiro connections on explicit non-threshold exhaustion signals", async () => {

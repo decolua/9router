@@ -74,6 +74,22 @@ afterEach(async () => {
 });
 
 describe("localDb provider connection status writes", () => {
+  it("summarizes canonical statuses without legacy-source fallback", async () => {
+    const { localDb } = await loadModulesWithTempDataDir();
+
+    expect(localDb.getConnectionStatusSummary([
+      { routingStatus: "eligible", quotaState: "ok", authState: "ok", healthStatus: "healthy" },
+      { authState: "invalid", routingStatus: "eligible" },
+      { testStatus: "active" },
+    ])).toEqual({
+      connected: 1,
+      error: 1,
+      unknown: 1,
+      total: 3,
+      allDisabled: false,
+    });
+  });
+
   it("does not persist legacy status fields during create upsert normalization", async () => {
     const { dataDir, localDb } = await loadModulesWithTempDataDir();
 
@@ -90,7 +106,7 @@ describe("localDb provider connection status writes", () => {
       provider: "provider-upsert",
       authType: "apikey",
       name: "Same Name",
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "expired",
       reasonCode: "auth_invalid",
       lastCheckedAt: "2026-04-22T12:00:00.000Z",
@@ -106,7 +122,7 @@ describe("localDb provider connection status writes", () => {
     expect(upserted.id).toBe(created.id);
     expect(upserted).toMatchObject({
       id: created.id,
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "expired",
       reasonCode: "auth_invalid",
       lastCheckedAt: "2026-04-22T12:00:00.000Z",
@@ -122,7 +138,7 @@ describe("localDb provider connection status writes", () => {
     const persisted = (await readDbJson(dataDir)).providerConnections.find((c) => c.id === created.id);
     expect(persisted).toMatchObject({
       id: created.id,
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "expired",
       reasonCode: "auth_invalid",
       lastCheckedAt: "2026-04-22T12:00:00.000Z",
@@ -152,7 +168,7 @@ describe("localDb provider connection status writes", () => {
     });
 
     await localDb.updateProviderConnection(created.id, {
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "expired",
       reasonCode: "auth_invalid",
       lastCheckedAt: "2026-04-22T12:00:00.000Z",
@@ -166,7 +182,7 @@ describe("localDb provider connection status writes", () => {
     const persisted = (await readDbJson(dataDir)).providerConnections.find((c) => c.id === created.id);
     expect(persisted).toMatchObject({
       id: created.id,
-      routingStatus: "blocked_auth",
+      routingStatus: "blocked",
       authState: "expired",
       reasonCode: "auth_invalid",
       lastCheckedAt: "2026-04-22T12:00:00.000Z",
@@ -196,7 +212,7 @@ describe("localDb provider connection status writes", () => {
     await localDb.updateProviderConnection(created.id, {
       apiKey: "new-secret",
       name: "After mixed update",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: "2026-04-22T12:00:00.000Z",
       testStatus: "unavailable",
@@ -207,11 +223,47 @@ describe("localDb provider connection status writes", () => {
       id: created.id,
       name: "After mixed update",
       apiKey: "new-secret",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: "2026-04-22T12:00:00.000Z",
     });
     expect(persisted).not.toHaveProperty("testStatus", "unavailable");
     expect(persisted).not.toHaveProperty("rateLimitedUntil", "2026-04-22T12:00:00.000Z");
+  });
+
+  it("drops legacy top-level routing statuses during localDb writes while keeping canonical details", async () => {
+    const { dataDir, localDb } = await loadModulesWithTempDataDir();
+
+    const created = await localDb.createProviderConnection({
+      provider: "provider-canonicalize-routing",
+      authType: "apikey",
+      name: "Canonicalize Routing",
+      apiKey: "secret",
+      routingStatus: "blocked_quota",
+      quotaState: "exhausted",
+      nextRetryAt: "2026-04-22T12:00:00.000Z",
+    });
+
+    expect(created).toMatchObject({
+      quotaState: "exhausted",
+      nextRetryAt: "2026-04-22T12:00:00.000Z",
+    });
+    expect(created).not.toHaveProperty("routingStatus");
+
+    await localDb.updateProviderConnection(created.id, {
+      routingStatus: "blocked_health",
+      healthStatus: "unhealthy",
+      reasonCode: "upstream_unhealthy",
+      reasonDetail: "Provider health check failed",
+    });
+
+    const persisted = (await readDbJson(dataDir)).providerConnections.find((c) => c.id === created.id);
+    expect(persisted).toMatchObject({
+      id: created.id,
+      healthStatus: "unhealthy",
+      reasonCode: "upstream_unhealthy",
+      reasonDetail: "Provider health check failed",
+    });
+    expect(persisted).not.toHaveProperty("routingStatus");
   });
 });

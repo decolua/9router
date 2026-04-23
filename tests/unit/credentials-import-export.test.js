@@ -82,46 +82,251 @@ describe("credentials import/export canonical transport", () => {
     }
   });
 
-  it("imports legacy payloads by translating to canonical-only state", async () => {
+  it("rejects import payloads that contain legacy status fields", async () => {
     getProviderConnections.mockResolvedValue([]);
 
     const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
-    const payload = {
-      format: "universal-credentials",
-      entries: [
-        {
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
           provider: "codex",
           authType: "oauth",
           accessToken: "legacy-access",
           testStatus: "unavailable",
-          lastErrorType: "token_expired",
-          rateLimitedUntil: "2099-04-20T11:00:00.000Z",
-        },
-      ],
-    };
-
-    const importResponse = await importPOST(new Request("http://localhost/api/credentials/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+        }],
+      }),
     }));
 
-    expect(importResponse.status).toBe(200);
-    expect(createProviderConnection).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ errorCode: "INVALID_LEGACY_STATUS_FIELDS" });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
 
-    const [created] = createProviderConnection.mock.calls[0];
-    expect(created).toMatchObject({
+  it("rejects import payloads that contain snake_case legacy status fields", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "oauth",
+          accessToken: "legacy-access",
+          test_status: "unavailable",
+          last_error_at: "2026-04-23T00:00:00.000Z",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      errorCode: "INVALID_LEGACY_STATUS_FIELDS",
+      legacyFields: ["test_status", "last_error_at"],
+    });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("rejects import payloads that contain lastErrorAt legacy status fields", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "oauth",
+          accessToken: "legacy-access",
+          lastErrorAt: "2026-04-23T00:00:00.000Z",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      errorCode: "INVALID_LEGACY_STATUS_FIELDS",
+      legacyFields: ["lastErrorAt"],
+    });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("rejects mixed canonical and legacy status payloads", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "oauth",
+          accessToken: "access",
+          routingStatus: "eligible",
+          quotaState: "ok",
+          authState: "ok",
+          healthStatus: "healthy",
+          testStatus: "active",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({ errorCode: "INVALID_LEGACY_STATUS_FIELDS" });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("imports canonical-only payloads successfully", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "oauth",
+          accessToken: "canonical-access",
+          routingStatus: "eligible",
+          quotaState: "ok",
+          authState: "ok",
+          healthStatus: "healthy",
+          reasonCode: "unknown",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      created: 1,
+      updated: 0,
+      skipped: 0,
+      imported: 1,
+    });
+    expect(createProviderConnection).toHaveBeenCalledTimes(1);
+    expect(createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
       provider: "codex",
       authType: "oauth",
-      accessToken: "legacy-access",
-      authState: "invalid",
-      routingStatus: "blocked",
-    });
-    expect(created.quotaState === undefined || created.quotaState === "ok").toBe(true);
-    expect(created.nextRetryAt === undefined || created.nextRetryAt === null).toBe(true);
+      accessToken: "canonical-access",
+      routingStatus: "eligible",
+      quotaState: "ok",
+      authState: "ok",
+      healthStatus: "healthy",
+      reasonCode: "unknown",
+    }));
+  });
 
-    for (const field of LEGACY_FIELDS) {
-      expect(created).not.toHaveProperty(field);
-    }
+  it("skips records with missing provider and reports the reason", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          authType: "oauth",
+          accessToken: "missing-provider-access",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      created: 0,
+      updated: 0,
+      skipped: 1,
+      imported: 0,
+      skipReasons: [{
+        code: "INVALID_RECORD",
+        message: "Credential record is missing provider",
+      }],
+    });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("skips records with no credential payload and reports the reason", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "oauth",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      created: 0,
+      updated: 0,
+      skipped: 1,
+      imported: 0,
+      skipReasons: [{
+        code: "INVALID_RECORD",
+        message: "Credential record has no credential payload",
+      }],
+    });
+    expect(createProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("skips records with invalid authType and reports the reason", async () => {
+    getProviderConnections.mockResolvedValue([]);
+
+    const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
+
+    const response = await importPOST(new Request("http://localhost/api/credentials/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: "universal-credentials",
+        entries: [{
+          provider: "codex",
+          authType: "bearer",
+          accessToken: "token",
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      created: 0,
+      updated: 0,
+      skipped: 1,
+      imported: 0,
+      skipReasons: [{
+        code: "INVALID_RECORD",
+        message: 'Unsupported authType: bearer',
+      }],
+    });
+    expect(createProviderConnection).not.toHaveBeenCalled();
   });
 });

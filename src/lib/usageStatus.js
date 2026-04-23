@@ -57,23 +57,6 @@ function stripLegacyMirrorFields(updates = {}) {
   return sanitized;
 }
 
-function getLegacyTestStatusFromCanonical(snapshot = {}) {
-  switch (snapshot?.routingStatus) {
-    case "eligible":
-      return "active";
-    case "exhausted":
-      return "unavailable";
-    case "blocked":
-      return snapshot?.reasonCode && String(snapshot.reasonCode).startsWith("auth_")
-        ? "expired"
-        : "error";
-    case "disabled":
-      return "unavailable";
-    default:
-      return null;
-  }
-}
-
 export async function syncUsageStatus(connection, updates = {}) {
   if (!connection?.id) return null;
 
@@ -89,7 +72,7 @@ export async function syncUsageStatus(connection, updates = {}) {
     provider: connection.provider,
     patch: hotPatch,
   });
-  const merged = snapshot || hotPatch;
+  const merged = stripLegacyMirrorFields(snapshot || hotPatch);
 
   return merged;
 }
@@ -252,6 +235,14 @@ function getSafeRemainingPercent(quota = {}) {
 
   const total = quota.total;
   const used = quota.used;
+  const remaining = quota.remaining;
+
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(remaining) && remaining >= 0 && remaining <= total) {
+    const remainingPercent = (remaining / total) * 100;
+    return Number.isFinite(remainingPercent) && remainingPercent >= 0 && remainingPercent <= 100
+      ? remainingPercent
+      : null;
+  }
 
   if (!Number.isFinite(total) || total <= 0) return null;
   if (!Number.isFinite(used) || used < 0) return null;

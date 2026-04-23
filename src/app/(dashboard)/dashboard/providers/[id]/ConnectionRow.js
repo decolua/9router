@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
 import { getConnectionStatusDetails, getConnectionCooldownUntil } from "@/lib/connectionStatus";
-import { getDashboardConnectionStatus } from "../statusDisplay";
+import { getConnectionStatusPresentation } from "../statusDisplay";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -71,22 +71,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
 
-  const statusDetails = getConnectionStatusDetails(connection);
-  const dashboardStatus = getDashboardConnectionStatus(connection);
-  const statusBadge = (() => {
-    switch (dashboardStatus) {
-      case "eligible":
-        return { status: dashboardStatus, label: "Eligible", variant: "success" };
-      case "exhausted":
-        return { status: dashboardStatus, label: "Exhausted", variant: "warning" };
-      case "blocked":
-        return { status: dashboardStatus, label: "Blocked", variant: "error" };
-      case "disabled":
-        return { status: dashboardStatus, label: "Disabled", variant: "default" };
-      default:
-        return { status: "unknown", label: "Unknown", variant: "default" };
-    }
-  })();
+  const { statusDetails, badge: statusBadge, reasonLabel: statusReasonLabel } = getConnectionStatusPresentation(connection);
   const modelLockUntil = statusDetails.activeModelLocks.length > 0
     ? statusDetails.activeModelLocks.map((lock) => lock.until).sort()[0]
     : getConnectionCooldownUntil(connection);
@@ -105,43 +90,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       if (interval) clearInterval(interval);
     };
   }, [modelLockUntil]);
-
-  const statusReasonLabel = (() => {
-    let baseReason = "status unavailable";
-
-    switch (statusDetails.source) {
-      case "authState":
-        baseReason = connection.authState ? `auth: ${connection.authState}` : "auth blocked";
-        break;
-      case "healthStatus":
-        baseReason = connection.healthStatus ? `health: ${connection.healthStatus}` : "health blocked";
-        break;
-      case "quotaState":
-        baseReason = connection.quotaState ? `quota: ${connection.quotaState}` : "quota limited";
-        break;
-      case "routingStatus":
-      case "routingStatus-legacy":
-        baseReason = connection.routingStatus ? `routing: ${connection.routingStatus}` : "routing constrained";
-        break;
-      case "legacy-unavailable-cooldown":
-      case "legacy-unavailable-stale":
-      case "legacy-testStatus":
-        baseReason = "status unavailable";
-        break;
-      case "isActive":
-        baseReason = "manually disabled";
-        break;
-      default:
-        baseReason = "status unavailable";
-        break;
-    }
-
-    if (statusDetails.status === "exhausted" && statusDetails.cooldownUntil) {
-      return `${baseReason} · retry ${new Date(statusDetails.cooldownUntil).toLocaleTimeString()}`;
-    }
-
-    return baseReason;
-  })();
 
   return (
     <div className={`group flex items-center justify-between p-2 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
@@ -172,7 +120,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant={statusBadge.variant} size="sm" dot>
               {statusBadge.label}
             </Badge>
-            <span className="text-[11px] text-text-muted capitalize" title={`Status source: ${statusDetails.source}`}>
+            <span className="text-[11px] text-text-muted capitalize">
               {statusReasonLabel}
             </span>
             {hasAnyProxy && (
@@ -273,9 +221,7 @@ ConnectionRow.propTypes = {
     email: PropTypes.string,
     displayName: PropTypes.string,
     modelLockUntil: PropTypes.string,
-    testStatus: PropTypes.string,
     isActive: PropTypes.bool,
-    lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
   }).isRequired,

@@ -9,13 +9,27 @@ describe("getConnectionErrorTag", () => {
     expect(getConnectionErrorTag({ reasonCode: "upstream_unhealthy" })).toBe("5XX");
   });
 
-  it("uses canonical routing status before legacy explicit error fields", () => {
-    expect(getConnectionErrorTag({ routingStatus: "blocked_auth", errorCode: "500" })).toBe("AUTH");
-    expect(getConnectionErrorTag({ routingStatus: "exhausted", lastErrorType: "upstream_auth_error" })).toBe("429");
-    expect(getConnectionErrorTag({ routingStatus: "blocked_health", lastErrorType: "upstream_rate_limited" })).toBe("5XX");
+  it("uses canonical routing status values only", () => {
+    expect(getConnectionErrorTag({ routingStatus: "blocked" })).toBe("AUTH");
+    expect(getConnectionErrorTag({ routingStatus: "exhausted" })).toBe("429");
+    expect(getConnectionErrorTag({ routingStatus: "unknown" })).toBe("ERR");
   });
 
-  it("maps legacy auth_invalid explicit error type to AUTH", () => {
-    expect(getConnectionErrorTag({ lastErrorType: "auth_invalid" })).toBe("AUTH");
+  it("uses canonical reason detail text when no canonical state code is set", () => {
+    expect(getConnectionErrorTag({ reasonDetail: "Token revoked by upstream" })).toBe("AUTH");
+  });
+
+  it("prefers canonical reasonCode over conflicting reasonDetail text", () => {
+    expect(getConnectionErrorTag({
+      reasonCode: "quota_exhausted",
+      reasonDetail: "Token revoked by upstream",
+    })).toBe("429");
+  });
+
+  it("prefers canonical reasonCode over conflicting routing status", () => {
+    expect(getConnectionErrorTag({
+      reasonCode: "upstream_unhealthy",
+      routingStatus: "blocked",
+    })).toBe("5XX");
   });
 });

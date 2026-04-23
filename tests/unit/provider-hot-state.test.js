@@ -50,8 +50,8 @@ describe("providerHotState", () => {
     expect(await getEligibleConnectionIds("provider-redis")).toEqual(["conn-eligible"]);
 
     redisState["conn-blocked"] = JSON.stringify({
-      routingStatus: "blocked_auth",
-      testStatus: "active",
+      routingStatus: "blocked",
+      authState: "invalid",
     });
     delete redisState["conn-eligible"];
 
@@ -95,7 +95,7 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 60_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-b", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -129,7 +129,7 @@ describe("providerHotState", () => {
 
     expect(merged[0]).toMatchObject({
       id: "conn-blocked",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -168,7 +168,7 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 60_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-h", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -188,7 +188,7 @@ describe("providerHotState", () => {
 
     expect(merged[0]).toMatchObject({
       id: "conn-blocked",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -204,7 +204,7 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 60_000).toISOString();
 
     await setConnectionHotState("shared-conn", "provider-left", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
       reasonDetail: "left blocked",
@@ -234,7 +234,7 @@ describe("providerHotState", () => {
     expect(merged[0]).toMatchObject({
       id: "shared-conn",
       provider: "provider-left",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
       reasonDetail: "left blocked",
@@ -258,7 +258,7 @@ describe("providerHotState", () => {
     expect(projected.get("provider-left:shared-conn")).toMatchObject({
       id: "shared-conn",
       provider: "provider-left",
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
       reasonDetail: "left blocked",
@@ -315,12 +315,12 @@ describe("providerHotState", () => {
       lastUsedAt: "2026-04-21T10:00:00.000Z",
     });
     await setConnectionHotState("conn-b", "provider-c", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: laterRetryAt,
     });
     await setConnectionHotState("conn-c", "provider-c", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: earlierRetryAt,
     });
@@ -413,7 +413,7 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-mixed", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -428,7 +428,7 @@ describe("providerHotState", () => {
     const retryAt = new Date(Date.now() + 45_000).toISOString();
 
     await setConnectionHotState("conn-blocked", "provider-unknown", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: retryAt,
     });
@@ -452,7 +452,7 @@ describe("providerHotState", () => {
         provider: "provider-revoked-gap",
         priority: 1,
         testStatus: "active",
-        routingStatus: "blocked_auth",
+        routingStatus: "blocked",
         authState: "revoked",
         lastError: "Token revoked",
       },
@@ -506,7 +506,7 @@ describe("providerHotState", () => {
     ])).toBeNull();
 
     await setConnectionHotState("conn-blocked", "provider-empty", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
       nextRetryAt: new Date(Date.now() + 45_000).toISOString(),
     });
@@ -522,17 +522,16 @@ describe("providerHotState", () => {
       testStatus: "active",
     });
     await setConnectionHotState("conn-auth-blocked", "provider-e", {
-      routingStatus: "blocked_auth",
-      testStatus: "active",
+      routingStatus: "blocked",
+      authState: "invalid",
     });
     await setConnectionHotState("conn-health-blocked", "provider-e", {
-      routingStatus: "blocked_health",
-      testStatus: "active",
+      routingStatus: "blocked",
+      healthStatus: "unhealthy",
     });
     await setConnectionHotState("conn-quota-blocked", "provider-e", {
-      routingStatus: "blocked_quota",
+      routingStatus: "exhausted",
       quotaState: "exhausted",
-      testStatus: "active",
     });
 
     expect(await getEligibleConnectionIds("provider-e")).toEqual(["conn-eligible"]);
@@ -554,8 +553,8 @@ describe("providerHotState", () => {
         updatedAt: "2026-04-21T10:00:00.000Z",
       }),
       "conn-stale": JSON.stringify({
-        routingStatus: "blocked_auth",
-        testStatus: "active",
+        routingStatus: "blocked",
+        authState: "invalid",
       }),
       "conn-eligible": JSON.stringify({
         routingStatus: "eligible",
@@ -568,7 +567,7 @@ describe("providerHotState", () => {
 
   it("does not emit legacy mirror fields from read-time projection", async () => {
     await setConnectionHotState("conn-health", "provider-g", {
-      routingStatus: "blocked_health",
+      routingStatus: "blocked",
       reasonCode: "upstream_unhealthy",
       reasonDetail: "Provider health check failed",
       nextRetryAt: "2026-04-21T12:30:00.000Z",
@@ -577,7 +576,7 @@ describe("providerHotState", () => {
     const snapshot = await getConnectionHotState("conn-health", "provider-g");
     expect(snapshot).toMatchObject({
       id: "conn-health",
-      routingStatus: "blocked_health",
+      routingStatus: "blocked",
       reasonCode: "upstream_unhealthy",
       reasonDetail: "Provider health check failed",
       nextRetryAt: "2026-04-21T12:30:00.000Z",
@@ -593,7 +592,7 @@ describe("providerHotState", () => {
 
   it("retains canonical blocked routing state without read-time legacy projection", async () => {
     await setConnectionHotState("conn-canonical-blocked", "provider-canonical-projection", {
-      routingStatus: "blocked_health",
+      routingStatus: "blocked",
       reasonCode: "upstream_unhealthy",
       testStatus: "active",
       reasonDetail: "Provider health check failed",
@@ -602,7 +601,7 @@ describe("providerHotState", () => {
     const snapshot = await getConnectionHotState("conn-canonical-blocked", "provider-canonical-projection");
     expect(snapshot).toMatchObject({
       id: "conn-canonical-blocked",
-      routingStatus: "blocked_health",
+      routingStatus: "blocked",
       reasonCode: "upstream_unhealthy",
       reasonDetail: "Provider health check failed",
     });
@@ -694,6 +693,40 @@ describe("providerHotState", () => {
     expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastError");
     expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastErrorType");
     expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastErrorAt");
+  });
+
+  it("drops legacy top-level routing statuses on hot-state writes while keeping canonical details", async () => {
+    const result = await setConnectionHotState("conn-legacy-routing", "provider-legacy-routing", {
+      routingStatus: "blocked_auth",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token expired",
+    });
+
+    expect(result.state).toMatchObject({
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+    });
+    expect(result.state).not.toHaveProperty("routingStatus");
+
+    const snapshot = await getConnectionHotState("conn-legacy-routing", "provider-legacy-routing");
+    expect(snapshot).toMatchObject({
+      id: "conn-legacy-routing",
+      authState: "invalid",
+      reasonCode: "auth_invalid",
+    });
+    expect(snapshot).not.toHaveProperty("routingStatus");
+  });
+
+  it("treats quotaState=cooldown as non-blocking for eligibility indexes", async () => {
+    await setConnectionHotState("conn-cooldown", "provider-cooldown", {
+      routingStatus: "eligible",
+      authState: "ok",
+      healthStatus: "healthy",
+      quotaState: "cooldown",
+    });
+
+    expect(await getEligibleConnectionIds("provider-cooldown")).toEqual(["conn-cooldown"]);
   });
 
   it("returns canonical exhausted routing state without legacy unavailable projection", async () => {

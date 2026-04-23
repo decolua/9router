@@ -64,9 +64,13 @@ function getCentralizedStatus(connection = {}) {
 
   switch (connection?.quotaState) {
     case "exhausted":
-    case "cooldown":
     case "blocked":
       return { status: "exhausted", source: "quotaState" };
+    case "ok":
+      if (connection?.authState === "ok" && connection?.healthStatus === "healthy") {
+        return { status: "eligible", source: "quotaState" };
+      }
+      break;
     default:
       break;
   }
@@ -80,10 +84,6 @@ function getCentralizedStatus(connection = {}) {
       return { status: connection.routingStatus, source: "routingStatus" };
     default:
       break;
-  }
-
-  if (connection?.quotaState === "ok") {
-    return { status: "eligible", source: "quotaState" };
   }
 
   return null;

@@ -42,7 +42,7 @@ describe("models availability canonical cooldown read path", () => {
       id: "conn-canonical-cooldown",
       provider: "codex",
       name: "Canonical Cooldown Conn",
-      quotaState: "cooldown",
+      quotaState: "exhausted",
       rateLimitedUntil: "2027-04-30T00:00:00.000Z",
       nextRetryAt: "2027-04-24T00:00:00.000Z",
       resetAt: "2027-04-23T18:00:00.000Z",
@@ -68,7 +68,7 @@ describe("models availability canonical cooldown read path", () => {
       id: "conn-legacy-cooldown-only",
       provider: "codex",
       name: "Legacy Cooldown Only",
-      quotaState: "cooldown",
+      quotaState: "exhausted",
       rateLimitedUntil: "2027-04-30T00:00:00.000Z",
     });
 

@@ -157,7 +157,15 @@ const LEGACY_MIRROR_FIELDS = new Set([
   "lastTested",
 ]);
 
-function stripLegacyMirrorFields(state = null) {
+const CANONICAL_ROUTING_STATUSES = new Set([
+  "eligible",
+  "exhausted",
+  "blocked",
+  "unknown",
+  "disabled",
+]);
+
+export function sanitizeConnectionStatusRecord(state = null) {
   if (!state || typeof state !== "object") return state;
 
   const sanitized = { ...state };
@@ -165,7 +173,15 @@ function stripLegacyMirrorFields(state = null) {
     delete sanitized[key];
   }
 
+  if ("routingStatus" in sanitized && !CANONICAL_ROUTING_STATUSES.has(sanitized.routingStatus)) {
+    delete sanitized.routingStatus;
+  }
+
   return sanitized;
+}
+
+function stripLegacyMirrorFields(state = null) {
+  return sanitizeConnectionStatusRecord(state);
 }
 
 function mergeHotState(base, updates) {
@@ -247,7 +263,7 @@ function isConnectionEligible(state = {}) {
   }
 
   const quotaState = state?.quotaState || null;
-  if (["exhausted", "cooldown", "blocked"].includes(quotaState)) {
+  if (["exhausted", "blocked"].includes(quotaState)) {
     return false;
   }
 

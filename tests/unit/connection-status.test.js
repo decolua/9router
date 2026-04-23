@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   getConnectionCentralizedStatus,
@@ -9,31 +9,39 @@ import {
 } from "../../src/lib/connectionStatus.js";
 
 describe("connection status canonical read path", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T00:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns unknown when only legacy testStatus=active is present", () => {
-    expect(getConnectionCentralizedStatus({ testStatus: "active" })).toBe("unknown");
-  });
-
-  it("retains legacy source metadata while remaining unknown status", () => {
     const details = getConnectionStatusDetails({ testStatus: "active" });
+    expect(getConnectionCentralizedStatus({ testStatus: "active" })).toBe("unknown");
     expect(details.status).toBe("unknown");
-    expect(details.source).toBe("legacy-testStatus");
+    expect(details.source).toBe("unknown");
   });
 
-  it("still marks legacy unavailable with cooldown as exhausted in core details", () => {
+  it("returns unknown when legacy unavailable payload is present without canonical fields", () => {
     const details = getConnectionStatusDetails({
       testStatus: "unavailable",
       nextRetryAt: "2099-01-01T00:00:00.000Z",
     });
-    expect(details.status).toBe("exhausted");
-    expect(details.source).toBe("legacy-unavailable-cooldown");
+    expect(details.status).toBe("unknown");
+    expect(details.source).toBe("unknown");
   });
 
-  it("treats legacy unavailable without cooldown as unknown in core details", () => {
-    const details = getConnectionStatusDetails({
-      testStatus: "unavailable",
-    });
-    expect(details.status).toBe("unknown");
-    expect(details.source).toBe("legacy-unavailable-stale");
+  it("treats canonical quotaState=blocked as exhausted", () => {
+    const details = getConnectionStatusDetails({ quotaState: "blocked" });
+    expect(details.status).toBe("exhausted");
+    expect(details.source).toBe("quotaState");
+  });
+
+  it("does not treat quotaState=cooldown as canonical", () => {
+    expect(getConnectionCentralizedStatus({ quotaState: "cooldown" })).toBe("unknown");
   });
 
   it("does not map removed legacy filter aliases", () => {
@@ -44,7 +52,7 @@ describe("connection status canonical read path", () => {
   it("keeps canonical precedence for auth/health/quota over routing", () => {
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible", authState: "expired" })).toBe("blocked");
     expect(getConnectionCentralizedStatus({ routingStatus: "eligible", healthStatus: "failed" })).toBe("blocked");
-    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "cooldown" })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ routingStatus: "eligible", quotaState: "blocked" })).toBe("exhausted");
   });
 
   it("uses canonical routingStatus when no stronger canonical blocker exists", () => {
@@ -57,19 +65,19 @@ describe("connection status canonical read path", () => {
 
   it("ignores legacy rateLimitedUntil when deriving cooldown timestamps", () => {
     const connection = {
-      rateLimitedUntil: "2026-04-25T00:00:00.000Z",
-      nextRetryAt: "2026-04-24T00:00:00.000Z",
-      resetAt: "2026-04-23T12:00:00.000Z",
-      modelLock_gpt4: "2026-04-23T06:00:00.000Z",
+      rateLimitedUntil: "2099-04-25T00:00:00.000Z",
+      nextRetryAt: "2099-04-24T00:00:00.000Z",
+      resetAt: "2099-04-23T12:00:00.000Z",
+      modelLock_gpt4: "2099-04-23T06:00:00.000Z",
     };
 
-    expect(getConnectionProviderCooldownUntil(connection)).toBe("2026-04-23T12:00:00.000Z");
-    expect(getConnectionCooldownUntil(connection)).toBe("2026-04-23T06:00:00.000Z");
+    expect(getConnectionProviderCooldownUntil(connection)).toBe("2099-04-23T12:00:00.000Z");
+    expect(getConnectionCooldownUntil(connection)).toBe("2099-04-23T06:00:00.000Z");
   });
 
   it("returns null cooldown when only legacy rateLimitedUntil exists", () => {
     const connection = {
-      rateLimitedUntil: "2026-04-25T00:00:00.000Z",
+      rateLimitedUntil: "2099-04-25T00:00:00.000Z",
     };
 
     expect(getConnectionProviderCooldownUntil(connection)).toBeNull();

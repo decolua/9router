@@ -6,6 +6,7 @@ import fs from "node:fs";
 import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus, getConnectionStatusDetails } from "@/lib/connectionStatus.js";
+import { sanitizeConnectionStatusRecord } from "./providerHotState.js";
 import { normalizeQuotaSchedulerSettings } from "./quotaRefreshPlanner.js";
 import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady } from "@/lib/quotaStateStore.js";
 import {
@@ -27,13 +28,13 @@ const LEGACY_MIRROR_STATUS_FIELDS = new Set([
 
 function stripLegacyMirrorStatusPatch(record = {}) {
   return Object.fromEntries(
-    Object.entries(record || {}).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
+    Object.entries(sanitizeConnectionStatusRecord(record || {})).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
   );
 }
 
 function stripLegacyMirrorStatusFields(record = {}) {
   return Object.fromEntries(
-    Object.entries(record || {}).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
+    Object.entries(sanitizeConnectionStatusRecord(record || {})).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
   );
 }
 
@@ -123,10 +124,7 @@ export function getConnectionStatusSummary(connections = []) {
   };
 
   for (const connection of connections || []) {
-    const details = getConnectionStatusDetails(connection);
-    const status = details.source?.startsWith("legacy-")
-      ? "unknown"
-      : details.status;
+    const status = getConnectionStatusDetails(connection).status;
 
     if (status === "eligible") summary.connected += 1;
     else if (status === "blocked" || status === "exhausted") summary.error += 1;
@@ -522,6 +520,34 @@ export async function createProviderConnection(data) {
     updatedAt: now,
   };
 
+  if (normalizedData.routingStatus !== undefined) {
+    connection.routingStatus = normalizedData.routingStatus;
+  }
+  if (normalizedData.healthStatus !== undefined) {
+    connection.healthStatus = normalizedData.healthStatus;
+  }
+  if (normalizedData.quotaState !== undefined) {
+    connection.quotaState = normalizedData.quotaState;
+  }
+  if (normalizedData.authState !== undefined) {
+    connection.authState = normalizedData.authState;
+  }
+  if (normalizedData.reasonCode !== undefined) {
+    connection.reasonCode = normalizedData.reasonCode;
+  }
+  if (normalizedData.reasonDetail !== undefined) {
+    connection.reasonDetail = normalizedData.reasonDetail;
+  }
+  if (normalizedData.nextRetryAt !== undefined) {
+    connection.nextRetryAt = normalizedData.nextRetryAt;
+  }
+  if (normalizedData.resetAt !== undefined) {
+    connection.resetAt = normalizedData.resetAt;
+  }
+  if (normalizedData.lastCheckedAt !== undefined) {
+    connection.lastCheckedAt = normalizedData.lastCheckedAt;
+  }
+
   const optionalFields = [
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
@@ -553,12 +579,13 @@ export async function updateProviderConnection(id, data) {
 
   const providerId = db.data.providerConnections[index].provider;
   const current = db.data.providerConnections[index];
-  const hotStatePatch = extractHotState(data);
+  const sanitizedInput = stripLegacyMirrorStatusPatch(data || {});
+  const hotStatePatch = extractHotState(sanitizedInput);
   const hasHotStateUpdates = Object.keys(hotStatePatch).length > 0;
   const dbPatch = Object.fromEntries(
-    Object.entries(stripLegacyMirrorStatusPatch(data || {})).filter(([key]) => !(key in hotStatePatch))
+    Object.entries(sanitizedInput).filter(([key]) => !(key in hotStatePatch))
   );
-  const shouldStoreHotState = isHotOnlyUpdate(data);
+  const shouldStoreHotState = isHotOnlyUpdate(sanitizedInput);
   const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
 
   if (hasHotStateUpdates) {
