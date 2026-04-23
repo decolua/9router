@@ -101,9 +101,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           }
         }
         if (isValid) {
-          updates.testStatus = "active";
-          updates.lastError = null;
-          updates.lastErrorAt = null;
+          updates.routingStatus = "eligible";
+          updates.healthStatus = "healthy";
+          updates.quotaState = "ok";
+          updates.authState = "ok";
+          updates.reasonCode = "unknown";
+          updates.reasonDetail = null;
+          updates.nextRetryAt = null;
+          updates.resetAt = null;
+          updates.lastCheckedAt = new Date().toISOString();
         }
       }
       await onSave(updates);

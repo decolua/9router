@@ -74,6 +74,68 @@ afterEach(async () => {
 });
 
 describe("localDb provider connection status writes", () => {
+  it("does not persist legacy status fields during create upsert normalization", async () => {
+    const { dataDir, localDb } = await loadModulesWithTempDataDir();
+
+    const created = await localDb.createProviderConnection({
+      provider: "provider-upsert",
+      authType: "apikey",
+      name: "Same Name",
+      apiKey: "secret",
+      isActive: true,
+      priority: 1,
+    });
+
+    const upserted = await localDb.createProviderConnection({
+      provider: "provider-upsert",
+      authType: "apikey",
+      name: "Same Name",
+      routingStatus: "blocked_auth",
+      authState: "expired",
+      reasonCode: "auth_invalid",
+      lastCheckedAt: "2026-04-22T12:00:00.000Z",
+      testStatus: "expired",
+      lastError: "Authentication expired",
+      lastErrorType: "auth_invalid",
+      lastErrorAt: "2026-04-22T12:00:00.000Z",
+      rateLimitedUntil: "2026-04-22T12:00:00.000Z",
+      lastTested: "2026-04-22T12:00:00.000Z",
+      errorCode: "auth_invalid",
+    });
+
+    expect(upserted.id).toBe(created.id);
+    expect(upserted).toMatchObject({
+      id: created.id,
+      routingStatus: "blocked_auth",
+      authState: "expired",
+      reasonCode: "auth_invalid",
+      lastCheckedAt: "2026-04-22T12:00:00.000Z",
+    });
+    expect(upserted).not.toHaveProperty("testStatus", "expired");
+    expect(upserted).not.toHaveProperty("lastError", "Authentication expired");
+    expect(upserted).not.toHaveProperty("lastErrorType", "auth_invalid");
+    expect(upserted).not.toHaveProperty("lastErrorAt", "2026-04-22T12:00:00.000Z");
+    expect(upserted).not.toHaveProperty("rateLimitedUntil", "2026-04-22T12:00:00.000Z");
+    expect(upserted).not.toHaveProperty("lastTested", "2026-04-22T12:00:00.000Z");
+    expect(upserted).not.toHaveProperty("errorCode", "auth_invalid");
+
+    const persisted = (await readDbJson(dataDir)).providerConnections.find((c) => c.id === created.id);
+    expect(persisted).toMatchObject({
+      id: created.id,
+      routingStatus: "blocked_auth",
+      authState: "expired",
+      reasonCode: "auth_invalid",
+      lastCheckedAt: "2026-04-22T12:00:00.000Z",
+    });
+    expect(persisted).not.toHaveProperty("testStatus", "expired");
+    expect(persisted).not.toHaveProperty("lastError", "Authentication expired");
+    expect(persisted).not.toHaveProperty("lastErrorType", "auth_invalid");
+    expect(persisted).not.toHaveProperty("lastErrorAt", "2026-04-22T12:00:00.000Z");
+    expect(persisted).not.toHaveProperty("rateLimitedUntil", "2026-04-22T12:00:00.000Z");
+    expect(persisted).not.toHaveProperty("lastTested", "2026-04-22T12:00:00.000Z");
+    expect(persisted).not.toHaveProperty("errorCode", "auth_invalid");
+  });
+
   it("does not persist synthesized legacy mirror fields for redis-backed hot-only updates", async () => {
     const { dataDir, localDb, providerHotState } = await loadModulesWithTempDataDir();
 

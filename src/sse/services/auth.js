@@ -124,13 +124,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | reason=${earliestConn?.reasonDetail?.slice(0, 50)}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
           retryAfterHuman: formatRetryAfter(earliest),
-          lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          lastError: earliestConn?.reasonDetail || null,
+          lastErrorCode: earliestConn?.reasonCode || null
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -213,9 +213,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
       },
       connectionId: connection.id,
-      // Include current status for optimization check
-      testStatus: connection.testStatus,
-      lastError: connection.lastError,
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection
     };
@@ -266,10 +263,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     || status === 429
     || normalizedReason.includes("rate limit")
     || normalizedReason.includes("too many requests")
-    || normalizedReason.includes("quota")
-    || Boolean(conn?.rateLimitedUntil);
+    || normalizedReason.includes("quota");
 
-  const exhaustedRetryAt = liveQuotaSignal?.resetAt || conn?.rateLimitedUntil || null;
+  const exhaustedRetryAt = liveQuotaSignal?.resetAt || null;
   const exhaustedReason = liveQuotaSignal?.reasonDetail || reason;
   const exhaustedReasonCode = liveQuotaSignal?.reasonCode || "quota_exhausted";
 
@@ -371,7 +367,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     conn.resetAt,
   ].some(Boolean);
 
-  if (!conn.testStatus && !conn.lastError && !hasCentralizedBlockedState && allLockKeys.length === 0) return;
+  if (!hasCentralizedBlockedState && allLockKeys.length === 0) return;
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -381,7 +377,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError && !hasCentralizedBlockedState) return;
+  if (keysToClear.length === 0 && !hasCentralizedBlockedState) return;
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {

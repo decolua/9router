@@ -178,7 +178,7 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
     .filter(([connId, conn]) => {
       if (conn.provider !== provider || !conn.isActive) return false;
       if (excludeConnectionId && connId === excludeConnectionId) return false;
-      if (isAccountUnavailable(conn.rateLimitedUntil)) return false;
+      if (isAccountUnavailable(conn)) return false;
       return true;
     })
     .sort((a, b) => (a[1].priority || 999) - (b[1].priority || 999));
@@ -189,18 +189,18 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
       .map(([, conn]) => conn);
     const earliest = getEarliestRateLimitedUntil(allConnections);
     if (earliest) {
-      const rateLimitedConns = allConnections.filter(
-        c => c.rateLimitedUntil && new Date(c.rateLimitedUntil).getTime() > Date.now()
-      );
-      const earliestConn = rateLimitedConns.sort(
-        (a, b) => new Date(a.rateLimitedUntil) - new Date(b.rateLimitedUntil)
-      )[0];
+      const unavailableConns = allConnections.filter(c => isAccountUnavailable(c));
+      const earliestConn = unavailableConns.sort((a, b) => {
+        const aUntil = a.nextRetryAt || a.resetAt;
+        const bUntil = b.nextRetryAt || b.resetAt;
+        return new Date(aUntil).getTime() - new Date(bUntil).getTime();
+      })[0];
       return {
         allRateLimited: true,
         retryAfter: earliest,
         retryAfterHuman: formatRetryAfter(earliest),
-        lastError: earliestConn?.lastError || null,
-        lastErrorCode: earliestConn?.errorCode || null
+        lastError: earliestConn?.reasonDetail || null,
+        lastErrorCode: earliestConn?.reasonCode || null
       };
     }
     return null;
@@ -215,9 +215,17 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
     expiresAt: connection.expiresAt,
     projectId: connection.projectId,
     providerSpecificData: connection.providerSpecificData,
-    status: connection.status,
-    lastError: connection.lastError,
-    rateLimitedUntil: connection.rateLimitedUntil
+    routingStatus: connection.routingStatus,
+    authState: connection.authState,
+    healthStatus: connection.healthStatus,
+    quotaState: connection.quotaState,
+    reasonCode: connection.reasonCode,
+    reasonDetail: connection.reasonDetail,
+    nextRetryAt: connection.nextRetryAt,
+    resetAt: connection.resetAt,
+    lastCheckedAt: connection.lastCheckedAt,
+    updatedAt: connection.updatedAt,
+    backoffLevel: connection.backoffLevel
   };
 }
 
@@ -231,13 +239,20 @@ async function markAccountUnavailable(machineId, connectionId, status, errorText
   const rateLimitedUntil = getUnavailableUntil(cooldownMs);
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
 
-  data.providers[connectionId].rateLimitedUntil = rateLimitedUntil;
-  data.providers[connectionId].status = "unavailable";
-  data.providers[connectionId].lastError = reason;
-  data.providers[connectionId].errorCode = status || null;
-  data.providers[connectionId].lastErrorAt = new Date().toISOString();
+  const nowIso = new Date().toISOString();
   data.providers[connectionId].backoffLevel = newBackoffLevel ?? backoffLevel;
-  data.providers[connectionId].updatedAt = new Date().toISOString();
+  data.providers[connectionId].routingStatus = "blocked";
+  data.providers[connectionId].healthStatus = status >= 500 ? "unhealthy" : "degraded";
+  data.providers[connectionId].quotaState = status === 429 ? "exhausted" : "ok";
+  data.providers[connectionId].authState = (status === 401 || status === 403) ? "invalid" : "ok";
+  data.providers[connectionId].reasonCode = status === 429
+    ? "quota_exhausted"
+    : ((status === 401 || status === 403) ? "auth_invalid" : "usage_request_failed");
+  data.providers[connectionId].reasonDetail = reason;
+  data.providers[connectionId].nextRetryAt = rateLimitedUntil;
+  data.providers[connectionId].resetAt = rateLimitedUntil;
+  data.providers[connectionId].lastCheckedAt = nowIso;
+  data.providers[connectionId].updatedAt = nowIso;
 
   await saveMachineData(machineId, data, env);
   log.warn("EMBEDDINGS_ACCOUNT", `${connectionId} | unavailable until ${rateLimitedUntil}`);
@@ -245,20 +260,30 @@ async function markAccountUnavailable(machineId, connectionId, status, errorText
 
 async function clearAccountError(machineId, connectionId, currentCredentials, env) {
   const hasError =
-    currentCredentials.status === "unavailable" ||
-    currentCredentials.lastError ||
-    currentCredentials.rateLimitedUntil;
+    currentCredentials.routingStatus && currentCredentials.routingStatus !== "eligible" ||
+    currentCredentials.quotaState && currentCredentials.quotaState !== "ok" ||
+    currentCredentials.authState && currentCredentials.authState !== "ok" ||
+    currentCredentials.healthStatus && currentCredentials.healthStatus !== "healthy" ||
+    currentCredentials.reasonCode && currentCredentials.reasonCode !== "unknown" ||
+    currentCredentials.reasonDetail ||
+    currentCredentials.nextRetryAt ||
+    currentCredentials.resetAt;
 
   if (!hasError) return;
 
   const data = await getMachineData(machineId, env);
   if (!data?.providers?.[connectionId]) return;
 
-  data.providers[connectionId].status = "active";
-  data.providers[connectionId].lastError = null;
-  data.providers[connectionId].lastErrorAt = null;
-  data.providers[connectionId].rateLimitedUntil = null;
   data.providers[connectionId].backoffLevel = 0;
+  data.providers[connectionId].routingStatus = "eligible";
+  data.providers[connectionId].authState = "ok";
+  data.providers[connectionId].healthStatus = "healthy";
+  data.providers[connectionId].quotaState = "ok";
+  data.providers[connectionId].reasonCode = "unknown";
+  data.providers[connectionId].reasonDetail = null;
+  data.providers[connectionId].nextRetryAt = null;
+  data.providers[connectionId].resetAt = null;
+  data.providers[connectionId].lastCheckedAt = new Date().toISOString();
   data.providers[connectionId].updatedAt = new Date().toISOString();
 
   await saveMachineData(machineId, data, env);

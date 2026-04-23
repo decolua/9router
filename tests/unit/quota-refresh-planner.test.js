@@ -233,7 +233,7 @@ describe("quotaRefreshPlanner", () => {
       connection: { id: "conn-error", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: settings,
       hotState: {
-        testStatus: "error",
+        healthStatus: "failed",
         lastCheckedAt: "2026-04-21T11:56:00.000Z",
       },
       now,
@@ -244,7 +244,7 @@ describe("quotaRefreshPlanner", () => {
     });
   });
 
-  it("prefers canonical blocked reasonCode routing over legacy testStatus", () => {
+  it("uses canonical routing and reason fields when both canonical and legacy fields are present", () => {
     expect(getQuotaRefreshDecision({
       connection: { id: "conn-canonical-quota", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
@@ -279,9 +279,9 @@ describe("quotaRefreshPlanner", () => {
     });
   });
 
-  it("uses legacy testStatus fallback only when routingStatus is absent", () => {
+  it("treats legacy-only testStatus states as unknown routing state", () => {
     expect(getQuotaRefreshDecision({
-      connection: { id: "conn-fallback-active", provider: "codex", authType: "oauth", isActive: true },
+      connection: { id: "conn-legacy-active", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
       hotState: {
         testStatus: "active",
@@ -290,41 +290,26 @@ describe("quotaRefreshPlanner", () => {
       now,
     })).toMatchObject({
       due: false,
-      reason: "fresh_success",
+      reason: "fresh_unknown",
       nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
 
     expect(getQuotaRefreshDecision({
-      connection: { id: "conn-no-fallback-when-canonical", provider: "codex", authType: "oauth", isActive: true },
+      connection: { id: "conn-legacy-error", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
       hotState: {
-        routingStatus: "blocked_health",
-        testStatus: "active",
+        testStatus: "error",
         lastCheckedAt: "2026-04-21T11:56:00.000Z",
       },
       now,
     })).toMatchObject({
       due: false,
-      reason: "fresh_error",
+      reason: "fresh_unknown",
       nextEligibleAt: "2026-04-21T12:11:00.000Z",
     });
   });
 
-  it("handles active or unknown states without quotaState using non-quota TTL logic", () => {
-    expect(getQuotaRefreshDecision({
-      connection: { id: "conn-active", provider: "codex", authType: "oauth", isActive: true },
-      schedulerSettings: enabledSettings,
-      hotState: {
-        testStatus: "active",
-        lastCheckedAt: "2026-04-21T11:56:00.000Z",
-      },
-      now,
-    })).toMatchObject({
-      due: false,
-      reason: "fresh_success",
-      nextEligibleAt: "2026-04-21T12:11:00.000Z",
-    });
-
+  it("handles unknown states without canonical health or quota markers", () => {
     expect(getQuotaRefreshDecision({
       connection: { id: "conn-unknown-fresh", provider: "codex", authType: "oauth", isActive: true },
       schedulerSettings: enabledSettings,
@@ -336,19 +321,6 @@ describe("quotaRefreshPlanner", () => {
       due: false,
       reason: "fresh_unknown",
       nextEligibleAt: "2026-04-21T12:11:00.000Z",
-    });
-
-    expect(getQuotaRefreshDecision({
-      connection: { id: "conn-active-stale", provider: "codex", authType: "oauth", isActive: true },
-      schedulerSettings: enabledSettings,
-      hotState: {
-        testStatus: "active",
-        lastCheckedAt: "2026-04-21T11:40:00.000Z",
-      },
-      now,
-    })).toMatchObject({
-      due: true,
-      reason: "stale_success",
     });
 
     expect(getQuotaRefreshDecision({

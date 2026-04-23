@@ -305,6 +305,82 @@ describe("handleEmbeddings — valid request (happy path)", () => {
     vi.mocked(saveMachineData).mockResolvedValue(undefined);
   });
 
+  it("successful request clears canonical error state when provider is blocked", async () => {
+    const blockedData = makeMachineData({
+      providers: {
+        "conn-001": {
+          provider: "openai",
+          apiKey: "sk-openai-provider-key",
+          isActive: true,
+          priority: 1,
+          routingStatus: "eligible",
+          authState: "ok",
+          healthStatus: "degraded",
+          quotaState: "ok",
+          reasonCode: "usage_request_failed",
+          reasonDetail: "Temporary provider issue",
+          nextRetryAt: null,
+          resetAt: null,
+          backoffLevel: 2,
+        },
+      },
+    });
+
+    vi.mocked(getMachineData)
+      .mockResolvedValueOnce(blockedData)
+      .mockResolvedValueOnce(blockedData)
+      .mockResolvedValueOnce(blockedData);
+
+    vi.mocked(handleEmbeddingsCore).mockImplementation(async ({ onRequestSuccess }) => {
+      await onRequestSuccess();
+      return {
+        success: true,
+        response: new Response(JSON.stringify(VALID_EMBEDDING_RESPONSE_BODY), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    });
+
+    const req = makeRequest("POST", {
+      model: "openai/text-embedding-ada-002",
+      input: "Hello world test embedding",
+    });
+
+    const res = await handleEmbeddings(req, makeEnv(), {});
+
+    expect(res.status).toBe(200);
+    expect(saveMachineData).toHaveBeenCalled();
+    const [, saved] = vi.mocked(saveMachineData).mock.calls.at(-1);
+    expect(saved.providers["conn-001"].routingStatus).toBe("eligible");
+    expect(saved.providers["conn-001"].reasonCode).toBe("unknown");
+    expect(saved.providers["conn-001"].nextRetryAt).toBeNull();
+  });
+
+  it("successful request does not write when canonical state is already clean", async () => {
+    vi.mocked(saveMachineData).mockClear();
+    vi.mocked(handleEmbeddingsCore).mockImplementation(async ({ onRequestSuccess }) => {
+      await onRequestSuccess();
+      return {
+        success: true,
+        response: new Response(JSON.stringify(VALID_EMBEDDING_RESPONSE_BODY), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }),
+      };
+    });
+
+    const req = makeRequest("POST", {
+      model: "openai/text-embedding-ada-002",
+      input: "Hello world test embedding",
+    });
+
+    const res = await handleEmbeddings(req, makeEnv(), {});
+
+    expect(res.status).toBe(200);
+    expect(saveMachineData).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -398,10 +474,14 @@ describe("handleEmbeddings — rate limit fallback", () => {
           apiKey: "sk-key",
           isActive: true,
           priority: 1,
-          status: "unavailable",
-          rateLimitedUntil,  // rate-limited
-          lastError: "Rate limit exceeded",
-          errorCode: 429,
+          routingStatus: "blocked",
+          authState: "ok",
+          healthStatus: "healthy",
+          quotaState: "exhausted",
+          reasonCode: "quota_exhausted",
+          reasonDetail: "Rate limit exceeded",
+          nextRetryAt: rateLimitedUntil,
+          resetAt: rateLimitedUntil,
           backoffLevel: 1,
         },
       },
@@ -410,7 +490,7 @@ describe("handleEmbeddings — rate limit fallback", () => {
     const req = makeRequest("POST", { model: "openai/text-embedding-ada-002", input: "hello" });
     const res = await handleEmbeddings(req, makeEnv(), {});
 
-    expect(res.status).toBe(429);
+    expect(res.status).toBe(503);
     expect(res.headers.get("Retry-After")).toBeDefined();
     const retryAfter = parseInt(res.headers.get("Retry-After"));
     expect(retryAfter).toBeGreaterThan(0);

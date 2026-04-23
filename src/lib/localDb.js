@@ -444,56 +444,70 @@ export async function createProviderConnection(data) {
   const db = await getDb();
   const now = new Date().toISOString();
 
+  const legacyMirrorStatusFields = new Set([
+    "testStatus",
+    "lastError",
+    "lastErrorType",
+    "lastErrorAt",
+    "rateLimitedUntil",
+    "errorCode",
+    "lastTested",
+  ]);
+
+  const normalizedData = Object.fromEntries(
+    Object.entries(data || {}).filter(([key]) => !legacyMirrorStatusFields.has(key))
+  );
+
   // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
   let existingIndex = -1;
-  if (data.authType === "oauth" && data.email) {
+  if (normalizedData.authType === "oauth" && normalizedData.email) {
     existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
+      c => c.provider === normalizedData.provider && c.authType === "oauth" && c.email === normalizedData.email
     );
-  } else if (data.authType === "apikey" && data.name) {
+  } else if (normalizedData.authType === "apikey" && normalizedData.name) {
     existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
+      c => c.provider === normalizedData.provider && c.authType === "apikey" && c.name === normalizedData.name
     );
   }
 
   if (existingIndex !== -1) {
     db.data.providerConnections[existingIndex] = {
       ...db.data.providerConnections[existingIndex],
-      ...data,
+      ...normalizedData,
       updatedAt: now,
     };
     await safeWrite(db);
     return db.data.providerConnections[existingIndex];
   }
 
-  let connectionName = data.name || data.email || data.displayName || null;
-  if (!connectionName && data.authType === "oauth") {
-    if (data.email) {
-      connectionName = data.email;
-    } else if (data.displayName) {
-      connectionName = data.displayName;
+  let connectionName = normalizedData.name || normalizedData.email || normalizedData.displayName || null;
+  if (!connectionName && normalizedData.authType === "oauth") {
+    if (normalizedData.email) {
+      connectionName = normalizedData.email;
+    } else if (normalizedData.displayName) {
+      connectionName = normalizedData.displayName;
     } else {
       const existingCount = db.data.providerConnections.filter(
-        c => c.provider === data.provider
+        c => c.provider === normalizedData.provider
       ).length;
       connectionName = `Account ${existingCount + 1}`;
     }
   }
 
-  let connectionPriority = data.priority;
+  let connectionPriority = normalizedData.priority;
   if (!connectionPriority) {
-    const providerConnections = db.data.providerConnections.filter(c => c.provider === data.provider);
+    const providerConnections = db.data.providerConnections.filter(c => c.provider === normalizedData.provider);
     const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
     connectionPriority = maxPriority + 1;
   }
 
   const connection = {
     id: uuidv4(),
-    provider: data.provider,
-    authType: data.authType || "oauth",
+    provider: normalizedData.provider,
+    authType: normalizedData.authType || "oauth",
     name: connectionName,
     priority: connectionPriority,
-    isActive: data.isActive !== undefined ? data.isActive : true,
+    isActive: normalizedData.isActive !== undefined ? normalizedData.isActive : true,
     createdAt: now,
     updatedAt: now,
   };
@@ -506,18 +520,18 @@ export async function createProviderConnection(data) {
   ];
 
   for (const field of optionalFields) {
-    if (data[field] !== undefined && data[field] !== null) {
-      connection[field] = data[field];
+    if (normalizedData[field] !== undefined && normalizedData[field] !== null) {
+      connection[field] = normalizedData[field];
     }
   }
 
-  if (data.providerSpecificData && Object.keys(data.providerSpecificData).length > 0) {
-    connection.providerSpecificData = data.providerSpecificData;
+  if (normalizedData.providerSpecificData && Object.keys(normalizedData.providerSpecificData).length > 0) {
+    connection.providerSpecificData = normalizedData.providerSpecificData;
   }
 
   db.data.providerConnections.push(connection);
   await safeWrite(db);
-  await reorderProviderConnections(data.provider);
+  await reorderProviderConnections(normalizedData.provider);
 
   return connection;
 }

@@ -81,7 +81,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         apiKey: formData.apiKey,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
-        testStatus: isValid ? "active" : "unknown",
+        ...(isValid
+          ? {
+              routingStatus: "eligible",
+              healthStatus: "healthy",
+              quotaState: "ok",
+              authState: "ok",
+              reasonCode: "unknown",
+              reasonDetail: null,
+              nextRetryAt: null,
+              resetAt: null,
+              lastCheckedAt: new Date().toISOString(),
+            }
+          : {}),
         providerSpecificData: buildProviderSpecificData()
       });
     } finally {

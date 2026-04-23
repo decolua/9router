@@ -78,11 +78,8 @@ function isQuotaBlockedState(hotState = {}) {
   const reasonCode = hotState?.reasonCode || null;
 
   return routingStatus === "exhausted"
-    || routingStatus === "blocked_quota"
-    || routingStatus === "cooldown"
     || (routingStatus === "blocked" && reasonCode === "quota_exhausted")
     || quotaState === "exhausted"
-    || quotaState === "cooldown"
     || quotaState === "blocked";
 }
 
@@ -90,17 +87,14 @@ function isErrorState(hotState = {}) {
   const routingStatus = hotState?.routingStatus || null;
   const reasonCode = hotState?.reasonCode || null;
   const healthStatus = hotState?.healthStatus || null;
-  const testStatus = hotState?.testStatus || null;
 
-  return routingStatus === "blocked_health"
-    || (routingStatus === "blocked" && reasonCode !== "quota_exhausted")
-    || ["error", "failed", "down", "unhealthy"].includes(healthStatus)
-    || (!routingStatus && testStatus === "error");
+  return (routingStatus === "blocked" && reasonCode !== "quota_exhausted")
+    || ["error", "failed", "down", "unhealthy"].includes(healthStatus);
 }
 
 function getRetryGate(hotState = {}) {
   const resetAtTs = toTimestamp(hotState?.resetAt);
-  const retryCandidates = [hotState.nextRetryAt, hotState.rateLimitedUntil, hotState.resetAt]
+  const retryCandidates = [hotState.nextRetryAt, hotState.resetAt]
     .map(toTimestamp)
     .filter((value) => value !== null);
 
@@ -117,7 +111,6 @@ function getRetryGate(hotState = {}) {
 function getDecisionTtlMs(hotState = {}, schedulerSettings) {
   const quotaState = hotState?.quotaState || null;
   const routingStatus = hotState?.routingStatus || null;
-  const testStatus = hotState?.testStatus || null;
 
   if (isQuotaBlockedState(hotState)) {
     return schedulerSettings.exhaustedTtlMs;
@@ -127,7 +120,7 @@ function getDecisionTtlMs(hotState = {}, schedulerSettings) {
     return Math.max(schedulerSettings.errorTtlMs, schedulerSettings.cadenceMs);
   }
 
-  if (routingStatus === "eligible" || quotaState === "ok" || (!routingStatus && testStatus === "active")) {
+  if (routingStatus === "eligible" || quotaState === "ok") {
     return Math.max(schedulerSettings.successTtlMs, schedulerSettings.cadenceMs);
   }
 
@@ -137,9 +130,8 @@ function getDecisionTtlMs(hotState = {}, schedulerSettings) {
 function isSuccessLikeState(hotState = {}) {
   const routingStatus = hotState?.routingStatus || null;
   const quotaState = hotState?.quotaState || null;
-  const testStatus = hotState?.testStatus || null;
 
-  return routingStatus === "eligible" || quotaState === "ok" || (!routingStatus && testStatus === "active");
+  return routingStatus === "eligible" || quotaState === "ok";
 }
 
 function getFreshReason(hotState = {}) {

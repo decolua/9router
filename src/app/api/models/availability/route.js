@@ -47,7 +47,7 @@ function getAvailabilityEntries(connection) {
       until: providerSurfaceStatus === "exhausted" ? (providerCooldownUntil || undefined) : undefined,
       connectionId: connection.id,
       connectionName: getConnectionName(connection),
-      lastError: connection.lastError || connection.reasonDetail || null,
+      lastError: connection.reasonDetail || null,
     });
   }
 
@@ -64,11 +64,11 @@ function buildCooldownClearPatch(connection, model) {
     patch.nextRetryAt = null;
     patch.resetAt = null;
 
-    if (["blocked_quota", "cooldown", "exhausted"].includes(connection?.routingStatus)) {
+    if (["exhausted", "blocked"].includes(connection?.routingStatus)) {
       patch.routingStatus = null;
     }
 
-    if (["exhausted", "cooldown", "blocked"].includes(connection?.quotaState)) {
+    if (["exhausted", "blocked"].includes(connection?.quotaState)) {
       patch.quotaState = null;
     }
 
@@ -83,11 +83,9 @@ function hasProviderWideCooldownState(connection) {
   return Boolean(
     getFutureTimestamp(connection?.nextRetryAt)
     || getFutureTimestamp(connection?.resetAt)
-    || getFutureTimestamp(connection?.rateLimitedUntil)
-    || connection?.routingStatus === "blocked_quota"
-    || connection?.routingStatus === "cooldown"
     || connection?.routingStatus === "exhausted"
-    || ["exhausted", "cooldown", "blocked"].includes(connection?.quotaState),
+    || connection?.routingStatus === "blocked"
+    || ["exhausted", "blocked"].includes(connection?.quotaState),
   );
 }
 

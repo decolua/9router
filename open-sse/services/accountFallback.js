@@ -49,12 +49,55 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+function hasFutureTimestamp(value) {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp > Date.now();
+}
+
+function getCanonicalUnavailableUntil(account = {}) {
+  if (!account || typeof account !== "object") return null;
+
+  const nextRetryAt = hasFutureTimestamp(account.nextRetryAt) ? account.nextRetryAt : null;
+  const resetAt = hasFutureTimestamp(account.resetAt) ? account.resetAt : null;
+
+  if (nextRetryAt && resetAt) {
+    return new Date(nextRetryAt).getTime() <= new Date(resetAt).getTime() ? nextRetryAt : resetAt;
+  }
+
+  return nextRetryAt || resetAt || null;
+}
+
+function isCanonicalUnavailable(account = {}) {
+  if (!account || typeof account !== "object") return false;
+
+  const routingStatus = account.routingStatus || null;
+  if (routingStatus && routingStatus !== "eligible") return true;
+
+  const authState = account.authState || null;
+  if (["expired", "invalid", "revoked"].includes(authState)) return true;
+
+  const healthStatus = account.healthStatus || null;
+  if (["error", "failed", "unhealthy", "down"].includes(healthStatus)) return true;
+
+  const quotaState = account.quotaState || null;
+  if (["exhausted", "cooldown", "blocked"].includes(quotaState)) return true;
+
+  return Boolean(getCanonicalUnavailableUntil(account));
+}
+
 /**
- * Check if account is currently unavailable (cooldown not expired)
+ * Check if account is currently unavailable.
+ * Accepts either a legacy timestamp string (local compatibility) or a canonical account object.
  */
-export function isAccountUnavailable(unavailableUntil) {
-  if (!unavailableUntil) return false;
-  return new Date(unavailableUntil).getTime() > Date.now();
+export function isAccountUnavailable(accountOrUntil) {
+  if (!accountOrUntil) return false;
+
+  if (typeof accountOrUntil === "string") {
+    return hasFutureTimestamp(accountOrUntil);
+  }
+
+  return isCanonicalUnavailable(accountOrUntil);
 }
 
 /**
@@ -65,17 +108,17 @@ export function getUnavailableUntil(cooldownMs) {
 }
 
 /**
- * Get the earliest rateLimitedUntil from a list of accounts
- * @param {Array} accounts - Array of account objects with rateLimitedUntil
- * @returns {string|null} Earliest rateLimitedUntil ISO string, or null
+ * Get earliest canonical retry timestamp from a list of accounts.
+ * Falls back to legacy rateLimitedUntil only for local payload compatibility.
  */
 export function getEarliestRateLimitedUntil(accounts) {
   let earliest = null;
   const now = Date.now();
   for (const acc of accounts) {
-    if (!acc.rateLimitedUntil) continue;
-    const until = new Date(acc.rateLimitedUntil).getTime();
-    if (until <= now) continue;
+    const untilValue = getCanonicalUnavailableUntil(acc) || acc?.rateLimitedUntil || null;
+    if (!untilValue) continue;
+    const until = new Date(untilValue).getTime();
+    if (!Number.isFinite(until) || until <= now) continue;
     if (!earliest || until < earliest) earliest = until;
   }
   if (!earliest) return null;
@@ -164,13 +207,9 @@ export function buildClearModelLocksUpdate(connection) {
  * Filter available accounts (not in cooldown)
  */
 export function filterAvailableAccounts(accounts, excludeId = null) {
-  const now = Date.now();
   return accounts.filter(acc => {
     if (excludeId && acc.id === excludeId) return false;
-    if (acc.rateLimitedUntil) {
-      const until = new Date(acc.rateLimitedUntil).getTime();
-      if (until > now) return false;
-    }
+    if (isAccountUnavailable(acc)) return false;
     return true;
   });
 }

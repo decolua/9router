@@ -220,10 +220,6 @@ function getConnectionRetryAt(state = {}) {
     timestamps.push(state.nextRetryAt);
   }
 
-  if (isFutureTimestamp(state.rateLimitedUntil)) {
-    timestamps.push(state.rateLimitedUntil);
-  }
-
   for (const [key, value] of Object.entries(state || {})) {
     if (isAccountWideModelLockKey(key) && isFutureTimestamp(value)) {
       timestamps.push(value);
@@ -294,11 +290,15 @@ function hydrateProviderState(providerId, rawState = {}) {
 
     const parsedField = parseRedisConnectionField(field);
     if (parsedField) {
+      if (LEGACY_MIRROR_FIELDS.has(parsedField.stateKey)) {
+        continue;
+      }
+
       const value = parseStoredValue(raw);
       if (value !== undefined) {
         const connectionState = providerState.connections.get(parsedField.connectionId) || {};
         connectionState[parsedField.stateKey] = value;
-        providerState.connections.set(parsedField.connectionId, connectionState);
+        providerState.connections.set(parsedField.connectionId, stripLegacyMirrorFields(connectionState));
       }
       continue;
     }
@@ -311,10 +311,7 @@ function hydrateProviderState(providerId, rawState = {}) {
 
   for (const [connectionId, legacyState] of legacyConnectionStates.entries()) {
     const currentState = providerState.connections.get(connectionId) || {};
-    providerState.connections.set(connectionId, {
-      ...legacyState,
-      ...currentState,
-    });
+    providerState.connections.set(connectionId, mergeHotState(legacyState, currentState));
   }
 
   recalculateProviderIndexes(providerState);
@@ -383,6 +380,7 @@ async function persistConnectionField(providerId, connectionId, updates = {}) {
   if (!client) return { storedInRedis: false, providerState: null };
 
   const key = getProviderRedisKey(providerId);
+  const sanitizedUpdates = stripLegacyMirrorFields(updates || {});
 
   const buildPersistPlan = (rawState = {}) => {
     const legacyState = parseStoredState(rawState?.[connectionId]);
@@ -403,9 +401,9 @@ async function persistConnectionField(providerId, connectionId, updates = {}) {
             }
           }
 
-          return mergeState(mergedState, updates);
+          return mergeHotState(mergedState, sanitizedUpdates);
         })()
-      : updates;
+      : mergeHotState({}, sanitizedUpdates);
 
     for (const [stateKey, value] of Object.entries(fieldsToPersist || {})) {
       const redisField = getRedisConnectionField(connectionId, stateKey);
@@ -622,31 +620,12 @@ export function projectProviderHotState(connection = {}, providerState = null) {
   if (!providerState) return connection;
 
   const connectionHotState = providerState.connections.get(connection.id) || null;
-  const projected = connectionHotState ? { ...connection, ...connectionHotState } : { ...connection };
-  const eligibleSet = providerState.eligibleConnectionIds;
-
-  if (connectionHotState && eligibleSet instanceof Set && !eligibleSet.has(connection.id)) {
-    if (!projected.rateLimitedUntil && providerState.retryAt) {
-      projected.rateLimitedUntil = providerState.retryAt;
-    }
-
-    const legacyProjection = projectLegacyConnectionState({
-      ...projected,
-      testStatus: connectionHotState?.routingStatus ? undefined : connectionHotState?.testStatus,
-    });
-
-    Object.assign(projected, legacyProjection);
-
-    if (
-      !projected.testStatus
-      || (projected.routingStatus && projected.testStatus === "unknown")
-      || (!projected.routingStatus && ["active", "success", "unknown"].includes(projected.testStatus))
-    ) {
-      projected.testStatus = "unavailable";
-    }
+  if (!connectionHotState) {
+    return { ...connection };
   }
 
-  return projected;
+  const projected = { ...connection, ...connectionHotState };
+  return stripLegacyMirrorFields(projected);
 }
 
 export async function getConnectionHotState(connectionId, providerId) {
@@ -701,9 +680,10 @@ export async function setConnectionHotState(connectionId, providerId, updates = 
     return { storedInRedis: false, state: null };
   }
 
+  const sanitizedUpdates = stripLegacyMirrorFields(updates);
   const providerState = (await getProviderHotState(providerId)) || createEmptyProviderState();
   const current = providerState.connections.get(connectionId) || {};
-  const next = mergeState(current, updates);
+  const next = mergeHotState(current, sanitizedUpdates);
 
   providerState.connections.set(connectionId, next);
   recalculateProviderIndexes(providerState);
@@ -712,7 +692,7 @@ export async function setConnectionHotState(connectionId, providerId, updates = 
   let storedInRedis = false;
   const client = await getRedisClient();
   if (client) {
-    const persisted = await persistConnectionField(providerId, connectionId, updates);
+    const persisted = await persistConnectionField(providerId, connectionId, sanitizedUpdates);
     storedInRedis = persisted.storedInRedis;
   } else {
     storedInRedis = await persistProviderState(providerId, providerState);

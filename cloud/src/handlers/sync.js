@@ -192,11 +192,15 @@ function formatProviderData(provider) {
     apiKey: provider.apiKey,
     providerSpecificData: provider.providerSpecificData || {},
     isActive: provider.isActive,
-    status: provider.status || "active",
-    lastError: provider.lastError || null,
-    lastErrorAt: provider.lastErrorAt || null,
-    errorCode: provider.errorCode || null,
-    rateLimitedUntil: provider.rateLimitedUntil || null,
+    routingStatus: provider.routingStatus || "eligible",
+    authState: provider.authState || "ok",
+    healthStatus: provider.healthStatus || "healthy",
+    quotaState: provider.quotaState || "ok",
+    reasonCode: provider.reasonCode || "unknown",
+    reasonDetail: provider.reasonDetail || null,
+    nextRetryAt: provider.nextRetryAt || null,
+    resetAt: provider.resetAt || null,
+    lastCheckedAt: provider.lastCheckedAt || null,
     createdAt: provider.createdAt,
     updatedAt: provider.updatedAt || new Date().toISOString()
   };
@@ -205,12 +209,12 @@ function formatProviderData(provider) {
 /**
  * Update provider status (called when token refresh fails or API errors)
  */
-export function updateProviderStatus(providers, providerId, status, error = null, errorCode = null) {
+export function updateProviderStatus(providers, providerId, routingStatus, reasonDetail = null, reasonCode = null) {
   if (providers[providerId]) {
-    providers[providerId].status = status;
-    providers[providerId].lastError = error;
-    providers[providerId].lastErrorAt = error ? new Date().toISOString() : null;
-    providers[providerId].errorCode = errorCode;
+    providers[providerId].routingStatus = routingStatus || "eligible";
+    providers[providerId].reasonDetail = reasonDetail;
+    providers[providerId].reasonCode = reasonCode || (reasonDetail ? "usage_request_failed" : "unknown");
+    providers[providerId].lastCheckedAt = new Date().toISOString();
     providers[providerId].updatedAt = new Date().toISOString();
   }
   return providers;

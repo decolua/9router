@@ -127,7 +127,15 @@ export async function handleImageGeneration(request) {
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
+          routingStatus: "eligible",
+          quotaState: "ok",
+          authState: "ok",
+          healthStatus: "healthy",
+          reasonCode: "unknown",
+          reasonDetail: null,
+          nextRetryAt: null,
+          resetAt: null,
+          lastCheckedAt: new Date().toISOString()
         });
       },
       onRequestSuccess: async () => {

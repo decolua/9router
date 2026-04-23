@@ -78,12 +78,6 @@ function getCentralizedStatus(connection = {}) {
     case "unknown":
     case "disabled":
       return { status: connection.routingStatus, source: "routingStatus" };
-    case "blocked_auth":
-    case "blocked_health":
-      return { status: "blocked", source: "routingStatus-legacy" };
-    case "blocked_quota":
-    case "cooldown":
-      return { status: "exhausted", source: "routingStatus-legacy" };
     default:
       break;
   }
@@ -143,24 +137,13 @@ export function getConnectionStatusDetails(connection) {
     };
   }
 
-  switch (connection?.testStatus) {
-    case "unavailable":
-      return {
-        status: cooldownUntil ? "exhausted" : "unknown",
-        source: cooldownUntil ? "legacy-unavailable-cooldown" : "legacy-unavailable-stale",
-        hasActiveModelLock: activeModelLocks.length > 0,
-        cooldownUntil,
-        activeModelLocks,
-      };
-    default:
-      return {
-        status: "unknown",
-        source: connection.testStatus ? "legacy-testStatus" : "unknown",
-        hasActiveModelLock: activeModelLocks.length > 0,
-        cooldownUntil,
-        activeModelLocks,
-      };
-  }
+  return {
+    status: "unknown",
+    source: "unknown",
+    hasActiveModelLock: activeModelLocks.length > 0,
+    cooldownUntil,
+    activeModelLocks,
+  };
 }
 
 export function getConnectionEffectiveStatus(connection) {

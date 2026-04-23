@@ -25,13 +25,20 @@ const ALLOWED_FIELDS = [
   "scope",
   "projectId",
   "providerSpecificData",
-    "testStatus",
-    "lastTested",
-    "lastError",
-    "lastErrorType",
-    "lastErrorAt",
-    "rateLimitedUntil",
-    "errorCode",
+  "routingStatus",
+  "quotaState",
+  "healthStatus",
+  "authState",
+  "reasonCode",
+  "reasonDetail",
+  "nextRetryAt",
+  "resetAt",
+  "lastCheckedAt",
+  "usageSnapshot",
+  "version",
+  "lastUsedAt",
+  "consecutiveUseCount",
+  "backoffLevel",
 ];
 
 function normalizeAuthType(value) {
@@ -58,6 +65,52 @@ function compactObject(input) {
     if (value !== undefined && value !== null) out[key] = value;
   }
   return out;
+}
+
+function deriveCanonicalStatusFromLegacy(record = {}) {
+  const derived = {};
+
+  const lastErrorType = pickValue(record.lastErrorType, record.last_error_type);
+  const lastError = pickValue(record.lastError, record.last_error);
+  const errorCode = pickValue(record.errorCode, record.error_code);
+  const rateLimitedUntil = pickValue(record.rateLimitedUntil, record.rate_limited_until);
+  const lastTested = pickValue(record.lastTested, record.last_tested);
+  const testStatus = pickValue(record.testStatus, record.test_status);
+
+  if (lastErrorType === "token_expired" || errorCode === "AUTH" || testStatus === "expired") {
+    derived.authState = "invalid";
+    derived.routingStatus = "blocked";
+    derived.reasonCode = "auth_invalid";
+  } else if (testStatus === "error") {
+    derived.healthStatus = "error";
+    derived.routingStatus = "blocked";
+    derived.reasonCode = "health_error";
+  }
+
+  if (testStatus === "active") {
+    derived.routingStatus = "eligible";
+    derived.quotaState = "ok";
+    derived.authState = derived.authState || "ok";
+    derived.healthStatus = derived.healthStatus || "healthy";
+    derived.reasonCode = derived.reasonCode || "unknown";
+  }
+
+  if (testStatus === "unavailable" || rateLimitedUntil) {
+    derived.quotaState = "exhausted";
+    derived.routingStatus = "exhausted";
+    if (rateLimitedUntil) derived.nextRetryAt = rateLimitedUntil;
+    if (!derived.reasonCode) derived.reasonCode = "quota_exhausted";
+  }
+
+  if (lastError && !derived.reasonDetail) {
+    derived.reasonDetail = lastError;
+  }
+
+  if (lastTested && !derived.lastCheckedAt) {
+    derived.lastCheckedAt = lastTested;
+  }
+
+  return compactObject(derived);
 }
 
 function normalizeInputRecord(raw) {
@@ -182,19 +235,52 @@ function normalizeInputRecord(raw) {
       meta?.projectId,
       meta?.project_id,
     ),
-    testStatus: pickValue(record.testStatus, record.test_status),
-    lastTested: pickValue(record.lastTested, record.last_tested),
-    lastError: pickValue(record.lastError, record.last_error),
-    lastErrorType: pickValue(record.lastErrorType, record.last_error_type),
-    lastErrorAt: pickValue(record.lastErrorAt, record.last_error_at),
-    rateLimitedUntil: pickValue(record.rateLimitedUntil, record.rate_limited_until),
-    errorCode: pickValue(record.errorCode, record.error_code),
+    routingStatus: pickValue(record.routingStatus, record.routing_status),
+    quotaState: pickValue(record.quotaState, record.quota_state),
+    healthStatus: pickValue(record.healthStatus, record.health_status),
+    authState: pickValue(record.authState, record.auth_state),
+    reasonCode: pickValue(record.reasonCode, record.reason_code),
+    reasonDetail: pickValue(record.reasonDetail, record.reason_detail),
+    nextRetryAt: pickValue(record.nextRetryAt, record.next_retry_at),
+    resetAt: pickValue(record.resetAt, record.reset_at),
+    lastCheckedAt: pickValue(record.lastCheckedAt, record.last_checked_at),
+    usageSnapshot: pickValue(record.usageSnapshot, record.usage_snapshot),
+    version: pickValue(record.version),
+    lastUsedAt: pickValue(record.lastUsedAt, record.last_used_at),
+    consecutiveUseCount: pickValue(record.consecutiveUseCount, record.consecutive_use_count),
+    backoffLevel: pickValue(record.backoffLevel, record.backoff_level),
     providerSpecificData: {
       ...providerSpecificData,
       ...compactObject(metadata),
       ...compactObject(meta),
     },
   };
+
+  Object.assign(normalized, deriveCanonicalStatusFromLegacy(record));
+
+  if (normalized.routingStatus === undefined && normalized.quotaState === "cooldown") {
+    normalized.routingStatus = "exhausted";
+  }
+
+  if (normalized.routingStatus === undefined && normalized.authState === "expired") {
+    normalized.routingStatus = "blocked_auth";
+  }
+
+  if (normalized.routingStatus === undefined && normalized.healthStatus === "error") {
+    normalized.routingStatus = "blocked_health";
+  }
+
+  if (normalized.routingStatus === undefined && normalized.quotaState === "ok") {
+    normalized.routingStatus = "eligible";
+  }
+
+  if (normalized.reasonCode === undefined && normalized.routingStatus === "blocked_auth") {
+    normalized.reasonCode = "auth_invalid";
+  }
+
+  if (normalized.reasonCode === undefined && normalized.routingStatus === "exhausted") {
+    normalized.reasonCode = "quota_exhausted";
+  }
 
   if (Object.keys(normalized.providerSpecificData).length === 0) {
     delete normalized.providerSpecificData;
@@ -260,15 +346,18 @@ function sanitizeCredentialRecord(record) {
   data.provider = typeof data.provider === "string" ? data.provider.trim() : "";
   data.authType = inferAuthType(record, normalizeAuthType(data.authType));
 
-  // Restored Codex OAuth credentials should behave like manually added ones:
-  // if the backup did not include a test status, seed the initial status so
-  // the dashboard does not surface a misleading "unknown" badge.
+  // Restored Codex OAuth credentials should behave like manually added ones.
+  // If no canonical status was provided, seed an initial eligible state.
   if (
     data.provider === "codex" &&
     data.authType === "oauth" &&
-    data.testStatus === undefined
+    data.routingStatus === undefined &&
+    data.quotaState === undefined &&
+    data.healthStatus === undefined &&
+    data.authState === undefined
   ) {
-    data.testStatus = "active";
+    data.routingStatus = "eligible";
+    data.quotaState = "ok";
   }
 
   if (!data.provider) {
