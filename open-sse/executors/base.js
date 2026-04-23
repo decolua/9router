@@ -1,4 +1,5 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { resolveOllamaLocalHost } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
@@ -34,6 +35,9 @@ export class BaseExecutor {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
+    }
+    if (this.provider === "ollama-local") {
+      return `${resolveOllamaLocalHost(credentials)}/api/chat`;
     }
     const baseUrls = this.getBaseUrls();
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
@@ -120,11 +124,11 @@ export class BaseExecutor {
         }, proxyOptions);
 
         // Retry based on status code config
-        const maxRetries = retryConfig[response.status] || 0;
+        const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
         if (maxRetries > 0 && retryAttemptsByUrl[urlIndex] < maxRetries) {
           retryAttemptsByUrl[urlIndex]++;
-          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${delayMs / 1000}s`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
           urlIndex--;
           continue;
         }

@@ -9,6 +9,9 @@ import { CursorExecutor } from "./cursor.js";
 import { VertexExecutor } from "./vertex.js";
 import { QwenExecutor } from "./qwen.js";
 import { OpenCodeExecutor } from "./opencode.js";
+import { OpenCodeGoExecutor } from "./opencode-go.js";
+import { GrokWebExecutor } from "./grok-web.js";
+import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -25,6 +28,9 @@ const executors = {
   "vertex-partner": new VertexExecutor("vertex-partner"),
   qwen: new QwenExecutor(),
   opencode: new OpenCodeExecutor(),
+  "opencode-go": new OpenCodeGoExecutor(),
+  "grok-web": new GrokWebExecutor(),
+  "perplexity-web": new PerplexityWebExecutor(),
 };
 
 const defaultCache = new Map();
@@ -52,3 +58,6 @@ export { VertexExecutor } from "./vertex.js";
 export { DefaultExecutor } from "./default.js";
 export { QwenExecutor } from "./qwen.js";
 export { OpenCodeExecutor } from "./opencode.js";
+export { OpenCodeGoExecutor } from "./opencode-go.js";
+export { GrokWebExecutor } from "./grok-web.js";
+export { PerplexityWebExecutor } from "./perplexity-web.js";

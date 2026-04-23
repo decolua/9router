@@ -72,7 +72,6 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -338,4 +337,26 @@ export const PROVIDERS = {
     headers: { "x-opencode-client": "desktop" },
     noAuth: true
   },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "grok-web": {
+    baseUrl: "https://grok.com/rest/app-chat/conversations/new",
+    format: "grok-web",
+    authType: "cookie"
+  },
+  "perplexity-web": {
+    baseUrl: "https://www.perplexity.ai/rest/sse/perplexity_ask",
+    format: "perplexity-web",
+    authType: "cookie"
+  },
 };
+
+export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
+
+export function resolveOllamaLocalHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}

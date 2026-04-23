@@ -5,13 +5,14 @@ import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
-import { APP_CONFIG } from "@/shared/constants/config";
+import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "tts"];
+const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts"];
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
@@ -40,7 +41,12 @@ export default function Sidebar({ onClose }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const { copied, copy } = useCopyToClipboard(2000);
+
+  const INSTALL_CMD = UPDATER_CONFIG.installCmd;
 
   useEffect(() => {
     fetch("/api/settings")
@@ -62,6 +68,25 @@ export default function Sidebar({ onClose }) {
       return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
     }
     return pathname.startsWith(href);
+  };
+
+  const handleUpdate = async () => {
+    setIsUpdating(true);
+    setShowUpdateModal(false);
+    try {
+      const res = await fetch("/api/version/update", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.message || "Update failed. Please run the install command manually.");
+        setIsUpdating(false);
+        return;
+      }
+      // Server will exit shortly; show disconnected overlay
+      setIsDisconnected(true);
+    } catch (e) {
+      // Expected once the server exits; treat as disconnected
+      setIsDisconnected(true);
+    }
   };
 
   const handleShutdown = async () => {
@@ -100,13 +125,27 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
-              <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
-                npm install -g 9router@latest
-              </code>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowUpdateModal(true)}
+                  className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  Update now
+                </button>
+                <button
+                  onClick={() => copy(INSTALL_CMD)}
+                  title="Copy install command"
+                  className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
+                >
+                  <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
+                    {copied ? "✓ copied!" : INSTALL_CMD}
+                  </code>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -284,18 +323,45 @@ export default function Sidebar({ onClose }) {
         loading={isShuttingDown}
       />
 
+      {/* Update Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showUpdateModal}
+        onClose={() => setShowUpdateModal(false)}
+        onConfirm={handleUpdate}
+        title="Update 9Router"
+        message={`This will close 9Router and install v${updateInfo?.latestVersion || ""} in a separate window. Continue?`}
+        confirmText="Update"
+        cancelText="Cancel"
+        variant="primary"
+        loading={isUpdating}
+      />
+
       {/* Disconnected Overlay */}
       {isDisconnected && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="text-center p-8">
-            <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-              <span className="material-symbols-outlined text-[32px]">power_off</span>
-            </div>
-            <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-            <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-            <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-              Reload Page
-            </Button>
+            {isUpdating ? (
+              <>
+                <div className="flex items-center justify-center size-16 rounded-full bg-green-500/20 text-green-500 mx-auto mb-4">
+                  <span className="material-symbols-outlined text-[32px]">download</span>
+                </div>
+                <h2 className="text-xl font-semibold text-white mb-2">Updating 9Router</h2>
+                <p className="text-text-muted mb-6">
+                  A new terminal window is installing the update. Once finished, run <code className="text-green-400">9router</code> again.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+                  <span className="material-symbols-outlined text-[32px]">power_off</span>
+                </div>
+                <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
+                <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+                <Button variant="secondary" onClick={() => globalThis.location.reload()}>
+                  Reload Page
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
