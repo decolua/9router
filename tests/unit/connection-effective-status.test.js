@@ -11,13 +11,13 @@ import {
 } from "../../src/lib/connectionStatus.js";
 
 describe("getConnectionEffectiveStatus", () => {
-  it("keeps exhausted when rateLimitedUntil is still active without model locks", () => {
+  it("returns unknown when only legacy unavailable cooldown remains", () => {
     const connection = {
       testStatus: "unavailable",
       rateLimitedUntil: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     };
 
-    expect(getConnectionEffectiveStatus(connection)).toBe("exhausted");
+    expect(getConnectionEffectiveStatus(connection)).toBe("unknown");
   });
 
   it("returns unknown after legacy unavailable cooldown has fully expired", () => {
@@ -91,16 +91,16 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionProviderCooldownUntil(connection)).toBe(connection.nextRetryAt);
   });
 
-  it("normalizes supported filter values and falls back invalid values to all", () => {
-    expect(normalizeConnectionFilterStatus("active")).toBe("eligible");
-    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("exhausted");
-    expect(normalizeConnectionFilterStatus("revoked-invalid")).toBe("blocked");
+  it("accepts only canonical filter values and falls back invalid values to all", () => {
+    expect(normalizeConnectionFilterStatus("active")).toBe("all");
+    expect(normalizeConnectionFilterStatus("quota-exhausted")).toBe("all");
+    expect(normalizeConnectionFilterStatus("revoked-invalid")).toBe("all");
     expect(normalizeConnectionFilterStatus("eligible")).toBe("eligible");
     expect(normalizeConnectionFilterStatus("exhausted")).toBe("exhausted");
-    expect(normalizeConnectionFilterStatus("blocked_health")).toBe("blocked");
-    expect(normalizeConnectionFilterStatus("blocked_auth")).toBe("blocked");
-    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("exhausted");
-    expect(normalizeConnectionFilterStatus("cooldown")).toBe("exhausted");
+    expect(normalizeConnectionFilterStatus("blocked_health")).toBe("all");
+    expect(normalizeConnectionFilterStatus("blocked_auth")).toBe("all");
+    expect(normalizeConnectionFilterStatus("blocked_quota")).toBe("all");
+    expect(normalizeConnectionFilterStatus("cooldown")).toBe("all");
     expect(normalizeConnectionFilterStatus("blocked")).toBe("blocked");
     expect(normalizeConnectionFilterStatus("definitely-invalid")).toBe("all");
   });
@@ -115,8 +115,8 @@ describe("getConnectionEffectiveStatus", () => {
     expect(getConnectionCentralizedStatus({ quotaState: "exhausted" })).toBe("exhausted");
     expect(getConnectionCentralizedStatus({ authState: "invalid" })).toBe("blocked");
     expect(getConnectionCentralizedStatus({ isActive: false, routingStatus: "eligible" })).toBe("disabled");
-    expect(getConnectionCentralizedStatus({ testStatus: "active" })).toBe("eligible");
-    expect(getConnectionCentralizedStatus({ testStatus: "unavailable", rateLimitedUntil: new Date(Date.now() + 10_000).toISOString() })).toBe("exhausted");
+    expect(getConnectionCentralizedStatus({ testStatus: "active" })).toBe("unknown");
+    expect(getConnectionCentralizedStatus({ testStatus: "unavailable", rateLimitedUntil: new Date(Date.now() + 10_000).toISOString() })).toBe("unknown");
     expect(getConnectionCentralizedStatus({ quotaState: "exhausted", testStatus: "active" })).toBe("exhausted");
     expect(getConnectionCentralizedStatus({ testStatus: "unavailable" })).toBe("unknown");
   });
