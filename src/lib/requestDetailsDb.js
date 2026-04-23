@@ -25,8 +25,26 @@ async function getDb() {
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
     const db = new Low(adapter, { records: [] });
-    await db.read();
-    if (!db.data?.records) db.data = { records: [] };
+    
+    // Handle corrupted JSON file gracefully
+    try {
+      await db.read();
+      if (!db.data?.records) db.data = { records: [] };
+    } catch (readError) {
+      console.error("[requestDetailsDb] Corrupted database file, creating fresh one:", readError.message);
+      // Backup corrupted file
+      const corruptedPath = DB_FILE + ".corrupted." + Date.now();
+      try {
+        fs.renameSync(DB_FILE, corruptedPath);
+        console.log("[requestDetailsDb] Backed up corrupted file to:", corruptedPath);
+      } catch (backupError) {
+        console.error("[requestDetailsDb] Failed to backup corrupted file:", backupError.message);
+      }
+      // Create fresh database
+      db.data = { records: [] };
+      await db.write();
+    }
+    
     dbInstance = db;
   }
   return dbInstance;
@@ -99,6 +117,34 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
+/**
+ * Recursively remove control characters (0x00-0x1F except 0x09 tab, 0x0A newline, 0x0D cr)
+ * from all string values in the DB data structure to prevent JSON parse failures.
+ */
+function sanitizeDbData(data) {
+  if (data === null || data === undefined) return data;
+  if (typeof data === "string") {
+    return data.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, (ch) => {
+      const code = ch.charCodeAt(0);
+      if (code === 0x0A) return "\\n";
+      if (code === 0x09) return "\\t";
+      if (code === 0x0D) return "\\r";
+      return "?";
+    });
+  }
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeDbData(item));
+  }
+  if (typeof data === "object") {
+    const result = {};
+    for (const [key, value] of Object.entries(data)) {
+      result[key] = sanitizeDbData(value);
+    }
+    return result;
+  }
+  return data;
+}
+
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
   const random = Math.random().toString(36).substring(2, 8);
@@ -169,7 +215,26 @@ async function flushToDatabase() {
       db.data.records = db.data.records.slice(0, Math.floor(db.data.records.length / 2));
     }
 
-    await db.write();
+    // Validate JSON before writing to prevent corruption
+    try {
+      const testSerialize = JSON.stringify(db.data);
+      // Additional validation: check for control characters that cause parse errors
+      if (/[\x00-\x08\x0B\x0C\x0E-\x1F]/.test(testSerialize)) {
+        console.warn("[requestDetailsDb] Found control characters in data, sanitizing...");
+        db.data = sanitizeDbData(db.data);
+      }
+      await db.write();
+    } catch (writeError) {
+      console.error("[requestDetailsDb] Failed to write database:", writeError.message);
+      // Attempt to recover by creating fresh data
+      try {
+        db.data = { records: [] };
+        await db.write();
+        console.log("[requestDetailsDb] Successfully recovered database");
+      } catch (recoveryError) {
+        console.error("[requestDetailsDb] Database recovery failed:", recoveryError.message);
+      }
+    }
   } catch (error) {
     console.error("[requestDetailsDb] Batch write failed:", error);
   } finally {
