@@ -12,6 +12,24 @@ import { FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, 
 
 export const dynamic = "force-dynamic";
 
+const LEGACY_MIRROR_FIELDS = [
+  "testStatus",
+  "lastTested",
+  "lastError",
+  "lastErrorType",
+  "lastErrorAt",
+  "rateLimitedUntil",
+  "errorCode",
+];
+
+function stripLegacyMirrorFields(connection) {
+  const result = { ...connection };
+  for (const field of LEGACY_MIRROR_FIELDS) {
+    delete result[field];
+  }
+  return result;
+}
+
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
   const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
@@ -83,7 +101,7 @@ export async function GET() {
         ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
       return {
-        ...c,
+        ...stripLegacyMirrorFields(c),
         name,
         apiKey: undefined,
         accessToken: undefined,
@@ -103,7 +121,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { provider, apiKey, name, priority, globalPriority, defaultModel, testStatus } = body;
+    const { provider, apiKey, name, priority, globalPriority, defaultModel } = body;
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
@@ -191,7 +209,6 @@ export async function POST(request) {
       defaultModel: defaultModel || null,
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
-      testStatus: testStatus || "unknown",
     });
 
     // Hide sensitive fields

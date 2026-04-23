@@ -6,6 +6,24 @@ import {
   deleteProviderConnection,
 } from "@/models";
 
+const LEGACY_MIRROR_FIELDS = [
+  "testStatus",
+  "lastTested",
+  "lastError",
+  "lastErrorType",
+  "lastErrorAt",
+  "rateLimitedUntil",
+  "errorCode",
+];
+
+function stripLegacyMirrorFields(connection) {
+  const result = { ...connection };
+  for (const field of LEGACY_MIRROR_FIELDS) {
+    delete result[field];
+  }
+  return result;
+}
+
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
     Object.prototype.hasOwnProperty.call(body, "connectionProxyEnabled") ||
@@ -70,7 +88,7 @@ export async function GET(request, { params }) {
     }
 
     // Hide sensitive fields
-    const result = { ...connection };
+    const result = stripLegacyMirrorFields(connection);
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;
@@ -95,9 +113,6 @@ export async function PUT(request, { params }) {
       defaultModel,
       isActive,
       apiKey,
-      testStatus,
-      lastError,
-      lastErrorAt,
       providerSpecificData
     } = body;
 
@@ -123,10 +138,6 @@ export async function PUT(request, { params }) {
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
-    if (testStatus !== undefined) updateData.testStatus = testStatus;
-    if (lastError !== undefined) updateData.lastError = lastError;
-    if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
-
     if (
       shouldMergeProviderSpecificData(
         existing.providerSpecificData,
@@ -158,7 +169,7 @@ export async function PUT(request, { params }) {
     const updated = await updateProviderConnection(id, updateData);
 
     // Hide sensitive fields
-    const result = { ...updated };
+    const result = stripLegacyMirrorFields(updated);
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;

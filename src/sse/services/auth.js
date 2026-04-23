@@ -28,6 +28,32 @@ function sortByRecencyAsc(connections = []) {
   });
 }
 
+function hasFutureTimestamp(value) {
+  if (!value) return false;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) && timestamp > Date.now();
+}
+
+function isCanonicalFallbackEligible(connection = {}) {
+  const routingStatus = connection?.routingStatus || null;
+  if (routingStatus !== "eligible") return false;
+
+  const authState = connection?.authState || null;
+  if (["expired", "invalid", "revoked"].includes(authState)) return false;
+
+  const healthStatus = connection?.healthStatus || null;
+  if (["error", "failed", "unhealthy", "down"].includes(healthStatus)) return false;
+
+  const quotaState = connection?.quotaState || null;
+  if (["exhausted", "cooldown", "blocked"].includes(quotaState)) return false;
+
+  if (hasFutureTimestamp(connection?.nextRetryAt) || hasFutureTimestamp(connection?.resetAt)) {
+    return false;
+  }
+
+  return true;
+}
+
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
@@ -76,7 +102,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     const centralizedEligibleConnections = await getEligibleConnections(providerId, availableConnections);
     const hasCentralizedEligibility = Array.isArray(centralizedEligibleConnections);
-    const selectionPool = hasCentralizedEligibility
+    const hasCentralizedEligibilityData = centralizedEligibleConnections != null;
+    let selectionPool = hasCentralizedEligibility
       ? sortByPriority(centralizedEligibleConnections)
       : null;
 
@@ -111,8 +138,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     if (!Array.isArray(selectionPool)) {
-      log.warn("AUTH", `${provider} | centralized eligibility unavailable`);
-      return null;
+      if (!hasCentralizedEligibilityData) {
+        const fallbackPool = sortByPriority(availableConnections.filter(isCanonicalFallbackEligible));
+        log.warn("AUTH", `${provider} | centralized eligibility unavailable, using canonical fallback (${fallbackPool.length}/${availableConnections.length})`);
+        if (fallbackPool.length > 0) {
+          selectionPool = fallbackPool;
+        }
+      }
+
+      if (!Array.isArray(selectionPool)) {
+        log.warn("AUTH", `${provider} | centralized eligibility unavailable`);
+        return null;
+      }
     }
 
     if (selectionPool.length === 0) {
@@ -235,7 +272,6 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const exhaustedRetryAt = liveQuotaSignal?.resetAt || conn?.rateLimitedUntil || null;
   const exhaustedReason = liveQuotaSignal?.reasonDetail || reason;
   const exhaustedReasonCode = liveQuotaSignal?.reasonCode || "quota_exhausted";
-  const exhaustedErrorCode = liveQuotaSignal?.errorCode || "quota_exhausted";
 
   const exhaustedPatch = !authBlockedPatch && isRuntimeQuotaOrRateLimited
     ? {
@@ -247,14 +283,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
         reasonDetail: exhaustedReason,
         nextRetryAt: exhaustedRetryAt,
         resetAt: exhaustedRetryAt,
-        testStatus: "unavailable",
-        lastError: exhaustedReason,
-        lastErrorType: exhaustedReasonCode,
-        lastErrorAt: lastCheckedAt,
-        rateLimitedUntil: exhaustedRetryAt,
-        errorCode: exhaustedErrorCode,
         lastCheckedAt,
-        lastTested: lastCheckedAt,
       }
     : null;
 
@@ -266,14 +295,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
         authState: "ok",
         reasonCode: "upstream_unhealthy",
         reasonDetail: reason,
-        testStatus: "error",
-        lastError: reason,
-        lastErrorType: "upstream_unhealthy",
-        lastErrorAt: lastCheckedAt,
-        rateLimitedUntil: null,
-        errorCode: "upstream_unhealthy",
         lastCheckedAt,
-        lastTested: lastCheckedAt,
       }
     : null;
 
@@ -293,14 +315,19 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connectionPatch = {
     ...(canonicalBlockedPatch || {}),
     ...lockUpdate,
-    testStatus: canonicalBlockedPatch?.testStatus || "unavailable",
-    lastErrorAt: canonicalBlockedPatch?.lastErrorAt || lastCheckedAt,
-    backoffLevel: newBackoffLevel ?? backoffLevel
+    backoffLevel: newBackoffLevel ?? backoffLevel,
   };
 
   if (!canonicalBlockedPatch) {
-    connectionPatch.lastError = reason;
-    connectionPatch.errorCode = status;
+    Object.assign(connectionPatch, {
+      routingStatus: "blocked",
+      healthStatus: "degraded",
+      quotaState: "ok",
+      authState: "ok",
+      reasonCode: "usage_request_failed",
+      reasonDetail: reason,
+      lastCheckedAt,
+    });
   }
 
   await updateProviderConnection(connectionId, connectionPatch);

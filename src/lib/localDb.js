@@ -7,7 +7,7 @@ import lockfile from "proper-lockfile";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { getConnectionEffectiveStatus, getConnectionStatusDetails } from "@/lib/connectionStatus.js";
 import { normalizeQuotaSchedulerSettings } from "./quotaRefreshPlanner.js";
-import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady, projectLegacyConnectionState } from "@/lib/quotaStateStore.js";
+import { clearAllHotState, clearProviderHotState, deleteConnectionHotState, extractHotState, mergeConnectionsWithHotState, setConnectionHotState, isHotOnlyUpdate, isRedisHotStateReady } from "@/lib/quotaStateStore.js";
 import {
   createDefaultOpenCodePreferences,
   normalizeOpenCodePreferences,
@@ -494,7 +494,6 @@ export async function createProviderConnection(data) {
     name: connectionName,
     priority: connectionPriority,
     isActive: data.isActive !== undefined ? data.isActive : true,
-    testStatus: data.testStatus !== undefined ? data.testStatus : "unknown",
     createdAt: now,
     updatedAt: now,
   };
@@ -503,8 +502,7 @@ export async function createProviderConnection(data) {
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
     "scope", "idToken", "projectId", "apiKey",
-    "testStatus", "lastTested", "lastError", "lastErrorType", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-    "consecutiveUseCount"
+    "expiresIn", "consecutiveUseCount"
   ];
 
   for (const field of optionalFields) {
@@ -529,12 +527,22 @@ export async function updateProviderConnection(id, data) {
   const index = db.data.providerConnections.findIndex(c => c.id === id);
   if (index === -1) return null;
 
+  const legacyMirrorStatusFields = new Set([
+    "testStatus",
+    "lastError",
+    "lastErrorType",
+    "lastErrorAt",
+    "rateLimitedUntil",
+    "errorCode",
+    "lastTested",
+  ]);
+
   const providerId = db.data.providerConnections[index].provider;
   const current = db.data.providerConnections[index];
   const hotStatePatch = extractHotState(data);
   const hasHotStateUpdates = Object.keys(hotStatePatch).length > 0;
   const dbPatch = Object.fromEntries(
-    Object.entries(data || {}).filter(([key]) => !(key in hotStatePatch))
+    Object.entries(data || {}).filter(([key]) => !(key in hotStatePatch) && !legacyMirrorStatusFields.has(key))
   );
   const shouldStoreHotState = isHotOnlyUpdate(data);
   const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
@@ -542,16 +550,11 @@ export async function updateProviderConnection(id, data) {
   if (hasHotStateUpdates) {
     const hotStateResult = await setConnectionHotState(id, providerId, hotStatePatch);
     const persistedHotState = hotStateResult?.state || hotStatePatch;
-    const projectedLegacyState = projectLegacyConnectionState({
-      ...current,
-      ...persistedHotState,
-    });
 
     db.data.providerConnections[index] = {
       ...db.data.providerConnections[index],
       ...dbPatch,
       ...persistedHotState,
-      ...projectedLegacyState,
       updatedAt: new Date().toISOString(),
     };
 
@@ -568,7 +571,7 @@ export async function updateProviderConnection(id, data) {
 
   db.data.providerConnections[index] = {
     ...db.data.providerConnections[index],
-    ...data,
+    ...dbPatch,
     updatedAt: new Date().toISOString(),
   };
 

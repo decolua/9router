@@ -38,7 +38,6 @@ export async function POST(request) {
         authMethod: "imported",
         provider: "Imported",
       },
-      testStatus: "active",
     });
 
     return NextResponse.json({

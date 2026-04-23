@@ -12,6 +12,7 @@ import {
   getConnectionHotStates,
   mergeConnectionsWithHotState,
   setConnectionHotState,
+  writeConnectionHotState,
 } from "../../src/lib/providerHotState.js";
 
 function createDeferred() {
@@ -72,12 +73,12 @@ describe("providerHotState", () => {
     });
 
     expect(result.state).toMatchObject({
-      testStatus: "unavailable",
-      lastError: "second failure",
       backoffLevel: 2,
       lastUsedAt: "2026-04-21T10:00:00.000Z",
       modelLock_gpt4: "2026-04-21T10:10:00.000Z",
     });
+    expect(result.state).not.toHaveProperty("testStatus");
+    expect(result.state).not.toHaveProperty("lastError");
 
     expect(await getConnectionHotState("conn-1", "provider-a")).toMatchObject({
       id: "conn-1",
@@ -561,6 +562,89 @@ describe("providerHotState", () => {
       testStatus: "error",
       lastErrorType: "upstream_unhealthy",
     });
+  });
+
+  it("does not emit legacy mirror fields from active setConnectionHotState writes", async () => {
+    const result = await setConnectionHotState("conn-no-legacy-set", "provider-no-legacy-set", {
+      routingStatus: "eligible",
+      healthStatus: "healthy",
+      authState: "ok",
+      quotaState: "ok",
+      testStatus: "active",
+      lastError: null,
+      lastErrorType: null,
+      lastErrorAt: null,
+      rateLimitedUntil: null,
+      errorCode: null,
+      lastTested: "2026-04-21T12:00:00.000Z",
+      lastCheckedAt: "2026-04-21T12:00:00.000Z",
+    });
+
+    expect(result.state).toMatchObject({
+      routingStatus: "eligible",
+      healthStatus: "healthy",
+      authState: "ok",
+      quotaState: "ok",
+      lastCheckedAt: "2026-04-21T12:00:00.000Z",
+    });
+
+    expect(result.state).not.toHaveProperty("testStatus");
+    expect(result.state).not.toHaveProperty("lastError");
+    expect(result.state).not.toHaveProperty("lastErrorType");
+    expect(result.state).not.toHaveProperty("lastErrorAt");
+    expect(result.state).not.toHaveProperty("rateLimitedUntil");
+    expect(result.state).not.toHaveProperty("errorCode");
+    expect(result.state).not.toHaveProperty("lastTested");
+
+    expect(await getConnectionHotState("conn-no-legacy-set", "provider-no-legacy-set")).toMatchObject({
+      id: "conn-no-legacy-set",
+      routingStatus: "eligible",
+      testStatus: "active",
+    });
+  });
+
+  it("does not emit legacy mirror fields from active writeConnectionHotState writes", async () => {
+    const snapshot = await writeConnectionHotState({
+      connectionId: "conn-no-legacy-write",
+      provider: "provider-no-legacy-write",
+      patch: {
+        routingStatus: "blocked",
+        reasonCode: "auth_invalid",
+        reasonDetail: "Token expired",
+        testStatus: "expired",
+        lastError: "Token expired",
+        lastErrorType: "auth_invalid",
+        lastErrorAt: "2026-04-21T12:30:00.000Z",
+      },
+    });
+
+    expect(snapshot).toMatchObject({
+      routingStatus: "blocked",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token expired",
+    });
+    expect(snapshot).not.toHaveProperty("testStatus");
+    expect(snapshot).not.toHaveProperty("lastError");
+    expect(snapshot).not.toHaveProperty("lastErrorType");
+    expect(snapshot).not.toHaveProperty("lastErrorAt");
+
+    expect(await getConnectionHotState("conn-no-legacy-write", "provider-no-legacy-write")).toMatchObject({
+      id: "conn-no-legacy-write",
+      routingStatus: "blocked",
+      reasonCode: "auth_invalid",
+      testStatus: "expired",
+    });
+
+    const providerSnapshot = __getProviderHotStateSnapshotForTests("provider-no-legacy-write");
+    expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).toMatchObject({
+      routingStatus: "blocked",
+      reasonCode: "auth_invalid",
+      reasonDetail: "Token expired",
+    });
+    expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("testStatus");
+    expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastError");
+    expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastErrorType");
+    expect(providerSnapshot?.connections?.["conn-no-legacy-write"]).not.toHaveProperty("lastErrorAt");
   });
 
   it("projects canonical exhausted routing state to legacy unavailable status", async () => {

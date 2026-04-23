@@ -147,7 +147,6 @@ describe("models availability route", () => {
 
     expect(response.status).toBe(200);
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-cooldown", {
-      rateLimitedUntil: null,
       nextRetryAt: null,
       resetAt: null,
       modelLock_gpt4: null,
@@ -176,7 +175,6 @@ describe("models availability route", () => {
 
     expect(response.status).toBe(200);
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-expired", {
-      rateLimitedUntil: null,
       nextRetryAt: null,
       resetAt: null,
       routingStatus: null,

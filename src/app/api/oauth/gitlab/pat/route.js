@@ -44,7 +44,6 @@ export async function POST(request) {
       expiresAt: null,
       email,
       displayName: user.name || user.username || email,
-      testStatus: "active",
       providerSpecificData: {
         username: user.username || "",
         email,

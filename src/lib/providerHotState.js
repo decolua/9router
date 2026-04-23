@@ -21,14 +21,8 @@ const HOT_STATE_KEYS = new Set([
   "version",
   "lastUsedAt",
   "consecutiveUseCount",
-  "testStatus",
-  "lastError",
-  "lastErrorAt",
   "backoffLevel",
-  "rateLimitedUntil",
   "expiresIn",
-  "errorCode",
-  "lastTested",
   "updatedAt",
 ]);
 
@@ -151,6 +145,36 @@ function parseRedisConnectionField(field) {
 
 function mergeState(base, updates) {
   return { ...(base || {}), ...(updates || {}) };
+}
+
+const LEGACY_MIRROR_FIELDS = new Set([
+  "testStatus",
+  "lastError",
+  "lastErrorType",
+  "lastErrorAt",
+  "rateLimitedUntil",
+  "errorCode",
+  "lastTested",
+]);
+
+function stripLegacyMirrorFields(state = null) {
+  if (!state || typeof state !== "object") return state;
+
+  const sanitized = { ...state };
+  for (const key of LEGACY_MIRROR_FIELDS) {
+    delete sanitized[key];
+  }
+
+  return sanitized;
+}
+
+function mergeHotState(base, updates) {
+  const sanitizedBase = stripLegacyMirrorFields(base || {});
+  const sanitizedUpdates = stripLegacyMirrorFields(updates || {});
+  return {
+    ...sanitizedBase,
+    ...sanitizedUpdates,
+  };
 }
 
 function normalizeConnectionRef(entry) {
@@ -697,7 +721,7 @@ export async function setConnectionHotState(connectionId, providerId, updates = 
   const latestProviderState = providerStateCache.get(providerId) || providerState;
   return {
     storedInRedis,
-    state: next,
+    state: stripLegacyMirrorFields(next),
     providerState: {
       eligibleConnectionIds: latestProviderState.eligibleConnectionIds ? [...latestProviderState.eligibleConnectionIds] : null,
       retryAt: latestProviderState.retryAt,
@@ -707,7 +731,8 @@ export async function setConnectionHotState(connectionId, providerId, updates = 
 }
 
 export async function writeConnectionHotState({ connectionId, provider, patch = {} } = {}) {
-  const result = await setConnectionHotState(connectionId, provider, patch);
+  const sanitizedPatch = stripLegacyMirrorFields(patch);
+  const result = await setConnectionHotState(connectionId, provider, sanitizedPatch);
   return result?.state || null;
 }
 

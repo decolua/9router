@@ -61,7 +61,6 @@ function buildCooldownClearPatch(connection, model) {
     for (const key of Object.keys(connection || {})) {
       if (key.startsWith(MODEL_LOCK_PREFIX)) patch[key] = null;
     }
-    patch.rateLimitedUntil = null;
     patch.nextRetryAt = null;
     patch.resetAt = null;
 
@@ -144,11 +143,8 @@ export async function POST(request) {
             ...clearPatch,
             ...(shouldReactivate
               ? {
-                  testStatus: "active",
-                  lastError: null,
-                  lastErrorAt: null,
                   backoffLevel: 0,
-                  reasonCode: null,
+                  reasonCode: "unknown",
                   reasonDetail: null,
                 }
               : {}),

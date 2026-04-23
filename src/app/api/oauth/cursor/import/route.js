@@ -53,7 +53,6 @@ export async function POST(request) {
         provider: "Imported",
         userId: userInfo?.userId,
       },
-      testStatus: "active",
     });
 
     return NextResponse.json({

@@ -158,9 +158,12 @@ export async function GET(request, { params }) {
       await syncUsageStatus(
         connection,
         getConnectionAuthBlockedPatch(refreshError.message, { lastCheckedAt }) || {
-          testStatus: "error",
-          lastError: refreshError.message,
-          lastErrorType: "refresh_failed",
+          routingStatus: "eligible",
+          healthStatus: "degraded",
+          quotaState: "ok",
+          authState: "ok",
+          reasonCode: "refresh_failed",
+          reasonDetail: refreshError.message,
           lastCheckedAt,
         }
       );
@@ -185,9 +188,12 @@ export async function GET(request, { params }) {
         await syncUsageStatus(
           connection,
           getConnectionAuthBlockedPatch(retryError.message, { lastCheckedAt }) || {
-            testStatus: "error",
-            lastError: retryError.message,
-            lastErrorType: "auth_expired",
+            routingStatus: "eligible",
+            healthStatus: "degraded",
+            quotaState: "ok",
+            authState: "ok",
+            reasonCode: "auth_expired",
+            reasonDetail: retryError.message,
             lastCheckedAt,
           }
         );
@@ -219,9 +225,12 @@ export async function GET(request, { params }) {
         await syncUsageStatus(
           connection,
           getConnectionAuthBlockedPatch(error, { lastCheckedAt, statusCode: status }) || {
-            testStatus: "error",
-            lastError: error.message,
-            lastErrorType: isConfirmedAuthBlockedError(error, { statusCode: status }) ? "auth_invalid" : "usage_request_failed",
+            routingStatus: "eligible",
+            healthStatus: "degraded",
+            quotaState: "ok",
+            authState: "ok",
+            reasonCode: isConfirmedAuthBlockedError(error, { statusCode: status }) ? "auth_invalid" : "usage_request_failed",
+            reasonDetail: error.message,
             lastCheckedAt,
           }
         );

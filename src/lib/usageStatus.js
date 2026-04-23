@@ -1,5 +1,4 @@
-import { updateProviderConnection } from "@/lib/localDb";
-import { projectLegacyConnectionState, writeConnectionHotState } from "@/lib/providerHotState";
+import { writeConnectionHotState } from "@/lib/providerHotState";
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 const AUTH_BLOCKED_PATTERNS = [
@@ -37,6 +36,27 @@ export function isAuthExpiredMessage(usage) {
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
 }
 
+const LEGACY_MIRROR_FIELDS = new Set([
+  "testStatus",
+  "lastTested",
+  "lastErrorType",
+  "lastErrorAt",
+  "rateLimitedUntil",
+  "errorCode",
+  "lastError",
+]);
+
+function stripLegacyMirrorFields(updates = {}) {
+  if (!updates || typeof updates !== "object") return {};
+
+  const sanitized = { ...updates };
+  for (const key of LEGACY_MIRROR_FIELDS) {
+    delete sanitized[key];
+  }
+
+  return sanitized;
+}
+
 function getLegacyTestStatusFromCanonical(snapshot = {}) {
   switch (snapshot?.routingStatus) {
     case "eligible":
@@ -57,11 +77,12 @@ function getLegacyTestStatusFromCanonical(snapshot = {}) {
 export async function syncUsageStatus(connection, updates = {}) {
   if (!connection?.id) return null;
 
-  const lastCheckedAt = updates.lastCheckedAt || updates.lastTested || new Date().toISOString();
+  const sanitizedUpdates = stripLegacyMirrorFields(updates);
+  const lastCheckedAt = sanitizedUpdates.lastCheckedAt || updates.lastCheckedAt || updates.lastTested || new Date().toISOString();
   const hotPatch = {
-    ...updates,
+    ...sanitizedUpdates,
     lastCheckedAt,
-    version: updates.version || Date.now(),
+    version: sanitizedUpdates.version || updates.version || Date.now(),
   };
   const snapshot = await writeConnectionHotState({
     connectionId: connection.id,
@@ -69,21 +90,6 @@ export async function syncUsageStatus(connection, updates = {}) {
     patch: hotPatch,
   });
   const merged = snapshot || hotPatch;
-  const legacy = projectLegacyConnectionState(merged);
-
-  const explicitLegacyTestStatus = hotPatch.testStatus === "blocked"
-    ? null
-    : hotPatch.testStatus;
-
-  await updateProviderConnection(connection.id, {
-    testStatus: explicitLegacyTestStatus || getLegacyTestStatusFromCanonical(merged) || legacy.testStatus,
-    lastTested: legacy.lastTested || lastCheckedAt,
-    lastError: hotPatch.lastError ?? legacy.lastError ?? null,
-    lastErrorType: hotPatch.lastErrorType ?? legacy.lastErrorType ?? null,
-    lastErrorAt: hotPatch.lastErrorAt ?? legacy.lastErrorAt ?? null,
-    rateLimitedUntil: hotPatch.rateLimitedUntil ?? legacy.rateLimitedUntil ?? null,
-    errorCode: hotPatch.errorCode ?? legacy.errorCode ?? null,
-  });
 
   return merged;
 }
@@ -97,11 +103,6 @@ function getHealthyUsageStatusUpdates(usage) {
     authState: "ok",
     reasonCode: "unknown",
     reasonDetail: null,
-    lastError: null,
-    lastErrorType: null,
-    lastErrorAt: null,
-    rateLimitedUntil: null,
-    errorCode: null,
     lastCheckedAt,
     usageSnapshot: JSON.stringify(usage || {}),
     resetAt: null,
@@ -119,15 +120,8 @@ export function getConnectionRecoveryPatch({ lastCheckedAt = new Date().toISOStr
     reasonDetail: null,
     nextRetryAt: null,
     resetAt: null,
-    testStatus: "active",
-    lastError: null,
-    lastErrorType: null,
-    lastErrorAt: null,
-    rateLimitedUntil: null,
-    errorCode: null,
     backoffLevel: 0,
     lastCheckedAt,
-    lastTested: lastCheckedAt,
   };
 }
 
@@ -174,14 +168,7 @@ export function getConnectionAuthBlockedPatch(error, { lastCheckedAt = new Date(
     reasonDetail,
     nextRetryAt: null,
     resetAt: null,
-    testStatus: "blocked",
-    lastError: reasonDetail,
-    lastErrorType: "auth_invalid",
-    lastErrorAt: lastCheckedAt,
-    rateLimitedUntil: null,
-    errorCode: "auth_invalid",
     lastCheckedAt,
-    lastTested: lastCheckedAt,
   };
 }
 
@@ -341,7 +328,6 @@ function getKiroQuotaSignal(connection, usage = {}, options = {}) {
 export function getUsageStatusUpdates(connection, usage, options = {}) {
   const base = getHealthyUsageStatusUpdates(usage);
   const liveSignal = options.liveSignal || null;
-  const nowIso = options.observedAt || new Date().toISOString();
 
   if (liveSignal?.kind === "quota_exhausted" && connection?.provider === "codex") {
     return {
@@ -349,16 +335,10 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
       routingStatus: "exhausted",
       healthStatus: "degraded",
       quotaState: "exhausted",
-      lastError: liveSignal.reasonDetail || "Codex quota exhausted",
-      lastErrorType: liveSignal.reasonCode || "quota_exhausted",
-      lastErrorAt: nowIso,
-      rateLimitedUntil: liveSignal.resetAt || null,
-      errorCode: liveSignal.errorCode || "codex_live_quota_exhausted",
       reasonCode: liveSignal.reasonCode || "quota_exhausted",
       reasonDetail: liveSignal.reasonDetail || "Codex quota exhausted",
       resetAt: liveSignal.resetAt || null,
       nextRetryAt: liveSignal.resetAt || null,
-      testStatus: "unavailable",
     };
   }
 
@@ -372,16 +352,10 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
           routingStatus: "exhausted",
           healthStatus: "degraded",
           quotaState: "exhausted",
-          lastError: "Kiro quota exhausted",
-          lastErrorType: "quota_exhausted",
-          lastErrorAt: nowIso,
-          rateLimitedUntil: kiroQuotaSignal.resetAt || null,
-          errorCode: "quota_exhausted",
           reasonCode: "quota_exhausted",
           reasonDetail: "Kiro quota exhausted",
           resetAt: kiroQuotaSignal.resetAt || null,
           nextRetryAt: kiroQuotaSignal.resetAt || null,
-          testStatus: "unavailable",
         };
       }
 
@@ -391,16 +365,10 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
           routingStatus: "exhausted",
           healthStatus: "degraded",
           quotaState: "exhausted",
-          lastError: `Kiro remaining quota is at or below ${kiroQuotaSignal.minimumRemainingQuotaPercent}%`,
-          lastErrorType: "quota_threshold",
-          lastErrorAt: nowIso,
-          rateLimitedUntil: kiroQuotaSignal.resetAt || null,
-          errorCode: "quota_threshold",
           reasonCode: "quota_threshold",
           reasonDetail: `Kiro remaining quota is at or below ${kiroQuotaSignal.minimumRemainingQuotaPercent}%`,
           resetAt: kiroQuotaSignal.resetAt || null,
           nextRetryAt: kiroQuotaSignal.resetAt || null,
-          testStatus: "unavailable",
         };
       }
     }
@@ -419,25 +387,15 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
     const reasonDetail = quotaLabel === "quota"
       ? "Codex quota exhausted"
       : `Codex ${quotaLabel} quota exhausted`;
-    const errorCode = quotaLabel === "quota"
-      ? "quota_exhausted"
-      : `${quotaLabel}_quota_exhausted`;
-
     return {
       ...base,
       routingStatus: "exhausted",
       healthStatus: "degraded",
       quotaState: "exhausted",
-      lastError: reasonDetail,
-      lastErrorType: "quota_exhausted",
-      lastErrorAt: nowIso,
-      rateLimitedUntil: exhaustedQuota?.resetAt || null,
-      errorCode,
       reasonCode: "quota_exhausted",
       reasonDetail,
       resetAt: exhaustedQuota?.resetAt || null,
       nextRetryAt: exhaustedQuota?.resetAt || null,
-      testStatus: "unavailable",
     };
   }
 
@@ -456,16 +414,10 @@ export function getUsageStatusUpdates(connection, usage, options = {}) {
       routingStatus: "exhausted",
       healthStatus: "degraded",
       quotaState: "exhausted",
-      lastError: `Remaining quota is at or below ${minimumRemainingQuotaPercent}%`,
-      lastErrorType: "quota_threshold",
-      lastErrorAt: nowIso,
-      rateLimitedUntil: thresholdQuota.resetAt || null,
-      errorCode: "quota_threshold",
       reasonCode: "quota_threshold",
       reasonDetail: `Remaining quota is at or below ${minimumRemainingQuotaPercent}%`,
       resetAt: thresholdQuota.resetAt || null,
       nextRetryAt: thresholdQuota.resetAt || null,
-      testStatus: "unavailable",
     };
   }
 

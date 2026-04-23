@@ -270,33 +270,42 @@ describe("auth account selection", () => {
     expect(credentials).toBeNull();
   });
 
-  it("returns null when centralized eligibility is unavailable", async () => {
+  it("falls back to canonical eligibility when centralized eligibility is unavailable", async () => {
     mockConnections.push(
       {
-        id: "conn-first",
+        id: "conn-blocked",
         provider: "codex",
         isActive: true,
         priority: 1,
-        displayName: "First",
-        accessToken: "first-token",
+        displayName: "Blocked",
+        accessToken: "blocked-token",
         testStatus: "active",
+        routingStatus: "blocked",
+        authState: "invalid",
+        healthStatus: "healthy",
+        quotaState: "ok",
       },
       {
-        id: "conn-second",
+        id: "conn-eligible",
         provider: "codex",
         isActive: true,
         priority: 2,
-        displayName: "Second",
-        accessToken: "second-token",
-        testStatus: "active",
+        displayName: "Eligible",
+        accessToken: "eligible-token",
+        testStatus: "unavailable",
+        routingStatus: "eligible",
+        authState: "ok",
+        healthStatus: "healthy",
+        quotaState: "ok",
       },
     );
-    getEligibleConnections.mockResolvedValueOnce(null);
+    getEligibleConnections.mockResolvedValueOnce(undefined);
 
     const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
     const credentials = await getProviderCredentials("codex", null, "gpt-4.1");
 
-    expect(credentials).toBeNull();
+    expect(credentials.connectionId).toBe("conn-eligible");
+    expect(credentials.accessToken).toBe("eligible-token");
   });
 
   it("does not fall back to legacy testStatus when centralized eligibility is unavailable", async () => {
@@ -376,9 +385,6 @@ describe("auth account selection", () => {
       quotaState: "exhausted",
       reasonCode: "quota_exhausted",
       reasonDetail: "Codex quota exhausted",
-      testStatus: "unavailable",
-      lastError: "Codex quota exhausted",
-      errorCode: "codex_live_quota_exhausted",
     }));
   });
 
@@ -421,9 +427,6 @@ describe("auth account selection", () => {
       quotaState: "exhausted",
       reasonCode: "quota_exhausted",
       reasonDetail: "Rate limit exceeded. Too many requests.",
-      testStatus: "unavailable",
-      lastError: "Rate limit exceeded. Too many requests.",
-      errorCode: "quota_exhausted",
     }));
   });
 
@@ -463,10 +466,6 @@ describe("auth account selection", () => {
       authState: "invalid",
       reasonCode: "auth_invalid",
       reasonDetail: "401 Unauthorized: token revoked",
-      testStatus: "blocked",
-      lastError: "401 Unauthorized: token revoked",
-      lastErrorType: "auth_invalid",
-      errorCode: "auth_invalid",
       backoffLevel: 3,
     }));
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
@@ -509,10 +508,6 @@ describe("auth account selection", () => {
       quotaState: "ok",
       reasonCode: "auth_invalid",
       reasonDetail: "Provider error",
-      testStatus: "blocked",
-      lastError: "Provider error",
-      lastErrorType: "auth_invalid",
-      errorCode: "auth_invalid",
       backoffLevel: 1,
     }));
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
@@ -554,9 +549,6 @@ describe("auth account selection", () => {
       authState: "invalid",
       reasonCode: "auth_invalid",
       reasonDetail: "Unauthorized: invalid token",
-      testStatus: "blocked",
-      lastError: "Unauthorized: invalid token",
-      errorCode: "auth_invalid",
       backoffLevel: 2,
     }));
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
@@ -592,10 +584,6 @@ describe("auth account selection", () => {
       quotaState: "ok",
       reasonCode: "upstream_unhealthy",
       reasonDetail: "Provider health check failed",
-      testStatus: "error",
-      lastError: "Provider health check failed",
-      lastErrorType: "upstream_unhealthy",
-      errorCode: "upstream_unhealthy",
       backoffLevel: 2,
     }));
     expect(applyLiveQuotaUpdate).not.toHaveBeenCalled();
@@ -661,12 +649,6 @@ describe("auth account selection", () => {
 
     expect(updateProviderConnection).toHaveBeenCalledWith("conn-recover", expect.objectContaining({
       modelLock_gpt4: null,
-      testStatus: "active",
-      lastError: null,
-      lastErrorAt: null,
-      lastErrorType: null,
-      rateLimitedUntil: null,
-      errorCode: null,
       backoffLevel: 0,
       routingStatus: "eligible",
       quotaState: "ok",

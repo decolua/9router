@@ -116,7 +116,6 @@ export async function POST(request) {
         cookie: cookieToSave,
         expireTime: refreshedKey.expireTime,
       },
-      testStatus: "active",
       isActive: true,
     });
 

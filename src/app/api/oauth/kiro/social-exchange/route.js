@@ -49,7 +49,6 @@ export async function POST(request) {
         authMethod: provider, // "google" or "github"
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
       },
-      testStatus: "active",
     });
 
     return NextResponse.json({
