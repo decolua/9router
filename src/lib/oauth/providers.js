@@ -243,7 +243,7 @@ const PROVIDERS = {
   antigravity: {
     config: ANTIGRAVITY_CONFIG,
     flowType: "authorization_code",
-    buildAuthUrl: (config, redirectUri, state) => {
+    buildAuthUrl: (config, redirectUri, state, _codeChallenge, meta = {}) => {
       const params = new URLSearchParams({
         client_id: config.clientId,
         response_type: "code",
@@ -253,6 +253,9 @@ const PROVIDERS = {
         access_type: "offline",
         prompt: "consent",
       });
+      if (meta.login_hint) {
+        params.set("login_hint", meta.login_hint);
+      }
       return `${config.authorizeUrl}?${params.toString()}`;
     },
     exchangeToken: async (config, code, redirectUri) => {

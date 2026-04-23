@@ -16,6 +16,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import AutoLoginModal from "./AutoLoginModal";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -46,6 +47,7 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [showAutoLoginModal, setShowAutoLoginModal] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -921,6 +923,11 @@ export default function ProviderDetailPage() {
                   <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
                     {providerId === "iflow" ? "OAuth" : "Add Connection"}
                   </Button>
+                  {providerId === "antigravity" && (
+                    <Button icon="bolt" variant="secondary" onClick={() => setShowAutoLoginModal(true)}>
+                      Auto Login
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -947,6 +954,17 @@ export default function ProviderDetailPage() {
                   >
                     Add
                   </Button>
+                  {providerId === "antigravity" && (
+                    <Button
+                      size="sm"
+                      icon="bolt"
+                      variant="secondary"
+                      onClick={() => setShowAutoLoginModal(true)}
+                      title="Bulk import accounts with auto login"
+                    >
+                      Auto Login
+                    </Button>
+                  )}
                 </div>
               )}
             </>
@@ -1046,6 +1064,15 @@ export default function ProviderDetailPage() {
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
+        />
+      )}
+      {providerId === "antigravity" && (
+        <AutoLoginModal
+          isOpen={showAutoLoginModal}
+          onClose={() => setShowAutoLoginModal(false)}
+          onSuccess={() => {
+            fetchConnections();
+          }}
         />
       )}
     </div>

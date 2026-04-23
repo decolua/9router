@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  serverExternalPackages: ["better-sqlite3"],
+  serverExternalPackages: ["better-sqlite3", "puppeteer", "puppeteer-extra", "puppeteer-extra-plugin-stealth"],
   images: {
     unoptimized: true
   },

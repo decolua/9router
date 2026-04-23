@@ -29,6 +29,9 @@
     "open": "^11.0.0",
     "ora": "^9.1.0",
     "proper-lockfile": "^4.1.2",
+    "puppeteer": "^24.42.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-is": "^16.13.1",
@@ -44,6 +47,7 @@
     "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
