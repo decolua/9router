@@ -45,7 +45,7 @@ function isCanonicalFallbackEligible(connection = {}) {
   if (["error", "failed", "unhealthy", "down"].includes(healthStatus)) return false;
 
   const quotaState = connection?.quotaState || null;
-  if (["exhausted", "cooldown", "blocked"].includes(quotaState)) return false;
+  if (quotaState === "exhausted") return false;
 
   if (hasFutureTimestamp(connection?.nextRetryAt) || hasFutureTimestamp(connection?.resetAt)) {
     return false;
