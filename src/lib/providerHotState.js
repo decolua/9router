@@ -716,69 +716,6 @@ export async function writeConnectionHotState({ connectionId, provider, patch = 
   return result?.state || null;
 }
 
-export function projectLegacyConnectionState(snapshot = {}) {
-  if (!snapshot || typeof snapshot !== "object") {
-    return {
-      testStatus: "unknown",
-      lastError: null,
-      lastErrorType: null,
-      lastErrorAt: null,
-      rateLimitedUntil: null,
-      errorCode: null,
-      lastTested: null,
-    };
-  }
-
-  const explicitTestStatus = snapshot.testStatus;
-  const routingStatus = snapshot.routingStatus || null;
-  let testStatus = explicitTestStatus || "unknown";
-
-  if (!explicitTestStatus) {
-    if (routingStatus === "eligible") testStatus = "active";
-    else if (routingStatus === "exhausted" || routingStatus === "blocked_quota" || routingStatus === "cooldown") testStatus = "unavailable";
-    else if (routingStatus === "blocked_auth") testStatus = "expired";
-    else if (routingStatus === "blocked_health") testStatus = "error";
-    else if (routingStatus === "blocked") {
-      const reasonCode = typeof snapshot.reasonCode === "string" ? snapshot.reasonCode : "";
-      const isAuthBlocked = reasonCode === "auth_invalid" || reasonCode.startsWith("auth_");
-      testStatus = isAuthBlocked ? "expired" : "error";
-    }
-  }
-
-  let lastError = snapshot.lastError ?? null;
-  let lastErrorType = snapshot.lastErrorType ?? null;
-
-  if (testStatus === "active" || testStatus === "success") {
-    lastError = null;
-    lastErrorType = null;
-  } else {
-    if (lastError == null && snapshot.reasonDetail) {
-      lastError = snapshot.reasonDetail;
-    }
-    if (lastErrorType == null && snapshot.reasonCode && snapshot.reasonCode !== "unknown") {
-      lastErrorType = snapshot.reasonCode;
-    }
-    if (lastError == null && routingStatus === "blocked_quota") {
-      lastError = "Quota exhausted";
-    }
-    if (lastError == null && routingStatus === "blocked_auth") {
-      lastError = "Authentication expired";
-    }
-    if (lastError == null && routingStatus === "blocked_health") {
-      lastError = "Provider unhealthy";
-    }
-  }
-
-  return {
-    testStatus,
-    lastError,
-    lastErrorType,
-    lastErrorAt: snapshot.lastErrorAt ?? (lastError ? snapshot.lastCheckedAt || null : null),
-    rateLimitedUntil: snapshot.rateLimitedUntil ?? snapshot.nextRetryAt ?? snapshot.resetAt ?? null,
-    errorCode: snapshot.errorCode ?? (snapshot.reasonCode && snapshot.reasonCode !== "unknown" ? snapshot.reasonCode : null),
-    lastTested: snapshot.lastTested ?? snapshot.lastCheckedAt ?? null,
-  };
-}
 
 export async function isRedisHotStateReady() {
   const client = await getRedisClient();
