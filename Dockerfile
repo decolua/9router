@@ -24,6 +24,8 @@ ENV NODE_ENV=production
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
@@ -36,8 +38,8 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 
 RUN mkdir -p /app/data && chown -R bun:bun /app
 
-# Fix permissions at runtime (handles mounted volumes)
-RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
+# Install Chromium + deps for Puppeteer auto-recovery, fix permissions at runtime
+RUN apk --no-cache upgrade && apk --no-cache add su-exec chromium nss freetype harfbuzz ca-certificates ttf-freefont && \
   printf '#!/bin/sh\nchown -R bun:bun /app/data 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
