@@ -35,6 +35,29 @@ async function main() {
     configRedisUrl: getRedisUrlFromConfig(runtimeConfig),
     envRedisUrl: env.REDIS_URL,
   });
+  
+  // Auto-detect and start Redis if installed
+  const redisDetection = await detectRedisServer();
+  if (redisDetection.installed) {
+    console.log("[Redis] Redis server detected on system");
+    
+    const serviceCheck = await checkRedisService();
+    if (!serviceCheck.running) {
+      console.log("[Redis] Redis service is not running, attempting to start...");
+      const startResult = await startRedisServer();
+      
+      if (startResult.success) {
+        console.log(`[Redis] Successfully started via ${startResult.method}`);
+      } else {
+        console.log(`[Redis] Failed to auto-start: ${startResult.error || "unknown error"}`);
+      }
+    } else {
+      console.log(`[Redis] Service already running: ${serviceCheck.service}`);
+    }
+  } else {
+    console.log("[Redis] Redis server not found on system, skipping auto-start");
+  }
+  
   const redisStatus = await probeRedis(redisUrl);
 
   runtimeConfig = setRedisStatus(runtimeConfig, {
@@ -292,6 +315,83 @@ function resolveRedisUrl({ cliRedisUrl = "", configRedisUrl = "", envRedisUrl = 
   return cliRedisUrl || configRedisUrl || envRedisUrl || "redis://127.0.0.1:6379";
 }
 
+async function detectRedisServer() {
+  const { execFile } = require("node:child_process");
+  const { promisify } = require("node:util");
+  const execFileAsync = promisify(execFile);
+
+  try {
+    await execFileAsync("which", ["redis-server"]);
+    return { installed: true, binary: "redis-server" };
+  } catch {
+    return { installed: false, binary: null };
+  }
+}
+
+async function checkRedisService() {
+  const { execFile } = require("node:child_process");
+  const { promisify } = require("node:util");
+  const execFileAsync = promisify(execFile);
+
+  const services = ["redis", "redis-server"];
+  
+  for (const service of services) {
+    try {
+      const { stdout } = await execFileAsync("systemctl", ["is-active", service]);
+      if (stdout.trim() === "active") {
+        return { running: true, service };
+      }
+    } catch {
+      // service not active or doesn't exist
+    }
+  }
+
+  return { running: false, service: null };
+}
+
+async function startRedisServer() {
+  const { execFile, spawn } = require("node:child_process");
+  const { promisify } = require("node:util");
+  const execFileAsync = promisify(execFile);
+
+  // Try systemctl first
+  const services = ["redis", "redis-server"];
+  for (const service of services) {
+    try {
+      await execFileAsync("systemctl", ["start", service]);
+      console.log(`[Redis] Started via systemctl: ${service}`);
+      
+      // Wait a bit for service to start
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const check = await checkRedisService();
+      if (check.running) {
+        return { success: true, method: "systemctl", service };
+      }
+    } catch (error) {
+      // Try next service or fallback
+    }
+  }
+
+  // Fallback: start redis-server directly in background
+  try {
+    const child = spawn("redis-server", ["--daemonize", "yes"], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    
+    console.log("[Redis] Started redis-server in background (daemonized)");
+    
+    // Wait for Redis to be ready
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    return { success: true, method: "direct", service: "redis-server" };
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) };
+  }
+}
+
 async function probeRedis(redisUrl) {
   if (!redisUrl) {
     return { ready: false, error: "no redis url" };
@@ -387,6 +487,8 @@ module.exports = {
   askPassword,
   askSecret,
   askYesNo,
+  checkRedisService,
+  detectRedisServer,
   hasStandaloneRuntime,
   isPortAvailable,
   main,
@@ -394,5 +496,6 @@ module.exports = {
   parseArgs,
   probeRedis,
   resolveRedisUrl,
+  startRedisServer,
   syncStandaloneAssets,
 };

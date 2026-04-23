@@ -189,6 +189,41 @@ function ensureDbShape(data) {
         }
       }
     }
+
+    // Validate unique constraints for provider connections
+    if (key === "providerConnections" && Array.isArray(next.providerConnections)) {
+      const seen = new Map();
+      const duplicates = [];
+
+      for (let i = 0; i < next.providerConnections.length; i++) {
+        const conn = next.providerConnections[i];
+        let uniqueKey;
+
+        if (conn.authType === "oauth" && conn.email) {
+          uniqueKey = `${conn.provider}:oauth:${conn.email}`;
+        } else if (conn.authType === "apikey" && conn.name) {
+          uniqueKey = `${conn.provider}:apikey:${conn.name}`;
+        }
+
+        if (uniqueKey) {
+          if (seen.has(uniqueKey)) {
+            console.warn(`[DB] Duplicate connection detected: ${uniqueKey} (id: ${conn.id}), marking for removal`);
+            duplicates.push(i);
+          } else {
+            seen.set(uniqueKey, conn.id);
+          }
+        }
+      }
+
+      // Remove duplicates (keep first occurrence)
+      if (duplicates.length > 0) {
+        for (let i = duplicates.length - 1; i >= 0; i--) {
+          next.providerConnections.splice(duplicates[i], 1);
+        }
+        changed = true;
+        console.warn(`[DB] Removed ${duplicates.length} duplicate connection(s)`);
+      }
+    }
   }
 
   return { data: next, changed };
@@ -462,114 +497,123 @@ export async function getProviderConnectionById(id) {
 
 export async function createProviderConnection(data) {
   const db = await getDb();
-  const now = new Date().toISOString();
-
   const normalizedData = stripLegacyMirrorStatusPatch(data || {});
 
-  // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
-  let existingIndex = -1;
-  if (normalizedData.authType === "oauth" && normalizedData.email) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === normalizedData.provider && c.authType === "oauth" && c.email === normalizedData.email
-    );
-  } else if (normalizedData.authType === "apikey" && normalizedData.name) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === normalizedData.provider && c.authType === "apikey" && c.name === normalizedData.name
-    );
-  }
+  // Wrap entire upsert logic in file lock to prevent race conditions
+  let result;
+  await withFileLock(db, async () => {
+    await db.read(); // Re-read inside lock to get latest state
+    const now = new Date().toISOString();
 
-  if (existingIndex !== -1) {
-    db.data.providerConnections[existingIndex] = {
-      ...db.data.providerConnections[existingIndex],
-      ...normalizedData,
+    // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
+    let existingIndex = -1;
+    if (normalizedData.authType === "oauth" && normalizedData.email) {
+      existingIndex = db.data.providerConnections.findIndex(
+        c => c.provider === normalizedData.provider && c.authType === "oauth" && c.email === normalizedData.email
+      );
+    } else if (normalizedData.authType === "apikey" && normalizedData.name) {
+      existingIndex = db.data.providerConnections.findIndex(
+        c => c.provider === normalizedData.provider && c.authType === "apikey" && c.name === normalizedData.name
+      );
+    }
+
+    if (existingIndex !== -1) {
+      db.data.providerConnections[existingIndex] = {
+        ...db.data.providerConnections[existingIndex],
+        ...normalizedData,
+        updatedAt: now,
+      };
+      await db.write();
+      result = db.data.providerConnections[existingIndex];
+      return;
+    }
+
+    let connectionName = normalizedData.name || normalizedData.email || normalizedData.displayName || null;
+    if (!connectionName && normalizedData.authType === "oauth") {
+      if (normalizedData.email) {
+        connectionName = normalizedData.email;
+      } else if (normalizedData.displayName) {
+        connectionName = normalizedData.displayName;
+      } else {
+        const existingCount = db.data.providerConnections.filter(
+          c => c.provider === normalizedData.provider
+        ).length;
+        connectionName = `Account ${existingCount + 1}`;
+      }
+    }
+
+    let connectionPriority = normalizedData.priority;
+    if (!connectionPriority) {
+      const providerConnections = db.data.providerConnections.filter(c => c.provider === normalizedData.provider);
+      const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
+      connectionPriority = maxPriority + 1;
+    }
+
+    const connection = {
+      id: uuidv4(),
+      provider: normalizedData.provider,
+      authType: normalizedData.authType || "oauth",
+      name: connectionName,
+      priority: connectionPriority,
+      isActive: normalizedData.isActive !== undefined ? normalizedData.isActive : true,
+      createdAt: now,
       updatedAt: now,
     };
-    await safeWrite(db);
-    return db.data.providerConnections[existingIndex];
-  }
 
-  let connectionName = normalizedData.name || normalizedData.email || normalizedData.displayName || null;
-  if (!connectionName && normalizedData.authType === "oauth") {
-    if (normalizedData.email) {
-      connectionName = normalizedData.email;
-    } else if (normalizedData.displayName) {
-      connectionName = normalizedData.displayName;
-    } else {
-      const existingCount = db.data.providerConnections.filter(
-        c => c.provider === normalizedData.provider
-      ).length;
-      connectionName = `Account ${existingCount + 1}`;
+    if (normalizedData.routingStatus !== undefined) {
+      connection.routingStatus = normalizedData.routingStatus;
     }
-  }
-
-  let connectionPriority = normalizedData.priority;
-  if (!connectionPriority) {
-    const providerConnections = db.data.providerConnections.filter(c => c.provider === normalizedData.provider);
-    const maxPriority = providerConnections.reduce((max, c) => Math.max(max, c.priority || 0), 0);
-    connectionPriority = maxPriority + 1;
-  }
-
-  const connection = {
-    id: uuidv4(),
-    provider: normalizedData.provider,
-    authType: normalizedData.authType || "oauth",
-    name: connectionName,
-    priority: connectionPriority,
-    isActive: normalizedData.isActive !== undefined ? normalizedData.isActive : true,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  if (normalizedData.routingStatus !== undefined) {
-    connection.routingStatus = normalizedData.routingStatus;
-  }
-  if (normalizedData.healthStatus !== undefined) {
-    connection.healthStatus = normalizedData.healthStatus;
-  }
-  if (normalizedData.quotaState !== undefined) {
-    connection.quotaState = normalizedData.quotaState;
-  }
-  if (normalizedData.authState !== undefined) {
-    connection.authState = normalizedData.authState;
-  }
-  if (normalizedData.reasonCode !== undefined) {
-    connection.reasonCode = normalizedData.reasonCode;
-  }
-  if (normalizedData.reasonDetail !== undefined) {
-    connection.reasonDetail = normalizedData.reasonDetail;
-  }
-  if (normalizedData.nextRetryAt !== undefined) {
-    connection.nextRetryAt = normalizedData.nextRetryAt;
-  }
-  if (normalizedData.resetAt !== undefined) {
-    connection.resetAt = normalizedData.resetAt;
-  }
-  if (normalizedData.lastCheckedAt !== undefined) {
-    connection.lastCheckedAt = normalizedData.lastCheckedAt;
-  }
-
-  const optionalFields = [
-    "displayName", "email", "globalPriority", "defaultModel",
-    "accessToken", "refreshToken", "expiresAt", "tokenType",
-    "scope", "idToken", "projectId", "apiKey",
-    "expiresIn", "consecutiveUseCount"
-  ];
-
-  for (const field of optionalFields) {
-    if (normalizedData[field] !== undefined && normalizedData[field] !== null) {
-      connection[field] = normalizedData[field];
+    if (normalizedData.healthStatus !== undefined) {
+      connection.healthStatus = normalizedData.healthStatus;
     }
-  }
+    if (normalizedData.quotaState !== undefined) {
+      connection.quotaState = normalizedData.quotaState;
+    }
+    if (normalizedData.authState !== undefined) {
+      connection.authState = normalizedData.authState;
+    }
+    if (normalizedData.reasonCode !== undefined) {
+      connection.reasonCode = normalizedData.reasonCode;
+    }
+    if (normalizedData.reasonDetail !== undefined) {
+      connection.reasonDetail = normalizedData.reasonDetail;
+    }
+    if (normalizedData.nextRetryAt !== undefined) {
+      connection.nextRetryAt = normalizedData.nextRetryAt;
+    }
+    if (normalizedData.resetAt !== undefined) {
+      connection.resetAt = normalizedData.resetAt;
+    }
+    if (normalizedData.lastCheckedAt !== undefined) {
+      connection.lastCheckedAt = normalizedData.lastCheckedAt;
+    }
 
-  if (normalizedData.providerSpecificData && Object.keys(normalizedData.providerSpecificData).length > 0) {
-    connection.providerSpecificData = normalizedData.providerSpecificData;
-  }
+    const optionalFields = [
+      "displayName", "email", "globalPriority", "defaultModel",
+      "accessToken", "refreshToken", "expiresAt", "tokenType",
+      "scope", "idToken", "projectId", "apiKey",
+      "expiresIn", "consecutiveUseCount"
+    ];
 
-  db.data.providerConnections.push(connection);
-  await safeWrite(db);
+    for (const field of optionalFields) {
+      if (normalizedData[field] !== undefined && normalizedData[field] !== null) {
+        connection[field] = normalizedData[field];
+      }
+    }
+
+    if (normalizedData.providerSpecificData && Object.keys(normalizedData.providerSpecificData).length > 0) {
+      connection.providerSpecificData = normalizedData.providerSpecificData;
+    }
+
+    db.data.providerConnections.push(connection);
+    await db.write();
+    result = connection;
+  });
+
+  // Reorder outside the lock to avoid holding it too long
   await reorderProviderConnections(normalizedData.provider);
 
-  return connection;
+  return result;
 }
 
 export async function updateProviderConnection(id, data) {
