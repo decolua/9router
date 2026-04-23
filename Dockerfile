@@ -15,6 +15,34 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# Trace all transitive deps of puppeteer packages (serverExternalPackages)
+RUN node -e " \
+const {execSync} = require('child_process'); \
+const {readFileSync, existsSync, mkdirSync} = require('fs'); \
+const path = require('path'); \
+const dest = '/puppeteer-deps/node_modules'; \
+mkdirSync(dest, {recursive: true}); \
+const visited = new Set(); \
+function copyPkg(name) { \
+  if (visited.has(name)) return; \
+  visited.add(name); \
+  const src = path.join('/app/node_modules', name); \
+  if (!existsSync(src)) return; \
+  const d = path.join(dest, name); \
+  mkdirSync(path.dirname(d), {recursive: true}); \
+  execSync('cp -r ' + JSON.stringify(src) + ' ' + JSON.stringify(d)); \
+  try { \
+    const pkg = JSON.parse(readFileSync(path.join(src, 'package.json'), 'utf8')); \
+    Object.keys(pkg.dependencies || {}).forEach(dep => copyPkg(dep)); \
+  } catch(e) {} \
+} \
+['@puppeteer','puppeteer','puppeteer-core','puppeteer-extra', \
+ 'puppeteer-extra-plugin','puppeteer-extra-plugin-stealth', \
+ 'puppeteer-extra-plugin-user-data-dir','puppeteer-extra-plugin-user-preferences' \
+].forEach(copyPkg); \
+console.log('Puppeteer deps traced:', visited.size, 'packages'); \
+"
+
 FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
 
@@ -35,23 +63,8 @@ COPY --from=builder /app/open-sse ./open-sse
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
-# Puppeteer + Stealth for Token Scheduler auto-recovery (serverExternalPackages)
-COPY --from=builder /app/node_modules/@puppeteer ./node_modules/@puppeteer
-COPY --from=builder /app/node_modules/puppeteer ./node_modules/puppeteer
-COPY --from=builder /app/node_modules/puppeteer-core ./node_modules/puppeteer-core
-COPY --from=builder /app/node_modules/puppeteer-extra ./node_modules/puppeteer-extra
-COPY --from=builder /app/node_modules/puppeteer-extra-plugin ./node_modules/puppeteer-extra-plugin
-COPY --from=builder /app/node_modules/puppeteer-extra-plugin-stealth ./node_modules/puppeteer-extra-plugin-stealth
-COPY --from=builder /app/node_modules/puppeteer-extra-plugin-user-data-dir ./node_modules/puppeteer-extra-plugin-user-data-dir
-COPY --from=builder /app/node_modules/puppeteer-extra-plugin-user-preferences ./node_modules/puppeteer-extra-plugin-user-preferences
-# Puppeteer transitive dependencies
-COPY --from=builder /app/node_modules/chromium-bidi ./node_modules/chromium-bidi
-COPY --from=builder /app/node_modules/cosmiconfig ./node_modules/cosmiconfig
-COPY --from=builder /app/node_modules/deepmerge ./node_modules/deepmerge
-COPY --from=builder /app/node_modules/devtools-protocol ./node_modules/devtools-protocol
-COPY --from=builder /app/node_modules/merge-deep ./node_modules/merge-deep
-COPY --from=builder /app/node_modules/typed-query-selector ./node_modules/typed-query-selector
-COPY --from=builder /app/node_modules/ws ./node_modules/ws
+# Puppeteer + Stealth — auto-trace all transitive deps from builder
+COPY --from=builder /puppeteer-deps/node_modules/ ./node_modules/
 
 RUN mkdir -p /app/data && chown -R bun:bun /app
 
