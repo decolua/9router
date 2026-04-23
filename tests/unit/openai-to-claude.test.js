@@ -7,6 +7,11 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { vi } from "vitest";
+
+vi.mock("stream", async () => await import("node:stream"));
+vi.mock("/workspaces/9router/.claude/worktrees/canonical-status-phase1/stream", async () => await import("node:stream"));
+
 import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.js";
 
 describe("openaiToClaudeRequest", () => {

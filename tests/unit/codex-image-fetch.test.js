@@ -9,6 +9,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+vi.mock("stream", async () => await import("node:stream"));
+vi.mock("/workspaces/9router/.claude/worktrees/canonical-status-phase1/stream", async () => await import("node:stream"));
+
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
 import * as proxyFetchModule from "../../open-sse/utils/proxyFetch.js";
 

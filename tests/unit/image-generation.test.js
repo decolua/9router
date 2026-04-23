@@ -10,6 +10,10 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("stream", async () => await import("node:stream"));
+vi.mock("/workspaces/9router/.claude/worktrees/canonical-status-phase1/stream", async () => await import("node:stream"));
+
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 
 const originalFetch = global.fetch;

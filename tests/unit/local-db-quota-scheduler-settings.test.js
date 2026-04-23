@@ -12,9 +12,13 @@ vi.mock("@/lib/dataDir.js", () => ({
 }));
 
 const mockGetConnectionEffectiveStatus = vi.fn((connection) => connection?.__status || "unknown");
+const mockGetConnectionStatusDetails = vi.fn((connection) => ({
+  status: connection?.__status || "unknown",
+}));
 
 vi.mock("@/lib/connectionStatus.js", () => ({
   getConnectionEffectiveStatus: mockGetConnectionEffectiveStatus,
+  getConnectionStatusDetails: mockGetConnectionStatusDetails,
 }));
 
 vi.mock("@/lib/quotaStateStore.js", () => ({
@@ -57,6 +61,10 @@ async function loadLocalDb(initialData) {
 beforeEach(() => {
   mockGetConnectionEffectiveStatus.mockReset();
   mockGetConnectionEffectiveStatus.mockImplementation((connection) => connection?.__status || "unknown");
+  mockGetConnectionStatusDetails.mockReset();
+  mockGetConnectionStatusDetails.mockImplementation((connection) => ({
+    status: connection?.__status || "unknown",
+  }));
 });
 
 afterEach(async () => {
@@ -91,12 +99,12 @@ describe("localDb quota scheduler settings", () => {
   it("summarizes canonical statuses as connected/error/unknown buckets", async () => {
     const localDb = await loadLocalDb();
 
-    mockGetConnectionEffectiveStatus
-      .mockReturnValueOnce("eligible")
-      .mockReturnValueOnce("exhausted")
-      .mockReturnValueOnce("blocked")
-      .mockReturnValueOnce("disabled")
-      .mockReturnValueOnce("unknown");
+    mockGetConnectionStatusDetails
+      .mockReturnValueOnce({ status: "eligible" })
+      .mockReturnValueOnce({ status: "exhausted" })
+      .mockReturnValueOnce({ status: "blocked" })
+      .mockReturnValueOnce({ status: "disabled" })
+      .mockReturnValueOnce({ status: "unknown" });
 
     const summary = localDb.getConnectionStatusSummary([
       { id: "conn-eligible" },

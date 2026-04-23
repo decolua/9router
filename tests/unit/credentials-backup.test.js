@@ -42,13 +42,12 @@ describe("credentials backup round-trip", () => {
       isActive: true,
       accessToken: "access-token",
       refreshToken: "refresh-token",
-      testStatus: "error",
-      lastTested: "2026-04-20T10:00:00.000Z",
-      lastError: "Token expired",
-      lastErrorType: "token_expired",
-      lastErrorAt: "2026-04-20T10:01:00.000Z",
-      rateLimitedUntil: "2026-04-20T11:00:00.000Z",
-      errorCode: "AUTH",
+      routingStatus: "blocked",
+      authState: "expired",
+      reasonCode: "auth_expired",
+      reasonDetail: "Token expired",
+      lastCheckedAt: "2026-04-20T10:00:00.000Z",
+      nextRetryAt: "2026-04-20T11:00:00.000Z",
       providerSpecificData: { sessionId: "seed-1" },
     });
 
@@ -58,13 +57,12 @@ describe("credentials backup round-trip", () => {
     expect(exportResponse.status).toBe(200);
     expect(exportResponse.body.entries).toHaveLength(1);
     expect(exportResponse.body.entries[0]).toMatchObject({
-      testStatus: "error",
-      lastTested: "2026-04-20T10:00:00.000Z",
-      lastError: "Token expired",
-      lastErrorType: "token_expired",
-      lastErrorAt: "2026-04-20T10:01:00.000Z",
-      rateLimitedUntil: "2026-04-20T11:00:00.000Z",
-      errorCode: "AUTH",
+      routingStatus: "blocked",
+      authState: "expired",
+      reasonCode: "auth_expired",
+      reasonDetail: "Token expired",
+      lastCheckedAt: "2026-04-20T10:00:00.000Z",
+      nextRetryAt: "2026-04-20T11:00:00.000Z",
     });
 
     mockConnections.length = 0;
@@ -80,13 +78,12 @@ describe("credentials backup round-trip", () => {
     expect(importResponse.status).toBe(200);
     expect(createProviderConnection).toHaveBeenCalledTimes(1);
     expect(createProviderConnection).toHaveBeenCalledWith(expect.objectContaining({
-      testStatus: "error",
-      lastTested: "2026-04-20T10:00:00.000Z",
-      lastError: "Token expired",
-      lastErrorType: "token_expired",
-      lastErrorAt: "2026-04-20T10:01:00.000Z",
-      rateLimitedUntil: "2026-04-20T11:00:00.000Z",
-      errorCode: "AUTH",
+      routingStatus: "blocked",
+      authState: "expired",
+      reasonCode: "auth_expired",
+      reasonDetail: "Token expired",
+      lastCheckedAt: "2026-04-20T10:00:00.000Z",
+      nextRetryAt: "2026-04-20T11:00:00.000Z",
     }));
   });
 
@@ -97,7 +94,8 @@ describe("credentials backup round-trip", () => {
       authType: "oauth",
       name: "Account 1",
       accessToken: "old-access",
-      testStatus: "active",
+      routingStatus: "eligible",
+      quotaState: "ok",
     });
 
     const { POST: importPOST } = await import("../../src/app/api/credentials/import/route.js");
@@ -108,7 +106,8 @@ describe("credentials backup round-trip", () => {
           provider: "codex",
           authType: "oauth",
           accessToken: "new-access",
-          testStatus: "error",
+          routingStatus: "blocked",
+          authState: "expired",
         },
       ],
     };
@@ -125,7 +124,8 @@ describe("credentials backup round-trip", () => {
       provider: "codex",
       authType: "oauth",
       accessToken: "new-access",
-      testStatus: "error",
+      routingStatus: "blocked",
+      authState: "expired",
     }));
     expect(createProviderConnection).not.toHaveBeenCalled();
   });
@@ -163,7 +163,8 @@ describe("credentials backup round-trip", () => {
       provider: "codex",
       authType: "oauth",
       accessToken: "new-access",
-      testStatus: "active",
+      routingStatus: "eligible",
+      quotaState: "ok",
     }));
     expect(createProviderConnection).not.toHaveBeenCalled();
   });
