@@ -9,7 +9,7 @@
   
   [![npm](https://img.shields.io/npm/v/8router.svg)](https://www.npmjs.com/package/8router)
   [![Downloads](https://img.shields.io/npm/dm/8router.svg)](https://www.npmjs.com/package/8router)
-  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/decolua/8router/blob/main/LICENSE)
+  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/baines95/8router/blob/main/LICENSE)
   
   [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://8router.com)
 
@@ -76,7 +76,7 @@ npm install -g 8router
 ### Option 2: Run from Source (For Developers)
 ```bash
 # 1. Clone and install
-git clone https://github.com/decolua/8router.git
+git clone https://github.com/baines95/8router.git
 cd 8router
 npm install
 
@@ -930,7 +930,7 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/8router.git
+git clone https://github.com/baines95/8router.git
 cd 8router
 npm install
 npm run build
@@ -1152,8 +1152,8 @@ Authorization: Bearer your-api-key
 ## 📧 Support
 
 - **Website**: [8router.com](https://8router.com)
-- **GitHub**: [github.com/decolua/8router](https://github.com/decolua/8router)
-- **Issues**: [github.com/decolua/8router/issues](https://github.com/decolua/8router/issues)
+- **GitHub**: [github.com/baines95/8router](https://github.com/baines95/8router)
+- **Issues**: [github.com/baines95/8router/issues](https://github.com/baines95/8router/issues)
 
 ---
 
@@ -1161,13 +1161,13 @@ Authorization: Bearer your-api-key
 
 Thanks to all contributors who helped make 8Router better!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/8router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/8router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=baines95/8router&max=150&columns=15&anon=1&v=20260309)](https://github.com/baines95/8router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/8router.svg?variant=adaptive)](https://starchart.cc/decolua/8router)
+[![Star Chart](https://starchart.cc/baines95/8router.svg?variant=adaptive)](https://starchart.cc/baines95/8router)
 
 
 

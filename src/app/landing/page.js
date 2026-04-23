@@ -77,7 +77,7 @@ export default function LandingPage() {
                 variant="outline"
                 size="lg"
                 className="h-14 w-full rounded-lg border-border/50 bg-transparent px-10 text-lg font-semibold text-foreground hover:bg-muted/10 sm:w-auto"
-                onClick={() => window.open("https://github.com/decolua/8router#readme", "_blank")}
+                onClick={() => window.open("https://github.com/baines95/8router#readme", "_blank")}
               >
                 Read Documentation
               </Button>

@@ -15,7 +15,7 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
   
   [![npm](https://img.shields.io/npm/v/8router.svg)](https://www.npmjs.com/package/8router)
   [![Downloads](https://img.shields.io/npm/dm/8router.svg)](https://www.npmjs.com/package/8router)
-  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/decolua/8router/blob/main/LICENSE)
+  [![License](https://img.shields.io/npm/l/8router.svg)](https://github.com/baines95/8router/blob/main/LICENSE)
   
   [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://8router.com)
 </div>
@@ -947,7 +947,7 @@ Model: cc/claude-opus-4-6
 
 ```bash
 # Clone và cài đặt
-git clone https://github.com/decolua/8router.git
+git clone https://github.com/baines95/8router.git
 cd 8router
 npm install
 npm run build
@@ -1258,8 +1258,8 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](docs
 ## 📧 Hỗ trợ
 
 - **Website**: [8router.com](https://8router.com)
-- **GitHub**: [github.com/decolua/8router](https://github.com/decolua/8router)
-- **Issues**: [github.com/decolua/8router/issues](https://github.com/decolua/8router/issues)
+- **GitHub**: [github.com/baines95/8router](https://github.com/baines95/8router)
+- **Issues**: [github.com/baines95/8router/issues](https://github.com/baines95/8router/issues)
 
 ---
 
@@ -1267,13 +1267,13 @@ Tài liệu tham khảo kiến trúc đầy đủ: [`docs/ARCHITECTURE.md`](docs
 
 Cảm ơn tất cả những người đã đóng góp giúp 8Router tốt hơn!
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/8router&max=100&columns=20&anon=1)](https://github.com/decolua/8router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=baines95/8router&max=100&columns=20&anon=1)](https://github.com/baines95/8router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![ Chart](https://starchart.cc/decolua/8router.svg?variant=adaptive)](https://starchart.cc/decolua/8router)
+[![ Chart](https://starchart.cc/baines95/8router.svg?variant=adaptive)](https://starchart.cc/baines95/8router)
 
 ### Cách Đóng góp
 

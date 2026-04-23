@@ -31,7 +31,7 @@ export default function HeroSection() {
             Get Started
           </button>
           <a 
-            href="https://github.com/decolua/8router" 
+            href="https://github.com/baines95/8router" 
             target="_blank" 
             rel="noopener noreferrer"
             className="h-12 px-8 rounded-lg border border-border/50 bg-muted/10 hover:bg-muted/20 text-foreground text-base font-semibold transition-all flex items-center gap-2"
