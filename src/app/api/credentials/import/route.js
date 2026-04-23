@@ -77,17 +77,19 @@ function deriveCanonicalStatusFromLegacy(record = {}) {
   const lastTested = pickValue(record.lastTested, record.last_tested);
   const testStatus = pickValue(record.testStatus, record.test_status);
 
-  if (lastErrorType === "token_expired" || errorCode === "AUTH" || testStatus === "expired") {
+  const hasAuthSignal = lastErrorType === "token_expired" || errorCode === "AUTH" || testStatus === "expired";
+  const hasHealthSignal = testStatus === "error";
+  const hasQuotaSignal = testStatus === "unavailable" || rateLimitedUntil;
+
+  if (hasAuthSignal) {
     derived.authState = "invalid";
     derived.routingStatus = "blocked";
     derived.reasonCode = "auth_invalid";
-  } else if (testStatus === "error") {
+  } else if (hasHealthSignal) {
     derived.healthStatus = "error";
     derived.routingStatus = "blocked";
     derived.reasonCode = "health_error";
-  }
-
-  if (testStatus === "active") {
+  } else if (testStatus === "active") {
     derived.routingStatus = "eligible";
     derived.quotaState = "ok";
     derived.authState = derived.authState || "ok";
@@ -95,7 +97,7 @@ function deriveCanonicalStatusFromLegacy(record = {}) {
     derived.reasonCode = derived.reasonCode || "unknown";
   }
 
-  if (testStatus === "unavailable" || rateLimitedUntil) {
+  if (hasQuotaSignal && !hasAuthSignal && !hasHealthSignal) {
     derived.quotaState = "exhausted";
     derived.routingStatus = "exhausted";
     if (rateLimitedUntil) derived.nextRetryAt = rateLimitedUntil;

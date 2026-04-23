@@ -15,6 +15,28 @@ import {
 } from "@/lib/opencodeSync/schema.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+const LEGACY_MIRROR_STATUS_FIELDS = new Set([
+  "testStatus",
+  "lastError",
+  "lastErrorType",
+  "lastErrorAt",
+  "rateLimitedUntil",
+  "errorCode",
+  "lastTested",
+]);
+
+function stripLegacyMirrorStatusPatch(record = {}) {
+  return Object.fromEntries(
+    Object.entries(record || {}).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
+  );
+}
+
+function stripLegacyMirrorStatusFields(record = {}) {
+  return Object.fromEntries(
+    Object.entries(record || {}).filter(([key]) => !LEGACY_MIRROR_STATUS_FIELDS.has(key))
+  );
+}
+
 const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "db.json");
 
@@ -444,19 +466,7 @@ export async function createProviderConnection(data) {
   const db = await getDb();
   const now = new Date().toISOString();
 
-  const legacyMirrorStatusFields = new Set([
-    "testStatus",
-    "lastError",
-    "lastErrorType",
-    "lastErrorAt",
-    "rateLimitedUntil",
-    "errorCode",
-    "lastTested",
-  ]);
-
-  const normalizedData = Object.fromEntries(
-    Object.entries(data || {}).filter(([key]) => !legacyMirrorStatusFields.has(key))
-  );
+  const normalizedData = stripLegacyMirrorStatusPatch(data || {});
 
   // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
   let existingIndex = -1;
@@ -541,22 +551,12 @@ export async function updateProviderConnection(id, data) {
   const index = db.data.providerConnections.findIndex(c => c.id === id);
   if (index === -1) return null;
 
-  const legacyMirrorStatusFields = new Set([
-    "testStatus",
-    "lastError",
-    "lastErrorType",
-    "lastErrorAt",
-    "rateLimitedUntil",
-    "errorCode",
-    "lastTested",
-  ]);
-
   const providerId = db.data.providerConnections[index].provider;
   const current = db.data.providerConnections[index];
   const hotStatePatch = extractHotState(data);
   const hasHotStateUpdates = Object.keys(hotStatePatch).length > 0;
   const dbPatch = Object.fromEntries(
-    Object.entries(data || {}).filter(([key]) => !(key in hotStatePatch) && !legacyMirrorStatusFields.has(key))
+    Object.entries(stripLegacyMirrorStatusPatch(data || {})).filter(([key]) => !(key in hotStatePatch))
   );
   const shouldStoreHotState = isHotOnlyUpdate(data);
   const canUseRedisForHotState = shouldStoreHotState && await isRedisHotStateReady();
@@ -565,12 +565,12 @@ export async function updateProviderConnection(id, data) {
     const hotStateResult = await setConnectionHotState(id, providerId, hotStatePatch);
     const persistedHotState = hotStateResult?.state || hotStatePatch;
 
-    db.data.providerConnections[index] = {
+    db.data.providerConnections[index] = stripLegacyMirrorStatusFields({
       ...db.data.providerConnections[index],
       ...dbPatch,
       ...persistedHotState,
       updatedAt: new Date().toISOString(),
-    };
+    });
 
     await safeWrite(db);
 
@@ -583,11 +583,11 @@ export async function updateProviderConnection(id, data) {
     return db.data.providerConnections[index];
   }
 
-  db.data.providerConnections[index] = {
+  db.data.providerConnections[index] = stripLegacyMirrorStatusFields({
     ...db.data.providerConnections[index],
     ...dbPatch,
     updatedAt: new Date().toISOString(),
-  };
+  });
 
   if (!canUseRedisForHotState) {
     await safeWrite(db);

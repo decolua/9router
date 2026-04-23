@@ -572,9 +572,15 @@ export async function testSingleConnection(id) {
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
       await updateProviderConnection(id, {
-        testStatus: "error",
-        lastError: proxyError,
-        lastErrorAt: new Date().toISOString(),
+        routingStatus: "blocked",
+        healthStatus: "error",
+        quotaState: "ok",
+        authState: "ok",
+        reasonCode: "health_error",
+        reasonDetail: proxyError,
+        nextRetryAt: null,
+        resetAt: null,
+        lastCheckedAt: new Date().toISOString(),
       });
       return { valid: false, error: proxyError, latencyMs: 0, testedAt: new Date().toISOString() };
     }
@@ -599,9 +605,15 @@ export async function testSingleConnection(id) {
     ...(result.valid
       ? getConnectionRecoveryPatch({ lastCheckedAt })
       : authBlockedPatch || {
-          testStatus: "error",
-          lastError: result.error,
-          lastErrorAt: lastCheckedAt,
+          routingStatus: "blocked",
+          healthStatus: "error",
+          quotaState: "ok",
+          authState: "ok",
+          reasonCode: "health_error",
+          reasonDetail: result.error,
+          nextRetryAt: null,
+          resetAt: null,
+          lastCheckedAt,
         }),
   };
 

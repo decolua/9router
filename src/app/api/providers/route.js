@@ -209,6 +209,15 @@ export async function POST(request) {
       defaultModel: defaultModel || null,
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
+      routingStatus: "eligible",
+      quotaState: "ok",
+      authState: "ok",
+      healthStatus: "healthy",
+      reasonCode: "unknown",
+      reasonDetail: null,
+      nextRetryAt: null,
+      resetAt: null,
+      lastCheckedAt: new Date().toISOString(),
     });
 
     // Hide sensitive fields

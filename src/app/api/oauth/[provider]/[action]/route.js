@@ -124,6 +124,15 @@ export async function POST(request, { params }) {
         expiresAt: tokenData.expiresIn
           ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
           : null,
+        routingStatus: "eligible",
+        quotaState: "ok",
+        authState: "ok",
+        healthStatus: "healthy",
+        reasonCode: "unknown",
+        reasonDetail: null,
+        nextRetryAt: null,
+        resetAt: null,
+        lastCheckedAt: new Date().toISOString(),
       });
 
       return NextResponse.json({ 
@@ -169,6 +178,15 @@ export async function POST(request, { params }) {
           expiresAt: result.tokens.expiresIn
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString()
             : null,
+          routingStatus: "eligible",
+          quotaState: "ok",
+          authState: "ok",
+          healthStatus: "healthy",
+          reasonCode: "unknown",
+          reasonDetail: null,
+          nextRetryAt: null,
+          resetAt: null,
+          lastCheckedAt: new Date().toISOString(),
         });
 
         return NextResponse.json({ 

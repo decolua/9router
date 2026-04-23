@@ -115,10 +115,10 @@ describe("credentials import/export canonical transport", () => {
       authType: "oauth",
       accessToken: "legacy-access",
       authState: "invalid",
-      quotaState: "exhausted",
-      routingStatus: "exhausted",
-      nextRetryAt: "2099-04-20T11:00:00.000Z",
+      routingStatus: "blocked",
     });
+    expect(created.quotaState === undefined || created.quotaState === "ok").toBe(true);
+    expect(created.nextRetryAt === undefined || created.nextRetryAt === null).toBe(true);
 
     for (const field of LEGACY_FIELDS) {
       expect(created).not.toHaveProperty(field);
