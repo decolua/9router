@@ -156,6 +156,11 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
+  "volcengine-ark": {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions",
     responsesUrl: "https://api.githubcopilot.com/responses",

@@ -151,6 +151,23 @@ export async function POST(request) {
           }
           break;
         }
+        case "volcengine-ark": {
+          const testModel = getDefaultModel(provider);
+          const res = await fetch("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              model: testModel,
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
 
         case "deepseek":
         case "groq":

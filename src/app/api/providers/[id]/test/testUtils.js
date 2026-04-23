@@ -439,6 +439,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "volcengine-ark": {
+        const res = await fetchWithConnectionProxy("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
       case "deepseek": {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };

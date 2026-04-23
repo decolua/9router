@@ -49,6 +49,8 @@ const ALIAS_TO_PROVIDER_ID = {
   nanobanana: "nanobanana",
   ch: "chutes",
   chutes: "chutes",
+  ark: "volcengine-ark",
+  "volcengine-ark": "volcengine-ark",
   cursor: "cursor",
   vx: "vertex",
   vertex: "vertex",
