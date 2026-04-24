@@ -1,3 +1,96 @@
+# v0.4.5 (2026-04-24)
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
+# v0.4.3 (2026-04-24)
+
+## Improvements
+- Improve in-app download/update UX on dashboard
+- Improve Codex provider rate limit handling with precise cooldown (`resetsAtMs`) and email backfill for OAuth accounts
+
+# v0.4.2 (2026-04-24)
+
+## Features
+- Add Azure OpenAI provider support
+- Add built-in Volcengine Ark provider support (#741)
+- Add GPT 5.5 model
+
+## Fixes
+- Enhance retry logic and configuration for HTTP status codes
+
+# v0.4.1 (2026-04-23)
+
+## Features
+- Add Hermes CLI tool with settings management and integration
+- Add in-app version update mechanism (appUpdater + /api/version/update)
+
+## Improvements
+- Strengthen CLI token validation for enhanced security
+- Enhance Sidebar layout for CLI tools
+- Update executors and runtime config
+
+# v0.3.98 (2026-04-22)
+
+## Features
+- Add RTK — filter context (ls/grep/find/.....) before sending to LLM to save tokens
+
+# v0.3.97 (2026-04-22)
+
+## Features
+- Add OpenCode Go provider and support for custom models
+- Add Text To Image provider
+- Support custom host URL for remote Ollama servers
+
+## Fixes
+- Fix copy to clipboard issue
+
+# v0.3.96 (2026-04-17)
+
+## Features
+- Add marked package for Markdown rendering
+- Enhance changelog styles
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb structure
+- Update Qwen executor for OAuth handling
+- Enhance error formatting to include low-level cause details
+- Refactor HeaderMenu to use MenuItem component
+- Improve LanguageSwitcher to support controlled open state
+- Update backoff configuration and improve CLI detection messages
+- Add installation guides for manual configuration in tool cards (Droid, Claude, OpenClaw)
+
+## Fixes
+- Fix Codex image URL fetches to await before sending upstream (#575)
+- Strip thinking/reasoning_effort for GitHub Copilot chat completions (#623)
+- Enable Codex Apply/Reset buttons when CLI is installed (#591)
+- Show manual config option when Claude CLI detection fails (#589)
+- Show manual config option when OpenClaw detection fails (#579)
+- Ensure LocalMutex acquire returns release callback correctly (#569)
+- Strip enumDescriptions from tool schema in antigravity-to-openai (#566)
+- Strip temperature parameter for gpt-5.4 model (#536)
+- Add Blackbox AI as a supported provider (#599)
+- Add multi-model support for Factory Droid CLI tool (#521)
+- Add GLM-5 and MiniMax-M2.5 models to Kiro provider (#580)
+- Fix usage tracking bug
+
+# v0.3.91 (2026-04-15)
+
+## Features
+- Add Kiro AWS Identity Center device flow for provider OAuth
+- Add TTS (Text-to-Speech) core handler and TTS models config
+- Add media providers dashboard page
+- Add suggested models API endpoint
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb and usageDb for cleaner structure
+
+## Fixes
+- Fix usage tracking bug
+
 # v0.3.90 (2026-04-14)
 
 ## Features

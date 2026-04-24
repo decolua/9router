@@ -13,6 +13,7 @@ const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
 
+
 let cachedConfig = null;
 let cachedConfigTs = 0;
 

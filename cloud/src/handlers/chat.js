@@ -2,6 +2,7 @@ import { getModelInfoCore } from "open-sse/services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { checkFallbackError, isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter } from "open-sse/services/accountFallback.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { getComboModelsFromData, handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -149,7 +150,7 @@ async function handleSingleModelChat(body, modelStr, machineId, env) {
 
     if (shouldFallback) {
       log.warn("FALLBACK", `${provider.toUpperCase()} | ${credentials.id} | ${result.status}`);
-      await markAccountUnavailable(machineId, credentials.id, result.status, result.error, env);
+      await markAccountUnavailable(machineId, credentials.id, result.status, result.error, env, result.resetsAtMs);
       excludeConnectionId = credentials.id;
       lastError = result.error;
       lastStatus = result.status;
@@ -244,13 +245,20 @@ async function getProviderCredentials(machineId, provider, env, excludeConnectio
   };
 }
 
-async function markAccountUnavailable(machineId, connectionId, status, errorText, env) {
+async function markAccountUnavailable(machineId, connectionId, status, errorText, env, resetsAtMs = null) {
   const data = await getMachineData(machineId, env);
   if (!data?.providers?.[connectionId]) return;
 
   const conn = data.providers[connectionId];
   const backoffLevel = conn.backoffLevel || 0;
-  const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
+  // Provider-specific precise cooldown (e.g. codex usage_limit_reached) overrides backoff
+  let cooldownMs, newBackoffLevel;
+  if (resetsAtMs && resetsAtMs > Date.now()) {
+    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    newBackoffLevel = 0;
+  } else {
+    ({ cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+  }
   const rateLimitedUntil = getUnavailableUntil(cooldownMs);
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
 

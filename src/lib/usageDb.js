@@ -5,29 +5,11 @@
 
 import { EventEmitter } from "events";
 import path from "node:path";
-import os from "node:os";
 import fs from "node:fs";
 import { getDatabase } from "./sqlite/connection.js";
+import { DATA_DIR } from "@/lib/dataDir.js";
 
 const isCloud = typeof caches !== "undefined" || typeof caches === "object";
-
-function getAppName() { return "9router"; }
-
-function getUserDataDir() {
-  if (isCloud) return "/tmp";
-  if (process.env.DATA_DIR) return process.env.DATA_DIR;
-  try {
-    const home = os.homedir();
-    if (process.platform === "win32") {
-      return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), getAppName());
-    }
-    return path.join(home, `.${getAppName()}`);
-  } catch {
-    return path.join(process.cwd(), ".9router");
-  }
-}
-
-const DATA_DIR = getUserDataDir();
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
 
 if (!isCloud && fs?.existsSync && !fs.existsSync(DATA_DIR)) {
@@ -569,6 +551,39 @@ export async function getUsageStats(period = "all") {
         const t = stats.byEndpoint[r.key];
         t.requests += requests; t.promptTokens += prompt; t.completionTokens += completion; t.cost += cost;
         if (r.date_key > (t.lastUsed || "")) t.lastUsed = r.date_key;
+      }
+    }
+
+    // Overlay lastUsed with precise ISO timestamps from live history (dailySummary only has YYYY-MM-DD)
+    const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
+    for (const entry of history) {
+      const ts = entry.timestamp;
+      if (!ts || new Date(ts).getTime() < overlayCutoff) continue;
+
+      const modelKey = entry.provider ? `${entry.model} (${entry.provider})` : entry.model;
+      if (stats.byModel[modelKey] && new Date(ts) > new Date(stats.byModel[modelKey].lastUsed)) {
+        stats.byModel[modelKey].lastUsed = ts;
+      }
+
+      if (entry.connectionId) {
+        const accountName = connectionMap[entry.connectionId] || `Account ${entry.connectionId.slice(0, 8)}...`;
+        const accountKey = `${entry.model} (${entry.provider} - ${accountName})`;
+        if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) {
+          stats.byAccount[accountKey].lastUsed = ts;
+        }
+      }
+
+      const apiKeyKey = (entry.apiKey && typeof entry.apiKey === "string")
+        ? `${entry.apiKey}|${entry.model}|${entry.provider || "unknown"}`
+        : "local-no-key";
+      if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) {
+        stats.byApiKey[apiKeyKey].lastUsed = ts;
+      }
+
+      const endpoint = entry.endpoint || "Unknown";
+      const endpointKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
+      if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) {
+        stats.byEndpoint[endpointKey].lastUsed = ts;
       }
     }
   } else {

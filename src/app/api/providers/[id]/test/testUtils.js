@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -365,6 +366,21 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "azure": {
+        const psd = connection.providerSpecificData || {};
+        const endpoint = (psd.azureEndpoint || "").replace(/\/$/, "");
+        const deployment = psd.deployment || "gpt-4";
+        const apiVersion = psd.apiVersion || "2024-10-01-preview";
+        const url = `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+        const headers = { "api-key": connection.apiKey, "Content-Type": "application/json" };
+        if (psd.organization) headers["OpenAI-Organization"] = psd.organization;
+        const res = await fetchWithConnectionProxy(url, {
+          method: "POST", headers,
+          body: JSON.stringify({ messages: [{ role: "user", content: "test" }], max_completion_tokens: 1 }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
+      }
       case "openai": {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -438,6 +454,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "volcengine-ark": {
+        const res = await fetchWithConnectionProxy("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },
+          body: JSON.stringify({ model: getDefaultModel(connection.provider), max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
       case "deepseek": {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -495,9 +520,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama-local": {
-        // No auth required for local Ollama
-        const res = await fetch("http://localhost:11434/api/tags");
-        return { valid: res.ok, error: res.ok ? null : "Ollama not running on localhost:11434" };
+        const host = resolveOllamaLocalHost(connection);
+        const res = await fetch(`${host}/api/tags`);
+        return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
       }
       case "deepgram": {
         const res = await fetchWithConnectionProxy("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } }, effectiveProxy);
@@ -514,6 +539,39 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "chutes": {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "grok-web": {
+        const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
+        const randomHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");
+        const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
+        const res = await fetchWithConnectionProxy("https://grok.com/rest/app-chat/conversations/new", {
+          method: "POST",
+          headers: {
+            Accept: "*/*", "Content-Type": "application/json",
+            Cookie: `sso=${token}`, Origin: "https://grok.com", Referer: "https://grok.com/",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            "x-statsig-id": statsigId, "x-xai-request-id": crypto.randomUUID(),
+            traceparent: `00-${randomHex(16)}-${randomHex(8)}-00`,
+          },
+          body: JSON.stringify({ temporary: true, modelName: "grok-4", message: "ping", fileAttachments: [], imageAttachments: [], disableSearch: false, enableImageGeneration: false, sendFinalMetadata: true }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid SSO cookie" };
+      }
+      case "perplexity-web": {
+        let sessionToken = connection.apiKey;
+        if (sessionToken.startsWith("__Secure-next-auth.session-token=")) sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);
+        const res = await fetchWithConnectionProxy("https://www.perplexity.ai/api/auth/session", {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Cookie: `__Secure-next-auth.session-token=${sessionToken}`,
+          },
+        }, effectiveProxy);
+        if (!res.ok) return { valid: false, error: "Invalid session cookie" };
+        const data = await res.json().catch(() => null);
+        const valid = !!(data && data.user);
+        return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       default:
         return { valid: false, error: "Provider test not supported" };
@@ -548,7 +606,7 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey") {
+  if (connection.authType === "apikey" || connection.authType === "cookie") {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);

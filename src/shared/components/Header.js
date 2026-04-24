@@ -5,8 +5,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import PropTypes from "prop-types";
 import ProviderIcon from "@/shared/components/ProviderIcon";
-import { ThemeToggle, LanguageSwitcher } from "@/shared/components";
-import NineRemoteButton from "@/shared/components/NineRemoteButton";
+import HeaderMenu from "@/shared/components/HeaderMenu";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
@@ -249,25 +248,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         ) : null}
       </div>
 
-      {/* Right actions */}
-      <div className="flex items-center gap-3 ml-auto">
-        {/* 9Remote button */}
-        <NineRemoteButton />
-
-        {/* Language switcher */}
-        <LanguageSwitcher />
-
-        {/* Theme toggle */}
-        <ThemeToggle />
-
-        {/* Logout button */}
-        <button
-          onClick={handleLogout}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
-          title="Logout"
-        >
-          <span className="material-symbols-outlined">logout</span>
-        </button>
+      {/* Right actions - consolidated into dropdown menu */}
+      <div className="flex items-center ml-auto">
+        <HeaderMenu onLogout={handleLogout} />
       </div>
     </header>
   );

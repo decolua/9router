@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS mitm_aliases (
   data         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS custom_models (
+  provider_alias TEXT NOT NULL,
+  id             TEXT NOT NULL,
+  type           TEXT NOT NULL DEFAULT 'llm',
+  name           TEXT,
+  PRIMARY KEY (provider_alias, id, type)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
   key          TEXT PRIMARY KEY,
   value        TEXT NOT NULL

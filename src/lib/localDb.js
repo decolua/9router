@@ -31,6 +31,7 @@ const DEFAULT_SETTINGS = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+  rtkEnabled: false,
 };
 
 function cloneDefaultData() {
@@ -39,6 +40,7 @@ function cloneDefaultData() {
     providerNodes: [],
     proxyPools: [],
     modelAliases: {},
+    customModels: [],
     mitmAlias: {},
     combos: [],
     apiKeys: [],
@@ -644,6 +646,55 @@ export async function deleteModelAlias(alias) {
     return;
   }
   db().prepare("DELETE FROM model_aliases WHERE alias = ?").run(alias);
+}
+
+// ===== Custom Models =====================================================
+
+export async function getCustomModels() {
+  if (isCloud) {
+    const d = await getCloudDb();
+    return d.data.customModels || [];
+  }
+  const rows = db().prepare(
+    "SELECT provider_alias, id, type, name FROM custom_models"
+  ).all();
+  return rows.map((r) => ({
+    providerAlias: r.provider_alias,
+    id: r.id,
+    type: r.type || "llm",
+    name: r.name || r.id,
+  }));
+}
+
+export async function addCustomModel({ providerAlias, id, type = "llm", name }) {
+  if (isCloud) {
+    const d = await getCloudDb();
+    if (!d.data.customModels) d.data.customModels = [];
+    const exists = d.data.customModels.some(
+      (m) => m.providerAlias === providerAlias && m.id === id && (m.type || "llm") === type
+    );
+    if (exists) return false;
+    d.data.customModels.push({ providerAlias, id, type, name: name || id });
+    return true;
+  }
+  const info = db().prepare(
+    "INSERT OR IGNORE INTO custom_models (provider_alias, id, type, name) VALUES (?, ?, ?, ?)"
+  ).run(providerAlias, id, type, name || id);
+  return info.changes > 0;
+}
+
+export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
+  if (isCloud) {
+    const d = await getCloudDb();
+    if (!d.data.customModels) return;
+    d.data.customModels = d.data.customModels.filter(
+      (m) => !(m.providerAlias === providerAlias && m.id === id && (m.type || "llm") === type)
+    );
+    return;
+  }
+  db().prepare(
+    "DELETE FROM custom_models WHERE provider_alias = ? AND id = ? AND type = ?"
+  ).run(providerAlias, id, type);
 }
 
 // ===== MITM Aliases ======================================================

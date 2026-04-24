@@ -7,7 +7,7 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -99,8 +99,10 @@ export async function POST(request) {
     const proxyPoolId = proxyPoolResult.proxyPoolId;
 
     // Validation
+    const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
+      isWebCookieProvider ||
       isOpenAICompatibleProvider(provider) ||
       isAnthropicCompatibleProvider(provider);
 
@@ -108,13 +110,13 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
     if (!apiKey) {
-      return NextResponse.json({ error: "API Key is required" }, { status: 400 });
+      return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    let providerSpecificData = null;
+    let providerSpecificData = body.providerSpecificData || null;
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -164,7 +166,7 @@ export async function POST(request) {
 
     const newConnection = await createProviderConnection({
       provider,
-      authType: "apikey",
+      authType: isWebCookieProvider ? "cookie" : "apikey",
       name,
       apiKey,
       priority: priority || 1,

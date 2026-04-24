@@ -108,11 +108,33 @@ export class GithubExecutor extends BaseExecutor {
     return /gpt-5|o[134]-/i.test(model);
   }
 
+  // Some models (like gpt-5.4) don't support the temperature parameter
+  supportsTemperature(model) {
+    // gpt-5.4 and similar newer models don't support temperature
+    return !/gpt-5\.4/i.test(model);
+  }
+
+  // GitHub Copilot /chat/completions rejects Claude-style thinking payloads
+  // (OpenClaw sends thinking: { type: "enabled" } → upstream 400).
+  // GPT-5 family on Copilot DOES honor reasoning_effort, so only strip for Claude. (#713)
+  supportsThinking(model) {
+    return !/claude/i.test(model);
+  }
+
   transformRequest(model, body, stream, credentials) {
     const transformed = { ...body };
     if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
       transformed.max_completion_tokens = transformed.max_tokens;
       delete transformed.max_tokens;
+    }
+    // Strip temperature for models that don't support it
+    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+      delete transformed.temperature;
+    }
+    // Strip thinking/reasoning_effort — unsupported on /chat/completions
+    if (!this.supportsThinking(model)) {
+      delete transformed.thinking;
+      delete transformed.reasoning_effort;
     }
     return transformed;
   }

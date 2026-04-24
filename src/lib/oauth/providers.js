@@ -32,19 +32,36 @@ const BASE64_BLOCK_SIZE = 4;
  * @param {string} accessToken
  * @returns {string|undefined}
  */
-function extractEmailFromAccessToken(accessToken) {
+function decodeJwtPayload(jwt) {
   try {
-    if (!accessToken || typeof accessToken !== "string") return undefined;
-    const parts = accessToken.split(".");
-    if (parts.length !== 3) return undefined;
+    if (!jwt || typeof jwt !== "string") return null;
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
     const padded = base64 + "=".repeat(missingPadding);
-    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-    return payload.email || payload.preferred_username || payload.sub || undefined;
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
   } catch {
-    return undefined;
+    return null;
   }
+}
+
+function extractEmailFromAccessToken(accessToken) {
+  const payload = decodeJwtPayload(accessToken);
+  if (!payload) return undefined;
+  return payload.email || payload.preferred_username || payload.sub || undefined;
+}
+
+// Extract codex account info from id_token
+export function extractCodexAccountInfo(idToken) {
+  const payload = decodeJwtPayload(idToken);
+  if (!payload) return {};
+  const chatgpt = payload["https://api.openai.com/auth"] || {};
+  return {
+    email: payload.email,
+    chatgptAccountId: chatgpt.chatgpt_account_id,
+    chatgptPlanType: chatgpt.chatgpt_plan_type,
+  };
 }
 
 // Provider configurations
@@ -150,12 +167,23 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      idToken: tokens.id_token,
-      expiresIn: tokens.expires_in,
-    }),
+    mapTokens: (tokens) => {
+      const info = extractCodexAccountInfo(tokens.id_token);
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token,
+        expiresIn: tokens.expires_in,
+      };
+      if (info.email) mapped.email = info.email;
+      if (info.chatgptAccountId || info.chatgptPlanType) {
+        mapped.providerSpecificData = {
+          chatgptAccountId: info.chatgptAccountId,
+          chatgptPlanType: info.chatgptPlanType,
+        };
+      }
+      return mapped;
+    },
   },
 
   "gemini-cli": {
@@ -1255,4 +1283,42 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   }
 
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
+}
+
+// Run-once guard across the process lifetime
+let codexBackfillDone = false;
+
+// Backfill email + chatgpt account info for existing codex OAuth connections missing them
+export async function backfillCodexEmails() {
+  if (codexBackfillDone) return;
+  codexBackfillDone = true;
+  try {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const connections = await getProviderConnections();
+    const targets = connections.filter((c) => {
+      if (c.provider !== "codex" || c.authType !== "oauth" || !c.idToken) return false;
+      const hasEmail = !!c.email;
+      const hasAccountInfo = !!c.providerSpecificData?.chatgptAccountId;
+      return !hasEmail || !hasAccountInfo;
+    });
+    for (const conn of targets) {
+      const info = extractCodexAccountInfo(conn.idToken);
+      if (!info.email && !info.chatgptAccountId) continue;
+      const patch = {};
+      if (!conn.email && info.email) patch.email = info.email;
+      if (info.chatgptAccountId || info.chatgptPlanType) {
+        patch.providerSpecificData = {
+          ...(conn.providerSpecificData || {}),
+          chatgptAccountId: info.chatgptAccountId,
+          chatgptPlanType: info.chatgptPlanType,
+        };
+      }
+      if (Object.keys(patch).length) {
+        await updateProviderConnection(conn.id, patch);
+      }
+    }
+  } catch (err) {
+    codexBackfillDone = false;
+    console.log("backfillCodexEmails failed:", err?.message || err);
+  }
 }

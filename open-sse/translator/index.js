@@ -5,6 +5,7 @@ import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
+import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
 // Registry for translators
 const requestRegistry = new Map();
@@ -70,9 +71,16 @@ function stripContentTypes(body, stripList = []) {
 }
 
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, rtkEnabled = false) {
   ensureInitialized();
   let result = body;
+
+  // RTK: compress tool_result content before any translation (shape-agnostic)
+  const rtkStats = compressMessages(result, rtkEnabled);
+  if (rtkStats) {
+    const line = formatRtkLog(rtkStats);
+    if (line) console.log(line);
+  }
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);

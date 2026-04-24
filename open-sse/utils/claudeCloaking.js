@@ -66,6 +66,18 @@ export function cloakClaudeTools(body) {
   };
 }
 
+// Decloak tool_use names in non-streaming Claude response body (INPUT side)
+export function decloakToolNames(body, toolNameMap) {
+  if (!toolNameMap?.size || !Array.isArray(body?.content)) return body;
+  const content = body.content.map(block => {
+    if (block?.type === "tool_use" && toolNameMap.has(block.name)) {
+      return { ...block, name: toolNameMap.get(block.name) };
+    }
+    return block;
+  });
+  return { ...body, content };
+}
+
 // CC decoy tools — Claude Code native tool names, marked unavailable
 const CC_DECOY_TOOLS = [
   { name: "Task", description: "This tool is currently unavailable.", input_schema: { type: "object", properties: {} } },

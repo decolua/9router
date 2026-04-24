@@ -159,7 +159,9 @@ export async function POST(request) {
       authData = JSON.parse(existingAuth);
     } catch { /* No existing auth */ }
     
+    // Force apikey mode (keep existing tokens untouched for ChatGPT login reuse)
     authData.OPENAI_API_KEY = apiKey;
+    authData.auth_mode = "apikey";
     await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
 
     return NextResponse.json({
@@ -215,7 +217,8 @@ export async function DELETE() {
       const existingAuth = await fs.readFile(authPath, "utf-8");
       const authData = JSON.parse(existingAuth);
       delete authData.OPENAI_API_KEY;
-      
+      delete authData.auth_mode;
+
       // Write back or delete if empty
       if (Object.keys(authData).length === 0) {
         await fs.unlink(authPath);
