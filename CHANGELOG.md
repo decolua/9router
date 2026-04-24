@@ -1,3 +1,14 @@
+# v0.4.1 (2026-04-23)
+
+## Features
+- Add Hermes CLI tool with settings management and integration
+- Add in-app version update mechanism (appUpdater + /api/version/update)
+
+## Improvements
+- Strengthen CLI token validation for enhanced security
+- Enhance Sidebar layout for CLI tools
+- Update executors and runtime config
+
 # v0.3.98 (2026-04-22)
 
 ## Features

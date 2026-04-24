@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { resolveOllamaLocalHost } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
@@ -124,11 +124,11 @@ export class BaseExecutor {
         }, proxyOptions);
 
         // Retry based on status code config
-        const maxRetries = retryConfig[response.status] || 0;
+        const { attempts: maxRetries, delayMs } = resolveRetryEntry(retryConfig[response.status]);
         if (maxRetries > 0 && retryAttemptsByUrl[urlIndex] < maxRetries) {
           retryAttemptsByUrl[urlIndex]++;
-          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${delayMs / 1000}s`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
           urlIndex--;
           continue;
         }

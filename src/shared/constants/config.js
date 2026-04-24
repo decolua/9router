@@ -12,6 +12,13 @@ export const GITHUB_CONFIG = {
   changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
 };
 
+// Updater configuration
+export const UPDATER_CONFIG = {
+  npmPackageName: "9router",
+  installCmd: "npm i -g 9router",
+  exitDelayMs: 500,
+};
+
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
