@@ -3,8 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -85,7 +85,10 @@ export default function ModelSelectModal({
     });
 
     sortedProviderIds.forEach((providerId) => {
-      const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      // Must match the prefix the provider detail page uses when writing modelAliases
+      // (getProviderAlias), otherwise custom models for providers with short aliases
+      // like deepseek ("ds"), perplexity ("pplx"), etc. would be filtered out.
+      const alias = getProviderAlias(providerId);
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
