@@ -554,7 +554,7 @@ Quality: Production-ready models
 ```
 Combo: "always-on"
   1. cc/claude-opus-4-6        (best quality)
-  2. cx/gpt-5.2-codex          (second subscription)
+  2. cx/gpt-5.2                (second subscription)
   3. glm/glm-4.7               (cheap, resets daily)
   4. minimax/MiniMax-M2.1      (cheapest, 5h reset)
   5. if/kimi-k2-thinking       (free unlimited)
@@ -704,8 +704,10 @@ Dashboard → Providers → Connect Codex
 → 5-hour + weekly reset
 
 Models:
-  cx/gpt-5.2-codex
-  cx/gpt-5.1-codex-max
+  cx/gpt-5.4
+  cx/gpt-5.4-mini
+  cx/gpt-5.3-codex
+  cx/gpt-5.2
 ```
 
 ### Gemini CLI (FREE 180K/month!)
@@ -1062,8 +1064,10 @@ Notes:
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
-- `cx/gpt-5.2-codex`
-- `cx/gpt-5.1-codex-max`
+- `cx/gpt-5.4`
+- `cx/gpt-5.4-mini`
+- `cx/gpt-5.3-codex`
+- `cx/gpt-5.2`
 
 **Gemini CLI (`gc/`)** - FREE:
 - `gc/gemini-3-flash-preview`
