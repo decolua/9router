@@ -2,6 +2,7 @@ import { getModelInfoCore } from "open-sse/services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse } from "open-sse/utils/error.js";
 import { checkFallbackError, isAccountUnavailable, getUnavailableUntil, getEarliestRateLimitedUntil, formatRetryAfter } from "open-sse/services/accountFallback.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { getComboModelsFromData, handleComboChat } from "open-sse/services/combo.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -253,7 +254,7 @@ async function markAccountUnavailable(machineId, connectionId, status, errorText
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached) overrides backoff
   let cooldownMs, newBackoffLevel;
   if (resetsAtMs && resetsAtMs > Date.now()) {
-    cooldownMs = resetsAtMs - Date.now();
+    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
     ({ cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));

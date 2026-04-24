@@ -174,6 +174,7 @@ model = "${effectiveSubagentModel}"
 `;
 
     const authContent = JSON.stringify({
+      auth_mode: "apikey",
       OPENAI_API_KEY: keyToUse
     }, null, 2);
 

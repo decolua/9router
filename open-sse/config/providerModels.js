@@ -219,7 +219,6 @@ export const PROVIDER_MODELS = {
     // Gemini 3.1 series
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
-    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image Preview" },
     // Gemini 3 series
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     // Gemini 2.5 series
@@ -342,6 +341,7 @@ export const PROVIDER_MODELS = {
     { id: "DeepSeek-V3.2", name: "DeepSeek-V3.2" },
   ],
   deepseek: [
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
   ],

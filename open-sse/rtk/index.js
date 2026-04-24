@@ -3,20 +3,37 @@
 import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
-import { isRtkEnabled } from "./flag.js";
-
-export { isRtkEnabled, setRtkEnabled } from "./flag.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
-export function compressMessages(body) {
-  if (!isRtkEnabled()) return null;
-  if (!body || !Array.isArray(body.messages)) return null;
+export function compressMessages(body, enabled) {
+  if (!enabled) return null;
+  if (!body) return null;
+  // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
+  const items = Array.isArray(body.messages) ? body.messages
+    : Array.isArray(body.input) ? body.input
+    : null;
+  if (!items) return null;
 
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
   try {
-    for (let i = 0; i < body.messages.length; i++) {
-      const msg = body.messages[i];
+    for (let i = 0; i < items.length; i++) {
+      const msg = items[i];
       if (!msg) continue;
+
+      // Shape 4: OpenAI Responses — top-level { type:"function_call_output", output: string | [{type:"input_text", text}] }
+      if (msg.type === "function_call_output") {
+        if (typeof msg.output === "string") {
+          msg.output = compressText(msg.output, stats, "openai-responses-string");
+        } else if (Array.isArray(msg.output)) {
+          for (let k = 0; k < msg.output.length; k++) {
+            const part = msg.output[k];
+            if (part && part.type === "input_text" && typeof part.text === "string") {
+              part.text = compressText(part.text, stats, "openai-responses-array");
+            }
+          }
+        }
+        continue;
+      }
 
       // Shape 1: OpenAI tool message — { role:"tool", content: "string" }
       if (msg.role === "tool" && typeof msg.content === "string") {

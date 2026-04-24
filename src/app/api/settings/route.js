@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
-import { setRtkEnabled } from "open-sse/rtk/flag.js";
+import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -67,10 +67,14 @@ export async function PATCH(request) {
       applyOutboundProxyEnv(settings);
     }
 
-    // Sync RTK toggle immediately (sync cache for request hot path)
-    if (Object.prototype.hasOwnProperty.call(body, "rtkEnabled")) {
-      setRtkEnabled(settings.rtkEnabled);
+    // Invalidate combo rotation state when strategy settings change
+    if (
+      Object.prototype.hasOwnProperty.call(body, "comboStrategy") ||
+      Object.prototype.hasOwnProperty.call(body, "comboStrategies")
+    ) {
+      resetComboRotation();
     }
+
     const { password, ...safeSettings } = settings;
     return NextResponse.json(safeSettings);
   } catch (error) {
