@@ -1,0 +1,172 @@
+/**
+ * Kiro to OpenAI Response Translator
+ * Converts Kiro/AWS CodeWhisperer streaming events to OpenAI SSE format
+ */
+import { register } from "../index";
+import { FORMATS } from "../formats";
+
+/**
+ * Parse Kiro SSE event and convert to OpenAI format
+ */
+export function convertKiroToOpenAI(chunk: any, state: any) {
+  
+  if (!chunk) return null;
+
+  if (chunk.object === "chat.completion.chunk" && chunk.choices) {
+    return chunk;
+  }
+  
+  let data = chunk;
+  if (typeof chunk === "string") {
+    const lines = chunk.split("\n");
+    let eventType = "";
+    let eventData = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventType = line.slice(6).trim();
+      } else if (line.startsWith(":event-type:")) {
+        eventType = line.slice(12).trim();
+      } else if (line.startsWith("data:")) {
+        eventData = line.slice(5).trim();
+      } else if (line.trim() && !line.startsWith(":")) {
+        eventData = line.trim();
+      }
+    }
+
+    if (!eventData) return null;
+
+    try {
+      data = JSON.parse(eventData);
+      data._eventType = eventType;
+    } catch {
+      data = { text: eventData, _eventType: eventType };
+    }
+  }
+
+  if (!state.responseId) {
+    state.responseId = `chatcmpl-${Date.now()}`;
+    state.created = Math.floor(Date.now() / 1000);
+    state.chunkIndex = 0;
+  }
+
+  const eventType = data._eventType || data.event || "";
+
+  if (eventType === "assistantResponseEvent" || data.assistantResponseEvent) {
+    const content = data.assistantResponseEvent?.content || data.content || "";
+    if (!content) return null;
+
+    const openaiChunk = {
+      id: state.responseId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "kiro",
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          content: content
+        },
+        finish_reason: null
+      }]
+    };
+
+    state.chunkIndex++;
+    return openaiChunk;
+  }
+
+  if (eventType === "reasoningContentEvent" || data.reasoningContentEvent) {
+    const content = data.reasoningContentEvent?.content || data.content || "";
+    if (!content) return null;
+
+    const openaiChunk = {
+      id: state.responseId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "kiro",
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          content: `<thinking>${content}</thinking>`
+        },
+        finish_reason: null
+      }]
+    };
+
+    state.chunkIndex++;
+    return openaiChunk;
+  }
+
+  if (eventType === "toolUseEvent" || data.toolUseEvent) {
+    const toolUse = data.toolUseEvent || data;
+    const toolCallId = toolUse.toolUseId || `call_${Date.now()}`;
+    const toolName = toolUse.name || "";
+    const toolInput = toolUse.input || {};
+
+    const openaiChunk = {
+      id: state.responseId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "kiro",
+      choices: [{
+        index: 0,
+        delta: {
+          ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
+          tool_calls: [{
+            index: 0,
+            id: toolCallId,
+            type: "function",
+            function: {
+              name: toolName,
+              arguments: JSON.stringify(toolInput)
+            }
+          }]
+        },
+        finish_reason: null
+      }]
+    };
+
+    state.chunkIndex++;
+    return openaiChunk;
+  }
+
+  if (eventType === "messageStopEvent" || eventType === "done" || data.messageStopEvent) {
+    state.finishReason = "stop";
+    
+    const openaiChunk: any = {
+      id: state.responseId,
+      object: "chat.completion.chunk",
+      created: state.created,
+      model: state.model || "kiro",
+      choices: [{
+        index: 0,
+        delta: {},
+        finish_reason: "stop"
+      }]
+    };
+
+    if (state.usage && typeof state.usage === "object") {
+      openaiChunk.usage = state.usage;
+    }
+
+    return openaiChunk;
+  }
+
+  if (eventType === "usageEvent" || data.usageEvent) {
+    const usage = data.usageEvent || data;
+    if (usage && typeof usage === 'object') {
+      state.usage = {
+        prompt_tokens: usage.inputTokens || 0,
+        completion_tokens: usage.outputTokens || 0,
+        total_tokens: (usage.inputTokens || 0) + (usage.outputTokens || 0)
+      };
+    }
+    return null;
+  }
+
+  return null;
+}
+
+// Register translator
+register(FORMATS.KIRO, FORMATS.OPENAI, null, convertKiroToOpenAI);

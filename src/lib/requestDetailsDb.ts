@@ -1,0 +1,260 @@
+import { Low } from "lowdb";
+import { JSONFile } from "lowdb/node";
+import path from "node:path";
+import fs from "node:fs";
+import { DATA_DIR } from "@/lib/dataDir";
+
+export interface RequestDetail {
+  id: string;
+  provider: string | null;
+  model: string | null;
+  connectionId: string | null;
+  timestamp: string;
+  status: string | null;
+  latency: Record<string, any>;
+  tokens: Record<string, any>;
+  request: any;
+  providerRequest: any;
+  providerResponse: any;
+  response: any;
+}
+
+export interface RequestDetailsDbData {
+  records: RequestDetail[];
+}
+
+const isCloud = typeof caches !== "undefined" && typeof caches === "object";
+
+const DEFAULT_MAX_RECORDS = 200;
+const DEFAULT_BATCH_SIZE = 20;
+const DEFAULT_FLUSH_INTERVAL_MS = 5000;
+const CONFIG_CACHE_TTL_MS = 5000;
+const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
+const DB_FILE = isCloud ? "" : path.join(DATA_DIR, "request-details.json");
+
+if (!isCloud && !fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+let dbInstance: Low<RequestDetailsDbData> | null = null;
+
+async function getDb(): Promise<Low<RequestDetailsDbData> | null> {
+  if (isCloud) return null;
+  if (!dbInstance) {
+    const adapter = new JSONFile<RequestDetailsDbData>(DB_FILE);
+    const db = new Low(adapter, { records: [] });
+    await db.read();
+    if (!db.data?.records) db.data = { records: [] };
+    dbInstance = db;
+  }
+  return dbInstance;
+}
+
+// Config cache
+let cachedConfig: any = null;
+let cachedConfigTs = 0;
+
+async function getObservabilityConfig() {
+  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) {
+    return cachedConfig;
+  }
+
+  try {
+    const { getSettings } = await import("@/lib/localDb");
+    const settings = await getSettings();
+    const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
+    const enabled = typeof settings.enableObservability === "boolean"
+      ? settings.enableObservability
+      : envEnabled;
+
+    cachedConfig = {
+      enabled,
+      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
+      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
+      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
+      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+    };
+  } catch {
+    cachedConfig = {
+      enabled: false,
+      maxRecords: DEFAULT_MAX_RECORDS,
+      batchSize: DEFAULT_BATCH_SIZE,
+      flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
+      maxJsonSize: 5 * 1024,
+    };
+  }
+
+  cachedConfigTs = Date.now();
+  return cachedConfig;
+}
+
+// Batch write queue
+let writeBuffer: any[] = [];
+let flushTimer: NodeJS.Timeout | null = null;
+let isFlushing = false;
+
+function sanitizeHeaders(headers: any) {
+  if (!headers || typeof headers !== "object") return {};
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
+  const sanitized = { ...headers };
+  for (const key of Object.keys(sanitized)) {
+    if (sensitiveKeys.some(s => key.toLowerCase().includes(s))) {
+      delete sanitized[key];
+    }
+  }
+  return sanitized;
+}
+
+function generateDetailId(model: string | null) {
+  const timestamp = new Date().toISOString();
+  const random = Math.random().toString(36).substring(2, 8);
+  const modelPart = model ? model.replace(/[^a-zA-Z0-9-]/g, "-") : "unknown";
+  return `${timestamp}-${random}-${modelPart}`;
+}
+
+async function flushToDatabase() {
+  if (isCloud || isFlushing || writeBuffer.length === 0) return;
+
+  isFlushing = true;
+  try {
+    const itemsToSave = [...writeBuffer];
+    writeBuffer = [];
+
+    const db = await getDb();
+    if (!db) return;
+    const config = await getObservabilityConfig();
+
+    for (const item of itemsToSave) {
+      if (!item.id) item.id = generateDetailId(item.model);
+      if (!item.timestamp) item.timestamp = new Date().toISOString();
+      if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+
+      const record: RequestDetail = {
+        id: item.id,
+        provider: item.provider || null,
+        model: item.model || null,
+        connectionId: item.connectionId || null,
+        timestamp: item.timestamp,
+        status: item.status || null,
+        latency: item.latency || {},
+        tokens: item.tokens || {},
+        request: item.request || {},
+        providerRequest: item.providerRequest || {},
+        providerResponse: item.providerResponse || {},
+        response: item.response || {},
+      };
+
+      const maxSize = config.maxJsonSize;
+      const jsonFields: (keyof RequestDetail)[] = ["request", "providerRequest", "providerResponse", "response"];
+      for (const field of jsonFields) {
+        const str = JSON.stringify(record[field]);
+        if (str.length > maxSize) {
+          record[field] = { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+        }
+      }
+
+      const idx = db.data.records.findIndex(r => r.id === record.id);
+      if (idx !== -1) {
+        db.data.records[idx] = record;
+      } else {
+        db.data.records.push(record);
+      }
+    }
+
+    db.data.records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    if (db.data.records.length > config.maxRecords) {
+      db.data.records = db.data.records.slice(0, config.maxRecords);
+    }
+
+    while (db.data.records.length > 1) {
+      const totalSize = Buffer.byteLength(JSON.stringify(db.data), "utf8");
+      if (totalSize <= MAX_TOTAL_DB_SIZE) break;
+      db.data.records = db.data.records.slice(0, Math.floor(db.data.records.length / 2));
+    }
+
+    await db.write();
+  } catch (error) {
+    console.error("[requestDetailsDb] Batch write failed:", error);
+  } finally {
+    isFlushing = false;
+  }
+}
+
+export async function saveRequestDetail(detail: any) {
+  if (isCloud) return;
+
+  const config = await getObservabilityConfig();
+  if (!config.enabled) return;
+
+  writeBuffer.push(detail);
+
+  if (writeBuffer.length >= config.batchSize) {
+    await flushToDatabase();
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  } else if (!flushTimer) {
+    flushTimer = setTimeout(() => {
+      flushToDatabase().catch(() => {});
+      flushTimer = null;
+    }, config.flushIntervalMs);
+  }
+}
+
+export async function getRequestDetails(filter: any = {}) {
+  if (isCloud) {
+    return { details: [], pagination: { page: 1, pageSize: 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+  }
+
+  const db = await getDb();
+  if (!db) return { details: [], pagination: { page: 1, pageSize: 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+  
+  let records = [...db.data.records];
+
+  if (filter.provider) records = records.filter(r => r.provider === filter.provider);
+  if (filter.model) records = records.filter(r => r.model === filter.model);
+  if (filter.connectionId) records = records.filter(r => r.connectionId === filter.connectionId);
+  if (filter.status) records = records.filter(r => r.status === filter.status);
+  if (filter.startDate) records = records.filter(r => new Date(r.timestamp) >= new Date(filter.startDate));
+  if (filter.endDate) records = records.filter(r => new Date(r.timestamp) <= new Date(filter.endDate));
+
+  records.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const totalItems = records.length;
+  const page = filter.page || 1;
+  const pageSize = filter.pageSize || 50;
+  const totalPages = Math.ceil(totalItems / pageSize);
+  const details = records.slice((page - 1) * pageSize, page * pageSize);
+
+  return {
+    details,
+    pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+  };
+}
+
+export async function getRequestDetailById(id: string) {
+  if (isCloud) return null;
+
+  const db = await getDb();
+  if (!db) return null;
+  return db.data.records.find(r => r.id === id) || null;
+}
+
+const _shutdownHandler = async () => {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (writeBuffer.length > 0) await flushToDatabase();
+};
+
+function ensureShutdownHandler() {
+  if (isCloud) return;
+
+  process.off("beforeExit", _shutdownHandler);
+  process.off("SIGINT", _shutdownHandler);
+  process.off("SIGTERM", _shutdownHandler);
+  process.off("exit", _shutdownHandler);
+
+  process.on("beforeExit", _shutdownHandler);
+  process.on("SIGINT", _shutdownHandler);
+  process.on("SIGTERM", _shutdownHandler);
+  process.on("exit", _shutdownHandler);
+}
+
+ensureShutdownHandler();
