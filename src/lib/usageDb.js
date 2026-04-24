@@ -92,6 +92,17 @@ function migrateHistoryToDailySummary(db) {
 // Singleton instance
 let dbInstance = null;
 
+let requestLogBuffer = [];
+let bufferedFlushTimer = null;
+let requestLogIsFlushing = false;
+let requestLogInitialized = false;
+let requestLogTail = [];
+let usageWritePending = false;
+const REQUEST_LOG_LIMIT = 200;
+const DISK_FLUSH_INTERVAL_MS = 3000;
+const REQUEST_LOG_LOAD_LIMIT = REQUEST_LOG_LIMIT * 4;
+const MAX_HISTORY = 10000;
+
 // Use global to share pending state across Next.js route modules
 if (!global._pendingRequests) {
   global._pendingRequests = { byModel: {}, byAccount: {} };
@@ -278,18 +289,72 @@ export async function getUsageDb() {
  * Save request usage
  * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
+async function flushUsageDb() {
+  if (isCloud || usageWritePending) return;
+  usageWritePending = true;
+
+  try {
+    const db = await getUsageDb();
+    await db.write();
+  } catch (error) {
+    console.error("Failed to flush usage stats:", error);
+  } finally {
+    usageWritePending = false;
+  }
+}
+
+async function flushBufferedState() {
+  await Promise.allSettled([
+    flushUsageDb(),
+    flushRequestLogBuffer(),
+  ]);
+}
+
+function scheduleBufferedFlush() {
+  if (isCloud || bufferedFlushTimer) return;
+  bufferedFlushTimer = setTimeout(() => {
+    bufferedFlushTimer = null;
+    flushBufferedState().catch(() => {});
+  }, DISK_FLUSH_INTERVAL_MS);
+  bufferedFlushTimer.unref?.();
+}
+
+function clearBufferedFlushTimer() {
+  if (!bufferedFlushTimer) return;
+  clearTimeout(bufferedFlushTimer);
+  bufferedFlushTimer = null;
+}
+
+const flushBufferedStateOnExit = async () => {
+  clearBufferedFlushTimer();
+  await flushBufferedState();
+};
+
+if (!isCloud) {
+  process.off("beforeExit", flushBufferedStateOnExit);
+  process.off("SIGINT", flushBufferedStateOnExit);
+  process.off("SIGTERM", flushBufferedStateOnExit);
+  process.off("exit", flushBufferedStateOnExit);
+  process.on("beforeExit", flushBufferedStateOnExit);
+  process.on("SIGINT", flushBufferedStateOnExit);
+  process.on("SIGTERM", flushBufferedStateOnExit);
+  process.on("exit", flushBufferedStateOnExit);
+}
+
+function scheduleUsageDbFlush() {
+  scheduleBufferedFlush();
+}
+
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
 
   try {
     const db = await getUsageDb();
 
-    // Add timestamp if not present
     if (!entry.timestamp) {
       entry.timestamp = new Date().toISOString();
     }
 
-    // Ensure history array exists
     if (!Array.isArray(db.data.history)) {
       db.data.history = [];
     }
@@ -305,13 +370,12 @@ export async function saveRequestUsage(entry) {
     if (!db.data.dailySummary) db.data.dailySummary = {};
     aggregateEntryToDailySummary(db.data.dailySummary, entry);
 
-    const MAX_HISTORY = 10000;
     if (db.data.history.length > MAX_HISTORY) {
       db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
     }
 
-    await db.write();
     statsEmitter.emit("update");
+    scheduleUsageDbFlush();
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
@@ -361,6 +425,55 @@ function formatLogDate(date = new Date()) {
   return `${d}-${m}-${y} ${h}:${min}:${s}`;
 }
 
+async function ensureRequestLogLoaded() {
+  if (requestLogInitialized || isCloud || !LOG_FILE || !fs?.promises) return;
+  requestLogInitialized = true;
+
+  try {
+    const content = await fs.promises.readFile(LOG_FILE, "utf-8");
+    requestLogTail = content.split("\n").filter(Boolean).slice(-REQUEST_LOG_LOAD_LIMIT);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.error("Failed to load log.txt:", error.message);
+    }
+    requestLogTail = [];
+  }
+}
+
+async function flushRequestLogBuffer() {
+  if (isCloud || requestLogIsFlushing || requestLogBuffer.length === 0 || !LOG_FILE || !fs?.promises) return;
+
+  requestLogIsFlushing = true;
+
+  let pendingLines = [];
+  try {
+    await ensureRequestLogLoaded();
+
+    pendingLines = requestLogBuffer;
+    requestLogBuffer = [];
+    requestLogTail.push(...pendingLines);
+    if (requestLogTail.length > REQUEST_LOG_LOAD_LIMIT) {
+      requestLogTail = requestLogTail.slice(-REQUEST_LOG_LOAD_LIMIT);
+    }
+
+    const nextTail = requestLogTail.slice(-REQUEST_LOG_LIMIT);
+    await fs.promises.writeFile(LOG_FILE, `${nextTail.join("\n")}\n`, "utf-8");
+    requestLogTail = nextTail;
+  } catch (error) {
+    console.error("Failed to flush log.txt:", error.message);
+    requestLogBuffer = pendingLines.concat(requestLogBuffer);
+  } finally {
+    requestLogIsFlushing = false;
+    if (requestLogBuffer.length > 0) {
+      scheduleBufferedFlush();
+    }
+  }
+}
+
+function scheduleRequestLogFlush() {
+  scheduleBufferedFlush();
+}
+
 /**
  * Append to log.txt
  * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
@@ -372,31 +485,12 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
     const timestamp = formatLogDate();
     const p = provider?.toUpperCase() || "-";
     const m = model || "-";
-
-    // Resolve account name
-    let account = connectionId ? connectionId.slice(0, 8) : "-";
-    try {
-      const { getProviderConnections } = await import("@/lib/localDb.js");
-      const connections = await getProviderConnections();
-      const conn = connections.find(c => c.id === connectionId);
-      if (conn) {
-        account = conn.name || conn.email || account;
-      }
-    } catch {}
-
+    const account = connectionId ? connectionId.slice(0, 8) : "-";
     const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
 
-    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
-
-    fs.appendFileSync(LOG_FILE, line);
-
-    // Trim to keep only last 200 lines
-    const content = fs.readFileSync(LOG_FILE, "utf-8");
-    const lines = content.trim().split("\n");
-    if (lines.length > 200) {
-      fs.writeFileSync(LOG_FILE, lines.slice(-200).join("\n") + "\n");
-    }
+    requestLogBuffer.push(`${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}`);
+    scheduleRequestLogFlush();
   } catch (error) {
     console.error("Failed to append to log.txt:", error.message);
   }

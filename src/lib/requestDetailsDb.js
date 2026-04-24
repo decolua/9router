@@ -8,7 +8,7 @@ const isCloud = typeof caches !== "undefined" && typeof caches === "object";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
-const DEFAULT_FLUSH_INTERVAL_MS = 5000;
+const DEFAULT_FLUSH_INTERVAL_MS = 3000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024; // 5KB default, configurable via settings
 const CONFIG_CACHE_TTL_MS = 5000;
 const MAX_TOTAL_DB_SIZE = 50 * 1024 * 1024; // 50MB hard limit for total DB file
@@ -185,14 +185,12 @@ export async function saveRequestDetail(detail) {
 
   writeBuffer.push(detail);
 
-  if (writeBuffer.length >= config.batchSize) {
-    await flushToDatabase();
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-  } else if (!flushTimer) {
+  if (!flushTimer) {
     flushTimer = setTimeout(() => {
-      flushToDatabase().catch(() => {});
       flushTimer = null;
+      flushToDatabase().catch(() => {});
     }, config.flushIntervalMs);
+    flushTimer.unref?.();
   }
 }
 
