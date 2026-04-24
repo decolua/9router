@@ -1,3 +1,8 @@
+# v0.4.4-beta (2026-04-24)
+
+## Improvements
+- Prepare Docker beta release for multi-architecture publishing
+
 # v0.4.3 (2026-04-24)
 
 ## Improvements
