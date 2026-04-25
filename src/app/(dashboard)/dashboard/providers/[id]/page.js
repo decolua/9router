@@ -9,6 +9,7 @@ import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS,
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -719,12 +720,14 @@ export default function ProviderDetailPage() {
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getHeaderIconPath = () => {
     if (isOpenAICompatible && providerInfo.apiType) {
-      return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+      return getProviderAssetPath(
+        providerInfo.apiType === "responses" ? "oai-r" : "oai-cc",
+      );
     }
     if (isAnthropicCompatible) {
-      return "/providers/anthropic-m.png";
+      return getProviderAssetPath("anthropic-m");
     }
-    return `/providers/${providerInfo.id}.png`;
+    return getProviderAssetPath(providerInfo.id);
   };
 
   return (

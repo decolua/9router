@@ -146,7 +146,7 @@ URL mặc định:
   <table>
     <tr>
       <td align="center" width="120">
-        <img src="../public/providers/claude.png" width="60" alt="Claude Code"/><br/>
+        <img src="../public/providers/claude.svg" width="60" alt="Claude Code"/><br/>
         <b>Claude-Code</b>
       </td>
       <td align="center" width="120">
@@ -154,7 +154,7 @@ URL mặc định:
         <b>OpenClaw</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/codex.png" width="60" alt="Codex"/><br/>
+        <img src="../public/providers/codex.svg" width="60" alt="Codex"/><br/>
         <b>Codex</b>
       </td>
       <td align="center" width="120">
@@ -162,7 +162,7 @@ URL mặc định:
         <b>OpenCode</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/cursor.png" width="60" alt="Cursor"/><br/>
+        <img src="../public/providers/cursor.svg" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
       </td>
       <td align="center" width="120">
@@ -180,11 +180,11 @@ URL mặc định:
         <b>Continue</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/droid.png" width="60" alt="Droid"/><br/>
+        <img src="../public/providers/droid.svg" width="60" alt="Droid"/><br/>
         <b>Droid</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/roo.png" width="60" alt="Roo"/><br/>
+        <img src="../public/providers/roo.svg" width="60" alt="Roo"/><br/>
         <b>Roo</b>
       </td>
       <td align="center" width="120">
@@ -192,7 +192,7 @@ URL mặc định:
         <b>Copilot</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
+        <img src="../public/providers/kilocode.svg" width="60" alt="Kilo Code"/><br/>
         <b>Kilo Code</b>
       </td>
     </tr>
@@ -209,7 +209,7 @@ URL mặc định:
   <table>
     <tr>
       <td align="center" width="120">
-        <img src="../public/providers/claude.png" width="60" alt="Claude Code"/><br/>
+        <img src="../public/providers/claude.svg" width="60" alt="Claude Code"/><br/>
         <b>Claude-Code</b>
       </td>
       <td align="center" width="120">
@@ -217,7 +217,7 @@ URL mặc định:
         <b>Antigravity</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/codex.png" width="60" alt="Codex"/><br/>
+        <img src="../public/providers/codex.svg" width="60" alt="Codex"/><br/>
         <b>Codex</b>
       </td>
       <td align="center" width="120">
@@ -225,7 +225,7 @@ URL mặc định:
         <b>GitHub</b>
       </td>
       <td align="center" width="120">
-        <img src="../public/providers/cursor.png" width="60" alt="Cursor"/><br/>
+        <img src="../public/providers/cursor.svg" width="60" alt="Cursor"/><br/>
         <b>Cursor</b>
       </td>
     </tr>
@@ -248,12 +248,12 @@ URL mặc định:
         <sub>3+ mô hình • Không giới hạn</sub>
       </td>
       <td align="center" width="150">
-        <img src="../public/providers/gemini-cli.png" width="70" alt="Gemini CLI"/><br/>
+        <img src="../public/providers/gemini-cli.svg" width="70" alt="Gemini CLI"/><br/>
         <b>Gemini CLI</b><br/>
         <sub>180K/tháng MIỄN PHÍ</sub>
       </td>
       <td align="center" width="150">
-        <img src="../public/providers/kiro.png" width="70" alt="Kiro"/><br/>
+        <img src="../public/providers/kiro.svg" width="70" alt="Kiro"/><br/>
         <b>Kiro AI</b><br/>
         <sub>Claude • Không giới hạn</sub>
       </td>
@@ -267,15 +267,15 @@ URL mặc định:
   <table>
     <tr>
       <td align="center" width="100">
-        <img src="../public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
+        <img src="../public/providers/openrouter.svg" width="50" alt="OpenRouter"/><br/>
         <sub>OpenRouter</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/glm.png" width="50" alt="GLM"/><br/>
+        <img src="../public/providers/glm.svg" width="50" alt="GLM"/><br/>
         <sub>GLM</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/kimi.png" width="50" alt="Kimi"/><br/>
+        <img src="../public/providers/kimi.svg" width="50" alt="Kimi"/><br/>
         <sub>Kimi</sub>
       </td>
       <td align="center" width="100">
@@ -283,63 +283,63 @@ URL mặc định:
         <sub>MiniMax</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/openai.png" width="50" alt="OpenAI"/><br/>
+        <img src="../public/providers/openai.svg" width="50" alt="OpenAI"/><br/>
         <sub>OpenAI</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/anthropic.png" width="50" alt="Anthropic"/><br/>
+        <img src="../public/providers/anthropic.svg" width="50" alt="Anthropic"/><br/>
         <sub>Anthropic</sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="100">
-        <img src="../public/providers/gemini.png" width="50" alt="Gemini"/><br/>
+        <img src="../public/providers/gemini.svg" width="50" alt="Gemini"/><br/>
         <sub>Gemini</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/deepseek.png" width="50" alt="DeepSeek"/><br/>
+        <img src="../public/providers/deepseek.svg" width="50" alt="DeepSeek"/><br/>
         <sub>DeepSeek</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/groq.png" width="50" alt="Groq"/><br/>
+        <img src="../public/providers/groq.svg" width="50" alt="Groq"/><br/>
         <sub>Groq</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/xai.png" width="50" alt="xAI"/><br/>
+        <img src="../public/providers/xai.svg" width="50" alt="xAI"/><br/>
         <sub>xAI</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/mistral.png" width="50" alt="Mistral"/><br/>
+        <img src="../public/providers/mistral.svg" width="50" alt="Mistral"/><br/>
         <sub>Mistral</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/perplexity.png" width="50" alt="Perplexity"/><br/>
+        <img src="../public/providers/perplexity.svg" width="50" alt="Perplexity"/><br/>
         <sub>Perplexity</sub>
       </td>
     </tr>
     <tr>
       <td align="center" width="100">
-        <img src="../public/providers/together.png" width="50" alt="Together"/><br/>
+        <img src="../public/providers/together.svg" width="50" alt="Together"/><br/>
         <sub>Together AI</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/fireworks.png" width="50" alt="Fireworks"/><br/>
+        <img src="../public/providers/fireworks.svg" width="50" alt="Fireworks"/><br/>
         <sub>Fireworks</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/cerebras.png" width="50" alt="Cerebras"/><br/>
+        <img src="../public/providers/cerebras.svg" width="50" alt="Cerebras"/><br/>
         <sub>Cerebras</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/cohere.png" width="50" alt="Cohere"/><br/>
+        <img src="../public/providers/cohere.svg" width="50" alt="Cohere"/><br/>
         <sub>Cohere</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
+        <img src="../public/providers/nvidia.svg" width="50" alt="NVIDIA"/><br/>
         <sub>NVIDIA</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
+        <img src="../public/providers/siliconflow.svg" width="50" alt="SiliconFlow"/><br/>
         <sub>SiliconFlow</sub>
       </td>
     </tr>

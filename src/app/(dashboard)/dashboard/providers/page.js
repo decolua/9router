@@ -23,6 +23,7 @@ import {
 } from "@/shared/constants/providers";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
 import { useNotificationStore } from "@/store/notificationStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 
@@ -554,7 +555,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
               }}
             >
               <ProviderIcon
-                src={`/providers/${provider.id}.png`}
+                src={getProviderAssetPath(provider.id)}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[32px] max-h-[32px]"
@@ -660,11 +661,11 @@ function ApiKeyProviderCard({
 
   const getIconPath = () => {
     if (isCompatible)
-      return provider.apiType === "responses"
-        ? "/providers/oai-r.png"
-        : "/providers/oai-cc.png";
-    if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.png`;
+      return getProviderAssetPath(
+        provider.apiType === "responses" ? "oai-r" : "oai-cc",
+      );
+    if (isAnthropicCompatible) return getProviderAssetPath("anthropic-m");
+    return getProviderAssetPath(provider.id);
   };
 
   return (

@@ -1,3 +1,5 @@
+import { getProviderAssetPath } from "@/shared/utils/providerAssets";
+
 // MITM Tools — IDE tools intercepted via MITM proxy
 export const MITM_TOOLS = {
   antigravity: {
@@ -36,7 +38,7 @@ export const MITM_TOOLS = {
   kiro: {
     id: "kiro",
     name: "Kiro",
-    image: "/providers/kiro.png",
+    image: getProviderAssetPath("kiro"),
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
@@ -53,7 +55,7 @@ export const MITM_TOOLS = {
   // cursor: {
   //   id: "cursor",
   //   name: "Cursor",
-  //   image: "/providers/cursor.png",
+  //   image: getProviderAssetPath("cursor"),
   //   color: "#000000",
   //   description: "Cursor IDE with MITM",
   //   configType: "mitm",
@@ -101,7 +103,7 @@ export const CLI_TOOLS = {
   codex: {
     id: "codex",
     name: "OpenAI Codex CLI",
-    image: "/providers/codex.png",
+    image: getProviderAssetPath("codex"),
     color: "#10A37F",
     description: "OpenAI Codex CLI",
     configType: "custom",
@@ -117,7 +119,7 @@ export const CLI_TOOLS = {
   droid: {
     id: "droid",
     name: "Factory Droid",
-    image: "/providers/droid.png",
+    image: getProviderAssetPath("droid"),
     color: "#00D4FF",
     description: "Factory Droid AI Assistant",
     configType: "custom",
@@ -125,7 +127,7 @@ export const CLI_TOOLS = {
   cursor: {
     id: "cursor",
     name: "Cursor",
-    image: "/providers/cursor.png",
+    image: getProviderAssetPath("cursor"),
     color: "#000000",
     description: "Cursor AI Code Editor",
     configType: "guide",
@@ -161,7 +163,7 @@ export const CLI_TOOLS = {
   kilo: {
     id: "kilo",
     name: "Kilo Code",
-    image: "/providers/kilocode.png",
+    image: getProviderAssetPath("kilocode"),
     color: "#FF6B6B",
     description: "Kilo Code AI Assistant",
     configType: "guide",
@@ -176,7 +178,7 @@ export const CLI_TOOLS = {
   roo: {
     id: "roo",
     name: "Roo",
-    image: "/providers/roo.png",
+    image: getProviderAssetPath("roo"),
     color: "#FF6B6B",
     description: "Roo AI Assistant",
     configType: "guide",
