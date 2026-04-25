@@ -213,9 +213,9 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
                       <AvatarImage src={navData.user.avatar} alt={navData.user.name} />
                       <AvatarFallback className="rounded-none bg-muted/20 text-muted-foreground">SA</AvatarFallback>
                     </Avatar>
-                    <div className="grid flex-1 text-left text-sm leading-tight ml-1">
-                      <span className="truncate font-bold uppercase tracking-tight text-foreground">{navData.user.name}</span>
-                      <span className="truncate text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60">{navData.user.email}</span>
+                    <div className="ml-1 grid flex-1 text-left leading-tight">
+                      <span className="truncate text-xs font-medium text-foreground">{navData.user.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">{navData.user.email}</span>
                     </div>
                     <DotsThree data-icon="inline-end" className="ml-auto opacity-40" weight="bold" />
                   </SidebarMenuButton>
@@ -231,22 +231,22 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
                       <AvatarImage src={navData.user.avatar} alt={navData.user.name} />
                       <AvatarFallback className="rounded-none">SA</AvatarFallback>
                     </Avatar>
-                    <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-bold uppercase tracking-tight text-foreground">{navData.user.name}</span>
-                      <span className="truncate text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60">{navData.user.email}</span>
+                    <div className="grid flex-1 text-left leading-tight">
+                      <span className="truncate text-xs font-medium text-foreground">{navData.user.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">{navData.user.email}</span>
                     </div>
                   </div>
                   <DropdownMenuSeparator className="mx-0 bg-border/20" />
                   <DropdownMenuGroup>
                     <DropdownMenuItem render={
-                      <Link href="/dashboard/profile" className="flex items-center gap-2 py-2.5 cursor-pointer font-bold uppercase tracking-widest text-[10px] hover:bg-primary/5 hover:text-primary transition-colors">
+                      <Link href="/dashboard/profile" className="flex cursor-pointer items-center gap-2 py-2 text-xs font-medium transition-colors hover:bg-primary/5 hover:text-primary">
                         <Gear data-icon="inline-start" className="size-4" weight="bold" />
                         <span>{translate("Node Infrastructure")}</span>
                       </Link>
                     } />
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator className="mx-0 bg-border/20" />
-                  <DropdownMenuItem onClick={() => setShowShutdownModal(true)} className="text-destructive focus:text-destructive py-2.5 cursor-pointer gap-2 font-bold uppercase tracking-widest text-[10px] focus:bg-destructive/10">
+                  <DropdownMenuItem onClick={() => setShowShutdownModal(true)} className="cursor-pointer gap-2 py-2 text-xs font-medium text-destructive focus:bg-destructive/10 focus:text-destructive">
                     <Power data-icon="inline-start" className="size-4" weight="bold" />
                     <span>{translate("De-provision Node")}</span>
                   </DropdownMenuItem>

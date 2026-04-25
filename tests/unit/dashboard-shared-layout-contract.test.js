@@ -16,6 +16,8 @@ describe("dashboard shared layout contract", () => {
     const sidebar = read("src/shared/components/Sidebar.tsx");
     expect(sidebar).toContain("text-xs text-muted-foreground");
     expect(sidebar).toContain("className=\"text-xs font-medium\"");
+    expect(sidebar).toContain("truncate text-xs font-medium text-foreground");
+    expect(sidebar).toContain("truncate text-xs text-muted-foreground");
   });
 
   it("keeps menu actions compact", () => {
