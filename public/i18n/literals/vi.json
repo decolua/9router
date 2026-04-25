@@ -461,5 +461,12 @@
   "Scan QR to connect instantly": "Quét QR để kết nối ngay",
   "No port forwarding needed": "Không cần mở cổng",
   "Works on any device": "Hoạt động trên mọi thiết bị",
-  "Get 9Remote": "Mở 9Remote"
+  "Get 9Remote": "Mở 9Remote",
+  "Menu": "Menu",
+  "Change Log": "Nhật ký thay đổi",
+  "Language": "Ngôn ngữ",
+  "Light Mode": "Chế độ sáng",
+  "Dark Mode": "Chế độ tối",
+  "Remote Access": "Truy cập từ xa",
+  "De-authorize Session": "Hủy phiên xác thực"
 }
