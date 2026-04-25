@@ -27,6 +27,8 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [trialFirst, setTrialFirst] = useState(false);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -362,13 +364,30 @@ export default function ProviderLimits() {
       conn.authType === "oauth",
   );
 
-  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically
-  const sortedConnections = [...filteredConnections].sort((a, b) => {
+  const providerFilteredConnections = filteredConnections.filter(
+    (conn) => providerFilter === "all" || conn.provider === providerFilter,
+  );
+
+  const getTrialExpiryTime = (conn) => {
+    const trialQuota = quotaData[conn.id]?.quotas?.find((quota) =>
+      String(quota.name || "").toLowerCase().includes("freetrial"),
+    );
+    return trialQuota?.resetAt ? new Date(trialQuota.resetAt).getTime() : Number.POSITIVE_INFINITY;
+  };
+
+  // Sort providers by category. Kiro can optionally be sorted by earliest trial expiry.
+  const sortedConnections = [...providerFilteredConnections].sort((a, b) => {
+    if (trialFirst && a.provider === "kiro" && b.provider === "kiro") {
+      const expiryDiff = getTrialExpiryTime(a) - getTrialExpiryTime(b);
+      if (expiryDiff !== 0) return expiryDiff;
+    }
     const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
     const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
     if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
+
+  const providerOptions = Array.from(new Set(filteredConnections.map((conn) => conn.provider)));
 
   // Calculate summary stats
   const totalProviders = sortedConnections.length;
@@ -422,6 +441,25 @@ export default function ProviderLimits() {
         </div>
 
         <div className="flex items-center gap-2">
+          <select
+            value={providerFilter}
+            onChange={(event) => setProviderFilter(event.target.value)}
+            className="h-10 rounded-lg border border-black/10 bg-transparent px-3 text-sm text-text-primary dark:border-white/10"
+          >
+            <option value="all">All categories</option>
+            {providerOptions.map((provider) => (
+              <option key={provider} value={provider}>{provider}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setTrialFirst((prev) => !prev)}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${trialFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            title="Sort Kiro accounts by earliest credit_freetrial expiry"
+          >
+            <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+            Trial ending first
+          </button>
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
