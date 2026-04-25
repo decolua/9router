@@ -44,6 +44,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
   const headerMeta = resolveHeaderMeta(pathname);
+  const isBasicChatPage = pathname === "/dashboard/basic-chat";
 
   return (
     <SidebarProvider defaultOpen={true}>
@@ -84,8 +85,14 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
           <SidebarInset className="flex flex-col flex-1 h-full min-w-0 overflow-hidden transition-all duration-300">
             <Header key={pathname} meta={headerMeta} />
-            <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-4 lg:p-6"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
-              <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>
+            <div
+              className={`flex-1 custom-scrollbar ${
+                isBasicChatPage
+                  ? "flex flex-col overflow-hidden"
+                  : "overflow-y-auto p-4 lg:p-6"
+              }`}
+            >
+              <div className={isBasicChatPage ? "flex h-full w-full flex-1 flex-col" : "mx-auto max-w-7xl"}>
                 {children}
               </div>
             </div>

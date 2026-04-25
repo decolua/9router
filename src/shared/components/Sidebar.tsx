@@ -78,11 +78,12 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
   const [isDisconnected, setIsDisconnected] = React.useState(false);
   const [enableTranslator, setEnableTranslator] = React.useState(false);
 
-  // Read direct to avoid hydration mismatch and extra API call if already known
   React.useEffect(() => {
     fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.enableTranslator) setEnableTranslator(true);
+      })
       .catch(() => {});
   }, []);
 
