@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
@@ -41,14 +41,7 @@ export default function Sidebar({ onClose }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState(null);
-  const [enableTranslator, setEnableTranslator] = useState(false);
-  const { copied, copy } = useCopyToClipboard(2000);
 
-  const INSTALL_CMD = UPDATER_CONFIG.installCmd;
-  const STATUS_URL = `http://localhost:${UPDATER_CONFIG.statusPort}/update/status`;
 
   useEffect(() => {
     fetch("/api/settings")
@@ -72,40 +65,7 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  const handleUpdate = async () => {
-    setIsUpdating(true);
-    setShowUpdateModal(false);
-    try {
-      const res = await fetch("/api/version/update", { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        alert(data.message || "Update failed. Please run the install command manually.");
-        setIsUpdating(false);
-        return;
-      }
-      setIsDisconnected(true);
-    } catch (e) {
-      setIsDisconnected(true);
-    }
-  };
 
-  // Poll updater status server while updating (Next server is dead, updater.js is alive)
-  useEffect(() => {
-    if (!isUpdating || !isDisconnected) return;
-    let stopped = false;
-    const tick = async () => {
-      try {
-        const res = await fetch(STATUS_URL, { cache: "no-store" });
-        if (res.ok) {
-          const data = await res.json();
-          if (!stopped) setUpdateStatus(data);
-        }
-      } catch { /* updater not ready yet or finished */ }
-    };
-    tick();
-    const id = setInterval(tick, UPDATER_CONFIG.statusPollIntervalMs);
-    return () => { stopped = true; clearInterval(id); };
-  }, [isUpdating, isDisconnected, STATUS_URL]);
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -143,28 +103,18 @@ export default function Sidebar({ onClose }) {
             </div>
           </Link>
           {updateInfo && (
-            <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
+            <button
+              onClick={() => navigator.clipboard.writeText("npm install -g 9router@latest")}
+              title="Click to copy install command"
+              className="flex flex-col gap-0.5 hover:opacity-80 transition-opacity text-left cursor-pointer rounded p-1 -m-1 focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
               </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowUpdateModal(true)}
-                  className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
-                >
-                  Update now
-                </button>
-                <button
-                  onClick={() => copy(INSTALL_CMD)}
-                  title="Copy install command"
-                  className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
-                >
-                  <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
-                    {copied ? "✓ copied!" : INSTALL_CMD}
-                  </code>
-                </button>
-              </div>
-            </div>
+              <code className="text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono select-all">
+                npm install -g 9router@latest
+              </code>
+            </button>
           )}
         </div>
 
