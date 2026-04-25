@@ -66,6 +66,7 @@ import { APP_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { translate } from "@/i18n/runtime";
 
 const VISIBLE_MEDIA_KINDS = ["embedding", "tts"];
 
@@ -106,11 +107,11 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
     user: { name: "System Admin", email: "admin@8router.ai", avatar: "/favicon.svg" },
     teams: [{ name: "8Router Proxy", logo: Command, plan: `v${APP_CONFIG.version}` }],
     navMain: [
-      { title: "Dịch vụ chính", items: [{ title: "Endpoint", url: "/dashboard/endpoint", icon: Lightning, badge: "API" }, { title: "Nhà cung cấp", url: "/dashboard/providers", icon: Database }, { title: "Kết hợp", url: "/dashboard/combos", icon: Stack }] },
-      { title: "Giám sát", items: [{ title: "Thống kê", url: "/dashboard/usage", icon: ChartBar }, { title: "Quota", url: "/dashboard/quota", icon: MagnifyingGlass }] },
-      { title: "Phát triển", items: [{ title: "MITM Proxy", url: "/dashboard/mitm", icon: ShieldCheck }, { title: "Công cụ", url: "/dashboard/cli-tools", icon: Terminal }] },
+      { title: "Core Services", items: [{ title: "Endpoint", url: "/dashboard/endpoint", icon: Lightning, badge: "API" }, { title: "Providers", url: "/dashboard/providers", icon: Database }, { title: "Combos", url: "/dashboard/combos", icon: Stack }] },
+      { title: "Monitoring", items: [{ title: "Usage", url: "/dashboard/usage", icon: ChartBar }, { title: "Quota", url: "/dashboard/quota", icon: MagnifyingGlass }] },
+      { title: "Development", items: [{ title: "MITM Proxy", url: "/dashboard/mitm", icon: ShieldCheck }, { title: "CLI Tools", url: "/dashboard/cli-tools", icon: Terminal }] },
     ],
-    system: [{ title: "Proxy Pools", url: "/dashboard/proxy-pools", icon: Globe }, { title: "Nhật ký Console", url: "/dashboard/console-log", icon: Desktop }, ...(enableTranslator ? [{ title: "Translator", url: "/dashboard/translator", icon: Globe }] : [])]
+    system: [{ title: "Proxy Pools", url: "/dashboard/proxy-pools", icon: Globe }, { title: "Console Log", url: "/dashboard/console-log", icon: Desktop }, ...(enableTranslator ? [{ title: "Translator", url: "/dashboard/translator", icon: Globe }] : [])]
   }), [enableTranslator]);
 
   return (
@@ -128,8 +129,8 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
                         <TeamLogo className="size-4" weight="bold" />
                       </div>
                       <div className="grid flex-1 text-left text-sm leading-tight ml-1">
-                        <span className="truncate font-bold uppercase tracking-tight text-foreground">{navData.teams[0].name}</span>
-                        <span className="truncate text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60">{navData.teams[0].plan}</span>
+                        <span className="truncate text-sm font-medium text-foreground">{navData.teams[0].name}</span>
+                        <span className="truncate text-xs text-muted-foreground">{navData.teams[0].plan}</span>
                       </div>
                     </Link>
                   } />
@@ -142,17 +143,17 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
         <SidebarContent>
           {navData.navMain.map((group) => (
             <SidebarGroup key={group.title}>
-              <SidebarGroupLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-40 px-4">{group.title}</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-xs text-muted-foreground px-4">{translate(group.title)}</SidebarGroupLabel>
               <SidebarMenu>
                 {group.items.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton isActive={isActive(item.url)} tooltip={item.title} render={
-                      <Link href={item.url} className="font-bold uppercase tracking-widest text-[11px]">
+                    <SidebarMenuButton isActive={isActive(item.url)} tooltip={translate(item.title)} render={
+                      <Link href={item.url} className="text-sm font-medium">
                         <item.icon data-icon="inline-start" weight={isActive(item.url) ? "fill" : "bold"} className={cn("size-4", isActive(item.url) ? "text-primary" : "text-muted-foreground")} />
-                        <span>{item.title}</span>
+                        <span>{translate(item.title)}</span>
                       </Link>
                     } />
-                    {item.badge && <SidebarMenuBadge className="rounded-none bg-primary/10 text-primary border-none font-bold text-[9px] px-1 h-4">{item.badge}</SidebarMenuBadge>}
+                    {item.badge && <SidebarMenuBadge className="rounded-md bg-primary/10 text-primary border-none text-xs px-1 h-4">{item.badge}</SidebarMenuBadge>}
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
@@ -160,14 +161,14 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
           ))}
 
           <SidebarGroup>
-            <SidebarGroupLabel className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-40 px-4">Hệ thống</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-xs text-muted-foreground px-4">{translate("System")}</SidebarGroupLabel>
             <SidebarMenu>
               <Collapsible defaultOpen={pathname.includes("media-providers")} className="group/collapsible" render={
                 <SidebarMenuItem>
                   <CollapsibleTrigger render={
-                    <SidebarMenuButton tooltip="Media Providers" className="font-bold uppercase tracking-widest text-[11px]">
+                    <SidebarMenuButton tooltip={translate("Media Providers")} className="text-sm font-medium">
                       <Headphones data-icon="inline-start" weight="bold" />
-                      <span>Media Providers</span>
+                      <span>{translate("Media Providers")}</span>
                       <CaretRight data-icon="inline-end" className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" weight="bold" />
                     </SidebarMenuButton>
                   } />
@@ -176,7 +177,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
                       {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
                         <SidebarMenuSubItem key={kind.id}>
                           <SidebarMenuSubButton isActive={pathname.includes(kind.id)} render={
-                            <Link href={`/dashboard/media-providers/${kind.id}`} className="font-bold uppercase tracking-widest text-[10px]">
+                            <Link href={`/dashboard/media-providers/${kind.id}`} className="text-xs text-muted-foreground">
                               <span>{kind.label}</span>
                             </Link>
                           } />
@@ -190,7 +191,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
               {navData.system.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton isActive={isActive(item.url)} tooltip={item.title} render={
-                    <Link href={item.url} className="font-bold uppercase tracking-widest text-[11px]">
+                    <Link href={item.url} className="text-sm font-medium">
                       <item.icon data-icon="inline-start" weight={isActive(item.url) ? "fill" : "bold"} className={cn("size-4", isActive(item.url) ? "text-primary" : "text-muted-foreground")} />
                       <span>{item.title}</span>
                     </Link>
@@ -239,14 +240,14 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
                     <DropdownMenuItem render={
                       <Link href="/dashboard/profile" className="flex items-center gap-2 py-2.5 cursor-pointer font-bold uppercase tracking-widest text-[10px] hover:bg-primary/5 hover:text-primary transition-colors">
                         <Gear data-icon="inline-start" className="size-4" weight="bold" />
-                        <span>Node Infrastructure</span>
+                        <span>{translate("Node Infrastructure")}</span>
                       </Link>
                     } />
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator className="mx-0 bg-border/20" />
                   <DropdownMenuItem onClick={() => setShowShutdownModal(true)} className="text-destructive focus:text-destructive py-2.5 cursor-pointer gap-2 font-bold uppercase tracking-widest text-[10px] focus:bg-destructive/10">
                     <Power data-icon="inline-start" className="size-4" weight="bold" />
-                    <span>De-provision Node</span>
+                    <span>{translate("De-provision Node")}</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

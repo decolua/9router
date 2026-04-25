@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
+import { resolveHeaderMeta } from "@/shared/components/headerMeta";
 import { X, CheckCircle, WarningCircle, Info, Warning } from "@phosphor-icons/react";
 
 const getToastStyle = (type: string) => {
@@ -42,6 +43,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
+  const headerMeta = resolveHeaderMeta(pathname);
 
   return (
     <SidebarProvider defaultOpen={true}>
@@ -54,13 +56,13 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               return (
                 <div
                   key={n.id}
-                  className={`rounded-xl border px-4 py-3 shadow-2xl backdrop-blur-md pointer-events-auto animate-in slide-in-from-right-4 duration-300 ${style.wrapper}`}
+                  className={`rounded-xl border px-4 py-3 shadow-lg backdrop-blur-md pointer-events-auto animate-in slide-in-from-right-4 duration-300 ${style.wrapper}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5">{style.icon}</div>
                     <div className="min-w-0 flex-1">
-                      {n.title ? <p className="text-xs font-bold uppercase tracking-widest mb-0.5">{n.title}</p> : null}
-                      <p className="text-xs font-medium leading-relaxed opacity-90">{n.message}</p>
+                      {n.title ? <p className="text-xs font-medium mb-0.5">{n.title}</p> : null}
+                      <p className="text-xs text-muted-foreground leading-relaxed">{n.message}</p>
                     </div>
                     {n.dismissible !== false ? (
                       <button
@@ -81,7 +83,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <Sidebar />
 
           <SidebarInset className="flex flex-col flex-1 h-full min-w-0 overflow-hidden transition-all duration-300">
-            <Header key={pathname} />
+            <Header key={pathname} meta={headerMeta} />
             <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-4 lg:p-6"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
               <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>
                 {children}
