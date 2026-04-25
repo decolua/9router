@@ -119,7 +119,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
     <>
       <Sidebar collapsible="icon" {...props}>
         <SidebarHeader>
-          <SidebarMenu>
+          <SidebarMenu className="gap-0.5">
             <SidebarMenuItem>
               {(() => {
                 const TeamLogo = navData.teams[0].logo;
@@ -204,7 +204,7 @@ export default function AppSidebar({ ...props }: React.ComponentProps<typeof Sid
         </SidebarContent>
 
         <SidebarFooter>
-          <SidebarMenu>
+          <SidebarMenu className="gap-0.5">
             <SidebarMenuItem>
               <DropdownMenu>
                 <DropdownMenuTrigger render={

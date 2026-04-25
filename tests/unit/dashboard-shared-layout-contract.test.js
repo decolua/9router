@@ -22,6 +22,11 @@ describe("dashboard shared layout contract", () => {
     expect(sidebar).toContain("weight=\"bold\" className={cn(\"size-4\"");
   });
 
+  it("keeps collapsed icon mode at compact density", () => {
+    const sidebarUi = read("src/components/ui/sidebar.tsx");
+    expect(sidebarUi).toContain("group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2!");
+  });
+
   it("keeps menu actions compact", () => {
     const menu = read("src/shared/components/HeaderMenu.tsx");
     expect(menu).toContain("h-8");
