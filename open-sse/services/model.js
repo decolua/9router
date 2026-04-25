@@ -51,6 +51,8 @@ const ALIAS_TO_PROVIDER_ID = {
   chutes: "chutes",
   ark: "volcengine-ark",
   "volcengine-ark": "volcengine-ark",
+  byteplus: "byteplus",
+  bpm: "byteplus",
   cursor: "cursor",
   vx: "vertex",
   vertex: "vertex",

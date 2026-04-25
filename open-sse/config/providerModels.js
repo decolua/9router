@@ -340,6 +340,16 @@ export const PROVIDER_MODELS = {
     { id: "GLM-4.7", name: "GLM-4.7" },
     { id: "DeepSeek-V3.2", name: "DeepSeek-V3.2" },
   ],
+  byteplus: [
+    { id: "dola-seed-2.0-pro", name: "Doubao Seed 2.0 Pro" },
+    { id: "dola-seed-2.0-code", name: "Doubao Seed 2.0 Code" },
+    { id: "dola-seed-2.0-lite", name: "Doubao Seed 2.0 lite" },
+    { id: "bytedance-seed-code", name: "Bytedance Seed Code" },
+    { id: "glm-5.1", name: "GLM-5.1" },
+    { id: "glm-4.7", name: "GLM-4.7" },
+    { id: "kimi-k2.5", name: "Kimi-K2.5" },
+    { id: "gpt-oss-120b", name: "GPT-OSS-120B" },
+  ],
   deepseek: [
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
