@@ -78,13 +78,17 @@ function parseResetTime(resetValue) {
       return resetValue.toISOString();
     }
 
-    // If it's a number (Unix timestamp in milliseconds)
+    // Unix timestamps from provider APIs may be seconds or milliseconds.
     if (typeof resetValue === 'number') {
-      return new Date(resetValue).toISOString();
+      return new Date(resetValue < 1e12 ? resetValue * 1000 : resetValue).toISOString();
     }
 
-    // If it's a string (ISO date or any parseable date string)
+    // If it's a numeric string, treat it like a Unix timestamp too.
     if (typeof resetValue === 'string') {
+      if (/^\d+$/.test(resetValue)) {
+        const timestamp = Number(resetValue);
+        return new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp).toISOString();
+      }
       return new Date(resetValue).toISOString();
     }
 
