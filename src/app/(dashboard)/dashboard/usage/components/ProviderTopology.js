@@ -221,7 +221,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, []);
 
   return (
-    <div className="w-full rounded-lg border border-border bg-bg-subtle/30" style={{ height: 480 }}>
+    <div className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected

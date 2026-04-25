@@ -440,7 +440,7 @@ export default function ProviderLimits() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <select
             value={providerFilter}
             onChange={(event) => setProviderFilter(event.target.value)}
@@ -454,11 +454,11 @@ export default function ProviderLimits() {
           <button
             type="button"
             onClick={() => setTrialFirst((prev) => !prev)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${trialFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
-            title="Sort Kiro accounts by earliest credit_freetrial expiry"
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${trialFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            title="Sort by time"
           >
             <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
-            Trial ending first
+            <span className="hidden sm:inline">Sort time</span>
           </button>
           {/* Auto-refresh toggle */}
           <button
