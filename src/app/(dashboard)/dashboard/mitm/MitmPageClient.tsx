@@ -105,12 +105,12 @@ export default function MitmPageClient() {
  {/* Page Header */}
  <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-border/50">
  <div className="space-y-1">
- <div className="flex items-center gap-2 text-muted-foreground font-medium text-xs uppercase tracking-tight">
+ <div className="flex items-center gap-2 text-xs text-muted-foreground">
  <ShieldCheck className="size-4" weight="bold"/>
  Development Tools
  </div>
- <h1 className="text-3xl font-medium tracking-tight">MITM Proxy</h1>
- <p className="text-sm text-muted-foreground font-medium">
+ <h1 className="text-2xl font-semibold tracking-tight">MITM Proxy</h1>
+ <p className="text-sm text-muted-foreground">
  {translate("Intercept CLI tool traffic and route through 8Router.")}
  </p>
  </div>

@@ -226,12 +226,12 @@ export default function CLIToolsPageClient({ machineId }: CLIToolsPageClientProp
  {/* Page Header */}
  <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-border/50">
  <div className="space-y-1">
- <div className="flex items-center gap-2 text-muted-foreground font-medium text-xs uppercase tracking-tight">
+ <div className="flex items-center gap-2 text-xs text-muted-foreground">
  <Terminal className="size-4" weight="bold"/>
  Development
  </div>
- <h1 className="text-3xl font-medium tracking-tight text-foreground">CLI Tools</h1>
- <p className="text-sm text-muted-foreground font-medium">
+ <h1 className="text-2xl font-semibold tracking-tight text-foreground">CLI Tools</h1>
+ <p className="text-sm text-muted-foreground">
  {translate("Configure CLI tools like Claude Code, Cursor, etc. to use with 8Router.")}
  </p>
  </div>
@@ -240,7 +240,7 @@ export default function CLIToolsPageClient({ machineId }: CLIToolsPageClientProp
  <div className="flex flex-col gap-8 mt-4">
  <section className="space-y-4">
  <div className="flex items-center gap-2 px-1">
- <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-40">Popular Tools</span>
+ <span className="text-xs text-muted-foreground">Popular Tools</span>
  <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent"></div>
  </div>
  <div className="flex flex-col gap-3">
@@ -251,7 +251,7 @@ export default function CLIToolsPageClient({ machineId }: CLIToolsPageClientProp
  {mitmTools.length > 0 && (
  <section className="space-y-4">
  <div className="flex items-center gap-2 px-1">
- <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-40">MITM Tools & Proxies</span>
+ <span className="text-xs text-muted-foreground">MITM Tools & Proxies</span>
  <div className="h-px flex-1 bg-gradient-to-r from-border/50 to-transparent"></div>
  </div>
  <div className="flex flex-col gap-3">
