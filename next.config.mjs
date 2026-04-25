@@ -15,8 +15,11 @@ const nextConfig = {
         path: false,
       };
     }
-    // Stop watching logs directory to prevent HMR during streaming
-    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
+    // Stop watching runtime write directories to prevent HMR loops during streaming
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ["**/{logs,data,.next,.8router}/**", "**/nul"],
+    };
     return config;
   },
   async rewrites() {

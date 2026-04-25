@@ -6,6 +6,7 @@ import "@/lib/network/initOutboundProxy"; // Auto-initialize outbound proxy env
 import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
 import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import React from "react";
 
 // Hook console immediately at module load time (server-side only, runs once)
@@ -49,6 +50,7 @@ export default function RootLayout({
           <RuntimeI18nProvider>
             <TooltipProvider>
               {children}
+              <Toaster richColors position="top-right" />
             </TooltipProvider>
           </RuntimeI18nProvider>
         </ThemeProvider>
