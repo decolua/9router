@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Copy, Check, FileCode } from "lucide-react";
+import { translate } from "@/i18n/runtime";
 
 interface Config {
   filename: string;
@@ -24,7 +25,7 @@ interface ManualConfigModalProps {
   configs?: Config[];
 }
 
-export default function ManualConfigModal({ isOpen, onClose, title = "Manual Configuration", configs = [] }: ManualConfigModalProps) {
+export default function ManualConfigModal({ isOpen, onClose, title = translate("Manual Configuration"), configs = [] }: ManualConfigModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const copyToClipboard = async (text: string, index: number) => {
     try {
@@ -42,7 +43,7 @@ export default function ManualConfigModal({ isOpen, onClose, title = "Manual Con
              <FileCode className="size-5 text-primary" />
              {title}
           </DialogTitle>
-          <DialogDescription className="text-xs font-medium">Manual system configuration for infrastructure integration.</DialogDescription>
+          <DialogDescription className="text-xs font-medium">{translate("Manual system configuration for infrastructure integration.")}</DialogDescription>
         </DialogHeader>
         
         <ScrollArea className="max-h-[60vh] pr-4">
@@ -50,10 +51,10 @@ export default function ManualConfigModal({ isOpen, onClose, title = "Manual Con
              {configs.map((config, index) => (
                <div key={index} className="space-y-2">
                  <div className="flex items-center justify-between px-1">
-                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60">{config.filename}</span>
-                   <Button variant="ghost" size="sm" className="h-7 text-[10px] font-bold uppercase tracking-widest" onClick={() => copyToClipboard(config.content, index)}>
+                   <span className="text-xs text-muted-foreground">{config.filename}</span>
+                   <Button variant="ghost" size="sm" className="h-7 text-xs font-medium" onClick={() => copyToClipboard(config.content, index)}>
                       {copiedIndex === index ? <Check className="size-3 mr-1.5 text-emerald-500" /> : <Copy className="size-3 mr-1.5" />}
-                      {copiedIndex === index ? "Copied" : "Copy Source"}
+                      {copiedIndex === index ? translate("Copied") : translate("Copy Source")}
                    </Button>
                  </div>
                  <pre className="p-4 rounded-xl bg-muted/40 border border-border font-mono text-[11px] leading-relaxed text-foreground/80 overflow-auto whitespace-pre-wrap break-all shadow-none">

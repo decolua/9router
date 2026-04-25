@@ -45,10 +45,10 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
       } else if (data.windowsManual) {
         setWindowsManual(true);
       } else {
-        setError(data.error || "Could not auto-detect tokens");
+        setError(data.error || translate("Could not auto-detect tokens"));
       }
     } catch (err) {
-      setError("Failed to auto-detect tokens");
+      setError(translate("Failed to auto-detect tokens"));
     } finally {
       setAutoDetecting(false);
     }
@@ -62,12 +62,12 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
 
   const handleImportToken = async () => {
     if (!accessToken.trim()) {
-      setError("Please enter an access token");
+      setError(translate("Please enter an access token"));
       return;
     }
 
     if (!machineId.trim()) {
-      setError("Please enter a machine ID");
+      setError(translate("Please enter a machine ID"));
       return;
     }
 
@@ -87,7 +87,7 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Import failed");
+        throw new Error(data.error || translate("Import failed"));
       }
 
       onSuccess?.();
@@ -100,7 +100,7 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
   };
 
   return (
-    <Modal open={open} title="Connect Cursor IDE" onClose={onClose}>
+    <Modal open={open} title={translate("Connect Cursor IDE")} onClose={onClose}>
       <div className="flex flex-col gap-4">
         {/* Auto-detecting state */}
         {autoDetecting && (
@@ -108,9 +108,9 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
             <span className="material-symbols-outlined text-4xl text-primary animate-spin">
               progress_activity
             </span>
-            <h3 className="text-lg font-semibold mb-2">Auto-detecting tokens...</h3>
+            <h3 className="text-lg font-semibold mb-2">{translate("Auto-detecting tokens...")}</h3>
             <p className="text-sm text-muted-foreground animate-pulse font-medium">
-              Reading from Cursor IDE database
+              {translate("Reading from Cursor IDE database")}
             </p>
           </div>
         )}
@@ -122,8 +122,8 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
             {autoDetected && (
               <div className="bg-primary/10 p-3 rounded-lg border border-primary/20 flex items-center gap-2">
                 <CheckCircle className="size-4 text-primary" weight="bold" />
-                <p className="text-xs font-bold uppercase tracking-wide text-primary">
-                  Tokens auto-detected from Cursor IDE successfully!
+                <p className="text-xs font-medium text-primary">
+                  {translate("Tokens auto-detected from Cursor IDE successfully!")}
                 </p>
               </div>
             )}
@@ -133,15 +133,15 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
               <div className="bg-amber-500/10 dark:bg-amber-500/5 p-3 rounded-lg border border-amber-500/20 flex flex-col gap-2">
                 <div className="flex gap-2 items-center">
                   <Info className="size-4 text-amber-500" weight="bold" />
-                  <p className="text-xs font-bold uppercase tracking-wide text-amber-500">
-                    Could not read Cursor database automatically.
+                  <p className="text-xs font-medium text-amber-500">
+                    {translate("Could not read Cursor database automatically.")}
                   </p>
                 </div>
-                <p className="text-[10px] text-amber-600/80 dark:text-amber-500/60 font-medium leading-relaxed italic">
-                  Make sure Cursor IDE has been opened at least once, then click <strong>Retry</strong>. If the problem persists, paste your tokens manually below.
+                <p className="text-xs text-amber-600/80 dark:text-amber-500/60 leading-relaxed">
+                  {translate("Make sure Cursor IDE has been opened at least once, then click Retry. If the problem persists, paste your tokens manually below.")}
                 </p>
-                <Button onClick={runAutoDetect} variant="outline" className="h-8 text-[10px] font-bold uppercase tracking-widest border-amber-500/30 hover:bg-amber-500/10 text-amber-600">
-                  Retry Detection
+                <Button onClick={runAutoDetect} variant="outline" className="h-8 text-xs font-medium border-amber-500/30 hover:bg-amber-500/10 text-amber-600">
+                  {translate("Retry Detection")}
                 </Button>
               </div>
             )}
@@ -151,20 +151,20 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
               <div className="bg-muted/10 p-3 rounded-lg border border-border/50 flex items-center gap-2">
                 <Info className="size-4 text-muted-foreground" weight="bold" />
                 <p className="text-xs font-medium text-muted-foreground">
-                  Cursor IDE not detected. Please paste your tokens manually.
+                  {translate("Cursor IDE not detected. Please paste your tokens manually.")}
                 </p>
               </div>
             )}
 
             {/* Access Token Input */}
             <div className="grid gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">
-                Access Token <span className="text-destructive">*</span>
+              <label className="px-1 text-xs text-muted-foreground">
+                {translate("Access Token")} <span className="text-destructive">*</span>
               </label>
               <textarea
                 value={accessToken}
                 onChange={(e) => setAccessToken(e.target.value)}
-                placeholder="Access token will be auto-filled..."
+                placeholder={translate("Access token will be auto-filled...")}
                 rows={3}
                 className="w-full px-3 py-2 text-xs font-mono border border-border/50 rounded-none bg-muted/5 focus:outline-none focus:border-primary/50 resize-none transition-colors"
               />
@@ -172,13 +172,13 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
 
             {/* Machine ID Input */}
             <div className="grid gap-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">
-                Machine ID <span className="text-destructive">*</span>
+              <label className="px-1 text-xs text-muted-foreground">
+                {translate("Machine ID")} <span className="text-destructive">*</span>
               </label>
               <Input
                 value={machineId}
                 onChange={(e) => setMachineId(e.target.value)}
-                placeholder="Machine ID will be auto-filled..."
+                placeholder={translate("Machine ID will be auto-filled...")}
                 className="font-mono text-xs h-10 bg-muted/5 border-border/50 rounded-none"
               />
             </div>
@@ -187,7 +187,7 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
             {error && (
               <div className="bg-destructive/10 p-3 rounded-lg border border-destructive/20 flex items-center gap-2">
                 <WarningCircle className="size-4 text-destructive" weight="bold" />
-                <p className="text-xs font-bold uppercase tracking-wide text-destructive">{error}</p>
+                <p className="text-xs font-medium text-destructive">{translate(error)}</p>
               </div>
             )}
 
@@ -195,13 +195,13 @@ export default function CursorAuthModal({ open, onSuccess, onClose }: CursorAuth
             <div className="flex gap-2 pt-2">
               <Button
                 onClick={handleImportToken}
-                className="flex-1 h-10 font-bold text-xs uppercase tracking-widest"
+                className="flex-1 h-10 text-xs font-medium"
                 disabled={importing || !accessToken.trim() || !machineId.trim()}
               >
-                {importing ? "Importing..." : "Import Token"}
+                {importing ? translate("Importing...") : translate("Import Token")}
               </Button>
-              <Button onClick={onClose} variant="ghost" className="flex-1 h-10 font-bold text-xs uppercase tracking-widest border border-border/50 rounded-none">
-                Cancel
+              <Button onClick={onClose} variant="ghost" className="flex-1 h-10 border border-border/50 rounded-none text-xs font-medium">
+                {translate("Cancel")}
               </Button>
             </div>
           </>

@@ -12,24 +12,24 @@ export interface HeaderMeta {
 }
 
 const STATIC_ROUTE_LABELS: Record<string, string> = {
-  "/dashboard/providers": "Providers",
-  "/dashboard/combos": "Combos",
-  "/dashboard/usage": "Usage",
-  "/dashboard/quota": "Quota Tracker",
+  "/dashboard/providers": "Nhà cung cấp",
+  "/dashboard/combos": "Kết hợp",
+  "/dashboard/usage": "Mức sử dụng",
+  "/dashboard/quota": "Theo dõi quota",
   "/dashboard/mitm": "MITM Proxy",
-  "/dashboard/cli-tools": "CLI Tools",
-  "/dashboard/proxy-pools": "Proxy Pools",
+  "/dashboard/cli-tools": "Công cụ CLI",
+  "/dashboard/proxy-pools": "Cụm proxy",
   "/dashboard/endpoint": "Endpoint",
-  "/dashboard/profile": "Settings",
-  "/dashboard/translator": "Translator",
-  "/dashboard/console-log": "Console Log",
-  "/dashboard": "Dashboard",
+  "/dashboard/profile": "Cài đặt",
+  "/dashboard/translator": "Dịch thuật",
+  "/dashboard/console-log": "Nhật ký console",
+  "/dashboard": "Bảng điều khiển",
 };
 
 export function resolveHeaderMeta(pathname: string): HeaderMeta {
   if (!pathname) {
     return {
-      breadcrumbs: [{ label: "Dashboard", href: "/dashboard", isCurrent: true }],
+      breadcrumbs: [{ label: "Bảng điều khiển", href: "/dashboard", isCurrent: true }],
     };
   }
 
@@ -42,8 +42,8 @@ export function resolveHeaderMeta(pathname: string): HeaderMeta {
 
     return {
       breadcrumbs: [
-        { label: "Dashboard", href: "/dashboard" },
-        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
+        { label: "Bảng điều khiển", href: "/dashboard" },
+        { label: "Nhà cung cấp media", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
         { label: provider?.name || providerId, isCurrent: true },
       ],
@@ -57,8 +57,8 @@ export function resolveHeaderMeta(pathname: string): HeaderMeta {
 
     return {
       breadcrumbs: [
-        { label: "Dashboard", href: "/dashboard" },
-        { label: "Media Providers", href: "/dashboard/media-providers" },
+        { label: "Bảng điều khiển", href: "/dashboard" },
+        { label: "Nhà cung cấp media", href: "/dashboard/media-providers" },
         { label: kindConfig?.label || kindId, isCurrent: true },
       ],
     };
@@ -74,8 +74,8 @@ export function resolveHeaderMeta(pathname: string): HeaderMeta {
     if (providerInfo) {
       return {
         breadcrumbs: [
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Providers", href: "/dashboard/providers" },
+          { label: "Bảng điều khiển", href: "/dashboard" },
+          { label: "Nhà cung cấp", href: "/dashboard/providers" },
           { label: providerInfo.name || providerId, isCurrent: true },
         ],
       };
@@ -85,11 +85,11 @@ export function resolveHeaderMeta(pathname: string): HeaderMeta {
   const currentLabel =
     STATIC_ROUTE_LABELS[pathname] ||
     STATIC_ROUTE_LABELS["/dashboard" + pathname.replace("/dashboard", "")] ||
-    "Dashboard";
+    "Bảng điều khiển";
 
   return {
     breadcrumbs: [
-      { label: "Dashboard", href: "/dashboard", isCurrent: pathname === "/dashboard" },
+      { label: "Bảng điều khiển", href: "/dashboard", isCurrent: pathname === "/dashboard" },
       ...(pathname === "/dashboard" ? [] : [{ label: currentLabel, isCurrent: true }]),
     ],
   };

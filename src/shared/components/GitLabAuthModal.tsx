@@ -61,7 +61,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
 
   const handleOAuthStart = () => {
     if (!clientId.trim()) {
-      setError("Client ID is required");
+      setError(translate("Client ID is required"));
       return;
     }
     setError(null);
@@ -71,7 +71,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
 
   const handlePATSubmit = async () => {
     if (!pat.trim()) {
-      setError("Personal Access Token is required");
+      setError(translate("Personal Access Token is required"));
       return;
     }
     setLoading(true);
@@ -83,7 +83,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         body: JSON.stringify({ token: pat.trim(), baseUrl: baseUrl.trim() || GITLAB_COM }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Authentication failed");
+      if (!res.ok) throw new Error(data.error || translate("Authentication failed"));
       onSuccess?.();
       handleClose();
     } catch (err: any) {
@@ -110,13 +110,13 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
   }
 
   return (
-    <Modal open={isOpen} title="Connect GitLab Duo" onClose={handleClose}>
+    <Modal open={isOpen} title={translate("Connect GitLab Duo")} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         {/* Mode selection */}
         {!mode && (
           <>
             <p className="text-sm text-muted-foreground font-medium">
-              Choose how to authenticate with GitLab Duo:
+              {translate("Choose how to authenticate with GitLab Duo:")}
             </p>
             <div className="grid grid-cols-2 gap-3">
               <button
@@ -125,8 +125,8 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               >
                 <LockOpen className="size-8 text-primary group-hover:scale-110 transition-transform" weight="bold" />
                 <div className="text-center">
-                  <p className="text-sm font-bold tracking-tight">OAuth App</p>
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">Use a GitLab App</p>
+                  <p className="text-sm font-bold tracking-tight">{translate("OAuth App")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{translate("Use a GitLab App")}</p>
                 </div>
               </button>
               <button
@@ -135,8 +135,8 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               >
                 <Key className="size-8 text-primary group-hover:scale-110 transition-transform" weight="bold" />
                 <div className="text-center">
-                  <p className="text-sm font-bold tracking-tight">Access Token</p>
-                  <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest mt-1">Use a GitLab PAT</p>
+                  <p className="text-sm font-bold tracking-tight">{translate("Access Token")}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{translate("Use a GitLab PAT")}</p>
                 </div>
               </button>
             </div>
@@ -146,32 +146,32 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         {/* OAuth mode */}
         {mode === "oauth" && (
           <div className="space-y-4">
-            <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic opacity-80 px-1">
-              Create an OAuth app at{" "}
+            <p className="px-1 text-xs text-muted-foreground leading-relaxed">
+              {translate("Create an OAuth app at")} {" "}
               <a href={`${baseUrl.trim() || GITLAB_COM}/-/profile/applications`} target="_blank" rel="noreferrer" className="text-primary underline font-bold">
-                GitLab Applications
+                {translate("GitLab Applications")}
               </a>{" "}
-              with redirect URI{" "}
+              {translate("with redirect URI")} {" "}
               <code className="bg-muted px-1 rounded-none font-mono text-[10px]">{getRedirectUri()}</code>
             </p>
             <div className="grid gap-2">
-               <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">GitLab Base URL</Label>
+               <Label className="px-1 text-xs text-muted-foreground">{translate("GitLab Base URL")}</Label>
                <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={GITLAB_COM} className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
             </div>
             <div className="grid gap-2">
-               <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">Client ID</Label>
-               <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Your application ID" className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
+               <Label className="px-1 text-xs text-muted-foreground">{translate("Client ID")}</Label>
+               <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder={translate("Your application ID")} className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
             </div>
             <div className="grid gap-2">
-               <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">Client Secret (optional)</Label>
-               <Input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder="PKCE only" className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
+               <Label className="px-1 text-xs text-muted-foreground">{translate("Client Secret (optional)")}</Label>
+               <Input value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={translate("PKCE only")} className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
             </div>
-            {error && <p className="text-xs font-bold uppercase tracking-wide text-destructive px-1">{error}</p>}
+            {error && <p className="px-1 text-xs font-medium text-destructive">{translate(error)}</p>}
             <div className="flex gap-2 pt-2">
-              <Button onClick={handleOAuthStart} className="flex-1 h-10 font-bold text-xs uppercase tracking-widest" disabled={!clientId.trim()}>
-                Authorize
+              <Button onClick={handleOAuthStart} className="flex-1 h-10 text-xs font-medium" disabled={!clientId.trim()}>
+                {translate("Authorize")}
               </Button>
-              <Button onClick={() => { setMode(null); setError(null); }} variant="ghost" className="flex-1 h-10 font-bold text-xs uppercase tracking-widest border border-border/50 rounded-none">
+              <Button onClick={() => { setMode(null); setError(null); }} variant="ghost" className="flex-1 h-10 border border-border/50 rounded-none text-xs font-medium">
                 {translate("Back")}
               </Button>
             </div>
@@ -181,29 +181,29 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
         {/* PAT mode */}
         {mode === "pat" && (
           <div className="space-y-4">
-            <p className="text-[10px] text-muted-foreground font-medium leading-relaxed italic opacity-80 px-1">
-              Create a PAT at{" "}
+            <p className="px-1 text-xs text-muted-foreground leading-relaxed">
+              {translate("Create a PAT at")} {" "}
               <a href={`${baseUrl.trim() || GITLAB_COM}/-/user_settings/personal_access_tokens`} target="_blank" rel="noreferrer" className="text-primary underline font-bold">
-                GitLab Access Tokens
+                {translate("GitLab Access Tokens")}
               </a>{" "}
-              with scopes: <code className="bg-muted px-1 rounded-none font-mono text-[10px]">api</code>,{" "}
-              <code className="bg-muted px-1 rounded-none font-mono text-[10px]">read_user</code>, and{" "}
+              {translate("with scopes:")} <code className="bg-muted px-1 rounded-none font-mono text-[10px]">api</code>,{" "}
+              <code className="bg-muted px-1 rounded-none font-mono text-[10px]">read_user</code>, {translate("and")} {" "}
               <code className="bg-muted px-1 rounded-none font-mono text-[10px]">ai_features</code>.
             </p>
             <div className="grid gap-2">
-               <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">GitLab Base URL</Label>
+               <Label className="px-1 text-xs text-muted-foreground">{translate("GitLab Base URL")}</Label>
                <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={GITLAB_COM} className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
             </div>
             <div className="grid gap-2">
-               <Label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-60 px-1">Personal Access Token</Label>
-               <Input value={pat} onChange={(e) => setPat(e.target.value)} placeholder="glpat-xxxxxxxxxxxxxxxxxxxx" type="password" className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
+               <Label className="px-1 text-xs text-muted-foreground">{translate("Personal Access Token")}</Label>
+               <Input value={pat} onChange={(e) => setPat(e.target.value)} placeholder={translate("glpat-xxxxxxxxxxxxxxxxxxxx")} type="password" className="rounded-none border-border/50 bg-muted/5 h-9 text-xs" />
             </div>
-            {error && <p className="text-xs font-bold uppercase tracking-wide text-destructive px-1">{error}</p>}
+            {error && <p className="px-1 text-xs font-medium text-destructive">{translate(error)}</p>}
             <div className="flex gap-2 pt-2">
-              <Button onClick={handlePATSubmit} className="flex-1 h-10 font-bold text-xs uppercase tracking-widest" disabled={!pat.trim() || loading}>
-                {loading ? "Connecting..." : "Connect"}
+              <Button onClick={handlePATSubmit} className="flex-1 h-10 text-xs font-medium" disabled={!pat.trim() || loading}>
+                {loading ? translate("Connecting...") : translate("Connect")}
               </Button>
-              <Button onClick={() => { setMode(null); setError(null); }} variant="ghost" className="flex-1 h-10 font-bold text-xs uppercase tracking-widest border border-border/50 rounded-none">
+              <Button onClick={() => { setMode(null); setError(null); }} variant="ghost" className="flex-1 h-10 border border-border/50 rounded-none text-xs font-medium">
                 {translate("Back")}
               </Button>
             </div>
