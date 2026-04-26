@@ -36,6 +36,10 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.1", name: "GPT 5.1" },
     { id: "gpt-5-codex", name: "GPT 5 Codex" },
     { id: "gpt-5-codex-mini", name: "GPT 5 Codex Mini" },
+    // Image models (uses image_generation tool, requires Plus/Pro plan)
+    { id: "gpt-5.4-image", name: "GPT 5.4 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
+    { id: "gpt-5.3-image", name: "GPT 5.3 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
+    { id: "gpt-5.2-image", name: "GPT 5.2 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
   ],
   gc: [  // Gemini CLI
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
@@ -206,9 +210,9 @@ export const PROVIDER_MODELS = {
     { id: "tts-1-hd", name: "TTS-1 HD", type: "tts" },
     { id: "gpt-4o-mini-tts", name: "GPT-4o Mini TTS", type: "tts" },
     // Image models
-    { id: "gpt-image-1", name: "GPT Image 1", type: "image" },
-    { id: "dall-e-3", name: "DALL-E 3", type: "image" },
-    { id: "dall-e-2", name: "DALL-E 2", type: "image" },
+    { id: "gpt-image-1", name: "GPT Image 1", type: "image", params: ["n", "size", "quality", "response_format"] },
+    { id: "dall-e-3", name: "DALL-E 3", type: "image", params: ["size", "quality", "style", "response_format"] },
+    { id: "dall-e-2", name: "DALL-E 2", type: "image", params: ["n", "size", "response_format"] },
   ],
   anthropic: [
     { id: "claude-sonnet-4-20250514", name: "Claude Sonnet 4" },
@@ -236,9 +240,9 @@ export const PROVIDER_MODELS = {
     { id: "text-embedding-005", name: "Text Embedding 005", type: "embedding" },
     { id: "text-embedding-004", name: "Text Embedding 004 (Legacy)", type: "embedding" },
     // Image models (Nano Banana)
-    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image (Nano Banana 2)", type: "image" },
-    { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image (Nano Banana Pro)", type: "image" },
-    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", type: "image" },
+    { id: "gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image (Nano Banana 2)", type: "image", params: [] },
+    { id: "gemini-3-pro-image-preview", name: "Gemini 3 Pro Image (Nano Banana Pro)", type: "image", params: [] },
+    { id: "gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image (Nano Banana)", type: "image", params: [] },
   ],
   openrouter: [
     // Embedding models
@@ -254,10 +258,10 @@ export const PROVIDER_MODELS = {
     { id: "openai/tts-1-hd",        name: "TTS-1 HD",        type: "tts" },
     { id: "openai/tts-1",           name: "TTS-1",           type: "tts" },
     // Image models
-    { id: "openai/dall-e-3", name: "DALL-E 3 (via OpenRouter)", type: "image" },
-    { id: "openai/gpt-image-1", name: "GPT Image 1 (via OpenRouter)", type: "image" },
-    { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image" },
-    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image" },
+    { id: "openai/dall-e-3", name: "DALL-E 3 (via OpenRouter)", type: "image", params: ["size", "quality", "style", "response_format"] },
+    { id: "openai/gpt-image-1", name: "GPT Image 1 (via OpenRouter)", type: "image", params: ["n", "size", "quality", "response_format"] },
+    { id: "google/imagen-3.0-generate-002", name: "Imagen 3 (via OpenRouter)", type: "image", params: ["n", "size"] },
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell (via OpenRouter)", type: "image", params: ["n", "size"] },
   ],
   glm: [
     { id: "glm-5.1", name: "GLM 5.1" },
@@ -282,7 +286,7 @@ export const PROVIDER_MODELS = {
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
     { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
     // Image models
-    { id: "minimax-image-01", name: "MiniMax Image 01", type: "image" },
+    { id: "minimax-image-01", name: "MiniMax Image 01", type: "image", params: ["n", "size", "response_format"] },
   ],
   blackbox: [
     { id: "gpt-4o", name: "GPT-4o" },
@@ -339,6 +343,15 @@ export const PROVIDER_MODELS = {
     { id: "Kimi-K2.5", name: "Kimi-K2.5" },
     { id: "GLM-4.7", name: "GLM-4.7" },
     { id: "DeepSeek-V3.2", name: "DeepSeek-V3.2" },
+  ],
+  byteplus: [
+    { id: "seed-2-0-pro-260328", name: "Seed 2.0 Pro" },
+    { id: "seed-2-0-code-preview-260328", name: "Seed 2.0 Code Preview" },
+    { id: "seed-2-0-mini-260215", name: "Seed 2.0 Mini" },
+    { id: "seed-2-0-lite-260228", name: "Seed 2.0 Lite" },
+    { id: "kimi-k2-thinking-251104", name: "Kimi K2 Thinking" },
+    { id: "glm-4-7-251222", name: "GLM 4.7" },
+    { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B" },
   ],
   deepseek: [
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
@@ -468,20 +481,20 @@ export const PROVIDER_MODELS = {
 
   // Image providers
   nanobanana: [
-    { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image" },
-    { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image" },
+    { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image", params: ["n", "size"] },
+    { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image", params: ["n", "size"] },
   ],
   sdwebui: [
-    { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image" },
-    { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+    { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image", params: ["n", "size"] },
+    { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image", params: ["n", "size"] },
   ],
   comfyui: [
-    { id: "flux-dev", name: "FLUX Dev", type: "image" },
-    { id: "sdxl", name: "SDXL", type: "image" },
+    { id: "flux-dev", name: "FLUX Dev", type: "image", params: ["n", "size"] },
+    { id: "sdxl", name: "SDXL", type: "image", params: ["n", "size"] },
   ],
   huggingface: [
-    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell", type: "image" },
-    { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image" },
+    { id: "black-forest-labs/FLUX.1-schnell", name: "FLUX.1 Schnell", type: "image", params: [] },
+    { id: "stabilityai/stable-diffusion-xl-base-1.0", name: "SDXL Base 1.0", type: "image", params: [] },
   ],
 };
 

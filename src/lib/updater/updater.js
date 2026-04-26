@@ -131,11 +131,11 @@ function sleep(ms) {
 function runInstall() {
   state.attempt += 1;
   setPhase("installing");
-  pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName}`);
+  pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName} --prefer-online`);
 
   const isWin = process.platform === "win32";
   const cmd = isWin ? "npm.cmd" : "npm";
-  const args = ["i", "-g", packageName];
+  const args = ["i", "-g", packageName, "--prefer-online"];
 
   const child = spawn(cmd, args, {
     stdio: ["ignore", "pipe", "pipe"],
@@ -172,6 +172,28 @@ function runInstall() {
   });
 }
 
+function relaunchApp() {
+  if (process.env.UPDATER_RELAUNCH !== "1") return;
+  const cmd = process.env.UPDATER_RELAUNCH_CMD;
+  if (!cmd) return;
+  let args = [];
+  try { args = JSON.parse(process.env.UPDATER_RELAUNCH_ARGS || "[]"); } catch { /* noop */ }
+  const isWin = process.platform === "win32";
+  try {
+    const child = spawn(cmd, args, {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      shell: isWin,
+      env: { ...process.env, UPDATER_RELAUNCH: "", UPDATER_RELAUNCH_CMD: "", UPDATER_RELAUNCH_ARGS: "" },
+    });
+    child.unref();
+    pushLog(`[updater] relaunched: ${cmd} ${args.join(" ")} (pid=${child.pid})`);
+  } catch (e) {
+    pushLog(`[updater] relaunch failed: ${e.message}`);
+  }
+}
+
 function finalize(success, exitCode, error) {
   state.done = true;
   state.success = success;
@@ -179,6 +201,7 @@ function finalize(success, exitCode, error) {
   state.error = error;
   state.finishedAt = Date.now();
   setPhase(success ? "done" : "error");
+  if (success) relaunchApp();
   // Linger so browser can poll final status, then exit & close the port
   setTimeout(() => {
     try { server.close(); } catch { /* ignore */ }

@@ -139,9 +139,22 @@ export async function killAppProcesses() {
   }
 }
 
+// Resolve npx/9router binary to relaunch after update (cross-platform)
+function resolveRelaunchCommand() {
+  const isWin = process.platform === "win32";
+  // Prefer `npx 9router` — works regardless of global bin path changes after npm i -g
+  const npx = isWin ? "npx.cmd" : "npx";
+  return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
+}
+
 // Spawn detached headless updater (Node process) then exit current server
 export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName) {
   const updaterPath = ensureRuntimeUpdater(resolveBundledUpdaterPath());
+  const isTray = process.env.TRAY_MODE === "1";
+  const relaunch = resolveRelaunchCommand();
+  // Only relaunch in tray/background mode — foreground CLI loses TTY on exit
+  const relaunchArgs = isTray ? [...relaunch.args, "--tray", "--skip-update"] : [];
+
   spawn(process.execPath, [updaterPath], {
     detached: true,
     stdio: "ignore",
@@ -158,6 +171,9 @@ export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName)
       UPDATER_WAIT_MAX_MS: String(UPDATER_CONFIG.waitForExitMaxMs),
       UPDATER_WAIT_CHECK_MS: String(UPDATER_CONFIG.waitForExitCheckMs),
       UPDATER_APP_PORT: String(UPDATER_CONFIG.appPort),
+      UPDATER_RELAUNCH: isTray ? "1" : "0",
+      UPDATER_RELAUNCH_CMD: relaunch.cmd,
+      UPDATER_RELAUNCH_ARGS: JSON.stringify(relaunchArgs),
     },
   }).unref();
 

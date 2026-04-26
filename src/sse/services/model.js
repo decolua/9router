@@ -33,6 +33,13 @@ export async function getModelInfo(modelStr) {
       if (matchedAnthropic) {
         return { provider: matchedAnthropic.id, model: parsed.model };
       }
+
+      // Check Custom Embedding nodes
+      const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
+      const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedEmbedding) {
+        return { provider: matchedEmbedding.id, model: parsed.model };
+      }
     }
     return {
       provider: parsed.provider,
