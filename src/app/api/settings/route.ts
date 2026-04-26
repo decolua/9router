@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings, type Settings } from "@/lib/localDb";
+import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
+import { setRtkEnabled } from "@/lib/open-sse/rtk/flag";
 import bcrypt from "bcryptjs";
 
 export async function GET(): Promise<NextResponse> {
@@ -11,10 +12,11 @@ export async function GET(): Promise<NextResponse> {
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
-    return NextResponse.json({ 
-      ...safeSettings, 
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
       enableTranslator,
+      enableRtk: safeSettings.enableRtk !== false,
       hasPassword: !!password
     });
   } catch (error: any) {
@@ -56,6 +58,10 @@ export async function PATCH(request: Request): Promise<NextResponse> {
     }
 
     const settings: any = await updateSettings(body);
+
+    if (Object.prototype.hasOwnProperty.call(body, "enableRtk")) {
+      setRtkEnabled(settings.enableRtk !== false);
+    }
 
     // Apply outbound proxy settings immediately (no restart required)
     if (

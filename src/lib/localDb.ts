@@ -37,6 +37,7 @@ export interface Settings {
   mitmSudoEncrypted?: string | null;
   password?: string | null;
   fallbackStrategy?: string;
+  enableRtk?: boolean;
 }
 
 export interface ProviderConnection {
@@ -156,6 +157,7 @@ const DEFAULT_SETTINGS: Settings = {
   outboundProxyUrl: "",
   outboundNoProxy: "",
   mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
+  enableRtk: true,
 };
 
 function cloneDefaultData(): DbData {

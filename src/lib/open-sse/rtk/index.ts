@@ -1,3 +1,5 @@
+import { getRtkEnabled } from "./flag";
+
 function compressToolText(input: string): string {
   const text = input.trim();
   if (!text) return input;
@@ -48,6 +50,7 @@ function processToolMessage(message: any): void {
 
 export function applyRtkFailOpen(body: any): any {
   try {
+    if (!getRtkEnabled()) return body;
     if (!body || !Array.isArray(body.messages)) return body;
 
     for (const message of body.messages) {

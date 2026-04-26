@@ -6,6 +6,7 @@ export interface Settings {
   requireLogin: boolean;
   hasPassword?: boolean;
   enableObservability: boolean;
+  enableRtk?: boolean;
   stickyRoundRobinLimit: number;
   comboStrategy: string;
   tunnelUrl?: string;

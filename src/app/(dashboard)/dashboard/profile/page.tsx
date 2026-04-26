@@ -18,6 +18,7 @@ export default async function ProfilePage() {
       requireLogin: settings.requireLogin !== false,
       hasPassword: !!settings.password,
       enableObservability: settings.enableObservability || settings.observabilityEnabled || false,
+      enableRtk: settings.enableRtk !== false,
       stickyRoundRobinLimit: settings.stickyRoundRobinLimit || 3,
       comboStrategy: settings.comboStrategy || "fallback",
     },

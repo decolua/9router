@@ -1,6 +1,7 @@
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
+import { refreshRtkFlag } from "@/lib/open-sse/rtk/flag";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -50,6 +51,7 @@ const NETWORK_RESTART_COOLDOWN_MS = 30000;
 export async function initializeApp() {
   try {
     await cleanupProviderConnections();
+    await refreshRtkFlag();
 
     const settings = await getSettings();
     if (settings.tunnelEnabled && !isCloudflaredRunning()) {

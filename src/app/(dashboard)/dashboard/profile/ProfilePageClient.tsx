@@ -32,6 +32,7 @@ export default function ProfilePageClient({ initialData }: ProfilePageClientProp
       outboundNoProxy: "",
       requireLogin: true,
       enableObservability: false,
+      enableRtk: true,
       stickyRoundRobinLimit: 3,
       comboStrategy: "fallback",
     },
@@ -245,6 +246,21 @@ export default function ProfilePageClient({ initialData }: ProfilePageClientProp
     }
   };
 
+  const updateRtkEnabled = async (enabled: boolean) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enableRtk: enabled }),
+      });
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, enableRtk: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update enableRtk:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -320,6 +336,7 @@ export default function ProfilePageClient({ initialData }: ProfilePageClientProp
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+  const rtkEnabled = settings.enableRtk !== false;
 
   return (
     <SettingsPageShell>
@@ -371,7 +388,12 @@ export default function ProfilePageClient({ initialData }: ProfilePageClientProp
             onTestProxy={testOutboundProxy}
           />
 
-          <ObservabilitySection enabled={observabilityEnabled} onChange={updateObservabilityEnabled} />
+          <ObservabilitySection
+            enabled={observabilityEnabled}
+            rtkEnabled={rtkEnabled}
+            onChange={updateObservabilityEnabled}
+            onRtkChange={updateRtkEnabled}
+          />
 
           <AppInfoSection />
         </div>
