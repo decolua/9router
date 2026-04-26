@@ -41,11 +41,22 @@ export const RETRY_CONFIG = {
   delayMs: 2000
 };
 
-// Default retry config by status code (number of retry attempts)
-export const DEFAULT_RETRY_CONFIG: Record<number, number> = {
-  429: 0,   // Rate limit - no retry, use account fallback instead
-  503: 1,   // Service unavailable - retry 1 time (transient)
-  502: 1    // Bad gateway - retry 1 time (transient)
+export type RetryPolicy = {
+  attempts: number;
+  delayMs: number;
+};
+
+export type RetryConfig = Record<number, RetryPolicy> & {
+  network?: RetryPolicy;
+};
+
+// Default retry config by status code
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  429: { attempts: 0, delayMs: 0 },   // Rate limit - no retry, use account fallback instead
+  502: { attempts: 1, delayMs: 2000 },
+  503: { attempts: 1, delayMs: 2000 },
+  504: { attempts: 1, delayMs: 2000 },
+  network: { attempts: 0, delayMs: 0 }
 };
 
 // Requests containing these texts will bypass provider

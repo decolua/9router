@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG } from "../config/runtimeConfig";
+import { HTTP_STATUS, DEFAULT_RETRY_CONFIG, type RetryPolicy } from "../config/runtimeConfig";
 import { proxyAwareFetch } from "../utils/proxyFetch";
 
 /**
@@ -103,17 +103,33 @@ export class BaseExecutor {
     const fallbackCount = this.getFallbackCount();
     let lastError: any = null;
     let lastStatus = 0;
-    const retryAttemptsByUrl: Record<number, number> = {};
-    
+    const retryAttemptsByUrl: Record<number, Record<string, number>> = {};
+
     // Merge default retry config with provider-specific config
-    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
+    const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry } as Record<string, RetryPolicy>;
+
+    const getPolicy = (status: number): RetryPolicy => {
+      const policy = retryConfig[String(status)] || retryConfig[status as unknown as keyof typeof retryConfig];
+      if (policy && typeof policy === "object") {
+        return policy as RetryPolicy;
+      }
+      return { attempts: 0, delayMs: 0 };
+    };
+
+    const getNetworkPolicy = (): RetryPolicy => {
+      const policy = retryConfig.network;
+      if (policy && typeof policy === "object") {
+        return policy as RetryPolicy;
+      }
+      return { attempts: 0, delayMs: 0 };
+    };
 
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream);
 
-      if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
+      if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = {};
 
       try {
         const response = await proxyAwareFetch(url, {
@@ -124,11 +140,13 @@ export class BaseExecutor {
         }, proxyOptions);
 
         // Retry based on status code config
-        const maxRetries = retryConfig[response.status] || 0;
-        if (maxRetries > 0 && retryAttemptsByUrl[urlIndex] < maxRetries) {
-          retryAttemptsByUrl[urlIndex]++;
-          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${maxRetries} after ${RETRY_CONFIG.delayMs / 1000}s`);
-          await new Promise(resolve => setTimeout(resolve, RETRY_CONFIG.delayMs));
+        const policy = getPolicy(response.status);
+        const statusRetryKey = `status:${response.status}`;
+        const statusAttempts = retryAttemptsByUrl[urlIndex][statusRetryKey] || 0;
+        if (policy.attempts > 0 && statusAttempts < policy.attempts) {
+          retryAttemptsByUrl[urlIndex][statusRetryKey] = statusAttempts + 1;
+          log?.debug?.("RETRY", `${response.status} retry ${retryAttemptsByUrl[urlIndex][statusRetryKey]}/${policy.attempts} after ${policy.delayMs / 1000}s`);
+          await new Promise(resolve => setTimeout(resolve, policy.delayMs));
           urlIndex--;
           continue;
         }
@@ -142,6 +160,18 @@ export class BaseExecutor {
         return { response, url, headers, transformedBody };
       } catch (error: any) {
         lastError = error;
+
+        const networkPolicy = getNetworkPolicy();
+        const networkRetryKey = "network";
+        const networkAttempts = retryAttemptsByUrl[urlIndex][networkRetryKey] || 0;
+        if (networkPolicy.attempts > 0 && networkAttempts < networkPolicy.attempts) {
+          retryAttemptsByUrl[urlIndex][networkRetryKey] = networkAttempts + 1;
+          log?.debug?.("RETRY", `Network error retry ${retryAttemptsByUrl[urlIndex][networkRetryKey]}/${networkPolicy.attempts} after ${networkPolicy.delayMs / 1000}s on ${url}`);
+          await new Promise(resolve => setTimeout(resolve, networkPolicy.delayMs));
+          urlIndex--;
+          continue;
+        }
+
         if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
           continue;
