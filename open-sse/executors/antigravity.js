@@ -257,8 +257,24 @@ export class AntigravityExecutor extends BaseExecutor {
     throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
   }
 
+  static stripEnumDescriptions(schema) {
+    if (!schema || typeof schema !== "object") return schema;
+    const result = Array.isArray(schema) ? [...schema] : { ...schema };
+    delete result.enumDescriptions;
+    if (result.properties) {
+      for (const key of Object.keys(result.properties)) {
+        result.properties[key] = this.stripEnumDescriptions(result.properties[key]);
+      }
+    }
+    if (result.items) {
+      result.items = this.stripEnumDescriptions(result.items);
+    }
+    return result;
+  }
+
   /**
    * Cloak tools before sending to Antigravity provider (anti-ban):
+   * - Strip enumDescriptions from tool schemas (upstream rejects it with 400)
    * - Rename client tools with _ide suffix
    * - Inject AG default decoy tools after client tools
    * Returns { cloakedBody, toolNameMap } where toolNameMap maps suffixed → original
@@ -272,20 +288,25 @@ export class AntigravityExecutor extends BaseExecutor {
     const toolNameMap = new Map();
     const clientDeclarations = [];
 
-    // First: collect renamed client tools
+    // First: collect renamed client tools (with enumDescriptions stripped)
     for (const toolGroup of tools) {
       if (!toolGroup.functionDeclarations) continue;
 
       for (const func of toolGroup.functionDeclarations) {
+        // Strip enumDescriptions — VSCode Copilot sends this field but Antigravity API rejects it with 400
+        const stripped = func.parameters
+          ? { ...func, parameters: AntigravityExecutor.stripEnumDescriptions(func.parameters) }
+          : func;
+
         // Skip if already an AG default tool name
         if (AG_DEFAULT_TOOLS.has(func.name)) {
-          clientDeclarations.push(func);
+          clientDeclarations.push(stripped);
           continue;
         }
 
         const suffixed = `${func.name}${AG_TOOL_SUFFIX}`;
         toolNameMap.set(suffixed, func.name);
-        clientDeclarations.push({ ...func, name: suffixed });
+        clientDeclarations.push({ ...stripped, name: suffixed });
       }
     }
 
