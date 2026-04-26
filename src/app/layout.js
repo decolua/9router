@@ -39,6 +39,11 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window._9r_serverOS = ${JSON.stringify(process.platform)}`,
+          }}
+        />
         <ThemeProvider>
           <RuntimeI18nProvider>
             {children}

@@ -89,7 +89,8 @@ export default function AntigravityToolCard({
   };
 
   // Windows uses UAC dialog, no sudo needed
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
+  // Detect the SERVER's OS, not the browser's — fixes WSL2 + Windows browser false-positive
+  const isWindows = typeof window !== "undefined" && window._9r_serverOS === "win32";
 
   const handleStart = () => {
     if (isWindows || status?.hasCachedPassword) {

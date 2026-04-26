@@ -20,7 +20,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [actionError, setActionError] = useState(null);
   const [mitmRouterBaseUrl, setMitmRouterBaseUrl] = useState(DEFAULT_MITM_ROUTER_BASE);
 
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
+  // Detect the SERVER's OS, not the browser's — fixes WSL2 + Windows browser false-positive
+  // (navigator.userAgent reports the browser OS, not the server OS)
+  const isWindows = typeof window !== "undefined" && window._9r_serverOS === "win32";
   const isAdmin = status?.isAdmin !== false;
 
   useEffect(() => {
