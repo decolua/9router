@@ -34,13 +34,20 @@ function convertMessages(messages: any[], tools: any[], model: string) {
       };
 
       if (pendingImages.length > 0) {
-        userMsg.userInputMessage.images = pendingImages;
+        userMsg.userInputMessage.images = [...pendingImages];
       }
 
       if (pendingToolResults.length > 0) {
         userMsg.userInputMessage.userInputMessageContext = {
-          toolResults: pendingToolResults
+          toolResults: [...pendingToolResults]
         };
+      }
+
+      if (pendingToolResults.length > 0) {
+        if (!userMsg.userInputMessage.userInputMessageContext) {
+          userMsg.userInputMessage.userInputMessageContext = {};
+        }
+        userMsg.userInputMessage.userInputMessageContext.toolResults = [...pendingToolResults];
       }
       
       if (tools && tools.length > 0 && history.length === 0) {
@@ -73,9 +80,8 @@ function convertMessages(messages: any[], tools: any[], model: string) {
       history.push(userMsg);
       currentMessage = userMsg;
       pendingUserContent = [];
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const toolResults = [...pendingToolResults]; // Copy if needed later
       pendingImages.length = 0;
+      pendingToolResults.length = 0;
     } else if (currentRole === "assistant") {
       const content = pendingAssistantContent.join("\n\n").trim() || "...";
       const assistantMsg = {
@@ -118,7 +124,11 @@ function convertMessages(messages: any[], tools: any[], model: string) {
               const format = mediaType.split("/")[1] || mediaType;
               pendingImages.push({ format, source: { bytes: base64Match[2] } });
             } else if (url.startsWith("http://") || url.startsWith("https://")) {
-              textParts.push(`[Image: ${url}]`);
+              const normalizedUrl = url.split("?")[0].split("#")[0];
+              const lastSegment = normalizedUrl.split("/").pop() || "";
+              const extension = lastSegment.includes(".") ? lastSegment.split(".").pop() : "";
+              const format = extension || "png";
+              pendingImages.push({ format, source: { url } });
             }
           } else if (supportsImages && c.type === "image") {
             if (c.source?.type === "base64" && c.source?.data) {
@@ -241,6 +251,29 @@ function convertMessages(messages: any[], tools: any[], model: string) {
         mergedHistory[mergedHistory.length - 1].userInputMessage) {
       const prev = mergedHistory[mergedHistory.length - 1];
       prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
+
+      const prevContext = prev.userInputMessage.userInputMessageContext || {};
+      const currentContext = current.userInputMessage.userInputMessageContext || {};
+      const mergedContext: Record<string, any> = { ...prevContext, ...currentContext };
+
+      const prevImages = prev.userInputMessage.images || prevContext.images || [];
+      const currentImages = current.userInputMessage.images || currentContext.images || [];
+      const allImages = [...prevImages, ...currentImages];
+      if (allImages.length > 0) {
+        prev.userInputMessage.images = allImages;
+      }
+      delete mergedContext.images;
+
+      const prevToolResults = prevContext.toolResults || [];
+      const currentToolResults = currentContext.toolResults || [];
+      const allToolResults = [...prevToolResults, ...currentToolResults];
+      if (allToolResults.length > 0) {
+        mergedContext.toolResults = allToolResults;
+      }
+
+      if (Object.keys(mergedContext).length > 0) {
+        prev.userInputMessage.userInputMessageContext = mergedContext;
+      }
     } else {
       mergedHistory.push(current);
     }
@@ -261,7 +294,7 @@ function convertMessages(messages: any[], tools: any[], model: string) {
  * Build Kiro payload from OpenAI format
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function buildKiroPayload(model: string, body: any, stream: boolean, credentials?: any) {
+export function buildKiroPayload(model: string, body: any, _stream: boolean, credentials?: any) {
   const messages = body.messages || [];
   const tools = body.tools || [];
   const temperature = body.temperature;
@@ -284,6 +317,9 @@ export function buildKiroPayload(model: string, body: any, stream: boolean, cred
           content: finalContent,
           modelId: model,
           origin: "AI_EDITOR",
+          ...(currentMessage?.userInputMessage?.images && {
+            images: currentMessage.userInputMessage.images
+          }),
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
             userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
           })
