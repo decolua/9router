@@ -301,13 +301,15 @@ export function estimateUsage(body: any, contentLength: number, targetFormat: st
 export function logUsage(provider: string, usage: Usage, model: string | null = null, connectionId: string | null = null, apiKey: string | null = null): void {
   if (!usage || typeof usage !== "object") return;
 
-  const p = provider?.toUpperCase() || "UNKNOWN";
+  const providerLabel = provider?.toUpperCase() || "UNKNOWN";
 
   const inTokens = usage?.prompt_tokens || usage?.input_tokens || 0;
   const outTokens = usage?.completion_tokens || usage?.output_tokens || 0;
-  const accountPrefix = connectionId ? connectionId.slice(0, 8) + "..." : "unknown";
+  const accountLabel = connectionId === "noauth"
+    ? "public"
+    : (connectionId ? `${connectionId.slice(0, 8)}...` : "unknown");
 
-  let msg = `[${getTimeString()}] 📊 ${COLORS.green}[USAGE] ${p} | in=${inTokens} | out=${outTokens} | account=${accountPrefix}${COLORS.reset}`;
+  let msg = `[${getTimeString()}] 📊 ${COLORS.green}[USAGE] provider=${providerLabel} model=${model || "unknown"} account=${accountLabel} in=${inTokens} out=${outTokens}${COLORS.reset}`;
 
   if (usage.estimated) {
     msg += ` ${COLORS.yellow}(estimated)${COLORS.reset}`;

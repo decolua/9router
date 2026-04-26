@@ -186,6 +186,25 @@ ENABLE_REQUEST_LOGS=true
 - `tests/`: Vitest suite cho các hành vi runtime chính
 - `cloud/`: Cloudflare Worker runtime
 
+## Account selection modes
+
+8Router hỗ trợ hai mode chọn tài khoản chính:
+
+- **Use-until-exhausted**: dùng account hiện tại cho đến khi account đó hết quota hoặc tạm unavailable. Nếu đã fallback sang account khác và account đó vẫn healthy, router không nhảy ngược về primary quá sớm.
+- **Round-robin**: mỗi request mới chuyển sang account usable kế tiếp; account đang cooldown hoặc unavailable sẽ bị bỏ qua.
+
+### Quota cooldown behavior
+
+- Khi account gặp rate limit hoặc quota exhaustion, router sẽ tạm thời bỏ qua account đó cho đến khi cooldown hoặc reset hợp lệ kết thúc.
+- Trạng thái cooldown áp dụng cho các request tiếp theo và không reset chỉ vì bắt đầu chat mới.
+
+### Compared with previous behavior
+
+- Hành vi cốt lõi của hai mode không đổi, nhưng semantics hiện rõ ràng hơn.
+- `Use-until-exhausted` không còn quay lại primary quá sớm khi fallback hiện tại vẫn khỏe.
+- `Round-robin` nay là hard round-robin quota-aware thay vì còn giữ sticky behavior.
+- Log chọn account, skip reason, fallback reason, và cooldown context đã dễ đọc hơn.
+
 ## License
 
 MIT. Xem [LICENSE](./LICENSE).

@@ -8,6 +8,59 @@ import * as log from "../utils/logger";
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+// Runtime selector memory (per provider+model) to avoid premature account flips
+const fillFirstPreferredConnectionByContext = new Map<string, string>();
+const roundRobinLastConnectionByContext = new Map<string, string>();
+const SELECTOR_CONTEXT_MEMORY_CAP = 512;
+
+// Deduplicate repetitive clear-account logs under concurrent success traffic
+const clearLogDedupeByContext = new Map<string, number>();
+const CLEAR_LOG_DEDUPE_WINDOW_MS = 15000;
+
+function formatAccountRef(connection: Pick<ProviderConnection, "id" | "displayName" | "name" | "email"> | null | undefined): string {
+  if (!connection?.id) return "unknown";
+  const label = connection.displayName || connection.name || connection.email || connection.id.slice(0, 8);
+  return `${label} (${connection.id.slice(0, 8)})`;
+}
+
+function formatCooldownUntil(iso: string | null): string {
+  return iso || "n/a";
+}
+
+function formatAuthCtx(providerId: string, model: string | null, mode: string): string {
+  return `provider=${providerId} model=${model || "__all"} mode=${mode}`;
+}
+
+function shouldEmitClearLog(contextKey: string): boolean {
+  const now = Date.now();
+  const last = clearLogDedupeByContext.get(contextKey) || 0;
+  if (now - last < CLEAR_LOG_DEDUPE_WINDOW_MS) return false;
+  clearLogDedupeByContext.set(contextKey, now);
+  while (clearLogDedupeByContext.size > SELECTOR_CONTEXT_MEMORY_CAP) {
+    const oldestKey = clearLogDedupeByContext.keys().next().value;
+    if (!oldestKey) break;
+    clearLogDedupeByContext.delete(oldestKey);
+  }
+  return true;
+}
+
+function getSelectionContextKey(providerId: string, model: string | null): string {
+  return `${providerId}::${model || "__all"}`;
+}
+
+function setSelectorMemory(map: Map<string, string>, key: string, value: string): void {
+  if (map.has(key)) {
+    map.delete(key);
+  }
+  map.set(key, value);
+
+  while (map.size > SELECTOR_CONTEXT_MEMORY_CAP) {
+    const oldestKey = map.keys().next().value;
+    if (!oldestKey) break;
+    map.delete(oldestKey);
+  }
+}
+
 export interface ProviderCredentials {
   id?: string;
   apiKey?: string;
@@ -57,12 +110,28 @@ export async function getProviderCredentials(provider: string, excludeConnection
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });
-    log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
-      log.warn("AUTH", `No credentials for ${provider}`);
+      log.warn("AUTH", `[AUTH] ${formatAuthCtx(providerId, model, "n/a")} no-account-configured`);
       return null;
     }
+
+    const settings = await getSettings();
+    // Per-provider strategy overrides global setting
+    const providerOverride = (settings.providerStrategies || {})[providerId] || {};
+    const strategy = providerOverride.fallbackStrategy || settings.comboStrategy || "fill-first";
+    const authCtx = formatAuthCtx(providerId, model, strategy);
+
+    const skippedConnections = connections
+      .map(c => {
+        const excluded = excludeSet.has(c.id);
+        const locked = isModelLockActive(c, model);
+        if (!excluded && !locked) return null;
+        const cooldownUntil = locked ? getEarliestModelLockUntil(c) : null;
+        const reason = excluded && locked ? "excluded+model-locked" : (excluded ? "excluded" : "model-locked");
+        return { connection: c, reason, cooldownUntil };
+      })
+      .filter(Boolean) as Array<{ connection: ProviderConnection; reason: string; cooldownUntil: string | null }>;
 
     // Filter out model-locked and excluded connections
     const availableConnections = connections.filter(c => {
@@ -71,14 +140,9 @@ export async function getProviderCredentials(provider: string, excludeConnection
       return true;
     });
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
-    connections.forEach(c => {
-      const excluded = excludeSet.has(c.id);
-      const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
-        const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
-      }
+    log.info("AUTH", `[AUTH] ${authCtx} accounts=${connections.length} usable=${availableConnections.length} skipped=${skippedConnections.length}`);
+    skippedConnections.forEach(item => {
+      log.debug("AUTH", `[AUTH] ${authCtx} skip account=${formatAccountRef(item.connection)} reason=${item.reason} cooldownUntil=${formatCooldownUntil(item.cooldownUntil)}`);
     });
 
     if (availableConnections.length === 0) {
@@ -88,7 +152,7 @@ export async function getProviderCredentials(provider: string, excludeConnection
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        log.warn("AUTH", `[AUTH] ${authCtx} all-unavailable reason=model-locked retryAfter=${formatRetryAfter(earliest)} cooldownUntil=${earliest} sampleAccount=${formatAccountRef(earliestConn)}`);
         return {
           connectionName: "",
           allRateLimited: true,
@@ -98,59 +162,39 @@ export async function getProviderCredentials(provider: string, excludeConnection
           lastErrorCode: earliestConn?.errorCode || undefined
         };
       }
-      log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
+      log.warn("AUTH", `[AUTH] ${authCtx} all-unavailable reason=excluded-or-inactive`);
       return null;
     }
 
-    const settings = await getSettings();
-    // Per-provider strategy overrides global setting
-    const providerOverride = (settings.providerStrategies || {})[providerId] || {};
-    const strategy = providerOverride.fallbackStrategy || settings.comboStrategy || "fill-first"; // assuming comboStrategy acts as fallback if not set
-
+    const contextKey = getSelectionContextKey(providerId, model);
     let connection: any;
+    let selectedReason = "first-available";
     if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
+      const lastSelectedId = roundRobinLastConnectionByContext.get(contextKey);
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!(a as any).lastUsedAt && !(b as any).lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!(a as any).lastUsedAt) return 1;
-        if (!(b as any).lastUsedAt) return -1;
-        return new Date((b as any).lastUsedAt).getTime() - new Date((a as any).lastUsedAt).getTime();
-      });
-
-      const current = byRecency[0];
-      const currentCount = (current as any)?.consecutiveUseCount || 0;
-
-      if (current && (current as any).lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: ((connection as any).consecutiveUseCount || 0) + 1
-        } as any);
+      if (!lastSelectedId) {
+        connection = availableConnections[0];
+        selectedReason = "round-robin-first";
       } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!(a as any).lastUsedAt && !(b as any).lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!(a as any).lastUsedAt) return -1;
-          if (!(b as any).lastUsedAt) return 1;
-          return new Date((a as any).lastUsedAt).getTime() - new Date((b as any).lastUsedAt).getTime();
-        });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        } as any);
+        const currentIdx = availableConnections.findIndex(c => c.id === lastSelectedId);
+        const nextIdx = currentIdx >= 0 ? (currentIdx + 1) % availableConnections.length : 0;
+        // Hard round-robin: every request advances to next usable account.
+        // Accounts on cooldown/unusable are already filtered out in availableConnections.
+        connection = availableConnections[nextIdx];
+        selectedReason = currentIdx >= 0 ? `round-robin-next-from-${lastSelectedId.slice(0, 8)}` : "round-robin-reset";
       }
+
+      if (connection?.id) setSelectorMemory(roundRobinLastConnectionByContext, contextKey, connection.id);
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      // Mode 1 (fill-first): stick to last healthy selected account to avoid premature jump-back
+      const preferredId = fillFirstPreferredConnectionByContext.get(contextKey);
+      const preferred = preferredId ? availableConnections.find(c => c.id === preferredId) : null;
+      connection = preferred || availableConnections[0];
+      selectedReason = preferred ? `fill-first-stick-${preferredId?.slice(0, 8)}` : "fill-first-first-available";
+      if (connection?.id) setSelectorMemory(fillFirstPreferredConnectionByContext, contextKey, connection.id);
     }
+
+    log.info("AUTH", `[AUTH] ${authCtx} selected account=${formatAccountRef(connection)} reason=${selectedReason}`);
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
@@ -209,6 +253,8 @@ export async function markAccountUnavailable(
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, effectiveCooldownMs);
+  const lockKey = Object.keys(lockUpdate)[0];
+  const cooldownUntil = (lockUpdate as any)[lockKey] || null;
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
@@ -219,9 +265,11 @@ export async function markAccountUnavailable(
     backoffLevel: newBackoffLevel ?? backoffLevel
   } as any);
 
-  const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(effectiveCooldownMs / 1000)}s [${status}]`);
+  const providerId = resolveProviderId(provider || "unknown");
+  const settings = await getSettings();
+  const providerOverride = (settings.providerStrategies || {})[providerId] || {};
+  const authMode = providerOverride.fallbackStrategy || settings.comboStrategy || "fill-first";
+  log.warn("AUTH", `[AUTH] provider=${providerId} model=${model || "__all"} mode=${authMode} fallback account=${formatAccountRef(conn)} reason=http-${status} cooldownUntil=${formatCooldownUntil(cooldownUntil)} detail=${reason}`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
@@ -244,7 +292,6 @@ export async function clearAccountError(connectionId: string, currentConnection:
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
     if (model && k === `modelLock_${model}`) return true; // succeeded model
-    if (model && k === "modelLock___all") return true;    // account-level lock
     const expiry = conn[k];
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
@@ -266,8 +313,15 @@ export async function clearAccountError(connectionId: string, currentConnection:
   }
 
   await updateProviderConnection(connectionId, clearObj);
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.info("AUTH", `Account ${connName} cleared lock for model=${model || "__all"}`);
+  const providerId = resolveProviderId(conn?.provider || currentConnection?.provider || "unknown");
+  const settings = await getSettings();
+  const providerOverride = (settings.providerStrategies || {})[providerId] || {};
+  const authMode = providerOverride.fallbackStrategy || settings.comboStrategy || "fill-first";
+  const authCtx = formatAuthCtx(providerId, model, authMode);
+  const contextKey = `${connectionId}::${model || "__all"}`;
+  if (shouldEmitClearLog(contextKey)) {
+    log.info("AUTH", `[AUTH] ${authCtx} clear account=${formatAccountRef(conn)} cleared=${keysToClear.length} remainingActiveLocks=${remainingActiveLocks.length}`);
+  }
 }
 
 /**
