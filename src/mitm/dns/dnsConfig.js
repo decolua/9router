@@ -3,14 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { log, err } = require("../logger");
-
-// Per-tool DNS hosts mapping
-const TOOL_HOSTS = {
-  antigravity: ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"],
-  copilot: ["api.individual.githubcopilot.com"],
-  kiro: ["q.us-east-1.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"],
-  cursor: ["api2.cursor.sh"],
-};
+const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -25,7 +18,7 @@ const HOSTS_FILE = IS_WIN
 function executeElevatedPowerShell(psScriptPath, timeoutMs = 30000) {
   const flagFile = path.join(os.tmpdir(), `ps_done_${Date.now()}.flag`);
   const psSQ = (s) => s.replace(/'/g, "''");
-  
+
   let psContent = fs.readFileSync(psScriptPath, "utf8");
   psContent += `\nSet-Content -Path '${psSQ(flagFile)}' -Value 'done' -Encoding UTF8\n`;
   fs.writeFileSync(psScriptPath, psContent, "utf8");
