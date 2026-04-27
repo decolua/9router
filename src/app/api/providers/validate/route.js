@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -29,6 +30,37 @@ export async function POST(request) {
           headers: { "Authorization": `Bearer ${apiKey}` },
         });
         isValid = res.ok;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API key",
+        });
+      }
+
+      // Custom Embedding nodes: probe /models (most embedding APIs are OpenAI-compatible)
+      if (isCustomEmbeddingProvider(provider)) {
+        const node = await getProviderNodeById(provider);
+        if (!node) {
+          return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
+        }
+        const baseUrl = node.baseUrl?.replace(/\/$/, "");
+        const modelsRes = await fetch(`${baseUrl}/models`, {
+          headers: { "Authorization": `Bearer ${apiKey}` },
+        });
+        if (modelsRes.ok) {
+          return NextResponse.json({ valid: true });
+        }
+        // Auth errors are definitive
+        if (modelsRes.status === 401 || modelsRes.status === 403) {
+          return NextResponse.json({ valid: false, error: "Invalid API key" });
+        }
+        // Fallback: probe /embeddings with a common test model — many providers lack /models
+        const embedRes = await fetch(`${baseUrl}/embeddings`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model: "test", input: "ping" }),
+        });
+        // 401/403 = bad key; anything else (including 400 "model not found") means key works
+        isValid = embedRes.status !== 401 && embedRes.status !== 403;
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
@@ -180,16 +212,16 @@ export async function POST(request) {
           }
           break;
         }
-        case "volcengine-ark": {
-          const testModel = getDefaultModel(provider);
-          const res = await fetch("https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions", {
+        case "volcengine-ark":
+        case "byteplus": {
+          const res = await fetch(PROVIDER_ENDPOINTS[provider], {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey}`,
               "content-type": "application/json",
             },
             body: JSON.stringify({
-              model: testModel,
+              model: getDefaultModel(provider),
               max_tokens: 1,
               messages: [{ role: "user", content: "test" }],
             }),

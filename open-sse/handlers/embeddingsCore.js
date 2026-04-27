@@ -23,7 +23,7 @@ function isGeminiProvider(provider) {
  *   - Single input  → embedContent  body: { model, content: { parts: [{ text }] } }
  *   - Batch input   → batchEmbedContents body: { requests: [{ model, content: { parts: [{ text }] } }] }
  */
-function buildEmbeddingsBody(provider, model, input, encodingFormat) {
+function buildEmbeddingsBody(provider, model, input, encodingFormat, dimensions) {
   if (isGeminiProvider(provider)) {
     // Normalize model name: Gemini API expects "models/<model>" prefix
     const geminiModel = model.startsWith("models/") ? model : `models/${model}`;
@@ -49,6 +49,10 @@ function buildEmbeddingsBody(provider, model, input, encodingFormat) {
   const body = { model, input };
   if (encodingFormat) {
     body.encoding_format = encodingFormat;
+  }
+  if (dimensions != null && dimensions !== "") {
+    const dim = Number(dimensions);
+    if (Number.isFinite(dim) && dim > 0) body.dimensions = dim;
   }
   return body;
 }
@@ -79,10 +83,12 @@ function buildEmbeddingsUrl(provider, model, credentials, input) {
     case "openrouter":
       return "https://openrouter.ai/api/v1/embeddings";
     default:
-      // openai-compatible providers: use their baseUrl + /embeddings
-      if (provider?.startsWith?.("openai-compatible-")) {
-        const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
-        return `${baseUrl.replace(/\/$/, "")}/embeddings`;
+      // openai-compatible & custom-embedding providers: use their baseUrl + /embeddings
+      if (provider?.startsWith?.("openai-compatible-") || provider?.startsWith?.("custom-embedding-")) {
+        const rawBaseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
+        // Defensive: strip trailing slash and accidental /embeddings to avoid double-append
+        const baseUrl = rawBaseUrl.replace(/\/$/, "").replace(/\/embeddings$/, "");
+        return `${baseUrl}/embeddings`;
       }
       // For other providers, attempt to use their base URL pattern with /embeddings path
       return null;
@@ -211,7 +217,7 @@ export async function handleEmbeddingsCore({
   }
 
   const headers = buildEmbeddingsHeaders(provider, credentials);
-  const requestBody = buildEmbeddingsBody(provider, model, input, encodingFormat);
+  const requestBody = buildEmbeddingsBody(provider, model, input, encodingFormat, body.dimensions);
 
   log?.debug?.("EMBEDDINGS", `${provider.toUpperCase()} | ${model} | input_type=${Array.isArray(input) ? `array[${input.length}]` : "string"}`);
 

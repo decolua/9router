@@ -1,3 +1,14 @@
+# v0.4.6 (2026-04-25)
+
+## Features
+- Add BytePlus Provider
+- Add Codex support to image providers
+- Enhance image and embedding provider support
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
 # v0.4.5 (2026-04-24)
 
 ## Improvements
