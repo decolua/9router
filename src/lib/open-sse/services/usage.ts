@@ -444,14 +444,7 @@ async function getCodexUsage(accessToken: string): Promise<ProviderUsageResult> 
 
     if (primaryWindow) {
       const resetAt = parseResetTime(primaryWindow.reset_at ? primaryWindow.reset_at * 1000 : null);
-      let name = "session";
-      if (primaryWindow.reset_at && !secondaryWindow) {
-        const nowSec = Date.now() / 1000;
-        if (primaryWindow.reset_at - nowSec > 48 * 3600) {
-          name = "weekly";
-        }
-      }
-      quotas[name] = {
+      quotas[secondaryWindow ? "session" : "primary"] = {
         used: primaryWindow.used_percent || 0,
         total: 100,
         remaining: 100 - (primaryWindow.used_percent || 0),

@@ -136,17 +136,20 @@ export default function ProviderLimits() {
  }, [connections, quotaData, sortBy]);
 
  const quotaAggregate = useMemo(() => {
+ const primary = { sumUsed: 0, sumTotal: 0 };
  const session = { sumUsed: 0, sumTotal: 0 };
  const weekly = { sumUsed: 0, sumTotal: 0 };
  connections.forEach(conn => {
  const d = quotaData[conn.id];
  d?.quotas?.forEach(q => {
- if (q.name === "session" && q.total > 0) { session.sumUsed += q.used; session.sumTotal += q.total; }
- else if (q.name === "weekly" && q.total > 0) { weekly.sumUsed += q.used; weekly.sumTotal += q.total; }
+ const quotaName = typeof q.name === "string" ? q.name.toLowerCase() : "";
+ if (quotaName.startsWith("primary") && q.total > 0) { primary.sumUsed += q.used; primary.sumTotal += q.total; }
+ else if (quotaName.startsWith("session") && q.total > 0) { session.sumUsed += q.used; session.sumTotal += q.total; }
+ else if (quotaName.startsWith("weekly") && q.total > 0) { weekly.sumUsed += q.used; weekly.sumTotal += q.total; }
  });
  });
  const build = (s: { sumUsed: number, sumTotal: number }) => s.sumTotal > 0 ? { sumUsed: s.sumUsed, sumTotal: s.sumTotal, remainingPct: calculatePercentage(s.sumUsed, s.sumTotal) } : null;
- return { session: build(session), weekly: build(weekly), kind: connections.length > 0 ? "active" : "empty" };
+ return { primary: build(primary), session: build(session), weekly: build(weekly), kind: connections.length > 0 ? "active" : "empty" };
  }, [connections, quotaData]);
 
  if (connections.length === 0 && !connectionsLoading) return (

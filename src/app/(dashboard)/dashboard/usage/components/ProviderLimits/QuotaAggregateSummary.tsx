@@ -4,7 +4,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { ChartBar as BarChart2, CalendarBlank as Calendar } from "@phosphor-icons/react";
+import { ClockCountdown as ClockCountdownIcon, ChartBar as BarChart2, CalendarBlank as Calendar } from "@phosphor-icons/react";
 
 interface AggregateData {
   remainingPct: number;
@@ -63,6 +63,7 @@ function AggregateRow({ label, data, icon: Icon }: AggregateRowProps) {
 interface QuotaAggregateSummaryProps {
   aggregate: {
     kind: string;
+    primary?: AggregateData;
     session?: AggregateData;
     weekly?: AggregateData;
   } | null;
@@ -72,19 +73,26 @@ export default function QuotaAggregateSummary({ aggregate }: QuotaAggregateSumma
  if (!aggregate || aggregate.kind === "empty") return null;
 
  return (
- <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+ <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+ {aggregate.primary && (
+   <AggregateRow
+     label="Primary"
+     data={aggregate.primary}
+     icon={ClockCountdownIcon}
+   />
+ )}
  {aggregate.session && (
-   <AggregateRow 
+   <AggregateRow
      label="Session"
-     data={aggregate.session} 
-     icon={BarChart2} 
+     data={aggregate.session}
+     icon={BarChart2}
    />
  )}
  {aggregate.weekly && (
-   <AggregateRow 
+   <AggregateRow
      label="Weekly"
-     data={aggregate.weekly} 
-     icon={Calendar} 
+     data={aggregate.weekly}
+     icon={Calendar}
    />
  )}
  </div>
