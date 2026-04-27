@@ -9,6 +9,7 @@ import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { getCodexConnectionMeta, isCodexOAuthConnection } from "@/shared/utils/codexConnectionMeta";
 
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 
@@ -461,6 +462,8 @@ export default function ProviderLimits() {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
+          const showCodexMeta = isCodexOAuthConnection(conn);
+          const codexMeta = showCodexMeta ? getCodexConnectionMeta(conn) : null;
 
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
@@ -490,7 +493,14 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
-                      {(() => {
+                      {showCodexMeta && codexMeta ? (
+                        <p
+                          className="text-xs text-text-muted truncate"
+                          title={`email: ${codexMeta.email} | plan: ${codexMeta.plan} | workspace: ${codexMeta.workspaceName} | workspaceId: ${codexMeta.workspaceId} | ${codexMeta.workspaceDebugTitle}`}
+                        >
+                          email: {codexMeta.email} | plan: {codexMeta.plan} | workspace: {codexMeta.workspaceName} | workspaceId: {codexMeta.workspaceId}{codexMeta.isWorkspaceMismatch ? " | workspace mismatch" : ""}
+                        </p>
+                      ) : (() => {
                         const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
                         const label = isEmail(conn.email) ? conn.email : (isEmail(conn.name) ? conn.name : conn.name);
                         return label ? (

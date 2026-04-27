@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
+import { getCodexConnectionMeta, isCodexOAuthConnection } from "@/shared/utils/codexConnectionMeta";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
@@ -68,6 +69,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
+  const showCodexMeta = isCodexOAuthConnection(connection);
+  const codexMeta = showCodexMeta ? getCodexConnectionMeta(connection) : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -133,6 +136,27 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {showCodexMeta && codexMeta && (
+            <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-text-muted">
+              <span className="truncate max-w-[180px]" title={codexMeta.email}>
+                email: {codexMeta.email}
+              </span>
+              <span className="truncate max-w-[120px]" title={codexMeta.plan}>
+                plan: {codexMeta.plan}
+              </span>
+              <span className="truncate max-w-[180px]" title={codexMeta.workspaceDebugTitle}>
+                workspace: {codexMeta.workspaceName}
+              </span>
+              <span className="truncate max-w-[260px] font-mono" title={codexMeta.workspaceDebugTitle}>
+                workspaceId: {codexMeta.workspaceId}
+              </span>
+              {codexMeta.isWorkspaceMismatch && (
+                <span className="truncate max-w-[180px] text-amber-600 dark:text-amber-400" title={codexMeta.workspaceDebugTitle}>
+                  workspace mismatch
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
@@ -231,9 +255,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 ConnectionRow.propTypes = {
   connection: PropTypes.shape({
     id: PropTypes.string,
+    provider: PropTypes.string,
+    authType: PropTypes.string,
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
+    providerSpecificData: PropTypes.object,
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,

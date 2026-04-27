@@ -52,15 +52,70 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
+function normalizeWorkspaceList(workspaces) {
+  if (Array.isArray(workspaces)) return workspaces.filter(Boolean);
+  if (workspaces && Array.isArray(workspaces.data)) return workspaces.data.filter(Boolean);
+  return [];
+}
+
+function pickDefaultWorkspace(workspaces) {
+  const normalized = normalizeWorkspaceList(workspaces);
+  return (
+    normalized.find((workspace) => workspace && workspace.is_default === true) ||
+    normalized.find((workspace) => !!workspace) ||
+    null
+  );
+}
+
+function extractWorkspaceFromToken(chatgptClaim = {}) {
+  const workspace = pickDefaultWorkspace(chatgptClaim.organizations);
+  return {
+    chatgptWorkspaceId: workspace?.id,
+    chatgptWorkspaceTitle: workspace?.title || workspace?.name,
+  };
+}
+
+async function fetchCodexActiveWorkspace(accessToken) {
+  if (!accessToken) return null;
+  try {
+    const response = await fetch("https://api.openai.com/v1/me", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!response.ok) return null;
+
+    const me = await response.json();
+    const workspace = pickDefaultWorkspace(me?.orgs);
+    const activeWorkspaceId = workspace?.id;
+    const activeWorkspaceTitle = workspace?.title || workspace?.name;
+
+    if (!activeWorkspaceId && !activeWorkspaceTitle) return null;
+    return {
+      chatgptActiveWorkspaceId: activeWorkspaceId,
+      chatgptActiveWorkspaceTitle: activeWorkspaceTitle,
+      chatgptActiveWorkspaceSource: "me",
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Extract codex account info from id_token
 export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
   if (!payload) return {};
   const chatgpt = payload["https://api.openai.com/auth"] || {};
+  const workspaceInfo = extractWorkspaceFromToken(chatgpt);
+
   return {
     email: payload.email,
     chatgptAccountId: chatgpt.chatgpt_account_id,
     chatgptPlanType: chatgpt.chatgpt_plan_type,
+    chatgptWorkspaceId: workspaceInfo.chatgptWorkspaceId,
+    chatgptWorkspaceTitle: workspaceInfo.chatgptWorkspaceTitle,
   };
 }
 
@@ -167,8 +222,13 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => {
+    postExchange: async (tokens) => {
+      const activeWorkspace = await fetchCodexActiveWorkspace(tokens.access_token);
+      return { activeWorkspace };
+    },
+    mapTokens: (tokens, extra) => {
       const info = extractCodexAccountInfo(tokens.id_token);
+      const activeWorkspace = extra?.activeWorkspace;
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -176,11 +236,31 @@ const PROVIDERS = {
         expiresIn: tokens.expires_in,
       };
       if (info.email) mapped.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
-        mapped.providerSpecificData = {
-          chatgptAccountId: info.chatgptAccountId,
-          chatgptPlanType: info.chatgptPlanType,
-        };
+      const providerSpecificData = {};
+      if (info.chatgptAccountId) providerSpecificData.chatgptAccountId = info.chatgptAccountId;
+      if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
+      if (info.chatgptWorkspaceId) providerSpecificData.chatgptWorkspaceId = info.chatgptWorkspaceId;
+      if (info.chatgptWorkspaceTitle) providerSpecificData.chatgptWorkspaceTitle = info.chatgptWorkspaceTitle;
+      const hasActiveWorkspaceFromMe = !!(
+        activeWorkspace?.chatgptActiveWorkspaceId || activeWorkspace?.chatgptActiveWorkspaceTitle
+      );
+      if (hasActiveWorkspaceFromMe) {
+        if (activeWorkspace.chatgptActiveWorkspaceId) {
+          providerSpecificData.chatgptActiveWorkspaceId = activeWorkspace.chatgptActiveWorkspaceId;
+        }
+        if (activeWorkspace.chatgptActiveWorkspaceTitle) {
+          providerSpecificData.chatgptActiveWorkspaceTitle = activeWorkspace.chatgptActiveWorkspaceTitle;
+        }
+        providerSpecificData.chatgptActiveWorkspaceSource = "me";
+      } else {
+        if (info.chatgptWorkspaceId) providerSpecificData.chatgptActiveWorkspaceId = info.chatgptWorkspaceId;
+        if (info.chatgptWorkspaceTitle) providerSpecificData.chatgptActiveWorkspaceTitle = info.chatgptWorkspaceTitle;
+        if (providerSpecificData.chatgptActiveWorkspaceId || providerSpecificData.chatgptActiveWorkspaceTitle) {
+          providerSpecificData.chatgptActiveWorkspaceSource = "token_fallback";
+        }
+      }
+      if (Object.keys(providerSpecificData).length > 0) {
+        mapped.providerSpecificData = providerSpecificData;
       }
       return mapped;
     },
@@ -1288,7 +1368,7 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
 // Run-once guard across the process lifetime
 let codexBackfillDone = false;
 
-// Backfill email + chatgpt account info for existing codex OAuth connections missing them
+// Backfill codex metadata for existing OAuth connections missing identity fields
 export async function backfillCodexEmails() {
   if (codexBackfillDone) return;
   codexBackfillDone = true;
@@ -1296,22 +1376,84 @@ export async function backfillCodexEmails() {
     const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
     const connections = await getProviderConnections();
     const targets = connections.filter((c) => {
-      if (c.provider !== "codex" || c.authType !== "oauth" || !c.idToken) return false;
+      if (c.provider !== "codex" || c.authType !== "oauth") return false;
       const hasEmail = !!c.email;
       const hasAccountInfo = !!c.providerSpecificData?.chatgptAccountId;
-      return !hasEmail || !hasAccountInfo;
+      const hasPlanType = !!c.providerSpecificData?.chatgptPlanType;
+      const hasWorkspaceId = !!c.providerSpecificData?.chatgptWorkspaceId;
+      const hasWorkspaceTitle = !!c.providerSpecificData?.chatgptWorkspaceTitle;
+      const hasActiveWorkspaceId = !!c.providerSpecificData?.chatgptActiveWorkspaceId;
+      const hasActiveWorkspaceTitle = !!c.providerSpecificData?.chatgptActiveWorkspaceTitle;
+      const hasActiveWorkspaceSource = !!c.providerSpecificData?.chatgptActiveWorkspaceSource;
+      return (
+        !hasEmail ||
+        !hasAccountInfo ||
+        !hasPlanType ||
+        !hasWorkspaceId ||
+        !hasWorkspaceTitle ||
+        !hasActiveWorkspaceId ||
+        !hasActiveWorkspaceTitle ||
+        !hasActiveWorkspaceSource
+      );
     });
     for (const conn of targets) {
-      const info = extractCodexAccountInfo(conn.idToken);
-      if (!info.email && !info.chatgptAccountId) continue;
+      const info = conn.idToken ? extractCodexAccountInfo(conn.idToken) : {};
+      const activeWorkspace = await fetchCodexActiveWorkspace(conn.accessToken);
       const patch = {};
       if (!conn.email && info.email) patch.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
-        patch.providerSpecificData = {
-          ...(conn.providerSpecificData || {}),
-          chatgptAccountId: info.chatgptAccountId,
-          chatgptPlanType: info.chatgptPlanType,
-        };
+      const nextProviderSpecificData = {
+        ...(conn.providerSpecificData || {}),
+      };
+      let shouldPatchProviderSpecificData = false;
+      if (!nextProviderSpecificData.chatgptAccountId && info.chatgptAccountId) {
+        nextProviderSpecificData.chatgptAccountId = info.chatgptAccountId;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (!nextProviderSpecificData.chatgptPlanType && info.chatgptPlanType) {
+        nextProviderSpecificData.chatgptPlanType = info.chatgptPlanType;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (!nextProviderSpecificData.chatgptWorkspaceId && info.chatgptWorkspaceId) {
+        nextProviderSpecificData.chatgptWorkspaceId = info.chatgptWorkspaceId;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (!nextProviderSpecificData.chatgptWorkspaceTitle && info.chatgptWorkspaceTitle) {
+        nextProviderSpecificData.chatgptWorkspaceTitle = info.chatgptWorkspaceTitle;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (activeWorkspace?.chatgptActiveWorkspaceId && !nextProviderSpecificData.chatgptActiveWorkspaceId) {
+        nextProviderSpecificData.chatgptActiveWorkspaceId = activeWorkspace.chatgptActiveWorkspaceId;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (activeWorkspace?.chatgptActiveWorkspaceTitle && !nextProviderSpecificData.chatgptActiveWorkspaceTitle) {
+        nextProviderSpecificData.chatgptActiveWorkspaceTitle = activeWorkspace.chatgptActiveWorkspaceTitle;
+        shouldPatchProviderSpecificData = true;
+      }
+      if (activeWorkspace && !nextProviderSpecificData.chatgptActiveWorkspaceSource) {
+        nextProviderSpecificData.chatgptActiveWorkspaceSource = "me";
+        shouldPatchProviderSpecificData = true;
+      }
+      if (!activeWorkspace) {
+        const fallbackWorkspaceId = info.chatgptWorkspaceId || nextProviderSpecificData.chatgptWorkspaceId;
+        const fallbackWorkspaceTitle = info.chatgptWorkspaceTitle || nextProviderSpecificData.chatgptWorkspaceTitle;
+        if (!nextProviderSpecificData.chatgptActiveWorkspaceId && fallbackWorkspaceId) {
+          nextProviderSpecificData.chatgptActiveWorkspaceId = fallbackWorkspaceId;
+          shouldPatchProviderSpecificData = true;
+        }
+        if (!nextProviderSpecificData.chatgptActiveWorkspaceTitle && fallbackWorkspaceTitle) {
+          nextProviderSpecificData.chatgptActiveWorkspaceTitle = fallbackWorkspaceTitle;
+          shouldPatchProviderSpecificData = true;
+        }
+        if (
+          !nextProviderSpecificData.chatgptActiveWorkspaceSource &&
+          (nextProviderSpecificData.chatgptActiveWorkspaceId || nextProviderSpecificData.chatgptActiveWorkspaceTitle)
+        ) {
+          nextProviderSpecificData.chatgptActiveWorkspaceSource = "token_fallback";
+          shouldPatchProviderSpecificData = true;
+        }
+      }
+      if (shouldPatchProviderSpecificData) {
+        patch.providerSpecificData = nextProviderSpecificData;
       }
       if (Object.keys(patch).length) {
         await updateProviderConnection(conn.id, patch);
