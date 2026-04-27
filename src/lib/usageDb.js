@@ -554,9 +554,20 @@ export async function getUsageStats(period = "all") {
       }
     }
 
-    // Overlay lastUsed with precise ISO timestamps from live history (dailySummary only has YYYY-MM-DD)
+    // Overlay lastUsed with precise ISO timestamps from usage_history rows
+    // (daily_summary only has YYYY-MM-DD granularity).
     const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
-    for (const entry of history) {
+    const overlayRows = maxDays
+      ? db.prepare(
+          `SELECT timestamp, provider, model, connection_id AS connectionId,
+                  api_key AS apiKey, endpoint
+             FROM usage_history WHERE timestamp >= ?`,
+        ).all(new Date(overlayCutoff).toISOString())
+      : db.prepare(
+          `SELECT timestamp, provider, model, connection_id AS connectionId,
+                  api_key AS apiKey, endpoint FROM usage_history`,
+        ).all();
+    for (const entry of overlayRows) {
       const ts = entry.timestamp;
       if (!ts || new Date(ts).getTime() < overlayCutoff) continue;
 
