@@ -59,12 +59,17 @@ async function main() {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
   const sqliteFile = path.join(dataDir, SQLITE_FILE_NAME);
-  const Database = require("better-sqlite3");
+  const Database = typeof Bun !== "undefined"
+    ? require(["bun", "sqlite"].join(":")).Database
+    : require(["better", "sqlite3"].join("-"));
   const db = new Database(sqliteFile);
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 5000");
+  const setPragma = typeof db.pragma === "function"
+    ? (s) => db.pragma(s)
+    : (s) => db.exec(`PRAGMA ${s}`);
+  setPragma("journal_mode = WAL");
+  setPragma("synchronous = NORMAL");
+  setPragma("foreign_keys = ON");
+  setPragma("busy_timeout = 5000");
   db.exec(loadSchemaSql());
 
   const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get();

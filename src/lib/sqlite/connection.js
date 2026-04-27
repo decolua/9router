@@ -42,10 +42,14 @@ function loadSchemaSql() {
 }
 
 function applyPragmas(db) {
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma("foreign_keys = ON");
-  db.pragma("busy_timeout = 5000");
+  // bun:sqlite has no `.pragma()` shorthand — fall back to exec.
+  const setPragma = typeof db.pragma === "function"
+    ? (s) => db.pragma(s)
+    : (s) => db.exec(`PRAGMA ${s}`);
+  setPragma("journal_mode = WAL");
+  setPragma("synchronous = NORMAL");
+  setPragma("foreign_keys = ON");
+  setPragma("busy_timeout = 5000");
 }
 
 function ensureSchema(db) {
@@ -82,10 +86,16 @@ export function getDatabase() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
 
-  // better-sqlite3 is a CommonJS native module; createRequire avoids the
-  // pitfalls of importing it via ESM. next.config.mjs already lists it in
-  // `serverExternalPackages`.
-  const Database = require("better-sqlite3");
+  // Under Bun, better-sqlite3 (native N-API) is not supported — use the
+  // built-in `bun:sqlite` instead. On Node, keep better-sqlite3 (CJS native
+  // module loaded via createRequire; next.config.mjs lists it in
+  // `serverExternalPackages`).
+  // Computed module names dodge webpack's static resolution so the Node
+  // build doesn't choke on `bun:sqlite` and the Bun build doesn't choke on
+  // the native `better-sqlite3`.
+  const Database = typeof Bun !== "undefined"
+    ? require(["bun", "sqlite"].join(":")).Database
+    : require(["better", "sqlite3"].join("-"));
   const db = new Database(SQLITE_FILE);
   applyPragmas(db);
   ensureSchema(db);
