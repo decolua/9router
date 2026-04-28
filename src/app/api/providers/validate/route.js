@@ -348,22 +348,6 @@ export async function POST(request) {
           break;
         }
 
-        case "cloudflare": {
-          const accountId = providerSpecificData?.accountId?.trim();
-          if (!accountId) {
-            return NextResponse.json({ valid: false, error: "Cloudflare Account ID is required" });
-          }
-          const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/meta/llama-3.2-1b-instruct`, {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
-          });
-          isValid = res.status !== 401 && res.status !== 403;
-          break;
-        }
 
         case "opencode-go": {
           const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
