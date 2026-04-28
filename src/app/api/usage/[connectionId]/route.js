@@ -4,6 +4,7 @@ import "open-sse/index.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -18,7 +19,7 @@ function isAuthExpiredMessage(usage) {
  * @param {boolean} force - Skip needsRefresh check and always attempt refresh
  * @returns Promise<{ connection, refreshed: boolean }>
  */
-async function refreshAndUpdateCredentials(connection, force = false) {
+async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection
@@ -39,8 +40,8 @@ async function refreshAndUpdateCredentials(connection, force = false) {
     return { connection, refreshed: false };
   }
 
-  // Use executor's refreshCredentials method
-  const refreshResult = await executor.refreshCredentials(credentials, console);
+  // Use executor's refreshCredentials method (with optional proxy)
+  const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
 
   if (!refreshResult) {
     // Refresh failed but we still have an accessToken — try with existing token
@@ -117,9 +118,19 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for API key connections" });
     }
 
+    // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
+    const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
+    const proxyOptions = {
+      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
+      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
+      connectionNoProxy: proxyConfig.connectionNoProxy || "",
+      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
+      strictProxy: false,
+    };
+
     // Refresh credentials if needed using executor
     try {
-      const result = await refreshAndUpdateCredentials(connection);
+      const result = await refreshAndUpdateCredentials(connection, false, proxyOptions);
       connection = result.connection;
     } catch (refreshError) {
       console.error("[Usage API] Credential refresh failed:", refreshError);
@@ -129,15 +140,15 @@ export async function GET(request, { params }) {
     }
 
     // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection);
+    let usage = await getUsageForProvider(connection, proxyOptions);
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once
     if (isAuthExpiredMessage(usage) && connection.refreshToken) {
       try {
-        const retryResult = await refreshAndUpdateCredentials(connection, true);
+        const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection);
+        usage = await getUsageForProvider(connection, proxyOptions);
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

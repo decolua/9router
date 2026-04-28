@@ -3,7 +3,7 @@
 import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { Card, Badge, Button, AddCustomEmbeddingModal } from "@/shared/components";
+import { Card, Badge, Button, AddCustomEmbeddingModal, NoAuthProxyCard, ProviderInfoCard } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProviderAlias, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
@@ -49,6 +49,12 @@ const KIND_EXAMPLE_CONFIG = {
     defaultInput: "What is the latest news about AI?",
     bodyKey: "query",
     defaultResponse: `{\n  "results": [\n    { "title": "...", "url": "...", "snippet": "..." }\n  ]\n}`,
+    extraFields: [
+      { key: "search_type", label: "Type", type: "select", default: "web", options: ["web", "news"] },
+      { key: "max_results", label: "Max results", type: "number", default: 5, min: 1, max: 100 },
+      { key: "country", label: "Country", type: "text", default: "" },
+      { key: "language", label: "Language", type: "text", default: "" },
+    ],
   },
   webFetch: {
     inputLabel: "URL",
@@ -56,6 +62,10 @@ const KIND_EXAMPLE_CONFIG = {
     defaultInput: "https://example.com",
     bodyKey: "url",
     defaultResponse: `{\n  "content": "...",\n  "title": "...",\n  "url": "..."\n}`,
+    extraFields: [
+      { key: "format", label: "Format", type: "select", default: "markdown", options: ["markdown", "text", "html"] },
+      { key: "max_characters", label: "Max chars", type: "number", default: 0, min: 0 },
+    ],
   },
   image: {
     inputLabel: "Prompt",
@@ -916,7 +926,8 @@ function GenericExampleCard({ providerId, kind }) {
 
   const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
   const apiPath = kindConfig.endpoint.path;
-  const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";
+  // For kinds without model concept (webSearch/webFetch), use providerAlias directly
+  const modelFull = kindModels.length === 0 ? providerAlias : (selectedModel ? `${providerAlias}/${selectedModel}` : "");
 
   // Build request body with optional extra fields (only non-empty values)
   const extraBodyFromFields = Object.entries(extraValues).reduce((acc, [k, v]) => {
@@ -1160,9 +1171,9 @@ function GenericExampleCard({ providerId, kind }) {
           </Row>
         )}
 
-        {/* Extra fields (filtered by model.params; if undefined → none shown) */}
+        {/* Extra fields — for kinds without model concept (webSearch/webFetch), show all; otherwise filter by model.params */}
         {(exConfig.extraFields || [])
-          .filter((f) => Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key))
+          .filter((f) => kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
           .map((f) => (
           <Row key={f.key} label={f.label}>
             {f.type === "select" ? (
@@ -1175,6 +1186,14 @@ function GenericExampleCard({ providerId, kind }) {
                   <option key={opt} value={opt}>{opt === "" ? "(default)" : opt}</option>
                 ))}
               </select>
+            ) : f.type === "text" ? (
+              <input
+                type="text"
+                value={extraValues[f.key] ?? ""}
+                placeholder={f.placeholder}
+                onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              />
             ) : (
               <input
                 type="number"
@@ -1413,27 +1432,30 @@ export default function MediaProviderDetailPage() {
 
       {/* Connections */}
       {!isCustom && provider.noAuth ? (
-        <Card>
-          <div className="flex items-center gap-3">
-            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
-              <span className="material-symbols-outlined text-[20px]">lock_open</span>
-            </div>
-            <div>
-              <p className="text-sm font-medium">No authentication required</p>
-              <p className="text-xs text-text-muted">This provider is ready to use.</p>
-            </div>
-          </div>
-        </Card>
+        <NoAuthProxyCard providerId={id} />
       ) : (
         <ConnectionsCard providerId={id} isOAuth={false} />
       )}
 
-      {/* Models - only for non-tts kinds; custom uses prefix as alias */}
-      {kind !== "tts" && (
+      {/* Models - hidden for tts/webSearch/webFetch (provider IS the model); custom uses prefix as alias */}
+      {kind !== "tts" && kind !== "webSearch" && kind !== "webFetch" && (
         <ModelsCard
           providerId={id}
           kindFilter={kind}
           providerAliasOverride={isCustom ? customNode?.prefix : undefined}
+        />
+      )}
+
+      {/* Provider Info — config-driven, supports searchConfig, fetchConfig, searchViaChat */}
+      {!isCustom && (provider.searchConfig || provider.fetchConfig || provider.searchViaChat) && (
+        <ProviderInfoCard
+          config={
+            kind === "webFetch"
+              ? provider.fetchConfig
+              : provider.searchConfig || { mode: "chat-completions", defaultModel: provider.searchViaChat?.defaultModel, costPerQuery: 0 }
+          }
+          provider={provider}
+          title={`${kindConfig.label} Config`}
         />
       )}
 

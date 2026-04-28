@@ -140,12 +140,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Antigravity cloaking/tool stripping is intentionally disabled for GitHub Copilot.
-  // Keep the translated request intact; final provider-specific sanitization happens
-  // in the Antigravity executor.
-  if (provider === FORMATS.ANTIGRAVITY && clientTool === "github-copilot") {
-    // No-op
-  }
+  // Antigravity cloaking disabled
+  // if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
+  //   const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
+  //   result = cloakedBody;
+  //   if (toolNameMap?.size > 0) {
+  //     result._toolNameMap = toolNameMap;
+  //   }
+  // }
 
   return result;
 }

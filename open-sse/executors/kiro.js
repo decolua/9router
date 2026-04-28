@@ -378,7 +378,7 @@ export class KiroExecutor extends BaseExecutor {
     });
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 
     try {
@@ -386,7 +386,8 @@ export class KiroExecutor extends BaseExecutor {
       const result = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,
-        log
+        log,
+        proxyOptions
       );
 
       return result;

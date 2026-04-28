@@ -1,9 +1,44 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
+
+// Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
+// Returns true if API key is accepted (status !== 401 && !== 403).
+async function probeWebProvider(provider, apiKey) {
+  const p = AI_PROVIDERS[provider];
+  if (!p) return null;
+  // Skip if provider has dual-purpose (LLM + search), let LLM validate handle it
+  const kinds = p.serviceKinds || ["llm"];
+  const isWebOnly = kinds.every((k) => k === "webSearch" || k === "webFetch");
+  if (!isWebOnly) return null;
+  const cfg = p.searchConfig || p.fetchConfig;
+  if (!cfg) return null;
+  if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
+
+  let url = cfg.baseUrl;
+  const headers = { "Content-Type": "application/json" };
+  let body;
+
+  // Apply auth based on authHeader
+  switch (cfg.authHeader) {
+    case "bearer":              headers["Authorization"] = `Bearer ${apiKey}`; break;
+    case "x-api-key":           headers["x-api-key"] = apiKey; break;
+    case "x-subscription-token":headers["x-subscription-token"] = apiKey; break;
+    case "key":                 url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`; break; // google-pse
+    case "api_key":             url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`; break; // searchapi
+  }
+
+  // Minimal body for POST endpoints; GET sends nothing
+  if (cfg.method === "POST") {
+    body = JSON.stringify({ query: "ping", q: "ping", url: "https://example.com" });
+  }
+
+  const res = await fetch(url, { method: cfg.method, headers, body, signal: AbortSignal.timeout(8000) });
+  return res.status !== 401 && res.status !== 403;
+}
 
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
@@ -11,7 +46,8 @@ export async function POST(request) {
     const body = await request.json();
     const { provider, apiKey, providerSpecificData } = body;
 
-    if (!provider || (!apiKey && provider !== "ollama-local")) {
+    const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
+    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
     }
 
@@ -95,6 +131,29 @@ export async function POST(request) {
         });
       }
 
+      if (provider === "cloudflare-ai") {
+        const { providerSpecificData } = body;
+        const accountId = providerSpecificData?.accountId;
+        if (!accountId) {
+          return NextResponse.json({ valid: false, error: "Missing Account ID" });
+        }
+        const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/chat/completions`;
+        const cfRes = await fetch(url, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: getDefaultModel("cloudflare-ai"),
+            messages: [{ role: "user", content: "test" }],
+            max_tokens: 1,
+          }),
+        });
+        isValid = cfRes.status !== 401 && cfRes.status !== 403 && cfRes.status !== 404;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API token or Account ID",
+        });
+      }
+
       if (provider === "azure") {
         const { providerSpecificData } = body;
         const endpoint = (providerSpecificData?.azureEndpoint || "").replace(/\/$/, "");
@@ -121,6 +180,15 @@ export async function POST(request) {
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key or Azure configuration",
+        });
+      }
+
+      // Generic probe for webSearch/webFetch providers (config-driven)
+      const webResult = await probeWebProvider(provider, apiKey);
+      if (webResult !== null) {
+        return NextResponse.json({
+          valid: webResult,
+          error: webResult ? null : "Invalid API key",
         });
       }
 
@@ -271,7 +339,12 @@ export async function POST(request) {
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
           const res = await fetch(endpoints[provider], { headers });
-          isValid = res.ok;
+          // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
+          if (provider === "xai") {
+            isValid = res.status === 200 || res.status === 403;
+          } else {
+            isValid = res.ok;
+          }
           break;
         }
 

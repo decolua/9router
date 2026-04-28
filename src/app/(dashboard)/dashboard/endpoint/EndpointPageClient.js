@@ -25,7 +25,7 @@ export default function APIPageClient({ machineId }) {
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
-  const [rtkEnabled, setRtkEnabledState] = useState(false);
+  const [rtkEnabled, setRtkEnabledState] = useState(true);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -81,7 +81,7 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
-        setRtkEnabledState(data.rtkEnabled || false);
+        setRtkEnabledState(data.rtkEnabled !== false);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -816,30 +816,13 @@ export default function APIPageClient({ machineId }) {
       {/* Token Saver (RTK) */}
       <Card id="rtk">
         <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">Token Saver</h2>
-            <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
-              Experimental
-            </span>
-          </div>
+          <h2 className="text-lg font-semibold">Token Saver</h2>
         </div>
         <div className="flex items-center justify-between pt-2">
           <div className="pr-4">
             <p className="font-medium">Compress tool output</p>
             <p className="text-sm text-text-muted">
-              Auto-compress git diff / status / grep / find / ls / tree / logs in <code>tool_result</code> before sending to LLM. Check server console for <code>[RTK] saved ...</code> log.
-            </p>
-            <p className="text-xs text-text-muted mt-1">
-              Inspired by{" "}
-              <a
-                href="https://github.com/rtk-ai/rtk"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-primary"
-              >
-                RTK (Rust Token Killer)
-              </a>
-              {" "}— ported to JavaScript. This feature is still under testing; disable it if you notice unexpected results.
+              Auto-compress tool output (git diff/grep/ls/tree/logs) before sending to LLM to save tokens. Disable if you see issues.
             </p>
           </div>
           <Toggle

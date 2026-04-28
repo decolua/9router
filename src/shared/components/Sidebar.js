@@ -13,6 +13,8 @@ import { ConfirmModal } from "./Modal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts"];
+// Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
+const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
@@ -234,6 +236,20 @@ export default function Sidebar({ onClose }) {
                     <span className="text-sm">{kind.label}</span>
                   </Link>
                 ))}
+                <Link
+                  key={COMBINED_WEB_ITEM.id}
+                  href={COMBINED_WEB_ITEM.href}
+                  onClick={onClose}
+                  className={cn(
+                    "flex items-center gap-3 px-4 py-1.5 rounded-lg transition-all group",
+                    pathname.startsWith(COMBINED_WEB_ITEM.href)
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-surface/50 hover:text-text-main"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
+                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
+                </Link>
               </div>
             )}
 

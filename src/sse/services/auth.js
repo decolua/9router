@@ -32,9 +32,24 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
-    // Inject a virtual connection for no-auth free providers
+    // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
-      return { id: "noauth", connectionName: "Public", isActive: true, accessToken: "public" };
+      const settings = await getSettings();
+      const override = (settings.providerStrategies || {})[providerId] || {};
+      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
+      return {
+        id: "noauth",
+        connectionName: "Public",
+        isActive: true,
+        accessToken: "public",
+        providerSpecificData: {
+          connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+          connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+          connectionNoProxy: resolvedProxy.connectionNoProxy,
+          connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
+          vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        },
+      };
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });

@@ -271,9 +271,9 @@ export class GithubExecutor extends BaseExecutor {
     };
   }
 
-  async refreshCopilotToken(githubAccessToken, log) {
+  async refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
     try {
-      const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      const response = await proxyAwareFetch("https://api.github.com/copilot_internal/v2/token", {
         headers: {
           "Authorization": `token ${githubAccessToken}`,
           "User-Agent": GITHUB_COPILOT.USER_AGENT,
@@ -282,7 +282,7 @@ export class GithubExecutor extends BaseExecutor {
           "Accept": "application/json",
           "x-github-api-version": GITHUB_COPILOT.API_VERSION
         }
-      });
+      }, proxyOptions);
       if (!response.ok) {
         const errorText = await response.text();
         log?.error?.("TOKEN", `Copilot token refresh failed: ${response.status} ${errorText}`);
@@ -297,7 +297,7 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshGitHubToken(refreshToken, log) {
+  async refreshGitHubToken(refreshToken, log, proxyOptions = null) {
     try {
       const params = {
         grant_type: "refresh_token",
@@ -308,11 +308,11 @@ export class GithubExecutor extends BaseExecutor {
         params.client_secret = this.config.clientSecret;
       }
 
-      const response = await fetch(OAUTH_ENDPOINTS.github.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
         body: new URLSearchParams(params)
-      });
+      }, proxyOptions);
       if (!response.ok) return null;
       const tokens = await response.json();
       log?.info?.("TOKEN", "GitHub token refreshed");
@@ -323,13 +323,13 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshCredentials(credentials, log) {
-    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log);
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log, proxyOptions);
 
     if (!copilotResult && credentials.refreshToken) {
-      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log);
+      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log, proxyOptions);
       if (githubTokens?.accessToken) {
-        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log);
+        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log, proxyOptions);
         if (copilotResult) {
           return { ...githubTokens, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
         }

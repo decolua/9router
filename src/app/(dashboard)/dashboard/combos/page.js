@@ -339,7 +339,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -504,6 +504,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Add Model to Combo"
+        kindFilter={kindFilter}
       />
     </>
   );

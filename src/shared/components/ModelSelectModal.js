@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import { getModelsByProviderId } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -25,7 +25,17 @@ export default function ModelSelectModal({
   activeProviders = [],
   title = "Select Model",
   modelAliases = {},
+  kindFilter = null,
 }) {
+  // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
+  const filteredActiveProviders = useMemo(() => {
+    if (!kindFilter) return activeProviders;
+    return activeProviders.filter((p) => {
+      const info = AI_PROVIDERS[p.provider];
+      const kinds = info?.serviceKinds || ["llm"];
+      return kinds.includes(kindFilter);
+    });
+  }, [activeProviders, kindFilter]);
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
@@ -85,13 +95,18 @@ export default function ModelSelectModal({
   const groupedModels = useMemo(() => {
     const groups = {};
 
-    // Get all active provider IDs from connections
-    const activeConnectionIds = activeProviders.map(p => p.provider);
+    // Get all active provider IDs from connections (filtered by kindFilter if set)
+    const activeConnectionIds = filteredActiveProviders.map(p => p.provider);
+
+    // No-auth providers: filter by kindFilter as well
+    const noAuthIds = kindFilter
+      ? NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
+      : NO_AUTH_PROVIDER_IDS;
 
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
       ...activeConnectionIds,  // Only connected providers
-      ...NO_AUTH_PROVIDER_IDS, // No-auth providers always visible
+      ...noAuthIds,            // No-auth providers (kind-filtered)
     ]);
 
     // Sort by PROVIDER_ORDER
@@ -203,14 +218,15 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders, providerNodes, customModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, kindFilter]);
 
-  // Filter combos by search query
+  // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
+    if (kindFilter) return [];
     if (!searchQuery.trim()) return combos;
     const query = searchQuery.toLowerCase();
     return combos.filter(c => c.name.toLowerCase().includes(query));
-  }, [combos, searchQuery]);
+  }, [combos, searchQuery, kindFilter]);
 
   // Filter models by search query
   const filteredGroups = useMemo(() => {
@@ -384,5 +400,6 @@ ModelSelectModal.propTypes = {
   ),
   title: PropTypes.string,
   modelAliases: PropTypes.object,
+  kindFilter: PropTypes.string,
 };
 
