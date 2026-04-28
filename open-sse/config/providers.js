@@ -367,7 +367,7 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
-  // Cloudflare Workers AI - {accountId} resolved from credentials.providerSpecificData.accountId
+  // Cloudflare AI - {accountId} resolved from credentials.providerSpecificData.accountId
   "cloudflare-ai": {
     baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
     format: "openai"
