@@ -130,8 +130,8 @@ export default function MitmToolCard({
   return (
     <>
       <Card padding="xs" className="overflow-hidden">
-        <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
-          <div className="flex items-center gap-3">
+        <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
+          <div className="flex min-w-0 items-center gap-3">
             <div className="size-8 flex items-center justify-center shrink-0">
               <Image
                 src={tool.image}
@@ -144,7 +144,7 @@ export default function MitmToolCard({
               />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-medium text-sm">{tool.name}</h3>
                 {!serverRunning ? (
                   <Badge variant="default" size="sm">Server off</Badge>
@@ -154,7 +154,7 @@ export default function MitmToolCard({
                   <Badge variant="warning" size="sm">DNS off</Badge>
                 )}
               </div>
-              <p className="text-xs text-text-muted">Intercept {tool.name} requests via MITM proxy</p>
+              <p className="text-xs text-text-muted sm:truncate">Intercept {tool.name} requests via MITM proxy</p>
             </div>
           </div>
           <span className={`material-symbols-outlined text-text-muted text-[20px] transition-transform ${isExpanded ? "rotate-180" : ""}`}>
@@ -191,9 +191,9 @@ export default function MitmToolCard({
             {tool.defaultModels?.length > 0 && (
               <div className="flex flex-col gap-2">
                 {tool.defaultModels.map((model) => (
-                  <div key={model.alias} className="flex items-center gap-2">
-                    <span className="w-36 shrink-0 text-xs font-semibold text-text-main text-right">{model.name}</span>
-                    <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                  <div key={model.alias} className="grid gap-1.5 sm:grid-cols-[9rem_auto_1fr_auto_auto] sm:items-center sm:gap-2">
+                    <span className="text-xs font-semibold text-text-main sm:text-right">{model.name}</span>
+                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <input
                       type="text"
                       value={modelMappings[model.alias] || ""}
@@ -201,12 +201,12 @@ export default function MitmToolCard({
                       onBlur={(e) => handleMappingBlur(model.alias, e.target.value)}
                       placeholder="provider/model-id"
                       disabled={!dnsActive}
-                      className={`flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
+                      className={`min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 ${!dnsActive ? "opacity-50 cursor-not-allowed" : ""}`}
                     />
                     <button
                       onClick={() => openModelSelector(model.alias)}
                       disabled={!hasActiveProviders || !dnsActive}
-                      className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                      className={`rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 ${hasActiveProviders && dnsActive ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
                     >
                       Select
                     </button>
@@ -232,12 +232,12 @@ export default function MitmToolCard({
             )}
 
             {/* Start / Stop DNS button */}
-            <div className="flex flex-col gap-2 items-start">
+            <div className="flex flex-col gap-2 sm:items-start">
               {dnsActive ? (
                 <button
                   onClick={handleDnsToggle}
                   disabled={!serverRunning || loading}
-                  className="px-4 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-medium text-xs flex items-center gap-1.5 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                   Stop DNS
@@ -246,7 +246,7 @@ export default function MitmToolCard({
                 <button
                   onClick={handleDnsToggle}
                   disabled={!serverRunning || loading}
-                  className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-xs flex items-center gap-1.5 hover:bg-primary/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:py-1.5"
                 >
                   <span className="material-symbols-outlined text-[16px]">play_circle</span>
                   Start DNS
@@ -268,7 +268,7 @@ export default function MitmToolCard({
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-xl">
+          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
             <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>

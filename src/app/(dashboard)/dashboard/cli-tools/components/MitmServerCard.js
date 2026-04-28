@@ -122,8 +122,8 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       <Card padding="sm" className="border-primary/20 bg-primary/5">
         <div className="flex flex-col gap-3">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="material-symbols-outlined text-primary text-[20px]">security</span>
               <span className="font-semibold text-sm text-text-main">MITM Server</span>
               {isRunning ? (
@@ -132,7 +132,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
                 <Badge variant="default" size="sm">Stopped</Badge>
               )}
             </div>
-            <div className="flex items-center gap-1 text-xs text-text-muted" data-i18n-skip="true">
+            <div className="flex flex-wrap items-center gap-1 text-xs text-text-muted" data-i18n-skip="true">
               {[
                 { label: "Cert", ok: status?.certExists },
                 { label: "Trusted", ok: status?.certTrusted },
@@ -160,9 +160,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
           {/* Base URL + API Key — same row pattern as Claude Code / cli-tools */}
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">9Router Base URL</span>
-              <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+            <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+              <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">9Router Base URL</span>
+              <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
               <input
                 type="text"
                 value={mitmRouterBaseUrl}
@@ -173,9 +173,9 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               />
             </div>
             {!isRunning && (
-              <div className="flex items-center gap-2">
-                <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
-                <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+              <div className="grid gap-1 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
+                <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                 <input
                   type="text"
                   list="mitm-api-keys"
@@ -196,12 +196,12 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-wrap" data-i18n-skip="true">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-i18n-skip="true">
             {status?.certExists && !status?.certTrusted && (
               <button
                 onClick={() => handleAction("trust-cert")}
                 disabled={loading}
-                className="px-4 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 font-medium text-xs flex items-center gap-1.5 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs font-medium text-yellow-600 transition-colors hover:bg-yellow-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">verified_user</span>
                 Trust Cert
@@ -211,7 +211,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <button
                 onClick={() => handleAction("stop")}
                 disabled={loading}
-                className="px-4 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 font-medium text-xs flex items-center gap-1.5 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-medium text-red-500 transition-colors hover:bg-red-500/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">stop_circle</span>
                 Stop Server
@@ -220,7 +220,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <button
                 onClick={() => handleAction("start")}
                 disabled={loading || (isWindows && !isAdmin)}
-                className="px-4 py-1.5 rounded-lg bg-primary/10 border border-primary/30 text-primary font-medium text-xs flex items-center gap-1.5 hover:bg-primary/20 transition-colors disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50 sm:w-auto sm:py-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">play_circle</span>
                 Start Server
@@ -252,7 +252,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-xl">
+          <div className="mx-4 flex w-full max-w-sm flex-col gap-4 rounded-xl border border-border bg-surface p-5 shadow-xl sm:p-6">
             <h3 className="font-semibold text-text-main">Sudo Password Required</h3>
             <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
