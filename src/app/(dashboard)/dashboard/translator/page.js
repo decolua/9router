@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Card, Button } from "@/shared/components";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import dynamic from "next/dynamic";
 
 const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
@@ -188,11 +187,29 @@ export default function TranslatorPage() {
     }
   };
 
-  const { copy } = useCopyToClipboard();
-
   const handleCopy = async (id) => {
     if (!contents[id]) return;
-    copy(contents[id], `translator-step-${id}`);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(contents[id]).catch(() => {
+        const textarea = document.createElement("textarea");
+        textarea.value = contents[id];
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      });
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = contents[id];
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
   };
 
   const handleFormat = (id) => {

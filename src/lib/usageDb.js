@@ -9,6 +9,9 @@ const isCloud = typeof caches !== 'undefined' || typeof caches === 'object';
 const DB_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json");
 const LOG_FILE = isCloud ? null : path.join(DATA_DIR, "log.txt");
 
+// Backup file used to preserve usage data across app updates/reinstalls
+const BACKUP_FILE = isCloud ? null : path.join(DATA_DIR, "usage.json.bak");
+
 // Ensure data directory exists
 if (!isCloud && fs && typeof fs.existsSync === "function") {
   try {
@@ -18,6 +21,41 @@ if (!isCloud && fs && typeof fs.existsSync === "function") {
     }
   } catch (error) {
     console.error("[usageDb] Failed to create data directory:", error.message);
+  }
+}
+
+/**
+ * Attempt to restore usage data from backup file.
+ * Called on first usageDb init when DB_FILE doesn't exist yet.
+ * @returns {object|null} The restored data object or null if no backup exists.
+ */
+function restoreFromBackup() {
+  if (!BACKUP_FILE || !fs.existsSync(BACKUP_FILE)) return null;
+  try {
+    const raw = fs.readFileSync(BACKUP_FILE, "utf-8");
+    const data = JSON.parse(raw);
+    // Validate it has the expected shape
+    if (typeof data !== "object" || data === null) return null;
+    console.log(`[usageDb] Restored usage data from backup (history: ${data.history?.length || 0} entries, dailySummary: ${Object.keys(data.dailySummary || {}).length} days)`);
+    return data;
+  } catch (err) {
+    console.warn(`[usageDb] Failed to restore from backup: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Write a backup of the current usage data.
+ * Called after successful DB write when history has entries.
+ * @param {object} data - The usage data to back up.
+ */
+function writeBackup(data) {
+  if (!BACKUP_FILE || isCloud) return;
+  if (!data.history?.length) return; // Nothing to back up
+  try {
+    fs.writeFileSync(BACKUP_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn(`[usageDb] Failed to write backup: ${err.message}`);
   }
 }
 
@@ -250,10 +288,28 @@ export async function getUsageDb() {
     } catch (error) {
       if (error instanceof SyntaxError) {
         console.warn('[DB] Corrupt Usage JSON detected, resetting to defaults...');
-        dbInstance.data = defaultData;
+        dbInstance.data = { ...defaultData };
         await dbInstance.write();
       } else {
         throw error;
+      }
+    }
+
+    // If DB file doesn't exist (brand new install), try to restore from backup
+    if (!fs.existsSync(DB_FILE)) {
+      const restored = restoreFromBackup();
+      if (restored) {
+        dbInstance.data = restored;
+        // Re-run migration if needed
+        if (!dbInstance.data.dailySummary) {
+          if (migrateHistoryToDailySummary(dbInstance)) {
+            await dbInstance.write();
+            writeBackup(dbInstance.data);
+          } else {
+            dbInstance.data.dailySummary = {};
+          }
+        }
+        return dbInstance;
       }
     }
 
@@ -311,6 +367,7 @@ export async function saveRequestUsage(entry) {
     }
 
     await db.write();
+    writeBackup(db.data);
     statsEmitter.emit("update");
   } catch (error) {
     console.error("Failed to save usage stats:", error);
