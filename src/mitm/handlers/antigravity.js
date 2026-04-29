@@ -8,7 +8,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
   try {
     const body = JSON.parse(bodyBuffer.toString());
     body.model = mappedModel;
-    const routerRes = await fetchRouter(body);
+    const routerRes = await fetchRouter(body, "/v1/chat/completions", req.headers);
     await pipeSSE(routerRes, res);
   } catch (error) {
     err(`[antigravity] ${error.message}`);

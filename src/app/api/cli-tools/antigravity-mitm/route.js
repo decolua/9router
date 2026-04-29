@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import {
   getMitmStatus,
@@ -16,6 +14,25 @@ import {
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 initDbHooks(getSettings, updateSettings);
+
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
+
+function normalizeMitmRouterBaseUrlInput(input) {
+  if (input == null || String(input).trim() === "") {
+    return DEFAULT_MITM_ROUTER_BASE;
+  }
+  const t = String(input).trim().replace(/\/+$/, "");
+  let u;
+  try {
+    u = new URL(t);
+  } catch {
+    throw new Error("Invalid MITM router URL");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error("MITM router URL must use http or https");
+  }
+  return t;
+}
 
 const isWin = process.platform === "win32";
 
@@ -37,6 +54,7 @@ function checkIsAdmin() {
 export async function GET() {
   try {
     const status = await getMitmStatus();
+    const settings = await getSettings();
     return NextResponse.json({
       running: status.running,
       pid: status.pid || null,
@@ -45,6 +63,9 @@ export async function GET() {
       dnsStatus: status.dnsStatus || {},
       hasCachedPassword: !!getCachedPassword() || !!(await loadEncryptedPassword()),
       isAdmin: checkIsAdmin(),
+      mitmRouterBaseUrl:
+        (settings.mitmRouterBaseUrl && String(settings.mitmRouterBaseUrl).trim()) ||
+        DEFAULT_MITM_ROUTER_BASE,
     });
   } catch (error) {
     console.log("Error getting MITM status:", error.message);
@@ -55,7 +76,7 @@ export async function GET() {
 // POST - Start MITM server (cert + server, no DNS)
 export async function POST(request) {
   try {
-    const { apiKey, sudoPassword } = await request.json();
+    const { apiKey, sudoPassword, mitmRouterBaseUrl } = await request.json();
     const pwd = getPassword(sudoPassword) || await loadEncryptedPassword() || "";
 
     if (!apiKey || (!isWin && !pwd)) {
@@ -63,6 +84,18 @@ export async function POST(request) {
         { error: isWin ? "Missing apiKey" : "Missing apiKey or sudoPassword" },
         { status: 400 }
       );
+    }
+
+    if (mitmRouterBaseUrl !== undefined && mitmRouterBaseUrl !== null) {
+      try {
+        const normalized = normalizeMitmRouterBaseUrlInput(mitmRouterBaseUrl);
+        await updateSettings({ mitmRouterBaseUrl: normalized });
+      } catch (e) {
+        return NextResponse.json(
+          { error: e.message || "Invalid MITM router URL" },
+          { status: 400 },
+        );
+      }
     }
 
     const result = await startServer(apiKey, pwd);

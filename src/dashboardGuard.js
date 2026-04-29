@@ -1,9 +1,26 @@
 import { NextResponse } from "next/server";
 import { jwtVerify } from "jose";
+import { getSettings } from "@/lib/localDb";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "9router-default-secret-change-me"
 );
+
+const CLI_TOKEN_HEADER = "x-9r-cli-token";
+const CLI_TOKEN_SALT = "9r-cli-auth";
+
+let cachedCliToken = null;
+async function getCliToken() {
+  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
+  return cachedCliToken;
+}
+
+async function hasValidCliToken(request) {
+  const token = request.headers.get(CLI_TOKEN_HEADER);
+  if (!token) return false;
+  return token === await getCliToken();
+}
 
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
@@ -19,12 +36,6 @@ const PROTECTED_API_PATHS = [
   "/api/provider-nodes/validate",
 ];
 
-function isLocalRequest(request) {
-  const host = request.headers.get("host") || "";
-  const hostname = host.split(":")[0];
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-}
-
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
   if (!token) return false;
@@ -36,62 +47,79 @@ async function hasValidToken(request) {
   }
 }
 
+// Read settings directly from DB to avoid self-fetch deadlock in proxy
+async function loadSettings() {
+  try {
+    return await getSettings();
+  } catch {
+    return null;
+  }
+}
+
 async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
-  // Allow if requireLogin is disabled
-  const origin = request.nextUrl.origin;
-  try {
-    const res = await fetch(`${origin}/api/settings/require-login`);
-    const data = await res.json();
-    if (data.requireLogin === false) return true;
-  } catch {
-    // On error, require login
-  }
+  const settings = await loadSettings();
+  if (settings && settings.requireLogin === false) return true;
   return false;
 }
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
-  // Always protected - allow localhost or valid JWT only
+  // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
-    if (isLocalRequest(request) || await hasValidToken(request))
+    if (await hasValidCliToken(request) || await hasValidToken(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Protect sensitive API endpoints (bypass if localhost or requireLogin = false)
+  // Protect sensitive API endpoints (allow CLI token, JWT, or requireLogin=false)
   if (PROTECTED_API_PATHS.some((p) => pathname.startsWith(p))) {
     if (pathname === "/api/settings/require-login") return NextResponse.next();
-    if (isLocalRequest(request) || await isAuthenticated(request))
+    if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
-    const token = request.cookies.get("auth_token")?.value;
+    let requireLogin = true;
+    let tunnelDashboardAccess = true;
 
+    try {
+      const settings = await loadSettings();
+      if (settings) {
+        requireLogin = settings.requireLogin !== false;
+        tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
+
+        // Block tunnel/tailscale access if disabled (redirect to login)
+        if (!tunnelDashboardAccess) {
+          const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
+          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
+          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
+          if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+            return NextResponse.redirect(new URL("/login", request.url));
+          }
+        }
+      }
+    } catch {
+      // On error, keep defaults (require login, block tunnel)
+    }
+
+    // If login not required, allow through
+    if (!requireLogin) return NextResponse.next();
+
+    // Verify JWT token
+    const token = request.cookies.get("auth_token")?.value;
     if (token) {
       try {
         await jwtVerify(token, SECRET);
         return NextResponse.next();
-      } catch (err) {
+      } catch {
         return NextResponse.redirect(new URL("/login", request.url));
       }
     }
 
-    const origin = request.nextUrl.origin;
-    try {
-      const res = await fetch(`${origin}/api/settings/require-login`);
-      const data = await res.json();
-      if (data.requireLogin === false) {
-        return NextResponse.next();
-      }
-    } catch (err) {
-      // On error, require login
-    }
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

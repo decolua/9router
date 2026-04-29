@@ -22,6 +22,8 @@ export default function OpenClawToolCard({
   const [message, setMessage] = useState(null);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [agentModels, setAgentModels] = useState({}); // { [agentId]: modelId }
+  const [agentModalFor, setAgentModalFor] = useState(null); // agentId opening modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
@@ -74,14 +76,18 @@ export default function OpenClawToolCard({
       const provider = openclawStatus.settings?.models?.providers?.["9router"];
       if (provider) {
         const primaryModel = openclawStatus.settings?.agents?.defaults?.model?.primary;
-        if (primaryModel) {
-          const modelId = primaryModel.replace("9router/", "");
-          setSelectedModel(modelId);
-        }
+        if (primaryModel) setSelectedModel(primaryModel.replace("9router/", ""));
         if (provider.apiKey && apiKeys?.some(k => k.key === provider.apiKey)) {
           setSelectedApiKey(provider.apiKey);
         }
       }
+      // Init per-agent models from enriched agents list
+      const agentList = openclawStatus.agents || [];
+      const initAgentModels = {};
+      agentList.forEach((agent) => {
+        if (agent.currentModel) initAgentModels[agent.id] = agent.currentModel;
+      });
+      setAgentModels(initAgentModels);
     }
   }, [openclawStatus, apiKeys]);
 
@@ -131,7 +137,8 @@ export default function OpenClawToolCard({
         body: JSON.stringify({ 
           baseUrl: getEffectiveBaseUrl(), 
           apiKey: keyToUse,
-          model: selectedModel 
+          model: selectedModel,
+          agentModels,
         }),
       });
       const data = await res.json();
@@ -170,7 +177,12 @@ export default function OpenClawToolCard({
   };
 
   const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
+    if (agentModalFor) {
+      setAgentModels(prev => ({ ...prev, [agentModalFor]: model.value }));
+      setAgentModalFor(null);
+    } else {
+      setSelectedModel(model.value);
+    }
     setModalOpen(false);
   };
 
@@ -242,11 +254,21 @@ export default function OpenClawToolCard({
           )}
 
           {!checkingOpenclaw && openclawStatus && !openclawStatus.installed && (
-            <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500">warning</span>
-              <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Open Claw CLI to use this feature.</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-yellow-500">warning</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Open Claw CLI not detected locally</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pl-9">
+                  <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-yellow-700 dark:!text-yellow-300 hover:!bg-yellow-500/30">
+                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                    Manual Config
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -298,14 +320,31 @@ export default function OpenClawToolCard({
                   )}
                 </div>
 
-                {/* Model */}
+                {/* Default Model */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Default Model</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                   <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
+                  <button onClick={() => { setAgentModalFor(null); setModalOpen(true); }} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                   {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                 </div>
+
+                {/* Per-agent model overrides */}
+                {(openclawStatus.agents || []).filter(a => a.agentDir).map((agent) => (
+                  <div key={agent.id} className="flex items-center gap-2 pl-4">
+                    <span className="w-32 shrink-0 text-xs text-primary text-right truncate" title={agent.name || agent.id}>Agent {agent.name || agent.id}</span>
+                    <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+                    <input
+                      type="text"
+                      value={agentModels[agent.id] || ""}
+                      onChange={(e) => setAgentModels(prev => ({ ...prev, [agent.id]: e.target.value }))}
+                      placeholder={`default (${selectedModel || "provider/model-id"})`}
+                      className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    />
+                    <button onClick={() => { setAgentModalFor(agent.id); setModalOpen(true); }} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
+                    {agentModels[agent.id] && <button onClick={() => setAgentModels(prev => ({ ...prev, [agent.id]: "" }))} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  </div>
+                ))}
               </div>
 
               {message && (

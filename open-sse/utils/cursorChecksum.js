@@ -128,7 +128,7 @@ export function buildCursorHeaders(accessToken, machineId = null, ghostMode = tr
     "x-amzn-trace-id": `Root=${crypto.randomUUID()}`,
     "x-client-key": clientKey,
     "x-cursor-checksum": checksum,
-    "x-cursor-client-version": "2.3.41",
+    "x-cursor-client-version": "3.1.0",
     "x-cursor-client-type": "ide",
     "x-cursor-client-os": os,
     "x-cursor-client-arch": arch,

@@ -85,11 +85,11 @@ function getEnvProxyUrl(targetUrl) {
 
   if (protocol === "https:") {
     return process.env.HTTPS_PROXY || process.env.https_proxy ||
-           process.env.ALL_PROXY || process.env.all_proxy;
+      process.env.ALL_PROXY || process.env.all_proxy;
   }
 
   return process.env.HTTP_PROXY || process.env.http_proxy ||
-         process.env.ALL_PROXY || process.env.all_proxy;
+    process.env.ALL_PROXY || process.env.all_proxy;
 }
 
 /**
@@ -100,7 +100,7 @@ function normalizeProxyUrl(proxyUrl) {
   if (!normalizedInput) return null;
 
   try {
-    // eslint-disable-next-line no-new
+
     new URL(normalizedInput);
     return normalizedInput;
   } catch {
@@ -197,6 +197,18 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+
+  // Vercel relay: forward request via relay headers
+  const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
+  if (vercelRelayUrl) {
+    const parsed = new URL(targetUrl);
+    const relayHeaders = {
+      ...options.headers,
+      "x-relay-target": `${parsed.protocol}//${parsed.host}`,
+      "x-relay-path": `${parsed.pathname}${parsed.search}`,
+    };
+    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+  }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));

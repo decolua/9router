@@ -1,14 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import PropTypes from "prop-types";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, Toggle, Select } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard } from "@/shared/components";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import ModelRow from "./ModelRow";
+import PassthroughModelsSection from "./PassthroughModelsSection";
+import CompatibleModelsSection from "./CompatibleModelsSection";
+import ConnectionRow from "./ConnectionRow";
+import AddApiKeyModal from "./AddApiKeyModal";
+import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
+import AddCustomModelModal from "./AddCustomModelModal";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -36,6 +43,9 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [thinkingMode, setThinkingMode] = useState("auto");
+  const [suggestedModels, setSuggestedModels] = useState([]);
+  const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -48,14 +58,16 @@ export default function ProviderDetailPage() {
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
       }
-    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId]);
+    : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
+  const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
+  const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
   
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   const providerDisplayAlias = isCompatible
@@ -74,6 +86,15 @@ export default function ProviderDetailPage() {
       console.log("Error fetching aliases:", error);
     }
   }, []);
+
+  // Fetch free models from Kilo API for kilocode provider
+  useEffect(() => {
+    if (providerId !== "kilocode") return;
+    fetch("/api/providers/kilo/free-models")
+      .then((res) => res.json())
+      .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
+      .catch(() => {});
+  }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -98,6 +119,9 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      // Load per-provider thinking config
+      const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
+      setThinkingMode(thinkingCfg.mode || "auto");
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -184,10 +208,43 @@ export default function ProviderDetailPage() {
     saveProviderStrategy("round-robin", value);
   };
 
+  const saveThinkingConfig = async (mode) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerThinking || {};
+      const updated = { ...current };
+      if (!mode || mode === "auto") {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = { mode };
+      }
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerThinking: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving thinking config:", error);
+    }
+  };
+
+  const handleThinkingModeChange = (mode) => {
+    setThinkingMode(mode);
+    saveThinkingConfig(mode);
+  };
+
   useEffect(() => {
     fetchConnections();
     fetchAliases();
   }, [fetchConnections, fetchAliases]);
+
+  // Fetch suggested models from provider's public API (if configured)
+  useEffect(() => {
+    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+    if (!fetcher) return;
+    fetchSuggestedModels(fetcher).then(setSuggestedModels);
+  }, [providerId]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -528,18 +585,12 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    if (providerInfo.passthroughModels) {
-      return (
-        <PassthroughModelsSection
-          providerAlias={providerAlias}
-          modelAliases={modelAliases}
-          copied={copied}
-          onCopy={copy}
-          onSetAlias={handleSetAlias}
-          onDeleteAlias={handleDeleteAlias}
-        />
-      );
-    }
+    // Combine hardcoded models with Kilo free models (deduplicated)
+    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
+    const displayModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ].filter((m) => !m.type || m.type === "llm");
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
@@ -547,6 +598,8 @@ export default function ProviderDetailPage() {
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
         // Only show if not already in hardcoded list
+        // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
+        if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
         return !models.some((m) => m.id === modelId) && alias === modelId;
       })
       .map(([alias, fullModel]) => ({
@@ -557,7 +610,7 @@ export default function ProviderDetailPage() {
 
     return (
       <div className="flex flex-wrap gap-3">
-        {models.map((model) => {
+        {displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -574,8 +627,9 @@ export default function ProviderDetailPage() {
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
               testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
+              isFree={model.isFree}
             />
           );
         })}
@@ -592,9 +646,10 @@ export default function ProviderDetailPage() {
             onSetAlias={() => {}}
             onDeleteAlias={() => handleDeleteAlias(model.alias)}
             testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 ? () => handleTestModel(model.id) : undefined}
+            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelId === model.id}
             isCustom
+            isFree={false}
           />
         ))}
 
@@ -606,6 +661,37 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
+
+        {/* Suggested models from provider API — show only models not yet added */}
+        {suggestedModels.length > 0 && (() => {
+          const addedFullModels = new Set(Object.values(modelAliases));
+          const hardcodedIds = new Set(models.map((m) => m.id));
+          const notAdded = suggestedModels.filter(
+            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
+          );
+          if (notAdded.length === 0) return null;
+          return (
+            <div className="w-full mt-2">
+              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <div className="flex flex-wrap gap-2">
+                {notAdded.map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={async () => {
+                      const alias = m.id.split("/").pop();
+                      await handleSetAlias(m.id, alias, providerStorageAlias);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    {m.id.split("/").pop()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -683,9 +769,26 @@ export default function ProviderDetailPage() {
       </div>
 
       {providerInfo.deprecated && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02] border border-black/[0.05] dark:border-white/[0.05]">
-          <span className="material-symbols-outlined text-[16px] text-text-muted mt-0.5 shrink-0">info</span>
-          <p className="text-xs text-text-muted leading-relaxed">{providerInfo.deprecationNotice}</p>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
+          <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
+          <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">{providerInfo.deprecationNotice}</p>
+        </div>
+      )}
+
+      {providerInfo.notice && !providerInfo.deprecated && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
+          <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
+          <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{providerInfo.notice.text}</p>
+          {providerInfo.notice.apiKeyUrl && (
+            <a
+              href={providerInfo.notice.apiKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-2 py-0.5 rounded shrink-0 transition-colors"
+            >
+              Get API Key →
+            </a>
+          )}
         </div>
       )}
 
@@ -745,86 +848,107 @@ export default function ProviderDetailPage() {
       )}
 
       {/* Connections */}
-      <Card>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Connections</h2>
-          {/* Round Robin toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted font-medium">Round Robin</span>
-            <Toggle
-              checked={providerStrategy === "round-robin"}
-              onChange={handleRoundRobinToggle}
-            />
-            {providerStrategy === "round-robin" && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-text-muted">Sticky:</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={providerStickyLimit}
-                  onChange={(e) => handleStickyLimitChange(e.target.value)}
-                  placeholder="1"
-                  className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+      {isFreeNoAuth ? (
+        <NoAuthProxyCard providerId={providerId} />
+      ) : (
+        <Card>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Connections</h2>
+            <div className="flex items-center gap-4">
+              {/* Thinking config */}
+              {/* {thinkingConfig && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-text-muted font-medium">Thinking</span>
+                  <select
+                    value={thinkingMode}
+                    onChange={(e) => handleThinkingModeChange(e.target.value)}
+                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  >
+                    {thinkingConfig.options.map((opt) => (
+                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+                    ))}
+                  </select>
+                </div>
+              )} */}
+              {/* Round Robin toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted font-medium">Round Robin</span>
+                <Toggle
+                  checked={providerStrategy === "round-robin"}
+                  onChange={handleRoundRobinToggle}
                 />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {connections.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-              <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
-            </div>
-            <p className="text-text-main font-medium mb-1">No connections yet</p>
-            <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
-            {!isCompatible && (
-              <div className="flex gap-2 justify-center">
-                {providerId === "iflow" && (
-                  <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
-                    Cookie Auth
-                  </Button>
+                {providerStrategy === "round-robin" && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-text-muted">Sticky:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={providerStickyLimit}
+                      onChange={(e) => handleStickyLimitChange(e.target.value)}
+                      placeholder="1"
+                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                    />
+                  </div>
                 )}
-                <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
-                  {providerId === "iflow" ? "OAuth" : "Add Connection"}
-                </Button>
               </div>
-            )}
+            </div>
           </div>
-        ) : (
-          <>
-            {connectionsList}
-            {!isCompatible && (
-              <div className="flex gap-2 mt-4">
-                {providerId === "iflow" && (
+
+          {connections.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+                <span className="material-symbols-outlined text-[32px]">{isOAuth ? "lock" : "key"}</span>
+              </div>
+              <p className="text-text-main font-medium mb-1">No connections yet</p>
+              <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
+              {!isCompatible && (
+                <div className="flex gap-2 justify-center">
+                  {providerId === "iflow" && (
+                    <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
+                      Cookie Auth
+                    </Button>
+                  )}
+                  <Button icon="add" onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}>
+                    {providerId === "iflow" ? "OAuth" : "Add Connection"}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {connectionsList}
+              {!isCompatible && (
+                <div className="flex gap-2 mt-4">
+                  {providerId === "iflow" && (
+                    <Button
+                      size="sm"
+                      icon="cookie"
+                      variant="secondary"
+                      onClick={() => setShowIFlowCookieModal(true)}
+                      title="Add connection using browser cookie"
+                    >
+                      Cookie
+                    </Button>
+                  )}
                   <Button
                     size="sm"
-                    icon="cookie"
-                    variant="secondary"
-                    onClick={() => setShowIFlowCookieModal(true)}
-                    title="Add connection using browser cookie"
+                    icon="add"
+                    onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
                   >
-                    Cookie
+                    Add
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  icon="add"
-                  onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
-                >
-                  Add
-                </Button>
-              </div>
-            )}
-          </>
-        )}
-      </Card>
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
 
       {/* Models */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">
-            {providerInfo.passthroughModels ? "Model Aliases" : "Available Models"}
+            {"Available Models"}
           </h2>
         </div>
         {!!modelsTestError && (
@@ -846,6 +970,13 @@ export default function ProviderDetailPage() {
       ) : providerId === "cursor" ? (
         <CursorAuthModal
           isOpen={showOAuthModal}
+          onSuccess={handleOAuthSuccess}
+          onClose={() => setShowOAuthModal(false)}
+        />
+      ) : providerId === "gitlab" ? (
+        <GitLabAuthModal
+          isOpen={showOAuthModal}
+          providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
         />
@@ -871,6 +1002,9 @@ export default function ProviderDetailPage() {
         providerName={providerInfo.name}
         isCompatible={isCompatible}
         isAnthropic={isAnthropicCompatible}
+        authType={providerInfo?.authType}
+        authHint={providerInfo?.authHint}
+        website={providerInfo?.website}
         proxyPools={proxyPools}
         onSave={handleSaveApiKey}
         onClose={() => setShowAddApiKeyModal(false)}
@@ -891,13 +1025,17 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
-      {!isCompatible && !providerInfo?.passthroughModels && (
+      {!isCompatible && (
         <AddCustomModelModal
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           onSave={async (modelId) => {
-            await handleSetAlias(modelId, modelId, providerStorageAlias);
+            // For passthrough providers (OpenRouter), use last segment as alias to avoid slash conflicts
+            const alias = providerInfo?.passthroughModels
+              ? modelId.split("/").pop()
+              : modelId;
+            await handleSetAlias(modelId, alias, providerStorageAlias);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
@@ -906,1340 +1044,3 @@ export default function ProviderDetailPage() {
     </div>
   );
 }
-
-function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, onDeleteAlias, onTest, isTesting }) {
-  const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
-    : testStatus === "error"
-    ? "border-red-500/40"
-    : "border-border";
-
-  const iconColor = testStatus === "ok"
-    ? "#22c55e"
-    : testStatus === "error"
-    ? "#ef4444"
-    : undefined;
-
-  return (
-    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <div className="flex items-center gap-2">
-        <span
-          className="material-symbols-outlined text-base"
-          style={iconColor ? { color: iconColor } : undefined}
-        >
-          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
-        </span>
-        <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-        {onTest && (
-          <button
-            onClick={onTest}
-            disabled={isTesting}
-            className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-            title="Test model"
-          >
-            <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-              {isTesting ? "progress_activity" : "science"}
-            </span>
-          </button>
-        )}
-        <button
-          onClick={() => onCopy(fullModel, `model-${model.id}`)}
-          className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-          title="Copy model"
-        >
-          <span className="material-symbols-outlined text-sm">
-            {copied === `model-${model.id}` ? "check" : "content_copy"}
-          </span>
-        </button>
-        {isCustom && (
-          <button
-            onClick={onDeleteAlias}
-            className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-auto"
-            title="Remove custom model"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-ModelRow.propTypes = {
-  model: PropTypes.shape({
-    id: PropTypes.string.isRequired,
-  }).isRequired,
-  fullModel: PropTypes.string.isRequired,
-  alias: PropTypes.string,
-  copied: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
-  testStatus: PropTypes.oneOf(["ok", "error"]),
-  isCustom: PropTypes.bool,
-  onDeleteAlias: PropTypes.func,
-  onTest: PropTypes.func,
-  isTesting: PropTypes.bool,
-};
-
-function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
-  const [newModel, setNewModel] = useState("");
-  const [adding, setAdding] = useState(false);
-
-  // Filter aliases for this provider - models are persisted via alias
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerAlias}/`)
-  );
-
-  const allModels = providerAliases.map(([alias, fullModel]) => ({
-    modelId: fullModel.replace(`${providerAlias}/`, ""),
-    fullModel,
-    alias,
-  }));
-
-  // Generate default alias from modelId (last part after /)
-  const generateDefaultAlias = (modelId) => {
-    const parts = modelId.split("/");
-    return parts[parts.length - 1];
-  };
-
-  const handleAdd = async () => {
-    if (!newModel.trim() || adding) return;
-    const modelId = newModel.trim();
-    const defaultAlias = generateDefaultAlias(modelId);
-    
-    // Check if alias already exists
-    if (modelAliases[defaultAlias]) {
-      alert(`Alias "${defaultAlias}" already exists. Please use a different model or edit existing alias.`);
-      return;
-    }
-    
-    setAdding(true);
-    try {
-      await onSetAlias(modelId, defaultAlias);
-      setNewModel("");
-    } catch (error) {
-      console.log("Error adding model:", error);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-text-muted">
-        OpenRouter supports any model. Add models and create aliases for quick access.
-      </p>
-
-      {/* Add new model */}
-      <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <label htmlFor="new-model-input" className="text-xs text-text-muted mb-1 block">Model ID (from OpenRouter)</label>
-          <input
-            id="new-model-input"
-            type="text"
-            value={newModel}
-            onChange={(e) => setNewModel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder="anthropic/claude-3-opus"
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-          />
-        </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
-          {adding ? "Adding..." : "Add"}
-        </Button>
-      </div>
-
-      {/* Models list */}
-      {allModels.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {allModels.map(({ modelId, fullModel, alias }) => (
-            <PassthroughModelRow
-              key={fullModel}
-              modelId={modelId}
-              fullModel={fullModel}
-              copied={copied}
-              onCopy={onCopy}
-              onDeleteAlias={() => onDeleteAlias(alias)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-PassthroughModelsSection.propTypes = {
-  providerAlias: PropTypes.string.isRequired,
-  modelAliases: PropTypes.object.isRequired,
-  copied: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
-  onSetAlias: PropTypes.func.isRequired,
-  onDeleteAlias: PropTypes.func.isRequired,
-};
-
-function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
-  const borderColor = testStatus === "ok"
-    ? "border-green-500/40"
-    : testStatus === "error"
-    ? "border-red-500/40"
-    : "border-border";
-
-  const iconColor = testStatus === "ok"
-    ? "#22c55e"
-    : testStatus === "error"
-    ? "#ef4444"
-    : undefined;
-
-  return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
-      <span
-        className="material-symbols-outlined text-base text-text-muted"
-        style={iconColor ? { color: iconColor } : undefined}
-      >
-        {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
-      </span>
-
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{modelId}</p>
-
-        <div className="flex items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          <button
-            onClick={() => onCopy(fullModel, `model-${modelId}`)}
-            className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
-            title="Copy model"
-          >
-            <span className="material-symbols-outlined text-sm">
-              {copied === `model-${modelId}` ? "check" : "content_copy"}
-            </span>
-          </button>
-          {onTest && (
-            <button
-              onClick={onTest}
-              disabled={isTesting}
-              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
-              title="Test model"
-            >
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
-                {isTesting ? "progress_activity" : "science"}
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Delete button */}
-      <button
-        onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
-        title="Remove model"
-      >
-        <span className="material-symbols-outlined text-sm">delete</span>
-      </button>
-    </div>
-  );
-}
-
-PassthroughModelRow.propTypes = {
-  modelId: PropTypes.string.isRequired,
-  fullModel: PropTypes.string.isRequired,
-  copied: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
-  onDeleteAlias: PropTypes.func.isRequired,
-  onTest: PropTypes.func,
-  testStatus: PropTypes.oneOf(["ok", "error"]),
-  isTesting: PropTypes.bool,
-};
-
-function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
-  const [newModel, setNewModel] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [testingModelId, setTestingModelId] = useState(null);
-  const [modelTestResults, setModelTestResults] = useState({});
-
-  const handleTestModel = async (modelId) => {
-    if (testingModelId) return;
-    setTestingModelId(modelId);
-    try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
-      });
-      const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
-    } catch {
-      setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
-    } finally {
-      setTestingModelId(null);
-    }
-  };
-
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerStorageAlias}/`)
-  );
-
-  const allModels = providerAliases.map(([alias, fullModel]) => ({
-    modelId: fullModel.replace(`${providerStorageAlias}/`, ""),
-    fullModel,
-    alias,
-  }));
-
-  const generateDefaultAlias = (modelId) => {
-    const parts = modelId.split("/");
-    return parts[parts.length - 1];
-  };
-
-  const resolveAlias = (modelId) => {
-    const fullModel = `${providerStorageAlias}/${modelId}`;
-    // Skip if this exact model already has an alias
-    if (Object.values(modelAliases).includes(fullModel)) return null;
-    const baseAlias = generateDefaultAlias(modelId);
-    if (!modelAliases[baseAlias]) return baseAlias;
-    const prefixedAlias = `${providerDisplayAlias}-${baseAlias}`;
-    if (!modelAliases[prefixedAlias]) return prefixedAlias;
-    return null;
-  };
-
-  const handleAdd = async () => {
-    if (!newModel.trim() || adding) return;
-    const modelId = newModel.trim();
-    const resolvedAlias = resolveAlias(modelId);
-    if (!resolvedAlias) {
-      alert("All suggested aliases already exist. Please choose a different model or remove conflicting aliases.");
-      return;
-    }
-
-    setAdding(true);
-    try {
-      await onSetAlias(modelId, resolvedAlias, providerStorageAlias);
-      setNewModel("");
-    } catch (error) {
-      console.log("Error adding model:", error);
-    } finally {
-      setAdding(false);
-    }
-  };
-
-  const handleImport = async () => {
-    if (importing) return;
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
-    if (!activeConnection) return;
-
-    setImporting(true);
-    try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Failed to import models");
-        return;
-      }
-      const models = data.models || [];
-      if (models.length === 0) {
-        alert("No models returned from /models.");
-        return;
-      }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        const resolvedAlias = resolveAlias(modelId);
-        if (!resolvedAlias) continue;
-        await onSetAlias(modelId, resolvedAlias, providerStorageAlias);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
-        alert("No new models were added.");
-      }
-    } catch (error) {
-      console.log("Error importing models:", error);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const canImport = connections.some((conn) => conn.isActive !== false);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
-      </p>
-
-      <div className="flex items-end gap-2 flex-wrap">
-        <div className="flex-1 min-w-[240px]">
-          <label htmlFor="new-compatible-model-input" className="text-xs text-text-muted mb-1 block">Model ID</label>
-          <input
-            id="new-compatible-model-input"
-            type="text"
-            value={newModel}
-            onChange={(e) => setNewModel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-          />
-        </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
-          {adding ? "Adding..." : "Add"}
-        </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
-          {importing ? "Importing..." : "Import from /models"}
-        </Button>
-      </div>
-
-      {!canImport && (
-        <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
-        </p>
-      )}
-
-      {allModels.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {allModels.map(({ modelId, fullModel, alias }) => (
-            <PassthroughModelRow
-              key={fullModel}
-              modelId={modelId}
-              fullModel={`${providerDisplayAlias}/${modelId}`}
-              copied={copied}
-              onCopy={onCopy}
-              onDeleteAlias={() => onDeleteAlias(alias)}
-              onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
-              testStatus={modelTestResults[modelId]}
-              isTesting={testingModelId === modelId}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-CompatibleModelsSection.propTypes = {
-  providerStorageAlias: PropTypes.string.isRequired,
-  providerDisplayAlias: PropTypes.string.isRequired,
-  modelAliases: PropTypes.object.isRequired,
-  copied: PropTypes.string,
-  onCopy: PropTypes.func.isRequired,
-  onSetAlias: PropTypes.func.isRequired,
-  onDeleteAlias: PropTypes.func.isRequired,
-  connections: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    isActive: PropTypes.bool,
-  })).isRequired,
-  isAnthropic: PropTypes.bool,
-};
-
-function CooldownTimer({ until }) {
-  const [remaining, setRemaining] = useState("");
-
-  useEffect(() => {
-    const updateRemaining = () => {
-      const diff = new Date(until).getTime() - Date.now();
-      if (diff <= 0) {
-        setRemaining("");
-        return;
-      }
-      const secs = Math.floor(diff / 1000);
-      if (secs < 60) {
-        setRemaining(`${secs}s`);
-      } else if (secs < 3600) {
-        setRemaining(`${Math.floor(secs / 60)}m ${secs % 60}s`);
-      } else {
-        const hrs = Math.floor(secs / 3600);
-        const mins = Math.floor((secs % 3600) / 60);
-        setRemaining(`${hrs}h ${mins}m`);
-      }
-    };
-
-    updateRemaining();
-    const interval = setInterval(updateRemaining, 1000);
-    return () => clearInterval(interval);
-  }, [until]);
-
-  if (!remaining) return null;
-
-  return (
-    <span className="text-xs text-orange-500 font-mono">
-      ⏱ {remaining}
-    </span>
-  );
-}
-
-CooldownTimer.propTypes = {
-  until: PropTypes.string.isRequired,
-};
-
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
-  const [showProxyDropdown, setShowProxyDropdown] = useState(false);
-  const [updatingProxy, setUpdatingProxy] = useState(false);
-  const proxyDropdownRef = useRef(null);
-
-  const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
-  const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
-  const boundProxyPool = boundProxyPoolId ? proxyPoolMap.get(boundProxyPoolId) : null;
-  const hasLegacyProxy = connection.providerSpecificData?.connectionProxyEnabled === true && !!connection.providerSpecificData?.connectionProxyUrl;
-  const hasAnyProxy = !!boundProxyPoolId || hasLegacyProxy;
-  const proxyDisplayText = boundProxyPool
-    ? `Pool: ${boundProxyPool.name}`
-    : boundProxyPoolId
-      ? `Pool: ${boundProxyPoolId} (inactive/missing)`
-      : hasLegacyProxy
-        ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
-        : "";
-
-  let maskedProxyUrl = "";
-  if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
-    const rawProxyUrl = boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl;
-    try {
-      const parsed = new URL(rawProxyUrl);
-      maskedProxyUrl = `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
-    } catch {
-      maskedProxyUrl = rawProxyUrl;
-    }
-  }
-
-  const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
-
-  let proxyBadgeVariant = "default";
-  if (boundProxyPool?.isActive === true) {
-    proxyBadgeVariant = "success";
-  } else if (boundProxyPoolId || hasLegacyProxy) {
-    proxyBadgeVariant = "error";
-  }
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    if (!showProxyDropdown) return;
-    const handler = (e) => {
-      if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target)) {
-        setShowProxyDropdown(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showProxyDropdown]);
-
-  const handleSelectProxy = async (poolId) => {
-    setUpdatingProxy(true);
-    try {
-      await onUpdateProxy(poolId === "__none__" ? null : poolId);
-    } finally {
-      setUpdatingProxy(false);
-      setShowProxyDropdown(false);
-    }
-  };
-
-  const displayName = isOAuth
-    ? connection.name || connection.email || connection.displayName || "OAuth Account"
-    : connection.name;
-
-  // Use useState + useEffect for impure Date.now() to avoid calling during render
-  const [isCooldown, setIsCooldown] = useState(false);
-
-  // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => !!v)
-    .sort()[0] || null;
-
-  useEffect(() => {
-    const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
-        .sort()[0] || null;
-      setIsCooldown(!!until);
-    };
-
-    checkCooldown();
-    const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [modelLockUntil]);
-
-  // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired → treat as active
-    : connection.testStatus;
-
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
-    return "default";
-  };
-
-  return (
-    <div className={`group flex items-center justify-between p-3 rounded-lg hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${connection.isActive === false ? "opacity-60" : ""}`}>
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        {/* Priority arrows */}
-        <div className="flex flex-col">
-          <button
-            onClick={onMoveUp}
-            disabled={isFirst}
-            className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
-          >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
-          </button>
-          <button
-            onClick={onMoveDown}
-            disabled={isLast}
-            className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
-          >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
-          </button>
-        </div>
-        <span className="material-symbols-outlined text-base text-text-muted">
-          {isOAuth ? "lock" : "key"}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{displayName}</p>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
-            {hasAnyProxy && (
-              <Badge variant={proxyBadgeVariant} size="sm">
-                Proxy
-              </Badge>
-            )}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>
-                {connection.lastError}
-              </span>
-            )}
-            <span className="text-xs text-text-muted">#{connection.priority}</span>
-            {connection.globalPriority && (
-              <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
-            )}
-          </div>
-          {hasAnyProxy && (
-            <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] text-text-muted truncate max-w-[420px]" title={proxyDisplayText}>
-                {proxyDisplayText}
-              </span>
-              {maskedProxyUrl && (
-                <code className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded text-text-muted">
-                  {maskedProxyUrl}
-                </code>
-              )}
-              {noProxyText && (
-                <span className="text-[11px] text-text-muted truncate max-w-[320px]" title={noProxyText}>
-                  no_proxy: {noProxyText}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="flex gap-1">
-          {/* Proxy button with inline dropdown */}
-          {(proxyPools || []).length > 0 && (
-            <div className="relative" ref={proxyDropdownRef}>
-              <button
-                onClick={() => setShowProxyDropdown((v) => !v)}
-                className={`flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors ${hasAnyProxy ? "text-primary" : "text-text-muted hover:text-primary"}`}
-                disabled={updatingProxy}
-              >
-                <span className="material-symbols-outlined text-[18px]">
-                  {updatingProxy ? "progress_activity" : "lan"}
-                </span>
-                <span className="text-[10px] leading-tight">Proxy</span>
-              </button>
-              {showProxyDropdown && (
-                <div className="absolute right-0 top-full mt-1 z-50 bg-bg border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
-                  <button
-                    onClick={() => handleSelectProxy("__none__")}
-                    className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${!boundProxyPoolId ? "text-primary font-medium" : "text-text-main"}`}
-                  >
-                    None
-                  </button>
-                  {(proxyPools || []).map((pool) => (
-                    <button
-                      key={pool.id}
-                      onClick={() => handleSelectProxy(pool.id)}
-                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/5 ${boundProxyPoolId === pool.id ? "text-primary font-medium" : "text-text-main"}`}
-                    >
-                      {pool.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
-          </button>
-          <button onClick={onDelete} className="flex flex-col items-center px-2 py-1 rounded hover:bg-red-500/10 text-red-500">
-            <span className="material-symbols-outlined text-[18px]">delete</span>
-            <span className="text-[10px] leading-tight">Delete</span>
-          </button>
-        </div>
-        <Toggle
-          size="sm"
-          checked={connection.isActive ?? true}
-          onChange={onToggleActive}
-          title={(connection.isActive ?? true) ? "Disable connection" : "Enable connection"}
-        />
-      </div>
-    </div>
-  );
-}
-
-ConnectionRow.propTypes = {
-  connection: PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-    email: PropTypes.string,
-    displayName: PropTypes.string,
-    modelLockUntil: PropTypes.string,
-    testStatus: PropTypes.string,
-    isActive: PropTypes.bool,
-    lastError: PropTypes.string,
-    priority: PropTypes.number,
-    globalPriority: PropTypes.number,
-  }).isRequired,
-  proxyPools: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-    proxyUrl: PropTypes.string,
-    noProxy: PropTypes.string,
-    isActive: PropTypes.bool,
-  })),
-  isOAuth: PropTypes.bool.isRequired,
-  isFirst: PropTypes.bool.isRequired,
-  isLast: PropTypes.bool.isRequired,
-  onMoveUp: PropTypes.func.isRequired,
-  onMoveDown: PropTypes.func.isRequired,
-  onToggleActive: PropTypes.func.isRequired,
-  onUpdateProxy: PropTypes.func,
-  onEdit: PropTypes.func.isRequired,
-  onDelete: PropTypes.func.isRequired,
-};
-
-function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, proxyPools, onSave, onClose }) {
-  const NONE_PROXY_POOL_VALUE = "__none__";
-
-  const [formData, setFormData] = useState({
-    name: "",
-    apiKey: "",
-    priority: 1,
-    proxyPoolId: NONE_PROXY_POOL_VALUE,
-  });
-  const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  const handleValidate = async () => {
-    setValidating(true);
-    try {
-      const res = await fetch("/api/providers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
-      });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch {
-      setValidationResult("failed");
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!provider || !formData.apiKey) return;
-
-    setSaving(true);
-    try {
-      let isValid = false;
-      try {
-        setValidating(true);
-        setValidationResult(null);
-        const res = await fetch("/api/providers/validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey }),
-        });
-        const data = await res.json();
-        isValid = !!data.valid;
-        setValidationResult(isValid ? "success" : "failed");
-      } catch {
-        setValidationResult("failed");
-      } finally {
-        setValidating(false);
-      }
-
-      await onSave({
-        name: formData.name,
-        apiKey: formData.apiKey,
-        priority: formData.priority,
-        proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
-        testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: undefined
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!provider) return null;
-
-  return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} API Key`} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Production Key"
-        />
-        <div className="flex gap-2">
-          <Input
-            label="API Key"
-            type="password"
-            value={formData.apiKey}
-            onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
-              {validating ? "Checking..." : "Check"}
-            </Button>
-          </div>
-        </div>
-        {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
-        )}
-        {isCompatible && (
-          <p className="text-xs text-text-muted">
-            {isAnthropic 
-              ? `Validation checks ${providerName || "Anthropic Compatible"} by verifying the API key.`
-              : `Validation checks ${providerName || "OpenAI Compatible"} via /models on your base URL.`
-            }
-          </p>
-        )}
-        <Input
-          label="Priority"
-          type="number"
-          value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
-        />
-
-        <Select
-          label="Proxy Pool"
-          value={formData.proxyPoolId}
-          onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
-          options={[
-            { value: NONE_PROXY_POOL_VALUE, label: "None" },
-            ...(proxyPools || []).map((pool) => ({ value: pool.id, label: pool.name })),
-          ]}
-          placeholder="None"
-        />
-
-        {(proxyPools || []).length === 0 && (
-          <p className="text-xs text-text-muted">
-            No active proxy pools available. Create one in Proxy Pools page first.
-          </p>
-        )}
-
-        <p className="text-xs text-text-muted">
-          Legacy manual proxy fields are still accepted by API for backward compatibility.
-        </p>
-
-        <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-AddApiKeyModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  provider: PropTypes.string,
-  providerName: PropTypes.string,
-  isCompatible: PropTypes.bool,
-  isAnthropic: PropTypes.bool,
-  proxyPools: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-  })),
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-};
-
-function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    priority: 1,
-    apiKey: "",
-  });
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
-  const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (connection) {
-      setFormData({
-        name: connection.name || "",
-        priority: connection.priority || 1,
-        apiKey: "",
-      });
-      setTestResult(null);
-      setValidationResult(null);
-    }
-  }, [connection]);
-
-  const handleTest = async () => {
-    if (!connection?.provider) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
-      const data = await res.json();
-      setTestResult(data.valid ? "success" : "failed");
-    } catch {
-      setTestResult("failed");
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    if (!connection?.provider || !formData.apiKey) return;
-    setValidating(true);
-    setValidationResult(null);
-    try {
-      const res = await fetch("/api/providers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
-      });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch {
-      setValidationResult("failed");
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    setSaving(true);
-    try {
-      const updates = {
-        name: formData.name,
-        priority: formData.priority,
-      };
-      if (!isOAuth && formData.apiKey) {
-        updates.apiKey = formData.apiKey;
-        let isValid = validationResult === "success";
-        if (!isValid) {
-          try {
-            setValidating(true);
-            setValidationResult(null);
-            const res = await fetch("/api/providers/validate", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ provider: connection.provider, apiKey: formData.apiKey }),
-            });
-            const data = await res.json();
-            isValid = !!data.valid;
-            setValidationResult(isValid ? "success" : "failed");
-          } catch {
-            setValidationResult("failed");
-          } finally {
-            setValidating(false);
-          }
-        }
-        if (isValid) {
-          updates.testStatus = "active";
-          updates.lastError = null;
-          updates.lastErrorAt = null;
-        }
-      }
-      await onSave(updates);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!connection) return null;
-
-  const isOAuth = connection.authType === "oauth";
-  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
-
-  return (
-    <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
-      <div className="flex flex-col gap-4">
-          <Input
-            label="Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={isOAuth ? "Account name" : "Production Key"}
-          />
-        {isOAuth && connection.email && (
-          <div className="bg-sidebar/50 p-3 rounded-lg">
-            <p className="text-sm text-text-muted mb-1">Email</p>
-            <p className="font-medium">{connection.email}</p>
-          </div>
-        )}
-        <Input
-          label="Priority"
-          type="number"
-          value={formData.priority}
-          onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value) || 1 })}
-        />
-
-        {!isOAuth && (
-          <>
-            <div className="flex gap-2">
-              <Input
-                label="API Key"
-                type="password"
-                value={formData.apiKey}
-                onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder="Enter new API key"
-                hint="Leave blank to keep the current API key."
-                className="flex-1"
-              />
-              <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
-                  {validating ? "Checking..." : "Check"}
-                </Button>
-              </div>
-            </div>
-            {validationResult && (
-              <Badge variant={validationResult === "success" ? "success" : "error"}>
-                {validationResult === "success" ? "Valid" : "Invalid"}
-              </Badge>
-            )}
-          </>
-        )}
-
-        {/* Test Connection */}
-        {!isCompatible && (
-          <div className="flex items-center gap-3">
-            <Button onClick={handleTest} variant="secondary" disabled={testing}>
-              {testing ? "Testing..." : "Test Connection"}
-            </Button>
-            {testResult && (
-              <Badge variant={testResult === "success" ? "success" : "error"}>
-                {testResult === "success" ? "Valid" : "Failed"}
-              </Badge>
-            )}
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-EditConnectionModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  connection: PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-    email: PropTypes.string,
-    priority: PropTypes.number,
-    authType: PropTypes.string,
-    provider: PropTypes.string,
-    providerSpecificData: PropTypes.object,
-  }),
-  proxyPools: PropTypes.arrayOf(PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-  })),
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-};
-
-function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    prefix: "",
-    apiType: "chat",
-    baseUrl: "https://api.openai.com/v1",
-  });
-  const [saving, setSaving] = useState(false);
-  const [checkKey, setCheckKey] = useState("");
-  const [checkModelId, setCheckModelId] = useState("");
-  const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState(null);
-
-  useEffect(() => {
-    if (node) {
-      setFormData({
-        name: node.name || "",
-        prefix: node.prefix || "",
-        apiType: node.apiType || "chat",
-        baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
-      });
-    }
-  }, [node, isAnthropic]);
-
-  const apiTypeOptions = [
-    { value: "chat", label: "Chat Completions" },
-    { value: "responses", label: "Responses API" },
-  ];
-
-  const handleSubmit = async () => {
-    if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
-    setSaving(true);
-    try {
-      const payload = {
-        name: formData.name,
-        prefix: formData.prefix,
-        baseUrl: formData.baseUrl,
-      };
-      if (!isAnthropic) {
-        payload.apiType = formData.apiType;
-      }
-      await onSave(payload);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleValidate = async () => {
-    setValidating(true);
-    try {
-      const res = await fetch("/api/provider-nodes/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          baseUrl: formData.baseUrl,
-          apiKey: checkKey,
-          type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
-          modelId: checkModelId.trim() || undefined
-        }),
-      });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch {
-      setValidationResult("failed");
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  if (!node) return null;
-
-  return (
-    <Modal isOpen={isOpen} title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`} onClose={onClose}>
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
-          hint="Required. A friendly label for this node."
-        />
-        <Input
-          label="Prefix"
-          value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-          placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
-          hint="Required. Used as the provider prefix for model IDs."
-        />
-        {!isAnthropic && (
-          <Select
-            label="API Type"
-            options={apiTypeOptions}
-            value={formData.apiType}
-            onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
-          />
-        )}
-        <Input
-          label="Base URL"
-          value={formData.baseUrl}
-          onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
-          placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
-          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
-        />
-        <div className="flex gap-2">
-          <Input
-            label="API Key (for Check)"
-            type="password"
-            value={checkKey}
-            onChange={(e) => setCheckKey(e.target.value)}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
-              {validating ? "Checking..." : "Check"}
-            </Button>
-          </div>
-        </div>
-        <Input
-          label="Model ID (optional)"
-          value={checkModelId}
-          onChange={(e) => setCheckModelId(e.target.value)}
-          placeholder="e.g. my-model-id"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
-        />
-        {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
-        )}
-        <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || saving}>
-            {saving ? "Saving..." : "Save"}
-          </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-EditCompatibleNodeModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  node: PropTypes.shape({
-    id: PropTypes.string,
-    name: PropTypes.string,
-    prefix: PropTypes.string,
-    apiType: PropTypes.string,
-    baseUrl: PropTypes.string,
-  }),
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-  isAnthropic: PropTypes.bool,
-};
-
-function AddCustomModelModal({ isOpen, providerAlias, providerDisplayAlias, onSave, onClose }) {
-  const [modelId, setModelId] = useState("");
-  const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
-  const [testError, setTestError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) { setModelId(""); setTestStatus(null); setTestError(""); }
-  }, [isOpen]);
-
-  const handleTest = async () => {
-    if (!modelId.trim()) return;
-    setTestStatus("testing");
-    setTestError("");
-    try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${modelId.trim()}` }),
-      });
-      const data = await res.json();
-      setTestStatus(data.ok ? "ok" : "error");
-      setTestError(data.error || "");
-    } catch (err) {
-      setTestStatus("error");
-      setTestError(err.message);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!modelId.trim() || saving) return;
-    setSaving(true);
-    try {
-      await onSave(modelId.trim());
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter") handleTest();
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Custom Model">
-      <div className="flex flex-col gap-4">
-        <div>
-          <label className="text-sm font-medium mb-1.5 block">Model ID</label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={modelId}
-              onChange={(e) => { setModelId(e.target.value); setTestStatus(null); setTestError(""); }}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. claude-opus-4-5"
-              className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-              autoFocus
-            />
-            <Button
-              variant="secondary"
-              icon="science"
-              loading={testStatus === "testing"}
-              onClick={handleTest}
-              disabled={!modelId.trim() || testStatus === "testing"}
-            >
-              {testStatus === "testing" ? "Testing..." : "Test"}
-            </Button>
-          </div>
-          <p className="text-xs text-text-muted mt-1">
-            Sent to provider as: <code className="font-mono bg-sidebar px-1 rounded">{modelId.trim() || "model-id"}</code>
-          </p>
-        </div>
-
-        {/* Test result */}
-        {testStatus === "ok" && (
-          <div className="flex items-center gap-2 text-sm text-green-600">
-            <span className="material-symbols-outlined text-base">check_circle</span>
-            Model is reachable
-          </div>
-        )}
-        {testStatus === "error" && (
-          <div className="flex items-start gap-2 text-sm text-red-500">
-            <span className="material-symbols-outlined text-base shrink-0">cancel</span>
-            <span>{testError || "Model not reachable"}</span>
-          </div>
-        )}
-
-        <div className="flex gap-2 pt-1">
-          <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>
-          <Button
-            onClick={handleSave}
-            fullWidth
-            size="sm"
-            disabled={!modelId.trim() || saving}
-          >
-            {saving ? "Adding..." : "Add Model"}
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-AddCustomModelModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  providerAlias: PropTypes.string.isRequired,
-  providerDisplayAlias: PropTypes.string.isRequired,
-  onSave: PropTypes.func.isRequired,
-  onClose: PropTypes.func.isRequired,
-};
-

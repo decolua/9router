@@ -1,3 +1,166 @@
+# v0.4.8 (2026-04-28)
+
+## Features
+- Add Web Search & Web Fetch providers with Combo support — chain multiple search/fetch providers as a single virtual provider
+- Add Cloudflare AI provider support
+- Add provider filter and expiry sorting to quota dashboard (#769)
+
+## Improvements
+- Proxy-aware token refresh across executors (Antigravity, Base, Default, Github, Kiro)
+
+## Fixes
+- Fix granular `reasoning_effort` handling for Claude models on Copilot & Anthropic backend (#791)
+- Fix Antigravity INVALID_ARGUMENT errors and Copilot agent mode parity
+- Fix quota reset timestamp parsing (#768)
+
+# v0.4.6 (2026-04-25)
+
+## Features
+- Add BytePlus Provider
+- Add Codex support to image providers
+- Enhance image and embedding provider support
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
+# v0.4.5 (2026-04-24)
+
+## Improvements
+- Cap maximum cooldown for rate limit handling in account unavailability and single-model chat flows
+- Dynamic custom model fetching for model selection
+
+# v0.4.3 (2026-04-24)
+
+## Improvements
+- Improve in-app download/update UX on dashboard
+- Improve Codex provider rate limit handling with precise cooldown (`resetsAtMs`) and email backfill for OAuth accounts
+
+# v0.4.2 (2026-04-24)
+
+## Features
+- Add Azure OpenAI provider support
+- Add built-in Volcengine Ark provider support (#741)
+- Add GPT 5.5 model
+
+## Fixes
+- Enhance retry logic and configuration for HTTP status codes
+
+# v0.4.1 (2026-04-23)
+
+## Features
+- Add Hermes CLI tool with settings management and integration
+- Add in-app version update mechanism (appUpdater + /api/version/update)
+
+## Improvements
+- Strengthen CLI token validation for enhanced security
+- Enhance Sidebar layout for CLI tools
+- Update executors and runtime config
+
+# v0.3.98 (2026-04-22)
+
+## Features
+- Add RTK — filter context (ls/grep/find/.....) before sending to LLM to save tokens
+
+# v0.3.97 (2026-04-22)
+
+## Features
+- Add OpenCode Go provider and support for custom models
+- Add Text To Image provider
+- Support custom host URL for remote Ollama servers
+
+## Fixes
+- Fix copy to clipboard issue
+
+# v0.3.96 (2026-04-17)
+
+## Features
+- Add marked package for Markdown rendering
+- Enhance changelog styles
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb structure
+- Update Qwen executor for OAuth handling
+- Enhance error formatting to include low-level cause details
+- Refactor HeaderMenu to use MenuItem component
+- Improve LanguageSwitcher to support controlled open state
+- Update backoff configuration and improve CLI detection messages
+- Add installation guides for manual configuration in tool cards (Droid, Claude, OpenClaw)
+
+## Fixes
+- Fix Codex image URL fetches to await before sending upstream (#575)
+- Strip thinking/reasoning_effort for GitHub Copilot chat completions (#623)
+- Enable Codex Apply/Reset buttons when CLI is installed (#591)
+- Show manual config option when Claude CLI detection fails (#589)
+- Show manual config option when OpenClaw detection fails (#579)
+- Ensure LocalMutex acquire returns release callback correctly (#569)
+- Strip enumDescriptions from tool schema in antigravity-to-openai (#566)
+- Strip temperature parameter for gpt-5.4 model (#536)
+- Add Blackbox AI as a supported provider (#599)
+- Add multi-model support for Factory Droid CLI tool (#521)
+- Add GLM-5 and MiniMax-M2.5 models to Kiro provider (#580)
+- Fix usage tracking bug
+
+# v0.3.91 (2026-04-15)
+
+## Features
+- Add Kiro AWS Identity Center device flow for provider OAuth
+- Add TTS (Text-to-Speech) core handler and TTS models config
+- Add media providers dashboard page
+- Add suggested models API endpoint
+
+## Improvements
+- Refactor error handling to config-driven approach with centralized error rules
+- Refactor localDb and usageDb for cleaner structure
+
+## Fixes
+- Fix usage tracking bug
+
+# v0.3.90 (2026-04-14)
+
+## Features
+- Add proactive token refresh lead times for providers and Codex proxy management
+- Enhance CodexExecutor with compact URL support
+
+## Improvements
+- Enhance Windows Tailscale installation with curl support and fallback to well-known Windows path
+- Refactor execSync and spawn calls with windowsHide option for better Windows compatibility
+
+## Fixes
+- Fix noAuth support for providers and adjusted MITM restart settings
+- Bug fixes
+
+# v0.3.89 (2026-04-13)
+
+## Improvements
+- Improved dashboard access control by blocking tunnel/Tailscale access when disabled
+
+# v0.3.87 (2026-04-13)
+
+## Fixes
+- Fix codex cache session id
+
+# v0.3.86 (2026-04-13)
+
+## Features
+- Add provider models and thinking configurations for enhanced chat handling
+- Add Vercel relay support to proxy functionality
+- Add Vercel deploy endpoint for proxy pools management
+
+## Improvements
+- Enhance proxy functionality with new relay capabilities
+- Streamline GitHub Actions Docker publish workflow
+- Update Docker configuration and package management
+
+## Fixes
+- Remove obsolete 9remote installation/management APIs
+
+# v0.3.83 (2026-04-08)
+
+## Fixes
+- Fix OpenRouter custom models not showing after being added
+
 # Unreleased
 
 ## Features

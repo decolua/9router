@@ -69,7 +69,7 @@ export default function Modal({
       >
         {/* Header */}
         {(title || showCloseButton) && (
-          <div className="flex items-center justify-between p-6 border-b border-black/5 dark:border-white/5">
+          <div className="flex items-center justify-between p-2 border-b border-black/5 dark:border-white/5">
             <div className="flex items-center">
               <div className="flex items-center gap-2 mr-4">
                 <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
@@ -94,7 +94,7 @@ export default function Modal({
         )}
 
         {/* Body */}
-        <div className="p-6 max-h-[calc(80vh-140px)] overflow-y-auto">{children}</div>
+        <div className="p-6 max-h-[calc(85vh-100px)] overflow-y-auto">{children}</div>
 
         {/* Footer */}
         {footer && (

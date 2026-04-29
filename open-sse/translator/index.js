@@ -1,8 +1,11 @@
 import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHelper.js";
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
+import { cloakClaudeTools } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./helpers/openaiHelper.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
+import { AntigravityExecutor } from "../executors/antigravity.js";
+import { compressMessages, formatRtkLog } from "../rtk/index.js";
 
 // Registry for translators
 const requestRegistry = new Map();
@@ -50,10 +53,37 @@ function ensureInitialized() {
   require("./response/ollama-to-openai.js");
 }
 
+// Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
+function stripContentTypes(body, stripList = []) {
+  if (!stripList.length || !body.messages || !Array.isArray(body.messages)) return;
+  const imageTypes = new Set(["image_url", "image"]);
+  const audioTypes = new Set(["audio_url", "input_audio"]);
+  const shouldStrip = (type) => {
+    if (imageTypes.has(type)) return stripList.includes("image");
+    if (audioTypes.has(type)) return stripList.includes("audio");
+    return false;
+  };
+  for (const msg of body.messages) {
+    if (!Array.isArray(msg.content)) continue;
+    msg.content = msg.content.filter(part => !shouldStrip(part.type));
+    if (msg.content.length === 0) msg.content = "";
+  }
+}
+
 // Translate request: source -> openai -> target
-export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null) {
+export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, rtkEnabled = false, clientTool = null) {
   ensureInitialized();
   let result = body;
+
+  // RTK: compress tool_result content before any translation (shape-agnostic)
+  const rtkStats = compressMessages(result, rtkEnabled);
+  if (rtkStats) {
+    const line = formatRtkLog(rtkStats);
+    if (line) console.log(line);
+  }
+
+  // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
+  stripContentTypes(result, stripList);
 
   // Normalize thinking config: remove if lastMessage is not user
   normalizeThinkingConfig(result);
@@ -94,8 +124,30 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Final step: prepare request for Claude format endpoints
   if (targetFormat === FORMATS.CLAUDE) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
-    result = prepareClaudeRequest(result, provider, apiKey);
+    result = prepareClaudeRequest(result, provider, apiKey, connectionId);
   }
+
+  // Claude cloaking: rename client tools with _cc suffix (anti-ban)
+  // Only for claude provider (not anthropic-compatible-*) with OAuth token
+  if (provider === "claude") {
+    const apiKey = credentials?.accessToken || credentials?.apiKey || null;
+    if (apiKey?.includes("sk-ant-oat")) {
+      const { body: cloakedBody, toolNameMap } = cloakClaudeTools(result);
+      result = cloakedBody;
+      if (toolNameMap?.size > 0) {
+        result._toolNameMap = toolNameMap;
+      }
+    }
+  }
+
+  // Antigravity cloaking disabled
+  // if (provider === FORMATS.ANTIGRAVITY && body.userAgent !== FORMATS.ANTIGRAVITY) {
+  //   const { cloakedBody, toolNameMap } = AntigravityExecutor.cloakTools(result);
+  //   result = cloakedBody;
+  //   if (toolNameMap?.size > 0) {
+  //     result._toolNameMap = toolNameMap;
+  //   }
+  // }
 
   return result;
 }

@@ -1,7 +1,6 @@
 // Gemini helper functions for translator
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
-// Reference: CLIProxyAPI/internal/util/gemini_schema.go (removeUnsupportedKeywords)
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Basic constraints (not supported by Gemini API)
   "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum",
@@ -9,9 +8,9 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Claude rejects these in VALIDATED mode
   "default", "examples",
   // JSON Schema meta keywords
-  "$schema", "$defs", "definitions", "const", "$ref",
+  "$schema", "$defs", "definitions", "const", "$ref", "$comment",
   // Object validation keywords (not supported)
-  "additionalProperties", "propertyNames", "patternProperties",
+  "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions",
   // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)
   "anyOf", "oneOf", "allOf", "not",
   // Dependency keywords (not supported)
@@ -112,16 +111,18 @@ function removeUnsupportedKeywords(obj, keywords) {
     for (const item of obj) {
       removeUnsupportedKeywords(item, keywords);
     }
-  } else {
-    for (const key of Object.keys(obj)) {
-      if (keywords.includes(key) || key.startsWith("x-")) {
-        delete obj[key];
-      }
+    return;
+  }
+
+  for (const key of Object.keys(obj)) {
+    if (keywords.includes(key) || key.startsWith("x-")) {
+      delete obj[key];
+      continue;
     }
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        removeUnsupportedKeywords(value, keywords);
-      }
+
+    const value = obj[key];
+    if (value && typeof value === "object") {
+      removeUnsupportedKeywords(value, keywords);
     }
   }
 }
@@ -270,7 +271,6 @@ function flattenTypeArrays(obj) {
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
-// Reference: CLIProxyAPI/internal/util/gemini_schema.go
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
 

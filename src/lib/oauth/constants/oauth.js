@@ -57,10 +57,21 @@ export const GEMINI_CONFIG = {
 // Qwen OAuth Configuration (Device Code Flow with PKCE)
 export const QWEN_CONFIG = {
   clientId: "f0304373b74a44d2b584a3fb70ca9e56",
-  deviceCodeUrl: "https://chat.qwen.ai/api/v1/oauth2/device/code",
-  tokenUrl: "https://chat.qwen.ai/api/v1/oauth2/token",
+  deviceCodeUrl: "https://qwen.ai/api/v1/oauth2/device/code",
+  tokenUrl: "https://qwen.ai/api/v1/oauth2/token",
   scope: "openid profile email model.completion",
   codeChallengeMethod: "S256",
+};
+
+// Qoder OAuth Configuration (Device Token Flow)
+export const QODER_CONFIG = {
+  apiBaseUrl: "https://api2.qoder.sh",
+  deviceTokenUrl: "https://api2.qoder.sh/api/v1/deviceToken/poll",
+  deviceRefreshUrl: "https://api2.qoder.sh/api/v1/deviceToken/refresh",
+  refreshUrl: "https://api2.qoder.sh/api/v3/user/refresh_token",
+  userInfoUrl: "https://api2.qoder.sh/api/v1/userinfo",
+  statusUrl: "https://api2.qoder.sh/api/v3/user/status",
+  loginUrl: "https://qoder.com/login",
 };
 
 // iFlow OAuth Configuration (Authorization Code)
@@ -178,7 +189,7 @@ export const CURSOR_CONFIG = {
   agentEndpoint: "https://agent.api5.cursor.sh", // Privacy mode
   agentNonPrivacyEndpoint: "https://agentn.api5.cursor.sh", // Non-privacy mode
   // Client metadata
-  clientVersion: "0.48.6",
+  clientVersion: "3.1.0",
   clientType: "ide",
   // Token storage locations (for user reference)
   tokenStoragePaths: {
@@ -216,6 +227,31 @@ export const CLINE_CONFIG = {
   refreshUrl: "https://api.cline.bot/api/v1/auth/refresh",
 };
 
+// GitLab Duo OAuth Configuration (Authorization Code Flow with PKCE)
+// Supports both OAuth (PKCE) and Personal Access Token (PAT) modes
+export const GITLAB_CONFIG = {
+  defaultBaseUrl: "https://gitlab.com",
+  authorizeUrlPath: "/oauth/authorize",
+  tokenUrlPath: "/oauth/token",
+  userInfoUrlPath: "/api/v4/user",
+  scope: "api read_user",
+  codeChallengeMethod: "S256",
+};
+
+// CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
+// Step 1: POST /v2/plugin/auth/state?platform=CLI → get { state, authUrl }
+// Step 2: Open authUrl in browser
+// Step 3: Poll POST /v2/plugin/auth/token with state until success
+export const CODEBUDDY_CONFIG = {
+  baseUrl: "https://copilot.tencent.com",
+  stateUrl: "https://copilot.tencent.com/v2/plugin/auth/state",
+  tokenUrl: "https://copilot.tencent.com/v2/plugin/auth/token",
+  refreshUrl: "https://copilot.tencent.com/v2/plugin/auth/token/refresh",
+  userAgent: "CLI/2.63.2 CodeBuddy/2.63.2",
+  platform: "CLI",
+  pollInterval: 5000,
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -225,6 +261,7 @@ export const PROVIDERS = {
   CODEX: "codex",
   GEMINI: "gemini-cli",
   QWEN: "qwen",
+  QODER: "qoder",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",
   OPENAI: "openai",
@@ -234,4 +271,6 @@ export const PROVIDERS = {
   KIMI_CODING: "kimi-coding",
   KILOCODE: "kilocode",
   CLINE: "cline",
+  GITLAB: "gitlab",
+  CODEBUDDY: "codebuddy",
 };

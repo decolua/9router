@@ -13,10 +13,14 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [subagentModel, setSubagentModel] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [subagentModalOpen, setSubagentModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [selectedModels, setSelectedModels] = useState([]);
+  const [activeModel, setActiveModel] = useState("");
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -36,10 +40,18 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
     if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
-  // Sync model from existing config
+  // Sync models from existing config
   useEffect(() => {
-    if (status?.config?.model?.startsWith("9router/")) {
-      setSelectedModel(status.config.model.replace("9router/", ""));
+    if (status?.opencode?.models) {
+      setSelectedModels(status.opencode.models);
+    }
+    if (status?.opencode?.activeModel) {
+      setActiveModel(status.opencode.activeModel);
+    }
+    
+    // Parse subagent settings from agent.explorer if exists
+    if (status?.config?.agent?.explorer?.model?.startsWith("9router/")) {
+      setSubagentModel(status.config.agent.explorer.model.replace("9router/", ""));
     }
   }, [status]);
 
@@ -94,7 +106,13 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       const res = await fetch("/api/cli-tools/opencode-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, model: selectedModel }),
+        body: JSON.stringify({ 
+          baseUrl: getEffectiveBaseUrl(), 
+          apiKey: keyToUse, 
+          models: selectedModels,
+          activeModel: activeModel === "" ? "" : (activeModel || selectedModels[0]),
+          subagentModel: subagentModel
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -119,6 +137,9 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
+        setSubagentModel("");
+        setSelectedModels([]);
+        setActiveModel("");
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -135,6 +156,15 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
+    const modelsToShow = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
+    const activeModelToShow = activeModel || selectedModels[0] || modelsToShow[0];
+    const effectiveSubagentModel = subagentModel || activeModelToShow;
+
+    const modelsObj = {};
+    modelsToShow.forEach(m => {
+      modelsObj[m] = { name: m };
+    });
+
     return [{
       filename: "~/.config/opencode/opencode.json",
       content: JSON.stringify({
@@ -142,10 +172,17 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
           "9router": {
             npm: "@ai-sdk/openai-compatible",
             options: { baseURL: getEffectiveBaseUrl(), apiKey: keyToUse },
-            models: { [selectedModel || "provider/model-id"]: { name: selectedModel || "provider/model-id" } },
+            models: modelsObj,
           },
         },
-        model: `9router/${selectedModel || "provider/model-id"}`,
+        model: `9router/${activeModelToShow}`,
+        agent: {
+          explorer: {
+            description: "Fast explorer subagent for codebase exploration",
+            mode: "subagent",
+            model: `9router/${effectiveSubagentModel}`
+          }
+        }
       }, null, 2),
     }];
   };
@@ -181,16 +218,24 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
           {!checking && status && !status.installed && (
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                <span className="material-symbols-outlined text-yellow-500">warning</span>
-                <div className="flex-1">
-                  <p className="font-medium text-yellow-600 dark:text-yellow-400">OpenCode CLI not installed</p>
-                  <p className="text-sm text-text-muted">Please install OpenCode CLI to use auto-apply feature.</p>
+              <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-yellow-500">warning</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">OpenCode CLI not detected locally</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                  </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
-                  <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
-                  {showInstallGuide ? "Hide" : "How to Install"}
-                </Button>
+                <div className="flex items-center gap-2 pl-9">
+                  <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-yellow-700 dark:!text-yellow-300 hover:!bg-yellow-500/30">
+                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                    Manual Config
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
+                    <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
+                    {showInstallGuide ? "Hide" : "How to Install"}
+                  </Button>
+                </div>
               </div>
               {showInstallGuide && (
                 <div className="p-4 bg-surface border border-border rounded-lg">
@@ -254,13 +299,113 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                   )}
                 </div>
 
-                {/* Model */}
+                {/* Models */}
+                <div className="flex items-start gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                      {selectedModels.length === 0 ? (
+                        <span className="text-xs text-text-muted">No models selected</span>
+                      ) : (
+                        selectedModels.map((model) => (
+                          <span
+                            key={model}
+                            onClick={async () => {
+                              if (model === activeModel) {
+                                try {
+                                  const res = await fetch("/api/cli-tools/opencode-settings", {
+                                    method: "PATCH",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ clearActiveModel: true }),
+                                  });
+                                  if (res.ok) {
+                                    setActiveModel("");
+                                    checkStatus();
+                                  }
+                                } catch (error) {
+                                  console.log("Error clearing active model:", error);
+                                }
+                              } else {
+                                setActiveModel(model);
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
+                              model === activeModel
+                                ? "bg-primary/10 text-primary border border-primary"
+                                : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
+                            }`}
+                            title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
+                          >
+                            {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
+                            {model}
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const res = await fetch(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
+                                  if (res.ok) {
+                                    const newModels = selectedModels.filter((m) => m !== model);
+                                    setSelectedModels(newModels);
+                                    if (activeModel === model) {
+                                      setActiveModel("");
+                                    }
+                                    checkStatus();
+                                  }
+                                } catch (error) {
+                                  console.log("Error removing model:", error);
+                                }
+                              }}
+                              className="ml-0.5 hover:text-red-500"
+                            >
+                              <span className="material-symbols-outlined text-[12px]">close</span>
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
+                      <span className="text-xs text-text-muted">
+                        {selectedModels.length > 0 && activeModel ? (
+                          <>Active: <span className="text-primary">{activeModel}</span></>
+                        ) : selectedModels.length > 0 ? (
+                          <span className="text-yellow-500">Click a model to set/clear active</span>
+                        ) : (
+                          "Select models to add"
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subagent Model */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Subagent Model</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
-                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  <input 
+                    type="text" 
+                    value={subagentModel} 
+                    onChange={(e) => setSubagentModel(e.target.value)} 
+                    placeholder={selectedModel || "provider/model-id (defaults to main model)"} 
+                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
+                  />
+                  <button 
+                    onClick={() => setSubagentModalOpen(true)} 
+                    disabled={!activeProviders?.length} 
+                    className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                  >
+                    Select Model
+                  </button>
+                  {subagentModel && (
+                    <button 
+                      onClick={() => setSubagentModel("")} 
+                      className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" 
+                      title="Clear (will use main model)"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -272,7 +417,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
               )}
 
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!status.has9Router} loading={restoring}>
@@ -290,11 +435,27 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       <ModelSelectModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSelect={(model) => { setSelectedModel(model.value); setModalOpen(false); }}
-        selectedModel={selectedModel}
+        onSelect={(model) => { 
+          if (!selectedModels.includes(model.value)) {
+            setSelectedModels([...selectedModels, model.value]);
+            if (!activeModel) setActiveModel(model.value);
+          }
+          setModalOpen(false);
+        }}
+        selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for OpenCode"
+        title="Add Model for OpenCode"
+      />
+
+      <ModelSelectModal
+        isOpen={subagentModalOpen}
+        onClose={() => setSubagentModalOpen(false)}
+        onSelect={(model) => { setSubagentModel(model.value); setSubagentModalOpen(false); }}
+        selectedModel={subagentModel}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        title="Select Subagent Model for OpenCode"
       />
 
       <ManualConfigModal

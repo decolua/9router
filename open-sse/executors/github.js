@@ -103,6 +103,62 @@ export class GithubExecutor extends BaseExecutor {
     return sanitized;
   }
 
+  // Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
+  requiresMaxCompletionTokens(model) {
+    return /gpt-5|o[134]-/i.test(model);
+  }
+
+  // Some models (like gpt-5.4) don't support the temperature parameter
+  supportsTemperature(model) {
+    // gpt-5.4 and similar newer models don't support temperature
+    return !/gpt-5\.4/i.test(model);
+  }
+
+  // GitHub Copilot /chat/completions rejects Claude-style thinking payloads
+  // (OpenClaw sends thinking: { type: "enabled" } → upstream 400).
+  // GPT-5 family on Copilot DOES honor reasoning_effort, so only strip for Claude. (#713)
+  supportsThinking(model) {
+    return !/claude/i.test(model);
+  }
+
+  // reasoning_effort works for GPT-5 family AND Claude Opus 4.6 / Sonnet 4.6
+  // on GitHub Copilot. Only strip for models that don't support it:
+  // Claude Haiku 4.5, Claude Opus 4.7 (rejected upstream).
+  supportsReasoningEffort(model) {
+    const m = model.toLowerCase();
+    // Claude models that DO support reasoning_effort
+    if (/claude.*opus.*4\.6/i.test(m) || /claude.*sonnet.*4\.6/i.test(m)) return true;
+    // All other Claude models: strip
+    if (/claude/i.test(model)) return false;
+    // GPT-5 family, Gemini, etc.: keep
+    return true;
+  }
+
+  transformRequest(model, body, stream, credentials) {
+    const transformed = { ...body };
+    if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+      transformed.max_completion_tokens = transformed.max_tokens;
+      delete transformed.max_tokens;
+    }
+    // Strip temperature for models that don't support it
+    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+      delete transformed.temperature;
+    }
+    // Always strip Claude-style thinking payload (Copilot doesn't understand it)
+    if (!this.supportsThinking(model)) {
+      delete transformed.thinking;
+    }
+    // "none" means no thinking — strip it so models that don't support "none" don't 400
+    if (transformed.reasoning_effort === "none") {
+      delete transformed.reasoning_effort;
+    }
+    // Strip reasoning_effort only for models that reject it
+    if (!this.supportsReasoningEffort(model) && transformed.reasoning_effort !== undefined) {
+      delete transformed.reasoning_effort;
+    }
+    return transformed;
+  }
+
   async execute(options) {
     const { model, log } = options;
 
@@ -124,7 +180,7 @@ export class GithubExecutor extends BaseExecutor {
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
 
-      if (errorBody.includes("not accessible via the /chat/completions endpoint")) {
+      if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
         return this.executeWithResponsesEndpoint(options);
@@ -215,9 +271,9 @@ export class GithubExecutor extends BaseExecutor {
     };
   }
 
-  async refreshCopilotToken(githubAccessToken, log) {
+  async refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
     try {
-      const response = await fetch("https://api.github.com/copilot_internal/v2/token", {
+      const response = await proxyAwareFetch("https://api.github.com/copilot_internal/v2/token", {
         headers: {
           "Authorization": `token ${githubAccessToken}`,
           "User-Agent": GITHUB_COPILOT.USER_AGENT,
@@ -226,7 +282,7 @@ export class GithubExecutor extends BaseExecutor {
           "Accept": "application/json",
           "x-github-api-version": GITHUB_COPILOT.API_VERSION
         }
-      });
+      }, proxyOptions);
       if (!response.ok) {
         const errorText = await response.text();
         log?.error?.("TOKEN", `Copilot token refresh failed: ${response.status} ${errorText}`);
@@ -241,18 +297,22 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshGitHubToken(refreshToken, log) {
+  async refreshGitHubToken(refreshToken, log, proxyOptions = null) {
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.github.token, {
+      const params = {
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: this.config.clientId,
+      };
+      if (this.config.clientSecret) {
+        params.client_secret = this.config.clientSecret;
+      }
+
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.github.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret
-        })
-      });
+        body: new URLSearchParams(params)
+      }, proxyOptions);
       if (!response.ok) return null;
       const tokens = await response.json();
       log?.info?.("TOKEN", "GitHub token refreshed");
@@ -263,13 +323,13 @@ export class GithubExecutor extends BaseExecutor {
     }
   }
 
-  async refreshCredentials(credentials, log) {
-    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log);
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log, proxyOptions);
 
     if (!copilotResult && credentials.refreshToken) {
-      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log);
+      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log, proxyOptions);
       if (githubTokens?.accessToken) {
-        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log);
+        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log, proxyOptions);
         if (copilotResult) {
           return { ...githubTokens, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
         }

@@ -37,6 +37,11 @@ function normalizeProxyPoolUpdate(body = {}) {
     updates.strictProxy = body?.strictProxy === true;
   }
 
+  if (Object.prototype.hasOwnProperty.call(body, "type")) {
+    const validTypes = ["http", "vercel"];
+    updates.type = validTypes.includes(body?.type) ? body.type : "http";
+  }
+
   return { updates };
 }
 

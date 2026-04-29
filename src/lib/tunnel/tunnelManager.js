@@ -1,12 +1,14 @@
 import crypto from "crypto";
-import { loadState, saveState } from "./state.js";
+import { loadState, saveState, generateShortId } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
+import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleLoggedIn, startLogin, startDaemonWithPassword } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
+import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+
+initDbHooks(getSettings, updateSettings);
 
 const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://9router.com";
 const MACHINE_ID_SALT = "9router-tunnel-salt";
-const SHORT_ID_LENGTH = 6;
-const SHORT_ID_CHARS = "abcdefghijklmnpqrstuvwxyz23456789";
 const RECONNECT_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
 const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_MS.length;
 
@@ -14,6 +16,7 @@ let isReconnecting = false;
 let exitHandlerRegistered = false;
 let reconnectTimeoutId = null;
 let manualDisabled = false;
+let activeLocalPort = null;
 
 export function isTunnelManuallyDisabled() {
   return manualDisabled;
@@ -21,14 +24,6 @@ export function isTunnelManuallyDisabled() {
 
 export function isTunnelReconnecting() {
   return isReconnecting;
-}
-
-function generateShortId() {
-  let result = "";
-  for (let i = 0; i < SHORT_ID_LENGTH; i++) {
-    result += SHORT_ID_CHARS.charAt(Math.floor(Math.random() * SHORT_ID_CHARS.length));
-  }
-  return result;
 }
 
 function getMachineId() {
@@ -41,9 +36,8 @@ function getMachineId() {
   }
 }
 
-/**
- * Register quick tunnel URL to worker (called on start and URL change)
- */
+// ─── Cloudflare Tunnel ───────────────────────────────────────────────────────
+
 async function registerTunnelUrl(shortId, tunnelUrl) {
   await fetch(`${WORKER_URL}/api/tunnel/register`, {
     method: "POST",
@@ -54,20 +48,23 @@ async function registerTunnelUrl(shortId, tunnelUrl) {
 
 export async function enableTunnel(localPort = 20128) {
   manualDisabled = false;
+  activeLocalPort = localPort;
+
   if (isCloudflaredRunning()) {
     const existing = loadState();
     if (existing?.tunnelUrl) {
-      return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, alreadyRunning: true };
+      const publicUrl = `https://r${existing.shortId}.9router.com`;
+      return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
     }
   }
 
-  killCloudflared();
+  killCloudflared(localPort);
 
   const machineId = getMachineId();
   const existing = loadState();
   const shortId = existing?.shortId || generateShortId();
 
-  // onUrlUpdate: only called when URL changes AFTER initial connect (not on first resolve)
+  // onUrlUpdate: called when URL changes AFTER initial connect
   const onUrlUpdate = async (url) => {
     if (manualDisabled) return;
     await registerTunnelUrl(shortId, url);
@@ -75,15 +72,12 @@ export async function enableTunnel(localPort = 20128) {
     await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
   };
 
-  // Spawn quick tunnel — resolve returns initial URL, onUrlUpdate handles subsequent changes
   const { tunnelUrl } = await spawnQuickTunnel(localPort, onUrlUpdate);
 
-  // Register initial URL (exactly once)
   await registerTunnelUrl(shortId, tunnelUrl);
   saveState({ shortId, machineId, tunnelUrl });
   await updateSettings({ tunnelEnabled: true, tunnelUrl });
 
-  // Set exit handler only once (not on every reconnect)
   if (!exitHandlerRegistered) {
     setUnexpectedExitHandler(() => {
       if (!isReconnecting) scheduleReconnect(0);
@@ -105,29 +99,25 @@ async function scheduleReconnect(attempt) {
   await new Promise((r) => { reconnectTimeoutId = setTimeout(r, delay); });
 
   try {
-    if (manualDisabled) {
-      isReconnecting = false;
-      return;
-    }
+    if (manualDisabled) { isReconnecting = false; return; }
     const settings = await getSettings();
-    if (!settings.tunnelEnabled) {
-      isReconnecting = false;
-      return;
-    }
+    if (!settings.tunnelEnabled) { isReconnecting = false; return; }
     await enableTunnel();
     console.log("[Tunnel] Reconnected successfully");
     isReconnecting = false;
   } catch (err) {
     console.log(`[Tunnel] Reconnect attempt ${attempt + 1} failed:`, err.message);
     isReconnecting = false;
-    const nextAttempt = attempt + 1;
-    if (nextAttempt < MAX_RECONNECT_ATTEMPTS) scheduleReconnect(nextAttempt);
-    else console.log("[Tunnel] All reconnect attempts exhausted");
+    const next = attempt + 1;
+    if (next < MAX_RECONNECT_ATTEMPTS) scheduleReconnect(next);
+    else {
+      console.log("[Tunnel] All reconnect attempts exhausted, disabling tunnel");
+      await updateSettings({ tunnelEnabled: false });
+    }
   }
 }
 
 export async function disableTunnel() {
-  // Block any reconnect attempts before killing the process
   manualDisabled = true;
   isReconnecting = true;
   if (reconnectTimeoutId) {
@@ -137,7 +127,7 @@ export async function disableTunnel() {
   setUnexpectedExitHandler(null);
   exitHandlerRegistered = false;
 
-  killCloudflared();
+  killCloudflared(activeLocalPort);
 
   const state = loadState();
   if (state) {
@@ -145,10 +135,7 @@ export async function disableTunnel() {
   }
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
-
-  // Unblock reconnect lock — manualDisabled stays true to block Watchdog/NetworkMonitor
   isReconnecting = false;
-
   return { success: true };
 }
 
@@ -164,6 +151,61 @@ export async function getTunnelStatus() {
     tunnelUrl: state?.tunnelUrl || "",
     shortId,
     publicUrl,
+    running
+  };
+}
+
+// ─── Tailscale Funnel ─────────────────────────────────────────────────────────
+
+export async function enableTailscale(localPort = 20128) {
+  // Ensure daemon is running (needs sudo for TUN mode)
+  const sudoPass = getCachedPassword() || await loadEncryptedPassword() || "";
+  await startDaemonWithPassword(sudoPass);
+
+  // Generate hostname from machine ID (same as tunnel shortId prefix)
+  const existing = loadState();
+  const shortId = existing?.shortId || generateShortId();
+  const tsHostname = shortId;
+
+  // If not logged in, return auth URL for user to authenticate
+  if (!isTailscaleLoggedIn()) {
+    const loginResult = await startLogin(tsHostname);
+    if (loginResult.authUrl) {
+      return { success: false, needsLogin: true, authUrl: loginResult.authUrl };
+    }
+  }
+
+  stopFunnel();
+  const result = await startFunnel(localPort);
+
+  // Funnel not enabled on tailnet — return enable URL
+  if (result.funnelNotEnabled) {
+    return { success: false, funnelNotEnabled: true, enableUrl: result.enableUrl };
+  }
+
+  // Verify device is actually connected (BackendState=Running + funnel active)
+  if (!isTailscaleLoggedIn() || !isTailscaleRunning()) {
+    stopFunnel();
+    return { success: false, error: "Tailscale not connected. Device may have been removed. Please re-login." };
+  }
+
+  await updateSettings({ tailscaleEnabled: true, tailscaleUrl: result.tunnelUrl });
+  return { success: true, tunnelUrl: result.tunnelUrl };
+}
+
+export async function disableTailscale() {
+  // Only reset funnel — keep tailscaled daemon running to avoid breaking other apps using Tailscale
+  stopFunnel();
+  await updateSettings({ tailscaleEnabled: false, tailscaleUrl: "" });
+  return { success: true };
+}
+
+export async function getTailscaleStatus() {
+  const settings = await getSettings();
+  const running = isTailscaleRunning();
+  return {
+    enabled: settings.tailscaleEnabled === true && running,
+    tunnelUrl: settings.tailscaleUrl || "",
     running
   };
 }

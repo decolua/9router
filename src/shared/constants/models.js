@@ -6,6 +6,7 @@ export {
   isValidModel as isValidModelCore,
   findModelName,
   getModelTargetFormat,
+  getModelStrip,
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId
 } from "open-sse/config/providerModels.js";

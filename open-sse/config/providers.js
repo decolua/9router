@@ -33,17 +33,16 @@ export const PROVIDERS = {
   claude: {
     baseUrl: "https://api.anthropic.com/v1/messages",
     format: "claude",
-    retry: { 429: 0 },
     headers: {
       "Anthropic-Version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05",
+      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
       "Anthropic-Dangerous-Direct-Browser-Access": "true",
-      "User-Agent": "claude-cli/2.1.63 (external, cli)",
+      "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
       "X-App": "cli",
       "X-Stainless-Helper-Method": "stream",
       "X-Stainless-Retry-Count": "0",
-      "X-Stainless-Runtime-Version": "v24.3.0",
-      "X-Stainless-Package-Version": "0.74.0",
+      "X-Stainless-Runtime-Version": "v24.14.0",
+      "X-Stainless-Package-Version": "0.80.0",
       "X-Stainless-Runtime": "node",
       "X-Stainless-Lang": "js",
       "X-Stainless-Arch": mapStainlessArch(),
@@ -73,16 +72,11 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
     baseUrl: "https://portal.qwen.ai/v1/chat/completions",
     format: "openai",
-    headers: {
-      "User-Agent": "google-api-nodejs-client/9.15.1",
-      "X-Goog-Api-Client": "gl-node/22.17.0"
-    },
     clientId: "f0304373b74a44d2b584a3fb70ca9e56",
     tokenUrl: "https://chat.qwen.ai/api/v1/oauth2/token",
     authUrl: "https://chat.qwen.ai/api/v1/oauth2/device/code"
@@ -95,6 +89,15 @@ export const PROVIDERS = {
     clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
     tokenUrl: "https://iflow.cn/oauth/token",
     authUrl: "https://iflow.cn/oauth"
+  },
+  qoder: {
+    baseUrl: "https://api.qoder.com/v1/chat/completions",
+    format: "openai",
+    headers: { "User-Agent": "Qoder-Cli" },
+    clientId: process.env.QODER_OAUTH_CLIENT_ID || "10009311001",
+    clientSecret: process.env.QODER_OAUTH_CLIENT_SECRET || "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
+    tokenUrl: "https://api.qoder.com/oauth/token",
+    authUrl: "https://qoder.com/oauth/authorize"
   },
   antigravity: {
     baseUrls: [
@@ -153,6 +156,16 @@ export const PROVIDERS = {
     format: "openai",
     headers: {}
   },
+  "volcengine-ark": {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  byteplus: {
+    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
   github: {
     baseUrl: "https://api.githubcopilot.com/chat/completions",
     responsesUrl: "https://api.githubcopilot.com/responses",
@@ -168,11 +181,13 @@ export const PROVIDERS = {
       "X-Initiator": "user",
       "Accept": "application/json",
       "Content-Type": "application/json"
-    }
+    },
+    clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
     baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
     format: "kiro",
+    retry: { 429: 2 },
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/vnd.amazon.eventstream",
@@ -193,7 +208,7 @@ export const PROVIDERS = {
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    clientVersion: "1.1.3"
+    clientVersion: "3.1.0"
   },
   "kimi-coding": {
     baseUrl: KIMI_CODING_BASE_URL,
@@ -316,4 +331,52 @@ export const PROVIDERS = {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "openai"
   },
+  // GitLab Duo - OpenAI-compatible chat endpoint
+  gitlab: {
+    baseUrl: "https://gitlab.com/api/v4/chat/completions",
+    format: "openai",
+  },
+  // CodeBuddy (Tencent) - uses device_code polling auth, no chat completions baseUrl needed
+  codebuddy: {
+    baseUrl: "https://copilot.tencent.com/v1/chat/completions",
+    format: "openai",
+  },
+  opencode: {
+    baseUrl: "https://opencode.ai",
+    format: "openai",
+    headers: { "x-opencode-client": "desktop" },
+    noAuth: true
+  },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "grok-web": {
+    baseUrl: "https://grok.com/rest/app-chat/conversations/new",
+    format: "grok-web",
+    authType: "cookie"
+  },
+  "perplexity-web": {
+    baseUrl: "https://www.perplexity.ai/rest/sse/perplexity_ask",
+    format: "perplexity-web",
+    authType: "cookie"
+  },
+  azure: {
+    baseUrl: "",
+    format: "openai",
+    headers: {}
+  },
+  // Cloudflare Workers AI - {accountId} resolved from credentials.providerSpecificData.accountId
+  "cloudflare-ai": {
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
+    format: "openai"
+  },
 };
+
+export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
+
+export function resolveOllamaLocalHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}
