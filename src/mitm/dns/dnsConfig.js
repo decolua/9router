@@ -63,6 +63,16 @@ function isSudoAvailable() {
   }
 }
 
+/** True when /bin/sh exists (missing in some minimal Docker images). */
+function isShAvailable() {
+  try {
+    execSync("command -v sh", { stdio: "ignore", windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Execute command with sudo password via stdin (macOS/Linux only).
  * Without sudo in PATH (containers), runs via sh — same user, no elevation.
@@ -70,6 +80,10 @@ function isSudoAvailable() {
 function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
     const useSudo = isSudoAvailable();
+    const hasSh = isShAvailable();
+    if (!hasSh) {
+      return reject(new Error("sh is not available in this environment (minimal Docker image?). Cannot execute shell commands."));
+    }
     const child = useSudo
       ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
       : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
