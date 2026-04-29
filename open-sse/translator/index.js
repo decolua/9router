@@ -155,7 +155,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, return as-is
+  // Null chunk is a flush signal; same-format passthrough should not emit a synthetic payload.
+  if (chunk == null && sourceFormat === targetFormat) {
+    return [];
+  }
+  // If same format, skip translation steps
   if (sourceFormat === targetFormat) {
     return [chunk];
   }

@@ -49,6 +49,11 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/superpowers/
+!docs/superpowers/specs/
+!docs/superpowers/specs/*.md
+!docs/superpowers/plans/
+!docs/superpowers/plans/*.md
 test/*
 bin/*
 open-sse/test/*
@@ -60,7 +65,7 @@ Thanks.md
 PUBLIC.en.md
 PR/*
 package-lock.json
-
+.worktrees/
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
