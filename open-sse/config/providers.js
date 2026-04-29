@@ -313,7 +313,8 @@ export const PROVIDERS = {
   },
   ollama: {
     baseUrl: "https://ollama.com/api/chat",
-    format: "ollama"
+    format: "ollama",
+    noAuth: true
   },
   "ollama-local": {
     baseUrl: "http://localhost:11434/api/chat",
