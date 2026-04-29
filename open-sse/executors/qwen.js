@@ -87,7 +87,7 @@ export class QwenExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     let next = body && typeof body === "object" ? { ...body } : body;
-    if (stream && next?.messages && !next.stream_options) {
+    if (stream && next?.messages && !next.stream_options && !next.thinking && !next.enable_thinking && next.stream !== false) {
       next.stream_options = { include_usage: true };
     }
     next = sanitizeQwenThinkingToolChoice(next);
