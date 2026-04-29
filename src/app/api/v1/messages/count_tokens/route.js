@@ -33,7 +33,7 @@ export async function POST(request) {
       totalChars += msg.content.length;
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part.type === "text" && part.text) {
+        if (part && part.type === "text" && part.text) {
           totalChars += part.text.length;
         }
       }

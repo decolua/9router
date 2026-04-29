@@ -158,7 +158,7 @@ function convertClaudeMessage(msg) {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
             resultContent = block.content
-              .filter(c => c.type === "text")
+              .filter(c => c && c.type === "text")
               .map(c => c.text)
               .join("\n") || JSON.stringify(block.content);
           } else if (block.content) {

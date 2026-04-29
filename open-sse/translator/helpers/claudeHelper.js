@@ -62,8 +62,8 @@ export function fixToolUseOrdering(messages) {
       const msgContent = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
 
       // Put tool_result first, then other content
-      const toolResults = [...lastContent.filter(b => b.type === "tool_result"), ...msgContent.filter(b => b.type === "tool_result")];
-      const otherContent = [...lastContent.filter(b => b.type !== "tool_result"), ...msgContent.filter(b => b.type !== "tool_result")];
+      const toolResults = [...lastContent.filter(b => b && b.type === "tool_result"), ...msgContent.filter(b => b && b.type === "tool_result")];
+      const otherContent = [...lastContent.filter(b => b && b.type !== "tool_result"), ...msgContent.filter(b => b && b.type !== "tool_result")];
 
       last.content = [...toolResults, ...otherContent];
     } else {

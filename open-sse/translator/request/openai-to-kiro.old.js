@@ -54,7 +54,7 @@ function convertMessages(messages, tools, model) {
       
       // Check if this user message contains tool_result blocks
       if (Array.isArray(msg.content)) {
-        const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
+        const toolResultBlocks = msg.content.filter(c => c && c.type === "tool_result");
         if (toolResultBlocks.length > 0) {
           toolResults = toolResultBlocks.map(block => {
             const text = Array.isArray(block.content) 
@@ -123,10 +123,10 @@ function convertMessages(messages, tools, model) {
       let toolUses = [];
       
       if (Array.isArray(msg.content)) {
-        const textBlocks = msg.content.filter(c => c.type === "text");
+        const textBlocks = msg.content.filter(c => c && c.type === "text");
         textContent = textBlocks.map(b => b.text).join("\n").trim();
         
-        const toolUseBlocks = msg.content.filter(c => c.type === "tool_use");
+        const toolUseBlocks = msg.content.filter(c => c && c.type === "tool_use");
         toolUses = toolUseBlocks;
       } else if (typeof msg.content === "string") {
         textContent = msg.content.trim();

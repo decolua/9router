@@ -52,13 +52,13 @@ export function openaiToClaudeRequest(model, body, stream) {
     for (const msg of nonSystemMessages) {
       const newRole = (msg.role === "user" || msg.role === "tool") ? "user" : "assistant";
       const blocks = getContentBlocksFromMessage(msg, toolNameMap);
-      const hasToolUse = blocks.some(b => b.type === "tool_use");
-      const hasToolResult = blocks.some(b => b.type === "tool_result");
+      const hasToolUse = blocks.some(b => b && b.type === "tool_use");
+      const hasToolResult = blocks.some(b => b && b.type === "tool_result");
 
       // Separate tool_result from other content
       if (hasToolResult) {
-        const toolResultBlocks = blocks.filter(b => b.type === "tool_result");
-        const otherBlocks = blocks.filter(b => b.type !== "tool_result");
+        const toolResultBlocks = blocks.filter(b => b && b.type === "tool_result");
+        const otherBlocks = blocks.filter(b => b && b.type !== "tool_result");
 
         flushCurrentMessage();
 
@@ -307,7 +307,7 @@ function convertOpenAIToolChoice(choice) {
 function extractTextContent(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.filter(c => c.type === "text").map(c => c.text).join("\n");
+    return content.filter(c => c && c.type === "text").map(c => c.text).join("\n");
   }
   return "";
 }
