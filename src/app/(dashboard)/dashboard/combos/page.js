@@ -140,7 +140,7 @@ export default function CombosPage() {
       </div>
 
       {/* Combos List */}
-      {combos.length === 0 ? (
+      {(combos == null || combos.length === 0) ? (
         <Card>
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
@@ -203,17 +203,17 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
           <div className="min-w-0 flex-1">
             <code className="text-sm font-medium font-mono truncate">{combo.name}</code>
             <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-              {combo.models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
-              ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
-                    {model}
-                  </code>
-                ))
-              )}
-              {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+              {combo.models && combo.models.length > 0 ? (
+                  combo.models.slice(0, 3).map((model, index) => (
+                    <code key={index} className="text-[10px] font-mono bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-text-muted">
+                      {typeof model === 'string' ? model : String(model)}
+                    </code>
+                  ))
+                ) : (
+                  <span className="text-xs text-text-muted italic">No models</span>
+                )}
+              {(combo.models && combo.models.length > 3) && (
+                <span className="text-[10px] text-text-muted">+{(combo.models?.length || 0) - 3} more</span>
               )}
             </div>
           </div>
@@ -342,7 +342,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const [models, setModels] = useState([]);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -362,6 +362,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   useEffect(() => {
     if (isOpen) fetchModalData();
   }, [isOpen]);
+
+  useEffect(() => {
+    setModels(combo?.models || []);
+  }, [combo]);
 
   const validateName = (value) => {
     if (!value.trim()) {
