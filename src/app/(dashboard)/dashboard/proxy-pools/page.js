@@ -41,6 +41,8 @@ export default function ProxyPoolsPage() {
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [testingId, setTestingId] = useState(null);
+  const [selectedProxyPoolIds, setSelectedProxyPoolIds] = useState(new Set());
+  const [deletingIds, setDeletingIds] = useState(new Set());
   const notify = useNotificationStore();
 
   const fetchProxyPools = useCallback(async () => {
@@ -117,14 +119,102 @@ export default function ProxyPoolsPage() {
     }
   };
 
+  const toggleSelection = (id) => {
+    setSelectedProxyPoolIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedProxyPoolIds.size === proxyPools.length) {
+      setSelectedProxyPoolIds(new Set());
+    } else {
+      setSelectedProxyPoolIds(new Set(proxyPools.map((p) => p.id)));
+    }
+  };
+
+  const handleBatchDeleteSelected = async () => {
+    const selected = Array.from(selectedProxyPoolIds);
+    if (selected.length === 0) return;
+    const confirmed = confirm(`Delete ${selected.length} selected proxy pool(s)?`);
+    if (!confirmed) return;
+
+    setDeletingIds(new Set(selected));
+    let deleted = 0;
+    let failed = 0;
+
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          deleted += 1;
+        } else {
+          failed += 1;
+        }
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setDeletingIds(new Set());
+    setSelectedProxyPoolIds(new Set());
+    await fetchProxyPools();
+
+    if (failed === 0) {
+      notify.success(`Deleted ${deleted} proxy pool(s)`);
+    } else {
+      notify.warning(`Deleted ${deleted}, failed ${failed}`);
+    }
+  };
+
+  const handleBatchToggleActive = async (makeActive) => {
+    const selected = Array.from(selectedProxyPoolIds);
+    if (selected.length === 0) return;
+
+    let updated = 0;
+    let failed = 0;
+
+    for (const id of selected) {
+      try {
+        const res = await fetch(`/api/proxy-pools/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: makeActive }),
+        });
+        if (res.ok) updated += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setSelectedProxyPoolIds(new Set());
+    await fetchProxyPools();
+
+    if (failed === 0) {
+      notify.success(`${updated} proxy pool(s) ${makeActive ? "activated" : "deactivated"}`);
+    } else {
+      notify.warning(`Updated ${updated}, failed ${failed}`);
+    }
+  };
+
   const handleDelete = async (proxyPool) => {
-    const deleting = confirm(`Delete proxy pool \"${proxyPool.name}\"?`);
+    const deleting = confirm(`Delete proxy pool "${proxyPool.name}"?`);
     if (!deleting) return;
 
+    setDeletingIds((prev) => new Set(prev).add(proxyPool.id));
     try {
       const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
       if (res.ok) {
         setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
+        setSelectedProxyPoolIds((prev) => {
+          const next = new Set(prev);
+          next.delete(proxyPool.id);
+          return next;
+        });
         notify.success("Proxy pool deleted");
         return;
       }
@@ -138,6 +228,12 @@ export default function ProxyPoolsPage() {
     } catch (error) {
       console.log("Error deleting proxy pool:", error);
       notify.error("Failed to delete proxy pool");
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(proxyPool.id);
+        return next;
+      });
     }
   };
 
@@ -323,6 +419,8 @@ export default function ProxyPoolsPage() {
     [proxyPools]
   );
 
+  const hasSelection = selectedProxyPoolIds.size > 0;
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -353,6 +451,47 @@ export default function ProxyPoolsPage() {
         </div>
       </div>
 
+      {hasSelection && (
+        <Card className="flex items-center justify-between gap-3 p-3">
+          <span className="text-sm">
+            {selectedProxyPoolIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="check"
+              onClick={() => handleBatchToggleActive(true)}
+            >
+              Activate
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="cancel"
+              onClick={() => handleBatchToggleActive(false)}
+            >
+              Deactivate
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              icon="delete"
+              onClick={handleBatchDeleteSelected}
+            >
+              Delete
+            </Button>
+            <button
+              onClick={() => setSelectedProxyPoolIds(new Set())}
+              className="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted"
+              title="Clear selection"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -373,6 +512,17 @@ export default function ProxyPoolsPage() {
           <div className="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
             {proxyPools.map((pool) => (
               <div key={pool.id} className="py-3 flex items-center justify-between gap-3 group">
+                {/* Selection checkbox */}
+                <div className="flex items-center pr-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedProxyPoolIds.has(pool.id)}
+                    onChange={() => toggleSelection(pool.id)}
+                    className="w-4 h-4 rounded border-border cursor-pointer accent-primary"
+                  />
+                </div>
+
+                {/* Content */}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-medium truncate">{pool.name}</p>
@@ -399,6 +549,7 @@ export default function ProxyPoolsPage() {
                   </p>
                 </div>
 
+                {/* Actions */}
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     onClick={() => handleTest(pool.id)}
@@ -422,10 +573,16 @@ export default function ProxyPoolsPage() {
                   </button>
                   <button
                     onClick={() => handleDelete(pool)}
-                    className="p-2 rounded hover:bg-red-500/10 text-red-500"
+                    disabled={deletingIds.has(pool.id)}
+                    className="p-2 rounded hover:bg-red-500/10 text-red-500 disabled:opacity-50"
                     title="Delete"
                   >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                    <span
+                      className="material-symbols-outlined text-[18px]"
+                      style={deletingIds.has(pool.id) ? { animation: "spin 1s linear infinite" } : undefined}
+                    >
+                      {deletingIds.has(pool.id) ? "progress_activity" : "delete"}
+                    </span>
                   </button>
                 </div>
               </div>
