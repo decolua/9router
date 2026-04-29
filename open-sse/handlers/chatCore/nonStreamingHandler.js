@@ -117,8 +117,8 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return result;
   }
 
-  // Ollama
-  if (targetFormat === FORMATS.OLLAMA) {
+  // Ollama  (sourceFormat = OLLAMA means provider returned Ollama-format body)
+  if (sourceFormat === FORMATS.OLLAMA) {
     return ollamaBodyToOpenAI(responseBody);
   }
 
