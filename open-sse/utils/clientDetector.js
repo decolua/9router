@@ -20,9 +20,16 @@ const NATIVE_PAIRS = {
 export function detectClientTool(headers = {}, body = {}) {
   const ua = (headers["user-agent"] || "").toLowerCase();
   const xApp = (headers["x-app"] || "").toLowerCase();
+  const openaiIntent = (headers["openai-intent"] || "").toLowerCase();
+  const initiator = (headers["x-initiator"] || headers["X-Initiator"] || "").toLowerCase();
 
   // Antigravity: detected via body field (not header)
   if (body.userAgent === "antigravity") return "antigravity";
+
+  // GitHub Copilot / OAI compatible extension using Copilot chat headers
+  if (ua.includes("githubcopilotchat") || openaiIntent === "conversation-panel" || initiator === "user") {
+    return "github-copilot";
+  }
 
   // Claude Code / Claude CLI
   if (ua.includes("claude-cli") || ua.includes("claude-code") || xApp === "cli") return "claude";

@@ -1,13 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 export default function GetStarted() {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
 
   const handleCopy = (text) => {
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copy(text, "landing");
   };
 
   return (
@@ -68,7 +66,7 @@ export default function GetStarted() {
                   <span className="text-green-400">$</span>
                   <span className="text-white">npx 9router</span>
                   <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
-                    {copied ? "✓ Copied" : "Copy"}
+                    {copied === "landing" ? "✓ Copied" : "Copy"}
                   </span>
                 </div>
                 

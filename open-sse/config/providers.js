@@ -72,7 +72,6 @@ export const PROVIDERS = {
       "User-Agent": "codex-cli/1.0.18 (macOS; arm64)"
     },
     clientId: "app_EMoamEEZ73f0CkXaXp7hrann",
-    clientSecret: "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",
     tokenUrl: "https://auth.openai.com/oauth/token"
   },
   qwen: {
@@ -154,6 +153,16 @@ export const PROVIDERS = {
   },
   "alicode-intl": {
     baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "volcengine-ark": {
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  byteplus: {
+    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
     format: "openai",
     headers: {}
   },
@@ -335,6 +344,39 @@ export const PROVIDERS = {
   opencode: {
     baseUrl: "https://opencode.ai",
     format: "openai",
-    headers: { "x-opencode-client": "desktop" }
+    headers: { "x-opencode-client": "desktop" },
+    noAuth: true
+  },
+  "opencode-go": {
+    baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
+    format: "openai",
+    headers: {}
+  },
+  "grok-web": {
+    baseUrl: "https://grok.com/rest/app-chat/conversations/new",
+    format: "grok-web",
+    authType: "cookie"
+  },
+  "perplexity-web": {
+    baseUrl: "https://www.perplexity.ai/rest/sse/perplexity_ask",
+    format: "perplexity-web",
+    authType: "cookie"
+  },
+  azure: {
+    baseUrl: "",
+    format: "openai",
+    headers: {}
+  },
+  // Cloudflare Workers AI - {accountId} resolved from credentials.providerSpecificData.accountId
+  "cloudflare-ai": {
+    baseUrl: "https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1/chat/completions",
+    format: "openai"
   },
 };
+
+export const OLLAMA_LOCAL_DEFAULT_HOST = "http://localhost:11434";
+
+export function resolveOllamaLocalHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  return (raw || OLLAMA_LOCAL_DEFAULT_HOST).replace(/\/$/, "");
+}

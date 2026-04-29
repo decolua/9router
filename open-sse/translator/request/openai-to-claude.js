@@ -179,6 +179,25 @@ Respond ONLY with the JSON object, no other text.`);
     };
   }
 
+  // Map OpenAI reasoning_effort → Claude thinking.budget_tokens
+  // When client sends reasoning_effort (OpenAI format) but no explicit thinking block,
+  // translate to Claude's native format.
+  if (body.reasoning_effort && !result.thinking) {
+    const effortToBudget = {
+      none:   0,
+      low:    4096,
+      medium: 8192,
+      high:   16384,
+      xhigh:  32768,
+    };
+    const budget = effortToBudget[body.reasoning_effort.toLowerCase()];
+    if (budget === 0) {
+      // none → no thinking
+    } else if (budget) {
+      result.thinking = { type: "enabled", budget_tokens: budget };
+    }
+  }
+
   // Attach toolNameMap to result for response translation
   if (toolNameMap.size > 0) {
     result._toolNameMap = toolNameMap;

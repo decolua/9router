@@ -1,8 +1,14 @@
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
-// Token expiry buffer (refresh if expires within 5 minutes)
+// Default token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
+
+// Get provider-specific refresh lead time, falls back to default buffer
+export function getRefreshLeadMs(provider) {
+  return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
+}
 
 /**
  * Refresh OAuth access token using refresh token
@@ -237,7 +243,7 @@ export async function refreshCodexToken(refreshToken, log) {
  * Specialized refresh for Kiro (AWS CodeWhisperer) tokens
  * Supports both AWS SSO OIDC (Builder ID/IDC) and Social Auth (Google/GitHub)
  */
-export async function refreshKiroToken(refreshToken, providerSpecificData, log) {
+export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
   const authMethod = providerSpecificData?.authMethod;
   const clientId = providerSpecificData?.clientId;
   const clientSecret = providerSpecificData?.clientSecret;
@@ -251,7 +257,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
       ? `https://oidc.${region}.amazonaws.com/token`
       : "https://oidc.us-east-1.amazonaws.com/token";
 
-    const response = await fetch(endpoint, {
+    const response = await proxyAwareFetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -263,7 +269,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
         refreshToken: refreshToken,
         grantType: "refresh_token",
       }),
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -289,7 +295,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
   }
 
   // Social Auth (Google/GitHub) - use Kiro's refresh endpoint
-  const response = await fetch(PROVIDERS.kiro.tokenUrl, {
+  const response = await proxyAwareFetch(PROVIDERS.kiro.tokenUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -299,7 +305,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log) 
     body: JSON.stringify({
       refreshToken: refreshToken,
     }),
-  });
+  }, proxyOptions);
 
   if (!response.ok) {
     const errorText = await response.text();

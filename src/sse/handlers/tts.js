@@ -10,7 +10,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 
 // Providers that require stored credentials (not noAuth)
-const CREDENTIALED_PROVIDERS = new Set(["openai", "elevenlabs"]);
+const CREDENTIALED_PROVIDERS = new Set(["openai", "elevenlabs", "openrouter"]);
 
 export async function handleTts(request) {
   let body;

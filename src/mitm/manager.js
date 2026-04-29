@@ -12,7 +12,7 @@ const IS_MAC = process.platform === "darwin";
 const { generateCert } = require("./cert/generate");
 const { installCert, uninstallCert } = require("./cert/install");
 const { isCertExpired } = require("./cert/rootCA");
-const { MITM_DIR } = require("./paths");
+const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
@@ -48,7 +48,7 @@ let mitmRestartCount = 0;
 let mitmLastStartTime = 0;
 let mitmIsRestarting = false;
 
-function resolveServerPath() {
+function resolveBundledServerPath() {
   if (process.env.MITM_SERVER_PATH) return process.env.MITM_SERVER_PATH;
   const sibling = path.join(__dirname, "server.js");
   if (fs.existsSync(sibling)) return sibling;
@@ -59,7 +59,38 @@ function resolveServerPath() {
   return fromCwd;
 }
 
-const SERVER_PATH = resolveServerPath();
+// Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
+// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+function ensureRuntimeServer(bundledPath) {
+  try {
+    if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
+
+    // Dev mode: source file has relative requires (./logger, ./config...),
+    // only the bundled file inside node_modules is self-contained + safe to copy.
+    if (!bundledPath.includes(`${path.sep}node_modules${path.sep}`)) {
+      return bundledPath;
+    }
+
+    const runtimeDir = path.join(DATA_DIR, "runtime", "mitm");
+    const runtimeServer = path.join(runtimeDir, "server.js");
+
+    // Skip copy if sizes match (bundle unchanged since last run)
+    if (fs.existsSync(runtimeServer)) {
+      try {
+        if (fs.statSync(bundledPath).size === fs.statSync(runtimeServer).size) return runtimeServer;
+      } catch { /* recopy */ }
+    }
+
+    fs.mkdirSync(runtimeDir, { recursive: true });
+    fs.copyFileSync(bundledPath, runtimeServer);
+    return runtimeServer;
+  } catch (e) {
+    try { log(`[MITM] runtime copy failed: ${e.message}`); } catch { /* ignore */ }
+    return bundledPath;
+  }
+}
+
+const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 
@@ -76,7 +107,7 @@ function getProcessUsingPort443() {
         if (processMatch) return processMatch[1].replace(".exe", "");
       }
     } else {
-      const result = execSync("lsof -i :443", { encoding: "utf8" });
+      const result = execSync("lsof -i :443", { encoding: "utf8", windowsHide: true });
       const lines = result.trim().split("\n");
       if (lines.length > 1) return lines[1].split(/\s+/)[0];
     }
@@ -110,9 +141,9 @@ function killProcess(pid, force = false, sudoPassword = null) {
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
     if (sudoPassword) {
       const { execWithPassword } = require("./dns/dnsConfig");
-      execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, () => { }));
+      execWithPassword(cmd, sudoPassword).catch(() => exec(cmd, { windowsHide: true }, () => { }));
     } else {
-      exec(cmd, () => { });
+      exec(cmd, { windowsHide: true }, () => { });
     }
   }
 }
@@ -205,7 +236,7 @@ function getPort443Owner(sudoPassword) {
     if (IS_WIN) {
       const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
         `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
-        `if ($c) { $c.OwningProcess } else { 0 }"`;
+        `if ($c) { $c.OwningProcess } else { 0 }"`;    
       exec(psCmd, { windowsHide: true }, (err, stdout) => {
         if (err) return resolve(null);
         const pid = parseInt(stdout.trim(), 10);
@@ -216,14 +247,14 @@ function getPort443Owner(sudoPassword) {
         });
       });
     } else {
-      exec(`ps aux | grep "[s]erver.js"`, (err, stdout) => {
-        if (!stdout?.trim()) return resolve(null);
-        for (const line of stdout.split("\n")) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parseInt(parts[1], 10);
-          if (!isNaN(pid)) return resolve({ pid, name: "node" });
-        }
-        resolve(null);
+      // Only find process actually LISTENING on TCP port 443
+      exec("lsof -nP -iTCP:443 -sTCP:LISTEN -t", { windowsHide: true }, (err, stdout) => {
+        if (err || !stdout?.trim()) return resolve(null);
+        const pid = parseInt(stdout.trim().split("\n")[0], 10);
+        if (!pid || isNaN(pid)) return resolve(null);
+        exec(`ps -p ${pid} -o comm=`, { windowsHide: true }, (e2, out2) => {
+          resolve({ pid, name: (out2?.trim() || "unknown") });
+        });
       });
     }
   });
@@ -252,7 +283,7 @@ async function killLeftoverMitm(sudoPassword) {
         const { execWithPassword } = require("./dns/dnsConfig");
         await execWithPassword(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, sudoPassword).catch(() => { });
       } else {
-        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, () => { });
+        exec(`pkill -SIGKILL -f "${escaped}" 2>/dev/null || true`, { windowsHide: true }, () => { });
       }
       await new Promise(r => setTimeout(r, 500));
     } catch { /* ignore */ }
@@ -391,8 +422,9 @@ async function startServer(apiKey, sudoPassword) {
     const portStatus = await checkPort443Free();
     if (portStatus === "in-use" || portStatus === "no-permission") {
       const owner = await getPort443Owner(sudoPassword);
-      if (owner && owner.name === "node") {
-        log(`Killing orphan node process on port 443 (PID ${owner.pid})...`);
+      const ownerIsNode = owner && (owner.name === "node" || owner.name.includes("node"));
+      if (ownerIsNode) {
+        log(`Killing orphan node process on port 443 (PID ${owner.pid}, name=${owner.name})...`);
         try {
           const { execWithPassword } = require("./dns/dnsConfig");
           await execWithPassword(`kill -9 ${owner.pid}`, sudoPassword);
@@ -489,7 +521,7 @@ async function startServer(apiKey, sudoPassword) {
     ].join(" ");
     serverProcess = spawn(
       "sudo", ["-S", "-E", "sh", "-c", inlineCmd],
-      { detached: false, stdio: ["pipe", "pipe", "pipe"] }
+      { detached: false, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] }
     );
     serverProcess.stdin.write(`${sudoPassword}\n`);
     serverProcess.stdin.end();
@@ -497,6 +529,7 @@ async function startServer(apiKey, sudoPassword) {
     // Docker/minimal images: no sudo — same as Windows-style direct spawn
     serverProcess = spawn(process.execPath, [SERVER_PATH], {
       detached: false,
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,

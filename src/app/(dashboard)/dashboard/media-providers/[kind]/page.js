@@ -1,9 +1,9 @@
 "use client";
 
-import { useParams, notFound } from "next/navigation";
+import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Card, Badge } from "@/shared/components";
+import { Card, Badge, Button, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
@@ -14,7 +14,7 @@ function getEffectiveStatus(conn) {
   return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
 }
 
-function MediaProviderCard({ provider, kind, connections }) {
+function MediaProviderCard({ provider, kind, connections, isCustom }) {
   const providerInfo = AI_PROVIDERS[provider.id];
   const isNoAuth = !!providerInfo?.noAuth;
 
@@ -60,6 +60,7 @@ function MediaProviderCard({ provider, kind, connections }) {
           <div>
             <h3 className="font-semibold text-sm">{provider.name}</h3>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
               {renderStatus()}
             </div>
           </div>
@@ -71,23 +72,60 @@ function MediaProviderCard({ provider, kind, connections }) {
 
 export default function MediaProviderKindPage() {
   const { kind } = useParams();
+  const router = useRouter();
   const [connections, setConnections] = useState([]);
+  const [customNodes, setCustomNodes] = useState([]);
+  const [showAddCustomEmbedding, setShowAddCustomEmbedding] = useState(false);
+
+  // webSearch/webFetch listing pages are merged into /web
+  useEffect(() => {
+    if (kind === "webSearch" || kind === "webFetch") {
+      router.replace("/dashboard/media-providers/web");
+    }
+  }, [kind, router]);
 
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
-  if (!kindConfig) return notFound();
-
-  const providers = getProvidersByKind(kind);
+  const isEmbedding = kind === "embedding";
 
   useEffect(() => {
+    if (!kindConfig) return;
     fetch("/api/providers", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setConnections(d.connections || []))
       .catch(() => {});
-  }, []);
+    if (isEmbedding) {
+      fetch("/api/provider-nodes", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d) => setCustomNodes((d.nodes || []).filter((n) => n.type === "custom-embedding")))
+        .catch(() => {});
+    }
+  }, [isEmbedding, kindConfig]);
+
+  if (!kindConfig) return notFound();
+
+  const providers = getProvidersByKind(kind);
+
+  // Map custom nodes to MediaProviderCard shape
+  const customProviders = customNodes.map((n) => ({
+    id: n.id,
+    name: n.name || "Custom Embedding",
+    color: "#6366F1",
+    textIcon: "CE",
+  }));
+
+  const allProviders = [...providers, ...customProviders];
 
   return (
     <div className="flex flex-col gap-6">
-      {providers.length === 0 ? (
+      {isEmbedding && (
+        <div className="flex items-center justify-end">
+          <Button size="sm" icon="add" onClick={() => setShowAddCustomEmbedding(true)}>
+            Add Custom Embedding
+          </Button>
+        </div>
+      )}
+
+      {allProviders.length === 0 ? (
         <div className="text-center py-12 border border-dashed border-border rounded-xl text-text-muted text-sm">
           No providers support <strong>{kindConfig.label}</strong> yet.
         </div>
@@ -101,7 +139,27 @@ export default function MediaProviderKindPage() {
               connections={connections}
             />
           ))}
+          {customProviders.map((provider) => (
+            <MediaProviderCard
+              key={provider.id}
+              provider={provider}
+              kind={kind}
+              connections={connections}
+              isCustom
+            />
+          ))}
         </div>
+      )}
+
+      {isEmbedding && (
+        <AddCustomEmbeddingModal
+          isOpen={showAddCustomEmbedding}
+          onClose={() => setShowAddCustomEmbedding(false)}
+          onCreated={(node) => {
+            setCustomNodes((prev) => [...prev, node]);
+            setShowAddCustomEmbedding(false);
+          }}
+        />
       )}
     </div>
   );

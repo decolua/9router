@@ -25,6 +25,45 @@ import {
   CODEBUDDY_CONFIG,
 } from "./constants/oauth";
 
+const BASE64_BLOCK_SIZE = 4;
+
+/**
+ * Decode JWT access token and extract a stable account identifier for display/upsert.
+ * @param {string} accessToken
+ * @returns {string|undefined}
+ */
+function decodeJwtPayload(jwt) {
+  try {
+    if (!jwt || typeof jwt !== "string") return null;
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
+    const padded = base64 + "=".repeat(missingPadding);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function extractEmailFromAccessToken(accessToken) {
+  const payload = decodeJwtPayload(accessToken);
+  if (!payload) return undefined;
+  return payload.email || payload.preferred_username || payload.sub || undefined;
+}
+
+// Extract codex account info from id_token
+export function extractCodexAccountInfo(idToken) {
+  const payload = decodeJwtPayload(idToken);
+  if (!payload) return {};
+  const chatgpt = payload["https://api.openai.com/auth"] || {};
+  return {
+    email: payload.email,
+    chatgptAccountId: chatgpt.chatgpt_account_id,
+    chatgptPlanType: chatgpt.chatgpt_plan_type,
+  };
+}
+
 // Provider configurations
 const PROVIDERS = {
   claude: {
@@ -128,12 +167,23 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => ({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      idToken: tokens.id_token,
-      expiresIn: tokens.expires_in,
-    }),
+    mapTokens: (tokens) => {
+      const info = extractCodexAccountInfo(tokens.id_token);
+      const mapped = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token,
+        expiresIn: tokens.expires_in,
+      };
+      if (info.email) mapped.email = info.email;
+      if (info.chatgptAccountId || info.chatgptPlanType) {
+        mapped.providerSpecificData = {
+          chatgptAccountId: info.chatgptAccountId,
+          chatgptPlanType: info.chatgptPlanType,
+        };
+      }
+      return mapped;
+    },
   },
 
   "gemini-cli": {
@@ -652,9 +702,17 @@ const PROVIDERS = {
     config: KIRO_CONFIG,
     flowType: "device_code",
     // Kiro uses AWS SSO OIDC - requires client registration first
-    requestDeviceCode: async (config) => {
+    requestDeviceCode: async (config, codeChallenge, options = {}) => {
+      const trimmedRegion = typeof options.region === "string" ? options.region.trim() : "";
+      const region = trimmedRegion || "us-east-1";
+      const trimmedStartUrl = typeof options.startUrl === "string" ? options.startUrl.trim() : "";
+      const startUrl = trimmedStartUrl || config.startUrl;
+      const authMethod = options.authMethod === "idc" ? "idc" : "builder-id";
+      const registerClientUrl = `https://oidc.${region}.amazonaws.com/client/register`;
+      const deviceAuthUrl = `https://oidc.${region}.amazonaws.com/device_authorization`;
+
       // Step 1: Register client with AWS SSO OIDC
-      const registerRes = await fetch(config.registerClientUrl, {
+      const registerRes = await fetch(registerClientUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -677,7 +735,7 @@ const PROVIDERS = {
       const clientInfo = await registerRes.json();
 
       // Step 2: Request device authorization
-      const deviceRes = await fetch(config.deviceAuthUrl, {
+      const deviceRes = await fetch(deviceAuthUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -686,7 +744,7 @@ const PROVIDERS = {
         body: JSON.stringify({
           clientId: clientInfo.clientId,
           clientSecret: clientInfo.clientSecret,
-          startUrl: config.startUrl,
+          startUrl,
         }),
       });
 
@@ -708,10 +766,15 @@ const PROVIDERS = {
         // Store client credentials for token exchange
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
+        _region: region,
+        _authMethod: authMethod,
+        _startUrl: startUrl,
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
-      const response = await fetch(config.tokenUrl, {
+      const region = extraData?._region || "us-east-1";
+      const tokenUrl = `https://oidc.${region}.amazonaws.com/token`;
+      const response = await fetch(tokenUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -745,6 +808,9 @@ const PROVIDERS = {
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
+            _region: extraData?._region,
+            _authMethod: extraData?._authMethod,
+            _startUrl: extraData?._startUrl,
           },
         };
       }
@@ -758,14 +824,19 @@ const PROVIDERS = {
       };
     },
     mapTokens: (tokens) => {
+      const email = extractEmailFromAccessToken(tokens.access_token);
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
+        email,
         providerSpecificData: {
           profileArn: tokens?.profile_arn || null,
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
+          region: tokens._region || "us-east-1",
+          authMethod: tokens._authMethod || "builder-id",
+          startUrl: tokens._startUrl || KIRO_CONFIG.startUrl,
         },
       };
       return mapped;
@@ -1158,12 +1229,12 @@ export async function exchangeTokens(providerName, code, redirectUri, codeVerifi
 /**
  * Request device code (for device_code flow)
  */
-export async function requestDeviceCode(providerName, codeChallenge) {
+export async function requestDeviceCode(providerName, codeChallenge, options) {
   const provider = getProvider(providerName);
   if (provider.flowType !== "device_code") {
     throw new Error(`Provider ${providerName} does not support device code flow`);
   }
-  return await provider.requestDeviceCode(provider.config, codeChallenge);
+  return await provider.requestDeviceCode(provider.config, codeChallenge, options || {});
 }
 
 /**
@@ -1214,3 +1285,40 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
 }
 
+// Run-once guard across the process lifetime
+let codexBackfillDone = false;
+
+// Backfill email + chatgpt account info for existing codex OAuth connections missing them
+export async function backfillCodexEmails() {
+  if (codexBackfillDone) return;
+  codexBackfillDone = true;
+  try {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const connections = await getProviderConnections();
+    const targets = connections.filter((c) => {
+      if (c.provider !== "codex" || c.authType !== "oauth" || !c.idToken) return false;
+      const hasEmail = !!c.email;
+      const hasAccountInfo = !!c.providerSpecificData?.chatgptAccountId;
+      return !hasEmail || !hasAccountInfo;
+    });
+    for (const conn of targets) {
+      const info = extractCodexAccountInfo(conn.idToken);
+      if (!info.email && !info.chatgptAccountId) continue;
+      const patch = {};
+      if (!conn.email && info.email) patch.email = info.email;
+      if (info.chatgptAccountId || info.chatgptPlanType) {
+        patch.providerSpecificData = {
+          ...(conn.providerSpecificData || {}),
+          chatgptAccountId: info.chatgptAccountId,
+          chatgptPlanType: info.chatgptPlanType,
+        };
+      }
+      if (Object.keys(patch).length) {
+        await updateProviderConnection(conn.id, patch);
+      }
+    }
+  } catch (err) {
+    codexBackfillDone = false;
+    console.log("backfillCodexEmails failed:", err?.message || err);
+  }
+}

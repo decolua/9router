@@ -10,7 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -138,31 +138,52 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const res = await fetch(`/api/oauth/${provider}/device-code`);
+        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        if (provider === "kiro" && idcConfig?.startUrl) {
+          deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
+          if (idcConfig.region) {
+            deviceCodeUrl.searchParams.set("region", idcConfig.region);
+          }
+          deviceCodeUrl.searchParams.set("auth_method", "idc");
+        }
+        const res = await fetch(deviceCodeUrl.toString());
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
 
         setDeviceData(data);
 
-        // Open verification URL
-        const verifyUrl = data.verification_uri_complete || data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, "_blank");
-
         // Pass extraData for Kiro (contains _clientId, _clientSecret)
-        const extraData = provider === "kiro" ? { _clientId: data._clientId, _clientSecret: data._clientSecret } : null;
+        const extraData = provider === "kiro"
+          ? {
+              _clientId: data._clientId,
+              _clientSecret: data._clientSecret,
+              _region: data._region,
+              _authMethod: data._authMethod,
+              _startUrl: data._startUrl,
+            }
+          : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
         return;
       }
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
+      const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
       let redirectUri;
+      let codexProxyActive = false;
+
       if (provider === "codex") {
-        // Codex requires fixed port 1455
+        // Try to start proxy on fixed port 1455 → redirect callback to app port
+        try {
+          const proxyRes = await fetch(`/api/oauth/codex/start-proxy?app_port=${appPort}`);
+          const proxyData = await proxyRes.json();
+          codexProxyActive = proxyData.success;
+        } catch {
+          codexProxyActive = false;
+        }
+        // Always use fixed port 1455 as redirect_uri (Codex requirement)
         redirectUri = "http://localhost:1455/auth/callback";
       } else {
-        // Use app's current port for OAuth callback
-        const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-        redirectUri = `http://localhost:${port}/callback`;
+        redirectUri = `http://localhost:${appPort}/callback`;
       }
 
       // Build authorize URL, optionally passing provider-specific metadata (e.g. gitlab clientId)
@@ -177,16 +198,21 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       setAuthData({ ...data, redirectUri });
 
-      // For Codex or non-localhost: use manual input mode
-      if (provider === "codex" || !isLocalhost) {
+      if (provider === "codex" && codexProxyActive) {
+        // Proxy active: callback will redirect to app port automatically
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (!isLocalhost || provider === "codex") {
+        // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
         // Localhost (non-Codex): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
-
-        // Check if popup was blocked
         if (!popupRef.current) {
           setStep("input");
         }
@@ -195,7 +221,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling]);
+  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -209,8 +235,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       pollingAbortRef.current = false;
       startOAuthFlow();
     } else if (!isOpen) {
-      // Abort polling when modal closes
+      // Abort polling and cleanup proxy when modal closes
       pollingAbortRef.current = true;
+      if (provider === "codex") {
+        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+      }
     }
   }, [isOpen, provider, startOAuthFlow]);
 
@@ -319,12 +348,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
-  // Clear session on modal close
+  // Clear session on modal close + cleanup proxy
   const handleClose = useCallback(() => {
+    if (provider === "codex") {
+      fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+    }
     onClose();
-  }, [onClose]);
+  }, [onClose, provider]);
 
   if (!provider || !providerInfo) return null;
+  const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
 
   return (
     <Modal isOpen={isOpen} title={`Connect ${providerInfo.name}`} onClose={handleClose} size="lg">
@@ -352,18 +385,28 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           <>
             <div className="text-center py-4">
               <p className="text-sm text-text-muted mb-4">
-                Visit the URL below and enter the code:
+                Visit the login URL below and authorize:
               </p>
               <div className="bg-sidebar p-4 rounded-lg mb-4">
-                <p className="text-xs text-text-muted mb-1">Verification URL</p>
+                <p className="text-xs text-text-muted mb-1">Login URL</p>
                 <div className="flex items-center gap-2">
-                  <code className="flex-1 text-sm break-all">{deviceData.verification_uri}</code>
+                  <code className="flex-1 text-sm break-all">{deviceLoginUrl}</code>
                   <Button
                     size="sm"
                     variant="ghost"
-                    icon={copied === "verify_url" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.verification_uri, "verify_url")}
+                    icon={copied === "login_url" ? "check" : "content_copy"}
+                    onClick={() => copy(deviceLoginUrl, "login_url")}
+                    disabled={!deviceLoginUrl}
                   />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="open_in_new"
+                    onClick={() => window.open(deviceLoginUrl, "_blank", "noopener,noreferrer")}
+                    disabled={!deviceLoginUrl}
+                  >
+                    Open
+                  </Button>
                 </div>
               </div>
               <div className="bg-primary/10 p-4 rounded-lg">
@@ -474,4 +517,9 @@ OAuthModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   /** Extra metadata passed to /authorize and /exchange (e.g. gitlab clientId/baseUrl) */
   oauthMeta: PropTypes.object,
+  /** Optional Kiro IDC config for AWS IAM Identity Center device flow */
+  idcConfig: PropTypes.shape({
+    startUrl: PropTypes.string,
+    region: PropTypes.string,
+  }),
 };

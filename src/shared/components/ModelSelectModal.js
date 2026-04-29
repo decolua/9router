@@ -3,8 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
-import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getModelsByProviderId } from "@/shared/constants/models";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -25,10 +25,21 @@ export default function ModelSelectModal({
   activeProviders = [],
   title = "Select Model",
   modelAliases = {},
+  kindFilter = null,
 }) {
+  // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
+  const filteredActiveProviders = useMemo(() => {
+    if (!kindFilter) return activeProviders;
+    return activeProviders.filter((p) => {
+      const info = AI_PROVIDERS[p.provider];
+      const kinds = info?.serviceKinds || ["llm"];
+      return kinds.includes(kindFilter);
+    });
+  }, [activeProviders, kindFilter]);
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
+  const [customModels, setCustomModels] = useState([]);
 
   const fetchCombos = async () => {
     try {
@@ -62,19 +73,40 @@ export default function ModelSelectModal({
     if (isOpen) fetchProviderNodes();
   }, [isOpen]);
 
+  const fetchCustomModels = async () => {
+    try {
+      const res = await fetch("/api/models/custom");
+      if (!res.ok) throw new Error(`Failed to fetch custom models: ${res.status}`);
+      const data = await res.json();
+      setCustomModels(data.models || []);
+    } catch (error) {
+      console.error("Error fetching custom models:", error);
+      setCustomModels([]);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchCustomModels();
+  }, [isOpen]);
+
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
     const groups = {};
 
-    // Get all active provider IDs from connections
-    const activeConnectionIds = activeProviders.map(p => p.provider);
+    // Get all active provider IDs from connections (filtered by kindFilter if set)
+    const activeConnectionIds = filteredActiveProviders.map(p => p.provider);
+
+    // No-auth providers: filter by kindFilter as well
+    const noAuthIds = kindFilter
+      ? NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
+      : NO_AUTH_PROVIDER_IDS;
 
     // Only show connected providers (including both standard and custom)
     const providerIdsToShow = new Set([
       ...activeConnectionIds,  // Only connected providers
-      ...NO_AUTH_PROVIDER_IDS, // No-auth providers always visible
+      ...noAuthIds,            // No-auth providers (kind-filtered)
     ]);
 
     // Sort by PROVIDER_ORDER
@@ -85,7 +117,7 @@ export default function ModelSelectModal({
     });
 
     sortedProviderIds.forEach((providerId) => {
-      const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      const alias = getProviderAlias(providerId);
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
@@ -151,7 +183,7 @@ export default function ModelSelectModal({
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
         // Otherwise only show aliases where aliasName === modelId ("Add Model" button pattern)
         const hasHardcoded = hardcodedModels.length > 0;
-        const customModels = Object.entries(modelAliases)
+        const customAliasModels = Object.entries(modelAliases)
           .filter(([aliasName, fullModel]) =>
             fullModel.startsWith(`${alias}/`) &&
             (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
@@ -162,9 +194,16 @@ export default function ModelSelectModal({
             return { id: modelId, name: aliasName, value: fullModel, isCustom: true };
           });
 
+        // Custom models registered via /api/models/custom (provider "Add Model" button)
+        const customAliasIds = new Set(customAliasModels.map((m) => m.id));
+        const customRegisteredModels = customModels
+          .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
+          .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
+
         const allModels = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}` })),
-          ...customModels,
+          ...customAliasModels,
+          ...customRegisteredModels,
         ];
 
         if (allModels.length > 0) {
@@ -179,14 +218,15 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [activeProviders, modelAliases, allProviders, providerNodes]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, kindFilter]);
 
-  // Filter combos by search query
+  // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
+    if (kindFilter) return [];
     if (!searchQuery.trim()) return combos;
     const query = searchQuery.toLowerCase();
     return combos.filter(c => c.name.toLowerCase().includes(query));
-  }, [combos, searchQuery]);
+  }, [combos, searchQuery, kindFilter]);
 
   // Filter models by search query
   const filteredGroups = useMemo(() => {
@@ -304,7 +344,7 @@ export default function ModelSelectModal({
                 const isPlaceholder = model.isPlaceholder;
                 return (
                   <button
-                    key={model.id}
+                    key={model.value}
                     onClick={() => handleSelect(model)}
                     title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
                     className={`
@@ -360,5 +400,6 @@ ModelSelectModal.propTypes = {
   ),
   title: PropTypes.string,
   modelAliases: PropTypes.object,
+  kindFilter: PropTypes.string,
 };
 

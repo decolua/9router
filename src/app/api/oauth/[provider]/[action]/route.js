@@ -7,6 +7,7 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { startCodexProxy, stopCodexProxy } from "@/lib/oauth/utils/server";
 
 /**
  * Dynamic OAuth API Route
@@ -30,6 +31,26 @@ export async function GET(request, { params }) {
       return NextResponse.json(authData);
     }
 
+    if (action === "start-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      const appPort = searchParams.get("app_port");
+      if (!appPort) {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const result = await startCodexProxy(Number(appPort));
+      return NextResponse.json(result);
+    }
+
+    if (action === "stop-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      stopCodexProxy();
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "device-code") {
       const providerData = getProvider(provider);
       if (providerData.flowType !== "device_code") {
@@ -37,15 +58,25 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
+      const startUrl = searchParams.get("start_url");
+      const region = searchParams.get("region");
+      const authMethod = searchParams.get("auth_method");
+      const deviceOptions = provider === "kiro"
+        ? {
+            ...(startUrl ? { startUrl } : {}),
+            ...(region ? { region } : {}),
+            ...(authMethod ? { authMethod } : {}),
+          }
+        : undefined;
       
       // Providers that don't use PKCE for device code
       const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider);
+        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge);
+        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
       }
 
       return NextResponse.json({

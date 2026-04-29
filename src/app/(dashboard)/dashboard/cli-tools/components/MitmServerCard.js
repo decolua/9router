@@ -17,6 +17,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [pendingAction, setPendingAction] = useState(null);
   const [modalError, setModalError] = useState(null);
+  const [actionError, setActionError] = useState(null);
   const [mitmRouterBaseUrl, setMitmRouterBaseUrl] = useState(DEFAULT_MITM_ROUTER_BASE);
 
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
@@ -49,6 +50,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
   };
 
   const handleAction = (action) => {
+    setActionError(null);
     if (isWindows || status?.hasCachedPassword) {
       doAction(action, "");
     } else {
@@ -60,9 +62,11 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
 
   const doAction = async (action, password) => {
     setLoading(true);
+    setActionError(null);
     try {
+      let res;
       if (action === "trust-cert") {
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "trust-cert", sudoPassword: password }),
@@ -71,7 +75,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
         const keyToUse = selectedApiKey?.trim()
           || (apiKeys?.length > 0 ? apiKeys[0].key : null)
           || (!cloudEnabled ? "sk_9router" : null);
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -81,16 +85,23 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           }),
         });
       } else {
-        await fetch("/api/cli-tools/antigravity-mitm", {
+        res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sudoPassword: password }),
         });
       }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || `Failed to ${action} MITM server`);
+        return;
+      }
       setShowPasswordModal(false);
       setSudoPassword("");
       await fetchStatus();
-    } catch { /* ignore */ } finally {
+    } catch (e) {
+      setActionError(e.message || "Network error");
+    } finally {
       setLoading(false);
       setPendingAction(null);
     }
@@ -165,22 +176,20 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <div className="flex items-center gap-2">
                 <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">API Key</span>
                 <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                {apiKeys?.length > 0 ? (
-                  <select
-                    value={selectedApiKey}
-                    onChange={(e) => setSelectedApiKey(e.target.value)}
-                    className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded text-xs border border-border text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50"
-                  >
+                <input
+                  type="text"
+                  list="mitm-api-keys"
+                  value={selectedApiKey}
+                  onChange={(e) => setSelectedApiKey(e.target.value)}
+                  placeholder={cloudEnabled ? "Enter or pick API key" : "sk_9router (default)"}
+                  className="flex-1 min-w-0 px-2 py-1.5 bg-surface rounded border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                {apiKeys?.length > 0 && (
+                  <datalist id="mitm-api-keys">
                     {apiKeys.map((key) => (
-                      <option key={key.id} value={key.key}>
-                        {key.key}
-                      </option>
+                      <option key={key.id} value={key.key}>{key.name || key.key}</option>
                     ))}
-                  </select>
-                ) : (
-                  <span className="flex-1 px-2 py-1.5 text-xs text-text-muted">
-                    {cloudEnabled ? "No API keys — create one in Keys page" : "sk_9router (default)"}
-                  </span>
+                  </datalist>
                 )}
               </div>
             )}
@@ -221,6 +230,14 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
               <p className="text-xs text-text-muted">Enable DNS per tool below to activate interception</p>
             )}
           </div>
+
+          {/* Action error */}
+          {actionError && (
+            <div className="flex items-start gap-2 px-2 py-1.5 rounded text-xs bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+              <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">error</span>
+              <span>{actionError}</span>
+            </div>
+          )}
 
           {/* Windows admin warning */}
           {isWindows && !isAdmin && (

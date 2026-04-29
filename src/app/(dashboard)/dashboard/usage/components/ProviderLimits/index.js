@@ -29,6 +29,8 @@ export default function ProviderLimits() {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
   const [reserveStates, setReserveStates] = useState({});
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [expiringFirst, setExpiringFirst] = useState(false);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -379,13 +381,31 @@ export default function ProviderLimits() {
       conn.authType === "oauth",
   );
 
-  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically
-  const sortedConnections = [...filteredConnections].sort((a, b) => {
+  const providerFilteredConnections = filteredConnections.filter(
+    (conn) => providerFilter === "all" || conn.provider === providerFilter,
+  );
+
+  const getEarliestResetTime = (conn) => {
+    const resetTimes = (quotaData[conn.id]?.quotas || [])
+      .map((quota) => quota.resetAt ? new Date(quota.resetAt).getTime() : Number.POSITIVE_INFINITY)
+      .filter((time) => Number.isFinite(time));
+    return resetTimes.length > 0 ? Math.min(...resetTimes) : Number.POSITIVE_INFINITY;
+  };
+
+  // Sort providers by USAGE_SUPPORTED_PROVIDERS order, then alphabetically.
+  // Optionally surface accounts with quotas expiring soonest first.
+  const sortedConnections = [...providerFilteredConnections].sort((a, b) => {
+    if (expiringFirst) {
+      const expiryDiff = getEarliestResetTime(a) - getEarliestResetTime(b);
+      if (expiryDiff !== 0) return expiryDiff;
+    }
     const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
     const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
     if (orderA !== orderB) return orderA - orderB;
     return a.provider.localeCompare(b.provider);
   });
+
+  const providerOptions = Array.from(new Set(filteredConnections.map((conn) => conn.provider))).sort();
 
   // Calculate summary stats
   const totalProviders = sortedConnections.length;
@@ -439,6 +459,26 @@ export default function ProviderLimits() {
         </div>
 
         <div className="flex items-center gap-2">
+          <select
+            value={providerFilter}
+            onChange={(event) => setProviderFilter(event.target.value)}
+            className="h-10 rounded-lg border border-black/10 bg-transparent px-3 text-sm text-text-primary dark:border-white/10"
+            aria-label="Filter quota providers"
+          >
+            <option value="all">All providers</option>
+            {providerOptions.map((provider) => (
+              <option key={provider} value={provider}>{provider}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setExpiringFirst((prev) => !prev)}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            title="Sort accounts by earliest quota reset time"
+          >
+            <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+            Expiring first
+          </button>
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
@@ -507,11 +547,13 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
-                      {conn.name && (
-                        <p className="text-xs text-text-muted truncate">
-                          {conn.name}
-                        </p>
-                      )}
+                      {(() => {
+                        const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+                        const label = isEmail(conn.email) ? conn.email : (isEmail(conn.name) ? conn.name : conn.name);
+                        return label ? (
+                          <p className="text-xs text-text-muted truncate">{label}</p>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
 

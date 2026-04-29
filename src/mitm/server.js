@@ -11,6 +11,7 @@ const { getCertForDomain } = require("./cert/generate");
 
 const DB_FILE = path.join(DATA_DIR, "db.json");
 const LOCAL_PORT = 443;
+const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = false;
 const LOG_DIR = path.join(DATA_DIR, "logs", "mitm");
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
@@ -219,23 +220,32 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 });
 
-// Kill any process occupying LOCAL_PORT before binding
+// Kill only processes LISTENING on LOCAL_PORT (not outbound connections)
 function killPort(port) {
   try {
-    const pids = execSync(`lsof -ti :${port}`, { encoding: "utf-8" }).trim();
-    if (!pids) return;
-    const pidList = pids.split("\n");
+    let pidList = [];
+    if (IS_WIN) {
+      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
+        `"Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`;
+      const out = execSync(psCmd, { encoding: "utf-8", windowsHide: true }).trim();
+      if (!out) return;
+      pidList = out.split(/\r?\n/).map(s => s.trim()).filter(p => p && Number(p) !== process.pid && Number(p) > 4);
+    } else {
+      const out = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
+      if (!out) return;
+      pidList = out.split("\n").filter(p => p && Number(p) !== process.pid);
+    }
+    if (pidList.length === 0) return;
     pidList.forEach(pid => {
       try {
-        process.kill(Number(pid), "SIGKILL");
+        if (IS_WIN) execSync(`taskkill /F /PID ${pid}`, { windowsHide: true });
+        else process.kill(Number(pid), "SIGKILL");
       } catch (e) {
         err(`Failed to kill PID ${pid}: ${e.message}`);
-        throw e;
       }
     });
     log(`Killed ${pidList.length} process(es) on port ${port}`);
   } catch (e) {
-    // lsof exits with status 1 when no process found — that's fine
     if (e.status !== 1) throw e;
   }
 }
@@ -256,7 +266,16 @@ server.on("error", (e) => {
   process.exit(1);
 });
 
-const shutdown = () => server.close(() => process.exit(0));
+const { removeAllDNSEntriesSync } = require("./dns/dnsConfig");
+let isShuttingDown = false;
+const shutdown = () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  // Strip tool hosts from /etc/hosts so other apps aren't broken after exit
+  removeAllDNSEntriesSync();
+  const forceExit = setTimeout(() => process.exit(0), 1500);
+  server.close(() => { clearTimeout(forceExit); process.exit(0); });
+};
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 if (process.platform === "win32") process.on("SIGBREAK", shutdown);

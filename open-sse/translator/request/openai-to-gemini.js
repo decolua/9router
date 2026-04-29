@@ -336,6 +336,20 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     }
   };
 
+  // Build tool_use id -> name map so functionResponse can use the correct name
+  const toolUseIdToName = {};
+  if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
+    for (const msg of claudeRequest.messages) {
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "tool_use" && block.id && block.name) {
+            toolUseIdToName[block.id] = block.name;
+          }
+        }
+      }
+    }
+  }
+
   // Convert Claude messages to Gemini contents
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
     for (const msg of claudeRequest.messages) {
@@ -349,7 +363,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             parts.push({
               functionCall: {
                 id: block.id,
-                name: block.name,
+                name: sanitizeGeminiFunctionName(block.name),
                 args: block.input || {}
               }
             });
@@ -358,10 +372,14 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             if (Array.isArray(content)) {
               content = content.map(c => c.type === "text" ? c.text : JSON.stringify(c)).join("\n");
             }
+            // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
+            const resolvedName = toolUseIdToName[block.tool_use_id]
+              ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
+              : "tool";
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
-                name: "unknown",
+                name: resolvedName,
                 response: { result: tryParseJSON(content) || content }
               }
             });
