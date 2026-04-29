@@ -464,10 +464,10 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
-    <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {connections
         .map((conn, index) => (
-          <div key={conn.id} className="flex items-stretch">
+          <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -537,7 +537,7 @@ export default function ProviderDetailPage() {
         <p className="text-xs text-text-muted">{bulkHint}</p>
         <p className="text-xs text-text-muted">Selecting None will unbind selected connections from proxy pool.</p>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button onClick={handleBulkApplyProxyPool} fullWidth disabled={!canApplyBulkProxy}>
             {bulkUpdatingProxy ? "Applying..." : "Apply"}
           </Button>
@@ -656,7 +656,7 @@ export default function ProviderDetailPage() {
         {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-black/15 px-3 py-2 text-xs text-text-muted transition-colors hover:border-primary/40 hover:text-primary sm:w-auto"
         >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
@@ -728,9 +728,9 @@ export default function ProviderDetailPage() {
   };
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-6 px-1 sm:gap-8 sm:px-0">
       {/* Header */}
-      <div>
+      <div className="min-w-0">
         <Link
           href="/dashboard/providers"
           className="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4"
@@ -738,9 +738,9 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div
-            className="rounded-lg flex items-center justify-center"
+            className="flex size-12 shrink-0 items-center justify-center rounded-lg"
             style={{ backgroundColor: `${providerInfo.color}15` }}
           >
             {headerImgError ? (
@@ -753,14 +753,14 @@ export default function ProviderDetailPage() {
                 alt={providerInfo.name}
                 width={48}
                 height={48}
-                className="object-contain rounded-lg max-w-[48px] max-h-[48px]"
+                className="max-h-12 max-w-12 rounded-lg object-contain"
                 sizes="48px"
                 onError={() => setHeaderImgError(true)}
               />
             )}
           </div>
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">{providerInfo.name}</h1>
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold tracking-tight sm:text-3xl">{providerInfo.name}</h1>
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
@@ -776,15 +776,15 @@ export default function ProviderDetailPage() {
       )}
 
       {providerInfo.notice && !providerInfo.deprecated && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30">
+        <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
           <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-          <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">{providerInfo.notice.text}</p>
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{providerInfo.notice.text}</p>
           {providerInfo.notice.apiKeyUrl && (
             <a
               href={providerInfo.notice.apiKeyUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 px-2 py-0.5 rounded shrink-0 transition-colors"
+              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
             >
               Get API Key →
             </a>
@@ -794,20 +794,21 @@ export default function ProviderDetailPage() {
 
       {isCompatible && providerNode && (
         <Card>
-          <div className="flex items-center justify-between mb-4">
-            <div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
               <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
-              <p className="text-sm text-text-muted">
+              <p className="break-all text-sm text-text-muted">
                 {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
                 {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
               <Button
                 size="sm"
                 icon="add"
                 onClick={() => setShowAddApiKeyModal(true)}
                 disabled={connections.length > 0}
+                className="w-full sm:w-auto"
               >
                 Add
               </Button>
@@ -816,6 +817,7 @@ export default function ProviderDetailPage() {
                 variant="secondary"
                 icon="edit"
                 onClick={() => setShowEditNodeModal(true)}
+                className="w-full sm:w-auto"
               >
                 Edit
               </Button>
@@ -834,6 +836,7 @@ export default function ProviderDetailPage() {
                     console.log("Error deleting provider node:", error);
                   }
                 }}
+                className="w-full sm:w-auto"
               >
                 Delete
               </Button>
@@ -852,9 +855,9 @@ export default function ProviderDetailPage() {
         <NoAuthProxyCard providerId={providerId} />
       ) : (
         <Card>
-          <div className="flex items-center justify-between mb-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
@@ -871,7 +874,7 @@ export default function ProviderDetailPage() {
                 </div>
               )} */}
               {/* Round Robin toggle */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
                 <Toggle
                   checked={providerStrategy === "round-robin"}
@@ -902,7 +905,7 @@ export default function ProviderDetailPage() {
               <p className="text-text-main font-medium mb-1">No connections yet</p>
               <p className="text-sm text-text-muted mb-4">Add your first connection to get started</p>
               {!isCompatible && (
-                <div className="flex gap-2 justify-center">
+                <div className="flex flex-col gap-2 justify-center sm:flex-row">
                   {providerId === "iflow" && (
                     <Button icon="cookie" variant="secondary" onClick={() => setShowIFlowCookieModal(true)}>
                       Cookie Auth
@@ -918,7 +921,7 @@ export default function ProviderDetailPage() {
             <>
               {connectionsList}
               {!isCompatible && (
-                <div className="flex gap-2 mt-4">
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {providerId === "iflow" && (
                     <Button
                       size="sm"
@@ -926,6 +929,7 @@ export default function ProviderDetailPage() {
                       variant="secondary"
                       onClick={() => setShowIFlowCookieModal(true)}
                       title="Add connection using browser cookie"
+                      className="w-full sm:w-auto"
                     >
                       Cookie
                     </Button>
@@ -934,6 +938,7 @@ export default function ProviderDetailPage() {
                     size="sm"
                     icon="add"
                     onClick={() => isOAuth ? setShowOAuthModal(true) : setShowAddApiKeyModal(true)}
+                    className="w-full sm:w-auto"
                   >
                     Add
                   </Button>
@@ -946,7 +951,7 @@ export default function ProviderDetailPage() {
 
       {/* Models */}
       <Card>
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg font-semibold">
             {"Available Models"}
           </h2>

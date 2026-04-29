@@ -29,6 +29,7 @@ export default function ProviderLimits() {
   const [proxyPools, setProxyPools] = useState([]);
   const [providerFilter, setProviderFilter] = useState("all");
   const [expiringFirst, setExpiringFirst] = useState(false);
+  const [providerMenuOpen, setProviderMenuOpen] = useState(false);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -389,6 +390,7 @@ export default function ProviderLimits() {
   });
 
   const providerOptions = Array.from(new Set(filteredConnections.map((conn) => conn.provider))).sort();
+  const selectedProviderLabel = providerFilter === "all" ? "All providers" : providerFilter;
 
   // Calculate summary stats
   const totalProviders = sortedConnections.length;
@@ -431,8 +433,8 @@ export default function ProviderLimits() {
   return (
     <div className="space-y-6">
       {/* Header Controls */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
           <h2 className="text-xl font-semibold text-text-primary">
             Provider Limits
           </h2>
@@ -441,31 +443,89 @@ export default function ProviderLimits() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <select
-            value={providerFilter}
-            onChange={(event) => setProviderFilter(event.target.value)}
-            className="h-10 rounded-lg border border-black/10 bg-transparent px-3 text-sm text-text-primary dark:border-white/10"
-            aria-label="Filter quota providers"
-          >
-            <option value="all">All providers</option>
-            {providerOptions.map((provider) => (
-              <option key={provider} value={provider}>{provider}</option>
-            ))}
-          </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setProviderMenuOpen((prev) => !prev)}
+              className="flex h-10 min-w-[116px] items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 text-sm text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10 sm:min-w-[180px]"
+              aria-haspopup="menu"
+              aria-expanded={providerMenuOpen}
+              title="Filter quota providers"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                {providerFilter === "all" ? (
+                  <span className="material-symbols-outlined text-[20px] text-text-muted">apps</span>
+                ) : (
+                  <ProviderIcon
+                    src={`/providers/${providerFilter}.png`}
+                    alt={providerFilter}
+                    size={22}
+                    className="size-[22px] rounded-md object-contain"
+                    fallbackText={providerFilter.slice(0, 2).toUpperCase()}
+                  />
+                )}
+                <span className="truncate capitalize hidden sm:inline">{selectedProviderLabel}</span>
+              </span>
+              <span className="material-symbols-outlined text-[18px] text-text-muted">expand_more</span>
+            </button>
+
+            {providerMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-30 bg-transparent"
+                  aria-label="Close provider filter"
+                  onClick={() => setProviderMenuOpen(false)}
+                />
+                <div className="absolute left-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-black/10 bg-surface/95 p-1.5 shadow-xl shadow-black/10 backdrop-blur dark:border-white/10 dark:bg-surface/95 sm:w-72">
+                  <button
+                    type="button"
+                    onClick={() => { setProviderFilter("all"); setProviderMenuOpen(false); }}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
+                  >
+                    <span className="material-symbols-outlined text-[22px]">apps</span>
+                    <span className="font-medium">All providers</span>
+                    {providerFilter === "all" && <span className="material-symbols-outlined ml-auto text-[20px]">check</span>}
+                  </button>
+                  <div className="my-1 h-px bg-black/10 dark:bg-white/10" />
+                  <div className="max-h-72 overflow-y-auto pr-1">
+                    {providerOptions.map((provider) => (
+                      <button
+                        key={provider}
+                        type="button"
+                        onClick={() => { setProviderFilter(provider); setProviderMenuOpen(false); }}
+                        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === provider ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
+                      >
+                        <ProviderIcon
+                          src={`/providers/${provider}.png`}
+                          alt={provider}
+                          size={24}
+                          className="size-6 rounded-md object-contain"
+                          fallbackText={provider.slice(0, 2).toUpperCase()}
+                        />
+                        <span className="font-medium capitalize">{provider}</span>
+                        {providerFilter === provider && <span className="material-symbols-outlined ml-auto text-[20px]">check</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setExpiringFirst((prev) => !prev)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
+            className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
             title="Sort accounts by earliest quota reset time"
           >
             <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
-            Expiring first
+            <span className="hidden sm:inline">Expiring first</span>
           </button>
           {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh((prev) => !prev)}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            className="flex shrink-0 items-center gap-2 rounded-lg border border-black/10 px-3 py-2 transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"
             title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
           >
             <span
@@ -475,7 +535,7 @@ export default function ProviderLimits() {
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="text-sm text-text-primary">Auto-refresh</span>
+            <span className="hidden text-sm text-text-primary sm:inline">Auto-refresh</span>
             {autoRefresh && (
               <span className="text-xs text-text-muted">({countdown}s)</span>
             )}

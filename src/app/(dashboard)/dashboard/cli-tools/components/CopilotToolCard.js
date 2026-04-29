@@ -234,17 +234,17 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
                     <input
                       type="text"
                       value={modelInput}
                       onChange={(e) => setModelInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && addModel()}
                       placeholder="provider/model-id"
-                      className="flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      className="min-w-0 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
                     />
-                    <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-3 py-2 rounded-lg border text-sm transition-colors shrink-0 ${activeProviders?.length ? "bg-bg-secondary border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
-                    <button onClick={addModel} disabled={!modelInput.trim()} className="px-3 py-2 rounded-lg border text-sm bg-bg-secondary border-border hover:border-primary transition-colors shrink-0 disabled:opacity-50" title="Add model">
+                    <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`rounded-lg border px-3 py-2 text-sm transition-colors sm:shrink-0 ${activeProviders?.length ? "bg-bg-secondary border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
+                    <button onClick={addModel} disabled={!modelInput.trim()} className="rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm transition-colors hover:border-primary disabled:opacity-50 sm:shrink-0" title="Add model">
                       <span className="material-symbols-outlined text-[16px]">add</span>
                     </button>
                   </div>
@@ -258,7 +258,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={modelList.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
