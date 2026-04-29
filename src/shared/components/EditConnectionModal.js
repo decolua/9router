@@ -6,13 +6,18 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import Toggle from "@/shared/components/Toggle";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
+    minReserveEnabled: false,
+    minReservePercent: 15,
+    cooldownEnabled: false,
+    cooldownMinutes: 30,
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -33,6 +38,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        minReserveEnabled: connection.minReserveEnabled || false,
+        minReservePercent: connection.minReservePercent || 15,
+        cooldownEnabled: connection.cooldownEnabled || false,
+        cooldownMinutes: connection.cooldownMinutes || 30,
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -57,6 +66,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
+  const supportsQuota = isOAuth && connection && USAGE_SUPPORTED_PROVIDERS.includes(connection.provider);
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -104,6 +114,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        minReserveEnabled: formData.minReserveEnabled,
+        minReservePercent: formData.minReservePercent,
+        cooldownEnabled: formData.cooldownEnabled,
+        cooldownMinutes: formData.cooldownMinutes,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -180,6 +194,58 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {supportsQuota && (
+          <div className="border border-black/10 dark:border-white/10 rounded-lg p-3 space-y-3">
+            <p className="text-sm font-semibold text-text-primary">Quota Management</p>
+
+            {/* Minimum Reserve */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <Toggle
+                  size="sm"
+                  label="Minimum Reserve"
+                  description="Block account when quota drops below threshold"
+                  checked={formData.minReserveEnabled}
+                  onChange={(val) => setFormData({ ...formData, minReserveEnabled: val })}
+                />
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Input
+                  type="number"
+                  value={formData.minReservePercent}
+                  onChange={(e) => setFormData({ ...formData, minReservePercent: Math.max(1, Math.min(50, Number(e.target.value) || 15)) })}
+                  disabled={!formData.minReserveEnabled}
+                  className="!w-16 text-center"
+                />
+                <span className="text-sm text-text-muted">%</span>
+              </div>
+            </div>
+
+            {/* Cooldown on Reset */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <Toggle
+                  size="sm"
+                  label="Cooldown on Reset"
+                  description="Rest account after quota resets"
+                  checked={formData.cooldownEnabled}
+                  onChange={(val) => setFormData({ ...formData, cooldownEnabled: val })}
+                />
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <Input
+                  type="number"
+                  value={formData.cooldownMinutes}
+                  onChange={(e) => setFormData({ ...formData, cooldownMinutes: Math.max(1, Math.min(120, Number(e.target.value) || 30)) })}
+                  disabled={!formData.cooldownEnabled}
+                  className="!w-16 text-center"
+                />
+                <span className="text-sm text-text-muted">min</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {!isOAuth && (
           <>

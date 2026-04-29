@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
-import { parseQuotaData, calculatePercentage } from "./utils";
+import { parseQuotaData, calculatePercentage, formatResetTime } from "./utils";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
+import Badge from "@/shared/components/Badge";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
@@ -27,6 +28,7 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [reserveStates, setReserveStates] = useState({});
   const [providerFilter, setProviderFilter] = useState("all");
   const [expiringFirst, setExpiringFirst] = useState(false);
 
@@ -119,6 +121,19 @@ export default function ProviderLimits() {
       }));
     } finally {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
+    }
+  }, []);
+
+  // Fetch reserve states from background monitor
+  const fetchReserveStates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/quota-reserve");
+      if (res.ok) {
+        const data = await res.json();
+        setReserveStates(data.states || {});
+      }
+    } catch {
+      // Silently ignore — reserve states are optional
     }
   }, []);
 
@@ -239,10 +254,11 @@ export default function ProviderLimits() {
           conn.authType === "oauth",
       );
 
-      // Fetch quota for supported OAuth connections only
-      await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      // Fetch quota and reserve states in parallel
+      await Promise.all([
+        Promise.all(oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))),
+        fetchReserveStates(),
+      ]);
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -250,7 +266,7 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota]);
+  }, [refreshingAll, fetchConnections, fetchQuota, fetchReserveStates]);
 
   // Initial load: fetch connections first so cards render immediately, then fetch quotas
   useEffect(() => {
@@ -272,9 +288,10 @@ export default function ProviderLimits() {
       });
       setLoading(loadingState);
 
-      await Promise.all(
-        oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      await Promise.all([
+        Promise.all(oauthConnections.map((conn) => fetchQuota(conn.id, conn.provider))),
+        fetchReserveStates(),
+      ]);
       setLastUpdated(new Date());
     };
 
@@ -541,6 +558,16 @@ export default function ProviderLimits() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {/* Quota reserve/cooldown badges */}
+                    {reserveStates[conn.id]?.quotaReserveBlocked && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-500/15 text-orange-600 dark:text-orange-400 whitespace-nowrap" title="Quota below minimum reserve threshold">
+                        <span className="material-symbols-outlined text-[12px]">shield</span>
+                        Reserve limit
+                      </span>
+                    )}
+                    {reserveStates[conn.id]?.cooldownUntil && reserveStates[conn.id].cooldownUntil > Date.now() && !reserveStates[conn.id]?.quotaReserveBlocked && (
+                      <CooldownBadge until={reserveStates[conn.id].cooldownUntil} />
+                    )}
                     <button
                       type="button"
                       onClick={() => refreshProvider(conn.id, conn.provider)}
@@ -640,5 +667,41 @@ export default function ProviderLimits() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * CooldownBadge — shows "Cooldown Xm Ys" with a live countdown.
+ */
+function CooldownBadge({ until }) {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    function update() {
+      const diff = until - Date.now();
+      if (diff <= 0) {
+        setRemaining("");
+        return;
+      }
+      const mins = Math.floor(diff / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      setRemaining(mins > 0 ? `${mins}m ${secs}s` : `${secs}s`);
+    }
+
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [until]);
+
+  if (!remaining) return null;
+
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 whitespace-nowrap"
+      title="Account is cooling down after quota reset"
+    >
+      <span className="material-symbols-outlined text-[12px]">hourglass_top</span>
+      Cooldown {remaining}
+    </span>
   );
 }

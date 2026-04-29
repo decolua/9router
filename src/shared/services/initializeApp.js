@@ -2,6 +2,7 @@ import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } f
 import { enableTunnel, isTunnelManuallyDisabled, isTunnelReconnecting } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
+import { startQuotaMonitor } from "@/shared/services/quotaMonitorService";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
@@ -91,6 +92,9 @@ export async function initializeApp() {
 
     // Network monitor: detect sleep/wake + network changes → restart tunnel
     startNetworkMonitor();
+
+    // Background quota monitor for reserve/cooldown
+    startQuotaMonitor();
 
     // Auto-start MITM if it was enabled before restart
     autoStartMitm();
