@@ -348,6 +348,7 @@ export async function POST(request) {
           break;
         }
 
+
         case "opencode-go": {
           const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
             method: "POST",

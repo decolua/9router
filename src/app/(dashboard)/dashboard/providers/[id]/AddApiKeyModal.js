@@ -187,7 +187,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isCloudflareAi && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-            <h3 className="font-semibold mb-3 text-sm">Cloudflare Workers AI</h3>
+            <h3 className="font-semibold mb-3 text-sm">Cloudflare AI</h3>
             <Input
               label="Account ID"
               value={cloudflareData.accountId}
