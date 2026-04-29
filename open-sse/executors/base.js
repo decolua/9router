@@ -121,7 +121,31 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const headers = this.buildHeaders(credentials, stream);
+      let headers = this.buildHeaders(credentials, stream);
+
+      // Strip OpenAI SDK (X-Stainless-*) metadata headers from passthrough/OpenAI-compatible requests.
+      // These headers identify the SDK client and are blocked by some upstream gateways (403).
+      // Only strip for OpenAI-compatible endpoints — other providers may legitimately use them.
+      const isOpenAICompatible = this.provider?.startsWith?.("openai-compatible-") ||
+        url.includes("/v1/chat/completions") || url.includes("/v1/responses");
+      if (isOpenAICompatible) {
+        const strippedKeys = [];
+        for (const key of Object.keys(headers)) {
+          if (key.toLowerCase().startsWith("x-stainless-")) {
+            delete headers[key];
+            strippedKeys.push(key);
+          }
+        }
+        // Normalize User-Agent: SDK-based clients send verbose product strings that some upstreams block.
+        // Replace with a clean browser-like UA if it looks SDK-derived.
+        const ua = (headers["User-Agent"] || "").toLowerCase();
+        if (ua.includes("openai") && (ua.includes("node") || ua.includes("axios") || ua.includes("undici"))) {
+          headers["User-Agent"] = "Mozilla/5.0 (compatible; OpenAI Compatible)";
+        }
+        if (strippedKeys.length > 0) {
+          log?.debug?.("HEADERS", `Stripped X-Stainless-* from passthrough request: ${strippedKeys.join(", ")}`);
+        }
+      }
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
