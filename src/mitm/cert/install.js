@@ -145,9 +145,14 @@ async function uninstallCertWindows() {
   });
 }
 
-function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
-  return Promise.resolve(fs.existsSync(certFile));
+function checkCertInstalledLinux(certPath) {
+  const certDirs = [
+    "/usr/local/share/ca-certificates",
+    "/etc/pki/ca-trust/source/anchors",
+    "/usr/share/pki/trust/anchors",
+  ];
+  const destFileName = "9router-root-ca.crt";
+  return Promise.resolve(certDirs.some(dir => fs.existsSync(path.join(dir, destFileName))));
 }
 
 async function installCertLinux(sudoPassword, certPath) {
@@ -155,29 +160,62 @@ async function installCertLinux(sudoPassword, certPath) {
     log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
-  // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
-  const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
-  try {
-    await execWithPassword(cmd, sudoPassword);
-    log("🔐 Cert: ✅ installed to Linux trust store");
-  } catch (error) {
-    throw new Error("Certificate install failed");
+
+  // Try multiple system certificate directories (Debian/Ubuntu, RHEL/Fedora, Alpine-like)
+  const certDirs = [
+    "/usr/local/share/ca-certificates",
+    "/etc/pki/ca-trust/source/anchors",
+    "/usr/share/pki/trust/anchors",
+  ];
+
+  const destFileName = "9router-root-ca.crt";
+  let success = false;
+
+  for (const certDir of certDirs) {
+    // Ensure directory exists before copying
+    const mkCmd = `mkdir -p "${certDir}"`;
+    const copyCmd = `cp "${certPath}" "${certDir}/${destFileName}"`;
+    // Try update-ca-certificates (Debian/Ubuntu), then update-ca-trust (Fedora/RHEL)
+    const updateCmd = `(update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+    const fullCmd = `${mkCmd} && ${copyCmd} && ${updateCmd}`;
+
+    try {
+      await execWithPassword(fullCmd, sudoPassword);
+      log(`🔐 Cert: ✅ installed to Linux trust store (${certDir})`);
+      success = true;
+      break;
+    } catch (error) {
+      // Try next directory
+      continue;
+    }
+  }
+
+  if (!success) {
+    const hint = `\nManual install: cp "${certPath}" /usr/local/share/ca-certificates/ && update-ca-certificates`;
+    throw new Error(`Certificate install failed${hint}`);
   }
 }
 
-async function uninstallCertLinux(sudoPassword) {
+async function uninstallCertLinux(sudoPassword, certPath) {
   if (!isSudoAvailable()) {
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
-  const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
-  try {
-    await execWithPassword(cmd, sudoPassword);
-    log("🔐 Cert: ✅ uninstalled from Linux trust store");
-  } catch (error) {
-    throw new Error("Failed to uninstall certificate");
+  const certDirs = [
+    "/usr/local/share/ca-certificates",
+    "/etc/pki/ca-trust/source/anchors",
+    "/usr/share/pki/trust/anchors",
+  ];
+  const destFileName = "9router-root-ca.crt";
+  for (const certDir of certDirs) {
+    const destFile = path.join(certDir, destFileName);
+    if (!fs.existsSync(destFile)) continue;
+    const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
+    try {
+      await execWithPassword(cmd, sudoPassword);
+      break;
+    } catch { /* try next */ }
   }
+  log("🔐 Cert: ✅ uninstalled from Linux trust store");
 }
 
 module.exports = { installCert, uninstallCert, checkCertInstalled };
