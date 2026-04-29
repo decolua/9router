@@ -6,7 +6,11 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
 
 // Get provider-specific refresh lead time, falls back to default buffer
-export function getRefreshLeadMs(provider) {
+// Allows per-connection override via providerSpecificData.refreshLeadMs
+export function getRefreshLeadMs(provider, providerSpecificData = null) {
+  if (providerSpecificData?.refreshLeadMs != null) {
+    return Number(providerSpecificData.refreshLeadMs);
+  }
   return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
 }
 
