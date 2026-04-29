@@ -12,15 +12,23 @@ const execAsync = promisify(exec);
 const getDroidDir = () => path.join(os.homedir(), ".factory");
 const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 
-// Check if droid CLI is installed
+// Check if droid CLI is installed (via which/where or config file exists)
 const checkDroidInstalled = async () => {
   try {
     const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "command -v droid";
-    await execAsync(command, { windowsHide: true });
+    const command = isWindows ? "where droid" : "which droid";
+    const env = isWindows
+      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
+      : process.env;
+    await execAsync(command, { windowsHide: true, env });
     return true;
   } catch {
-    return false;
+    try {
+      await fs.access(getDroidSettingsPath());
+      return true;
+    } catch {
+      return false;
+    }
   }
 };
 
@@ -39,7 +47,7 @@ const readSettings = async () => {
 // Check if settings has 9Router customModels
 const has9RouterConfig = (settings) => {
   if (!settings || !settings.customModels) return false;
-  return settings.customModels.some(m => m.id === "custom:9Router-0");
+  return settings.customModels.some(m => m.id?.startsWith("custom:9Router"));
 };
 
 // GET - Check droid CLI and read current settings
@@ -70,12 +78,17 @@ export async function GET() {
 }
 
 // POST - Update 9Router customModels (merge with existing settings)
+// Accepts either `model` (string, legacy single-model) or `models` (array of strings, multi-model)
+// Also accepts `activeModel` to set which model is active/primary
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model } = await request.json();
+    const { baseUrl, apiKey, model, models, activeModel } = await request.json();
     
-    if (!baseUrl || !model) {
-      return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
+    // Accept either `models` (array) or `model` (string, legacy)
+    const modelsArray = Array.isArray(models) ? models.slice() : (typeof model === "string" ? [model] : []);
+    
+    if (!baseUrl || modelsArray.length === 0) {
+      return NextResponse.json({ error: "baseUrl and at least one model are required" }, { status: 400 });
     }
 
     const droidDir = getDroidDir();
@@ -96,26 +109,51 @@ export async function POST(request) {
       settings.customModels = [];
     }
 
-    // Remove existing 9Router config if any
-    settings.customModels = settings.customModels.filter(m => m.id !== "custom:9Router-0");
+    // Remove all existing 9Router configs
+    settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:9Router"));
 
     // Normalize baseUrl to ensure /v1 suffix
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const keyToUse = apiKey || "your_api_key";
 
-    // Add new 9Router config
-    const customModel = {
-      model: model,
-      id: "custom:9Router-0",
-      index: 0,
-      baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "your_api_key",
-      displayName: model,
-      maxOutputTokens: 131072,
-      noImageSupport: false,
-      provider: "openai",
-    };
+    // Determine active model: prefer explicit activeModel, else first of modelsArray
+    // If activeModel is explicitly empty string, no model will be set as default
+    let defaultIndex = 0;
+    if (typeof activeModel === "string") {
+      if (activeModel === "") {
+        defaultIndex = -1; // signal: don't set a default
+      } else {
+        const idx = modelsArray.indexOf(activeModel);
+        defaultIndex = idx >= 0 ? idx : 0;
+      }
+    }
 
-    settings.customModels.unshift(customModel);
+    // Add entries for all requested models
+    // The first one (index 0) will be the default if defaultIndex >= 0
+    for (let i = 0; i < modelsArray.length; i++) {
+      const m = modelsArray[i];
+      if (!m || typeof m !== "string") continue;
+      settings.customModels.push({
+        model: m,
+        id: `custom:9Router-${i}`,
+        index: i,
+        baseUrl: normalizedBaseUrl,
+        apiKey: keyToUse,
+        displayName: m,
+        maxOutputTokens: 131072,
+        noImageSupport: false,
+        provider: "openai",
+      });
+    }
+
+    // Set default model if applicable
+    if (defaultIndex >= 0 && settings.customModels[defaultIndex]) {
+      // Reorder so the default comes first
+      const [defaultEntry] = settings.customModels.splice(defaultIndex, 1);
+      settings.customModels.unshift({ ...defaultEntry, index: 0 });
+      // Re-index the rest
+      settings.customModels.forEach((m, i) => { m.index = i; });
+    }
 
     // Write settings
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
@@ -153,7 +191,7 @@ export async function DELETE() {
 
     // Remove 9Router customModels
     if (settings.customModels) {
-      settings.customModels = settings.customModels.filter(m => m.id !== "custom:9Router-0");
+      settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:9Router"));
       
       // Remove customModels array if empty
       if (settings.customModels.length === 0) {

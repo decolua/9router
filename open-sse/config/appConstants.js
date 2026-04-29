@@ -62,6 +62,62 @@ export const CLIENT_METADATA = {
 // Internal anti-loop header
 export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
+// Suffix added to client tools when forwarding to Antigravity provider (anti-ban cloaking)
+export const AG_TOOL_SUFFIX = "_ide";
+
+// Suffix added to client tools when forwarding to Claude provider (anti-ban cloaking)
+export const CLAUDE_TOOL_SUFFIX = "_ide";
+
+// CC native default tools — these are Claude Code's own tools, kept as decoys
+// Client tools matching these names are skipped (not renamed), others get _cc suffix
+export const CC_DEFAULT_TOOLS = new Set([
+  "Task",
+  "TaskOutput",
+  "TaskStop",
+  "TaskCreate",
+  "TaskGet",
+  "TaskUpdate",
+  "TaskList",
+  "Bash",
+  "Glob",
+  "Grep",
+  "Read",
+  "Edit",
+  "Write",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+  "AskUserQuestion",
+  "Skill",
+  "EnterPlanMode",
+  "ExitPlanMode",
+]);
+
+// AG native default tools — kept as decoys with neutral description/properties
+// These names must match exactly what AG sends in the real request log
+export const AG_DEFAULT_TOOLS = new Set([
+  "browser_subagent",
+  "command_status",
+  "find_by_name",
+  "generate_image",
+  "grep_search",
+  "list_dir",
+  "list_resources",
+  "multi_replace_file_content",
+  "notify_user",
+  "read_resource",
+  "read_terminal",
+  "read_url_content",
+  "replace_file_content",
+  "run_command",
+  "search_web",
+  "send_command_input",
+  "task_boundary",
+  "view_content_chunk",
+  "view_file",
+  "write_to_file"
+]);
+
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
   "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
@@ -87,8 +143,18 @@ export const LOAD_CODE_ASSIST_METADATA = {
 };
 
 // System prompts
-export const CLAUDE_SYSTEM_PROMPT = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official CLI for Claude.";
 export const ANTIGRAVITY_DEFAULT_SYSTEM = "You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.**Absolute paths only****Proactiveness**";
+
+// Proactive token refresh lead times per provider (ms)
+export const REFRESH_LEAD_MS = {
+  codex:       5 * 24 * 60 * 60 * 1000, // 5 days
+  claude:       4 * 60 * 60 * 1000,     // 4 hours
+  iflow:       24 * 60 * 60 * 1000,     // 24 hours
+  qwen:        20 * 60 * 1000,          // 20 minutes
+  "kimi-coding": 5 * 60 * 1000,         // 5 minutes
+  antigravity:  5 * 60 * 1000,          // 5 minutes
+};
 
 // OAuth endpoints
 export const OAUTH_ENDPOINTS = {

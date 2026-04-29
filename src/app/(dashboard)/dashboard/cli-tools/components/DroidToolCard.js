@@ -23,16 +23,19 @@ export default function DroidToolCard({
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [modelList, setModelList] = useState([]);
+  const [modelInput, setModelInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
 
   const getConfigStatus = () => {
     if (!droidStatus?.installed) return null;
-    const currentConfig = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+    // Check for any 9Router model entry (support multi-model: custom:9Router-0, custom:9Router-1, ...)
+    const currentConfig = droidStatus.settings?.customModels?.find(m => m.id?.startsWith("custom:9Router"));
     if (!currentConfig) return "not_configured";
     const localMatch = currentConfig.baseUrl?.includes("localhost") || currentConfig.baseUrl?.includes("127.0.0.1");
     const cloudMatch = cloudEnabled && CLOUD_URL && currentConfig.baseUrl?.startsWith(CLOUD_URL);
@@ -71,18 +74,25 @@ export default function DroidToolCard({
     }
   };
 
+  // Pre-fill model list from existing config (supports multi-model)
   useEffect(() => {
     if (droidStatus?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
-      const customModel = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
-      if (customModel) {
-        if (customModel.model) setSelectedModel(customModel.model);
-        if (customModel.apiKey && apiKeys?.some(k => k.key === customModel.apiKey)) {
-          setSelectedApiKey(customModel.apiKey);
+      const existingModels = (droidStatus.settings?.customModels || [])
+        .filter(m => m.id?.startsWith("custom:9Router"))
+        .sort((a, b) => (a.index || 0) - (b.index || 0))
+        .map(m => m.model);
+      if (existingModels.length > 0) {
+        setModelList(existingModels);
+      } else {
+        // Legacy: single model stored as custom:9Router-0
+        const legacy = droidStatus.settings?.customModels?.find(m => m.id === "custom:9Router-0");
+        if (legacy?.model) {
+          setModelList([legacy.model]);
         }
       }
     }
-  }, [droidStatus, apiKeys]);
+  }, [droidStatus]);
 
   const checkDroidStatus = async () => {
     setCheckingDroid(true);
@@ -107,21 +117,37 @@ export default function DroidToolCard({
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
+  const addModel = () => {
+    const val = modelInput.trim();
+    if (!val || modelList.includes(val)) return;
+    setModelList((prev) => [...prev, val]);
+    setModelInput("");
+  };
+
+  const removeModel = (id) => setModelList((prev) => prev.filter((m) => m !== id));
+
+  const handleModelSelect = (model) => {
+    if (!model.value || modelList.includes(model.value)) return;
+    setModelList((prev) => [...prev, model.value]);
+    setModalOpen(false);
+  };
+
   const handleApplySettings = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim() 
+      const keyToUse = selectedApiKey?.trim()
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
         || (!cloudEnabled ? "sk_9router" : null);
 
       const res = await fetch("/api/cli-tools/droid-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          baseUrl: getEffectiveBaseUrl(), 
+        body: JSON.stringify({
+          baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          model: selectedModel 
+          models: modelList,
+          activeModel: modelList[0] || "",
         }),
       });
       const data = await res.json();
@@ -146,8 +172,7 @@ export default function DroidToolCard({
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setSelectedModel("");
-        setSelectedApiKey("");
+        setModelList([]);
         checkDroidStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -159,35 +184,28 @@ export default function DroidToolCard({
     }
   };
 
-  const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
-    setModalOpen(false);
-  };
-
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim()) 
-      ? selectedApiKey 
+    const keyToUse = (selectedApiKey && selectedApiKey.trim())
+      ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const settingsContent = {
-      customModels: [
-        {
-          model: selectedModel || "provider/model-id",
-          id: "custom:9Router-0",
-          index: 0,
-          baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
-          displayName: selectedModel || "provider/model-id",
-          maxOutputTokens: 131072,
-          noImageSupport: false,
-          provider: "openai",
-        },
-      ],
+      customModels: modelList.map((m, i) => ({
+        model: m,
+        id: `custom:9Router-${i}`,
+        index: i,
+        baseUrl: getEffectiveBaseUrl(),
+        apiKey: keyToUse,
+        displayName: m,
+        maxOutputTokens: 131072,
+        noImageSupport: false,
+        provider: "openai",
+      })),
     };
 
     const platform = typeof navigator !== "undefined" && navigator.platform;
     const isWindows = platform?.toLowerCase().includes("win");
-    const settingsPath = isWindows 
+    const settingsPath = isWindows
       ? "%USERPROFILE%\\.factory\\settings.json"
       : "~/.factory/settings.json";
 
@@ -229,12 +247,38 @@ export default function DroidToolCard({
           )}
 
           {!checkingDroid && droidStatus && !droidStatus.installed && (
-            <div className="flex items-center gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-              <span className="material-symbols-outlined text-yellow-500">warning</span>
-              <div className="flex-1">
-                <p className="font-medium text-yellow-600 dark:text-yellow-400">Factory Droid CLI not installed</p>
-                <p className="text-sm text-text-muted">Please install Factory Droid CLI to use this feature.</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <span className="material-symbols-outlined text-yellow-500">warning</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Factory Droid CLI not detected locally</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 pl-9">
+                  <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-yellow-700 dark:!text-yellow-300 hover:!bg-yellow-500/30">
+                    <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
+                    Manual Config
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setShowInstallGuide(!showInstallGuide)}>
+                    <span className="material-symbols-outlined text-[18px] mr-1">{showInstallGuide ? "expand_less" : "help"}</span>
+                    {showInstallGuide ? "Hide" : "How to Install"}
+                  </Button>
+                </div>
               </div>
+              {showInstallGuide && (
+                <div className="p-4 bg-surface border border-border rounded-lg">
+                  <h4 className="font-medium mb-3">Installation Guide</h4>
+                  <div className="space-y-3 text-sm">
+                    <div>
+                      <p className="text-text-muted mb-1">macOS / Linux / Windows:</p>
+                      <code className="block px-3 py-2 bg-black/5 dark:bg-white/5 rounded font-mono text-xs">curl -fsSL https://app.factory.ai/cli | sh</code>
+                    </div>
+                    <p className="text-text-muted">After installation, run <code className="px-1 bg-black/5 dark:bg-white/5 rounded">droid</code> to verify.</p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -242,12 +286,12 @@ export default function DroidToolCard({
             <>
               <div className="flex flex-col gap-2">
                 {/* Current Base URL */}
-                {droidStatus?.settings?.customModels?.find(m => m.id === "custom:9Router-0")?.baseUrl && (
+                {droidStatus?.settings?.customModels?.find(m => m.id?.startsWith("custom:9Router"))?.baseUrl && (
                   <div className="flex items-center gap-2">
                     <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Current</span>
                     <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
                     <span className="flex-1 px-2 py-1.5 text-xs text-text-muted truncate">
-                      {droidStatus.settings.customModels.find(m => m.id === "custom:9Router-0").baseUrl}
+                      {droidStatus.settings.customModels.find(m => m.id?.startsWith("custom:9Router")).baseUrl}
                     </span>
                   </div>
                 )}
@@ -256,12 +300,12 @@ export default function DroidToolCard({
                 <div className="flex items-center gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Base URL</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input 
-                    type="text" 
-                    value={getDisplayUrl()} 
-                    onChange={(e) => setCustomBaseUrl(e.target.value)} 
-                    placeholder="https://.../v1" 
-                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" 
+                  <input
+                    type="text"
+                    value={getDisplayUrl()}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                    placeholder="https://.../v1"
+                    className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
                   />
                   {customBaseUrl && customBaseUrl !== baseUrl && (
                     <button onClick={() => setCustomBaseUrl("")} className="p-1 text-text-muted hover:text-primary rounded transition-colors" title="Reset to default">
@@ -285,13 +329,48 @@ export default function DroidToolCard({
                   )}
                 </div>
 
-                {/* Model */}
+                {/* Models */}
                 <div className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Model</span>
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">
+                    Models {modelList.length > 0 && <span className="text-primary">({modelList.length})</span>}
+                  </span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
-                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`px-2 py-1.5 rounded border text-xs transition-colors shrink-0 whitespace-nowrap ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
-                  {selectedModel && <button onClick={() => setSelectedModel("")} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                  <div className="flex-1 flex flex-col gap-1">
+                    {/* Model list */}
+                    {modelList.length > 0 && (
+                      <div className="flex flex-col gap-0.5 mb-1">
+                        {modelList.map((id) => (
+                          <div key={id} className="flex items-center gap-1.5 px-2 py-1 bg-bg-secondary rounded border border-border">
+                            <span className="flex-1 text-xs font-mono truncate">{id}</span>
+                            <button onClick={() => removeModel(id)} className="text-text-muted hover:text-red-500 transition-colors shrink-0" title="Remove">
+                              <span className="material-symbols-outlined text-[12px]">close</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Model input row */}
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={modelInput}
+                        onChange={(e) => setModelInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addModel(); } }}
+                        placeholder="provider/model-id"
+                        className="flex-1 px-2 py-1.5 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                      />
+                      <button
+                        onClick={() => setModalOpen(true)}
+                        disabled={!hasActiveProviders}
+                        className={`px-2 py-1.5 rounded border text-xs shrink-0 ${hasActiveProviders ? "bg-surface border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                      >
+                        Select
+                      </button>
+                      <button onClick={addModel} disabled={!modelInput.trim()} className="px-2 py-1.5 rounded border bg-surface border-border hover:border-primary text-xs shrink-0 disabled:opacity-50" title="Add model">
+                        <span className="material-symbols-outlined text-[14px]">add</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -303,7 +382,7 @@ export default function DroidToolCard({
               )}
 
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={!selectedModel} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApplySettings} disabled={modelList.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleResetSettings} disabled={!droidStatus?.has9Router} loading={restoring}>
@@ -322,7 +401,7 @@ export default function DroidToolCard({
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onSelect={handleModelSelect}
-        selectedModel={selectedModel}
+        selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Select Model for Factory Droid"

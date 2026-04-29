@@ -7,6 +7,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -127,7 +128,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, trackDone, appendLog }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -152,6 +153,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) await onRequestSuccess();
+
+  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
+  responseBody = decloakToolNames(responseBody, toolNameMap);
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
@@ -183,6 +187,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (translatedResponse?.usage) {
     translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
+  }
+
+  // Strip reasoning_content — some clients (e.g. Firecrawl AI SDK) have JSON parsers that
+  // break on this non-standard field, even though OpenAI allows it in extensions.
+  if (translatedResponse?.choices) {
+    for (const choice of translatedResponse.choices) {
+      if (choice?.message) delete choice.message.reasoning_content;
+    }
   }
 
   reqLogger.logConvertedResponse(translatedResponse);

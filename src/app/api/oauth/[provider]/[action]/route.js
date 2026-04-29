@@ -7,6 +7,7 @@ import {
   pollForToken 
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { startCodexProxy, stopCodexProxy } from "@/lib/oauth/utils/server";
 
 /**
  * Dynamic OAuth API Route
@@ -22,8 +23,32 @@ export async function GET(request, { params }) {
 
     if (action === "authorize") {
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
-      const authData = generateAuthData(provider, redirectUri);
+      // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
+      const reservedParams = new Set(["redirect_uri"]);
+      const meta = {};
+      searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
+      const authData = generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
+    }
+
+    if (action === "start-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      const appPort = searchParams.get("app_port");
+      if (!appPort) {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const result = await startCodexProxy(Number(appPort));
+      return NextResponse.json(result);
+    }
+
+    if (action === "stop-proxy") {
+      if (provider !== "codex") {
+        return NextResponse.json({ error: "Proxy only supported for codex" }, { status: 400 });
+      }
+      stopCodexProxy();
+      return NextResponse.json({ success: true });
     }
 
     if (action === "device-code") {
@@ -33,15 +58,25 @@ export async function GET(request, { params }) {
       }
 
       const authData = generateAuthData(provider, null);
+      const startUrl = searchParams.get("start_url");
+      const region = searchParams.get("region");
+      const authMethod = searchParams.get("auth_method");
+      const deviceOptions = provider === "kiro"
+        ? {
+            ...(startUrl ? { startUrl } : {}),
+            ...(region ? { region } : {}),
+            ...(authMethod ? { authMethod } : {}),
+          }
+        : undefined;
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider);
+        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
       } else {
         // Qwen and other PKCE providers
-        deviceData = await requestDeviceCode(provider, authData.codeChallenge);
+        deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
       }
 
       return NextResponse.json({
@@ -70,7 +105,7 @@ export async function POST(request, { params }) {
     }
 
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state } = body;
+      const { code, redirectUri, codeVerifier, state, meta } = body;
 
       // Cline uses authorization_code without PKCE
       const noPkceExchangeProviders = ["cline"];
@@ -78,8 +113,8 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
-      // Exchange code for tokens
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state);
+      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
+      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
 
       // Save to database
       const connection = await createProviderConnection({
@@ -111,7 +146,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode"];
+      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy"];
       let result;
       if (noPkceProviders.includes(provider)) {
         result = await pollForToken(provider, deviceCode);

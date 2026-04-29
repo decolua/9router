@@ -40,6 +40,15 @@ export function getRotatedModels(models, comboName, strategy) {
 }
 
 /**
+ * Reset in-memory rotation state when combo/settings change
+ * @param {string} [comboName] - Combo name to reset; omit to clear all
+ */
+export function resetComboRotation(comboName) {
+  if (comboName) comboRotationState.delete(comboName);
+  else comboRotationState.clear();
+}
+
+/**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos

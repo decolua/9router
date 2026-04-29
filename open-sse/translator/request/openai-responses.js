@@ -75,6 +75,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           tool_calls: []
         };
       }
+      // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
+      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: "function",
@@ -139,7 +141,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           function: {
             name,
             description: String(tool.description || ""),
-            parameters: tool.parameters,
+            parameters: normalizeToolParameters(tool.parameters),
             strict: tool.strict
           }
         };
@@ -156,6 +158,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.reasoning;
 
   return result;
+}
+
+/**
+ * Ensure object schema always has properties field (required by Codex Responses API)
+ */
+function normalizeToolParameters(params) {
+  if (!params) return { type: "object", properties: {} };
+  if (params.type === "object" && !params.properties) return { ...params, properties: {} };
+  return params;
 }
 
 /**
@@ -226,7 +237,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         result.input.push({
           type: "function_call",
           call_id: clampCallId(tc.id),
-          name: tc.function?.name || "",
+          name: tc.function?.name || "_unknown",
           arguments: tc.function?.arguments || "{}"
         });
       }
@@ -260,7 +271,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           type: "function",
           name: tool.function.name,
           description: String(tool.function.description || ""),
-          parameters: tool.function.parameters,
+          parameters: normalizeToolParameters(tool.function.parameters),
           strict: tool.function.strict
         };
       }

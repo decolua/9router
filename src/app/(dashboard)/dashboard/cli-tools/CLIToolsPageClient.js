@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, DefaultToolCard, OpenCodeToolCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, MitmLinkCard } from "./components";
+import { MITM_TOOLS } from "@/shared/constants/cliTools";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -15,6 +16,7 @@ const STATUS_ENDPOINTS = {
   opencode: "/api/cli-tools/opencode-settings",
   droid: "/api/cli-tools/droid-settings",
   openclaw: "/api/cli-tools/openclaw-settings",
+  hermes: "/api/cli-tools/hermes-settings",
 };
 
 export default function CLIToolsPageClient({ machineId }) {
@@ -178,28 +180,25 @@ export default function CLIToolsPageClient({ machineId }) {
         return <DroidToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.droid} />;
       case "openclaw":
         return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
+      case "hermes":
+        return <HermesToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.hermes} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }
   };
 
   const regularTools = Object.entries(CLI_TOOLS);
+  const mitmTools = Object.entries(MITM_TOOLS);
 
   return (
     <div className="flex flex-col gap-6">
-      {!hasActiveProviders && (
-        <Card className="border-yellow-500/50 bg-yellow-500/5">
-          <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-yellow-500">warning</span>
-            <div>
-              <p className="font-medium text-yellow-600 dark:text-yellow-400">No active providers</p>
-              <p className="text-sm text-text-muted">Please add and connect providers first to configure CLI tools.</p>
-            </div>
-          </div>
-        </Card>
-      )}
       <div className="flex flex-col gap-4">
         {regularTools.map(([toolId, tool]) => renderToolCard(toolId, tool))}
+      </div>
+      <div className="flex flex-col gap-4">
+        {mitmTools.map(([toolId, tool]) => (
+          <MitmLinkCard key={toolId} tool={tool} />
+        ))}
       </div>
     </div>
   );

@@ -2,10 +2,12 @@ export { default as ClaudeToolCard } from "./ClaudeToolCard";
 export { default as CodexToolCard } from "./CodexToolCard";
 export { default as DroidToolCard } from "./DroidToolCard";
 export { default as OpenClawToolCard } from "./OpenClawToolCard";
+export { default as HermesToolCard } from "./HermesToolCard";
 export { default as DefaultToolCard } from "./DefaultToolCard";
 export { default as AntigravityToolCard } from "./AntigravityToolCard";
 export { default as OpenCodeToolCard } from "./OpenCodeToolCard";
 export { default as CopilotToolCard } from "./CopilotToolCard";
 export { default as MitmServerCard } from "./MitmServerCard";
 export { default as MitmToolCard } from "./MitmToolCard";
+export { default as MitmLinkCard } from "./MitmLinkCard";
 

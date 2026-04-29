@@ -355,6 +355,14 @@ function flushEvents(state) {
   return events;
 }
 
+// currentToolCallId is intentionally sticky for the current turn so flush/completion
+  // can still finalize as tool_calls even if the tool call was emitted before stream end.
+function computeFinishReason(state) {
+   return state.toolCallIndex > 0 || state.currentToolCallId
+    ? "tool_calls"
+    : "stop";
+}
+
 /**
  * Translate OpenAI Responses API chunk to OpenAI Chat Completions format
  * This is for when Codex returns data and we need to send it to an OpenAI-compatible client
@@ -362,22 +370,30 @@ function flushEvents(state) {
 export function openaiResponsesToOpenAIResponse(chunk, state) {
   if (!chunk) {
     // Flush: send final chunk with finish_reason
-    if (!state.finishReasonSent && state.started) {
-      state.finishReasonSent = true;
-      const hasToolCalls = state.toolCallIndex > 0;
-      return {
-        id: state.chatId || `chatcmpl-${Date.now()}`,
-        object: "chat.completion.chunk",
-        created: state.created || Math.floor(Date.now() / 1000),
-        model: state.model || "unknown",
-        choices: [{
-          index: 0,
-          delta: {},
-          finish_reason: hasToolCalls ? "tool_calls" : "stop"
-        }]
-      };
+    if (state.finishReasonSent || !state.started) return null;
+
+    const finishReason = computeFinishReason(state);
+
+    state.finishReasonSent = true;
+    state.finishReason = finishReason;
+
+    const finalChunk = {
+      id: state.chatId || `chatcmpl-${Date.now()}`,
+      object: "chat.completion.chunk",
+      created: state.created || Math.floor(Date.now() / 1000),
+      model: state.model || "unknown",
+      choices: [{
+        index: 0,
+        delta: {},
+        finish_reason: finishReason
+      }]
+    };
+
+    if (state.usage && typeof state.usage === "object") {
+      finalChunk.usage = state.usage;
     }
-    return null;
+
+    return finalChunk;
   }
 
   // Handle different event types from Responses API
@@ -480,35 +496,29 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     if (responseUsage && typeof responseUsage === "object") {
       const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
       const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
-      const cacheReadTokens = responseUsage.cache_read_input_tokens || 0;
-      const cacheCreationTokens = responseUsage.cache_creation_input_tokens || 0;
-      
-      // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
-      const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
+      // OpenAI Responses API: input_tokens already includes cached_tokens
+      // Cache info is in input_tokens_details.cached_tokens
+      const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
       
       state.usage = {
-        prompt_tokens: promptTokens,
+        prompt_tokens: inputTokens,
         completion_tokens: outputTokens,
-        total_tokens: promptTokens + outputTokens
+        total_tokens: inputTokens + outputTokens
       };
       
       // Add prompt_tokens_details if cache tokens exist
-      if (cacheReadTokens > 0 || cacheCreationTokens > 0) {
-        state.usage.prompt_tokens_details = {};
-        if (cacheReadTokens > 0) {
-          state.usage.prompt_tokens_details.cached_tokens = cacheReadTokens;
-        }
-        if (cacheCreationTokens > 0) {
-          state.usage.prompt_tokens_details.cache_creation_tokens = cacheCreationTokens;
-        }
+      if (cacheReadTokens > 0) {
+        state.usage.prompt_tokens_details = {
+          cached_tokens: cacheReadTokens
+        };
       }
     }
     
     if (!state.finishReasonSent) {
+      const finishReason = computeFinishReason(state);
+
       state.finishReasonSent = true;
-      const hasToolCalls = state.toolCallIndex > 0;
-      const resolvedFinishReason = hasToolCalls ? "tool_calls" : "stop";
-      state.finishReason = resolvedFinishReason; // Mark for usage injection in stream.js
+      state.finishReason = finishReason; // Mark for usage injection in stream.js
       
       const finalChunk = {
         id: state.chatId,
@@ -518,7 +528,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
         choices: [{
           index: 0,
           delta: {},
-          finish_reason: resolvedFinishReason
+          finish_reason: finishReason
         }]
       };
       
@@ -571,4 +581,3 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 // Register both directions
 register(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, null, openaiToOpenAIResponsesResponse);
 register(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, null, openaiResponsesToOpenAIResponse);
-

@@ -23,7 +23,7 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     const body = JSON.parse(bodyBuffer.toString());
     body.model = mappedModel;
     const routerPath = resolveRouterPath(req.url);
-    const routerRes = await fetchRouter(body, routerPath);
+    const routerRes = await fetchRouter(body, routerPath, req.headers);
     await pipeSSE(routerRes, res);
   } catch (error) {
     err(`[copilot] ${error.message}`);

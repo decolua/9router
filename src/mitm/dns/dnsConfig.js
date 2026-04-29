@@ -3,14 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { log, err } = require("../logger");
-
-// Per-tool DNS hosts mapping
-const TOOL_HOSTS = {
-  antigravity: ["daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com"],
-  copilot: ["api.individual.githubcopilot.com"],
-  kiro: ["q.us-east-1.amazonaws.com", "codewhisperer.us-east-1.amazonaws.com"],
-  cursor: ["api2.cursor.sh"],
-};
+const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts");
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
@@ -25,7 +18,7 @@ const HOSTS_FILE = IS_WIN
 function executeElevatedPowerShell(psScriptPath, timeoutMs = 30000) {
   const flagFile = path.join(os.tmpdir(), `ps_done_${Date.now()}.flag`);
   const psSQ = (s) => s.replace(/'/g, "''");
-  
+
   let psContent = fs.readFileSync(psScriptPath, "utf8");
   psContent += `\nSet-Content -Path '${psSQ(flagFile)}' -Value 'done' -Encoding UTF8\n`;
   fs.writeFileSync(psScriptPath, psContent, "utf8");
@@ -63,7 +56,7 @@ function executeElevatedPowerShell(psScriptPath, timeoutMs = 30000) {
 function isSudoAvailable() {
   if (IS_WIN) return false;
   try {
-    execSync("command -v sudo", { stdio: "ignore" });
+    execSync("command -v sudo", { stdio: "ignore", windowsHide: true });
     return true;
   } catch {
     return false;
@@ -78,8 +71,8 @@ function execWithPassword(command, password) {
   return new Promise((resolve, reject) => {
     const useSudo = isSudoAvailable();
     const child = useSudo
-      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"] })
-      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"] });
+      ? spawn("sudo", ["-S", "sh", "-c", command], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true })
+      : spawn("sh", ["-c", command], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
 
     let stdout = "";
     let stderr = "";
@@ -221,11 +214,35 @@ async function removeAllDNSEntries(sudoPassword) {
   }
 }
 
+/**
+ * Sync removal of ALL tool DNS entries — for use during process shutdown
+ * when async ops aren't safe. Assumes caller already has root/admin rights.
+ */
+function removeAllDNSEntriesSync() {
+  try {
+    if (!fs.existsSync(HOSTS_FILE)) return;
+    const allHosts = Object.values(TOOL_HOSTS).flat();
+    const content = fs.readFileSync(HOSTS_FILE, "utf8");
+    const eol = IS_WIN ? "\r\n" : "\n";
+    const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join(eol);
+    if (filtered === content) return;
+    fs.writeFileSync(HOSTS_FILE, filtered, "utf8");
+    if (IS_WIN) {
+      try { execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+    } else if (IS_MAC) {
+      try { execSync("dscacheutil -flushcache && killall -HUP mDNSResponder", { stdio: "ignore" }); } catch { /* ignore */ }
+    } else {
+      try { execSync("resolvectl flush-caches 2>/dev/null || true", { stdio: "ignore" }); } catch { /* ignore */ }
+    }
+  } catch { /* best effort during shutdown */ }
+}
+
 module.exports = {
   TOOL_HOSTS,
   addDNSEntry,
   removeDNSEntry,
   removeAllDNSEntries,
+  removeAllDNSEntriesSync,
   execWithPassword,
   isSudoAvailable,
   executeElevatedPowerShell,

@@ -1,12 +1,22 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { deriveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { cleanJSONSchemaForAntigravity } from "../translator/helpers/geminiHelper.js";
+
+// Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
+function sanitizeFunctionName(name) {
+  if (!name) return "_unknown";
+  let s = name.replace(/[^a-zA-Z0-9_.:\-]/g, "_");
+  if (!/^[a-zA-Z_]/.test(s)) s = "_" + s;
+  return s.substring(0, 64);
+}
 
 const MAX_RETRY_AFTER_MS = 10000;
+const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
 
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
@@ -53,14 +63,44 @@ export class AntigravityExecutor extends BaseExecutor {
       return c;
     });
 
+    // Sanitize tool schemas and function names before sending to Antigravity.
+    let tools = body.request?.tools;
+
+    if (tools && tools.length > 0) {
+      tools = tools
+        .map(group => {
+          if (!group.functionDeclarations) return group;
+          const cleanedDeclarations = group.functionDeclarations.map(fn => ({
+            ...fn,
+            name: sanitizeFunctionName(fn.name),
+            parameters: fn.parameters
+              ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
+              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+          }));
+
+          return {
+            ...group,
+            functionDeclarations: cleanedDeclarations
+          };
+        })
+        .filter(group => group.functionDeclarations?.length > 0)
+        .slice(0, 1);
+    }
+
+    const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
+    const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
+    if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
+      generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    }
+
     const transformedRequest = {
-      ...body.request,
+      ...requestWithoutTools,
+      generationConfig,
       ...(contents && { contents }),
+      ...(tools && { tools }),
       sessionId: body.request?.sessionId || deriveSessionId(credentials?.email || credentials?.connectionId),
       safetySettings: undefined,
-      toolConfig: body.request?.tools?.length > 0
-        ? { functionCallingConfig: { mode: "VALIDATED" } }
-        : body.request?.toolConfig
+      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
 
     return {
@@ -74,11 +114,11 @@ export class AntigravityExecutor extends BaseExecutor {
     };
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     if (!credentials.refreshToken) return null;
 
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.google.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.google.token, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
         body: new URLSearchParams({
@@ -87,7 +127,7 @@ export class AntigravityExecutor extends BaseExecutor {
           client_id: this.config.clientId,
           client_secret: this.config.clientSecret
         })
-      });
+      }, proxyOptions);
 
       if (!response.ok) return null;
 
@@ -256,6 +296,216 @@ export class AntigravityExecutor extends BaseExecutor {
 
     throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
   }
+
+  /**
+   * Cloak tools before sending to Antigravity provider (anti-ban):
+   * - Rename client tools with _ide suffix
+   * - Inject AG default decoy tools after client tools
+   * Returns { cloakedBody, toolNameMap } where toolNameMap maps suffixed → original
+   */
+  static cloakTools(body, clientTool = null) {
+    const tools = body.request?.tools;
+    if (!tools || tools.length === 0) {
+      return { cloakedBody: body, toolNameMap: null };
+    }
+
+    const isCopilot = clientTool === "github-copilot";
+    const toolNameMap = new Map();
+    const clientDeclarations = [];
+    const decoyNames = new Set(AG_DECOY_TOOLS.map(tool => tool.name));
+
+    // First: collect renamed client tools
+    for (const toolGroup of tools) {
+      if (!toolGroup.functionDeclarations) continue;
+
+      for (const func of toolGroup.functionDeclarations) {
+        // For GitHub Copilot, avoid emitting duplicate native Antigravity tool names.
+        // Keep the decoys only once in the final declaration list.
+        if (isCopilot && AG_DEFAULT_TOOLS.has(func.name)) {
+          continue;
+        }
+
+        // Skip if already covered by decoys for Copilot
+        if (isCopilot && decoyNames.has(func.name)) {
+          continue;
+        }
+
+        // Preserve native AG names for non-Copilot clients
+        if (AG_DEFAULT_TOOLS.has(func.name)) {
+          clientDeclarations.push(func);
+          continue;
+        }
+
+        const suffixed = `${func.name}${AG_TOOL_SUFFIX}`;
+        toolNameMap.set(suffixed, func.name);
+        clientDeclarations.push({ ...func, name: suffixed });
+      }
+    }
+
+    // Client tools first, then AG decoy tools
+    const allDeclarations = [];
+    const seenNames = new Set();
+    for (const decl of [...clientDeclarations, ...AG_DECOY_TOOLS]) {
+      if (!decl?.name || seenNames.has(decl.name)) continue;
+      seenNames.add(decl.name);
+      allDeclarations.push(decl);
+    }
+
+    // Rename tool names in conversation history (contents)
+    const cloakedContents = body.request?.contents?.map(msg => {
+      if (!msg.parts) return msg;
+      
+      const cloakedParts = msg.parts.map(part => {
+        // Rename functionCall.name
+        if (part.functionCall && !AG_DEFAULT_TOOLS.has(part.functionCall.name)) {
+          return {
+            ...part,
+            functionCall: {
+              ...part.functionCall,
+              name: `${part.functionCall.name}${AG_TOOL_SUFFIX}`
+            }
+          };
+        }
+        
+        // Rename functionResponse.name
+        if (part.functionResponse && !AG_DEFAULT_TOOLS.has(part.functionResponse.name)) {
+          return {
+            ...part,
+            functionResponse: {
+              ...part.functionResponse,
+              name: `${part.functionResponse.name}${AG_TOOL_SUFFIX}`
+            }
+          };
+        }
+        
+        return part;
+      });
+      
+      return { ...msg, parts: cloakedParts };
+    });
+
+    // Single functionDeclarations group: client tools first, then decoys
+    return {
+      cloakedBody: {
+        ...body,
+        request: {
+          ...body.request,
+          tools: [{ functionDeclarations: allDeclarations }],
+          contents: cloakedContents || body.request.contents
+        }
+      },
+      toolNameMap
+    };
+  }
 }
+
+// AG decoy tools — same names as AG native defaults, redirect to _ide suffixed tools
+const AG_DECOY_TOOLS = [
+  {
+    name: "browser_subagent",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "command_status",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "find_by_name",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "generate_image",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "grep_search",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_dir",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "list_resources",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "mcp_sequential-thinking_sequentialthinking",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "multi_replace_file_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "notify_user",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_resource",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_terminal",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "read_url_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "replace_file_content",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "run_command",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "search_web",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "send_command_input",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "task_boundary",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_content_chunk",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "view_file",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  },
+  {
+    name: "write_to_file",
+    description: "This tool is currently unavailable.",
+    parameters: { type: "OBJECT", properties: {}, required: [] }
+  }
+];
 
 export default AntigravityExecutor;

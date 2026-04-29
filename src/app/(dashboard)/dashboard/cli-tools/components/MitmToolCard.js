@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input, ModelSelectModal } from "@/shared/components";
+import { TOOL_HOSTS } from "@/shared/constants/mitmToolHosts";
 import Image from "next/image";
 
 /**
@@ -34,6 +35,7 @@ export default function MitmToolCard({
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
 
+  const mitmHosts = TOOL_HOSTS[tool.id] ?? [];
   const isWindows = typeof navigator !== "undefined" && navigator.userAgent?.includes("Windows");
 
   useEffect(() => {
@@ -162,6 +164,19 @@ export default function MitmToolCard({
 
         {isExpanded && (
           <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
+            {/* Hosts */}
+            {mitmHosts.length > 0 && (
+              <div className="mt-2 rounded-md border border-border bg-surface/50 px-2 py-1.5">
+                <p className="text-[10px] font-medium tracking-wide text-text-main/80 mb-1">
+                  Edit hosts file manually to add the following entries:
+                </p>
+                <ul className="list-none space-y-0.5 font-mono text-[10px] text-text-muted break-all">
+                  {mitmHosts.map((h) => (
+                    <li key={h}>127.0.0.1 {h}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {/* Info */}
             <div className="flex flex-col gap-0.5 text-[11px] text-text-muted px-1">
               <p>Toggle DNS to redirect {tool.name} traffic through 9Router via MITM.</p>
@@ -240,7 +255,7 @@ export default function MitmToolCard({
 
               {/* Warning below button */}
               {warning && (
-                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                <div className="flex items-center gap-2 px-2 py-1.5 rounded text-xs text-amber-500">
                   <span className="material-symbols-outlined text-[14px]">warning</span>
                   <span>{warning}</span>
                 </div>

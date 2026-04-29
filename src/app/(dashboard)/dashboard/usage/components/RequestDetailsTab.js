@@ -82,6 +82,12 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
   );
 }
 
+function getInputTokens(tokens) {
+  const prompt = tokens?.prompt_tokens || tokens?.input_tokens || 0;
+  const cache = tokens?.cached_tokens || tokens?.cache_read_input_tokens || 0;
+  return prompt < cache ? cache : prompt;
+}
+
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
@@ -276,7 +282,7 @@ export default function RequestDetailsTab() {
                        </span>
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {detail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                      {getInputTokens(detail.tokens).toLocaleString()}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {detail.tokens?.completion_tokens?.toLocaleString() || 0}
@@ -359,7 +365,7 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.prompt_tokens?.toLocaleString() || 0}
+                  {getInputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
               <div>

@@ -32,11 +32,14 @@ export default function ProxyPoolsPage() {
   const [loading, setLoading] = useState(true);
   const [showFormModal, setShowFormModal] = useState(false);
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
+  const [showVercelModal, setShowVercelModal] = useState(false);
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
+  const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [testingId, setTestingId] = useState(null);
   const notify = useNotificationStore();
 
@@ -167,6 +170,41 @@ export default function ProxyPoolsPage() {
   const closeBatchImportModal = () => {
     if (importing) return;
     setShowBatchImportModal(false);
+  };
+
+  const openVercelModal = () => {
+    setVercelForm({ vercelToken: "", projectName: "vercel-relay" });
+    setShowVercelModal(true);
+  };
+
+  const closeVercelModal = () => {
+    if (deploying) return;
+    setShowVercelModal(false);
+  };
+
+  const handleVercelDeploy = async () => {
+    if (!vercelForm.vercelToken.trim()) return;
+    setDeploying(true);
+    try {
+      const res = await fetch("/api/proxy-pools/vercel-deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vercelForm),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await fetchProxyPools();
+        closeVercelModal();
+        notify.success(`Deployed: ${data.deployUrl}`);
+      } else {
+        notify.error(data.error || "Deploy failed");
+      }
+    } catch (error) {
+      console.log("Error deploying Vercel relay:", error);
+      notify.error("Deploy failed");
+    } finally {
+      setDeploying(false);
+    }
   };
 
   const parseProxyLine = (line) => {
@@ -305,8 +343,11 @@ export default function ProxyPoolsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button variant="secondary" icon="cloud_upload" onClick={openVercelModal}>
+            Vercel Relay
+          </Button>
           <Button variant="secondary" icon="upload" onClick={openBatchImportModal}>
-            Batch Import Proxies
+            Batch Import
           </Button>
           <Button icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
         </div>
@@ -341,6 +382,9 @@ export default function ProxyPoolsPage() {
                     <Badge variant={pool.isActive ? "success" : "default"} size="sm">
                       {pool.isActive ? "active" : "inactive"}
                     </Badge>
+                    {pool.type === "vercel" && (
+                      <Badge variant="default" size="sm">vercel relay</Badge>
+                    )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
                     </Badge>
@@ -414,6 +458,54 @@ export default function ProxyPoolsPage() {
               {importing ? "Importing..." : "Import"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeBatchImportModal} disabled={importing}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showVercelModal}
+        title="Deploy Vercel Relay"
+        onClose={closeVercelModal}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-lg bg-blue-500/5 border border-blue-500/10 p-3 flex flex-col gap-1.5">
+            <p className="text-sm text-text-main font-medium">What is Vercel Relay?</p>
+            <p className="text-xs text-text-muted">
+              Deploys an edge relay function to Vercel. All AI provider requests will be forwarded through Vercel&apos;s edge network, masking your real IP from providers.
+            </p>
+            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
+              <li>Your IP is replaced by Vercel&apos;s dynamic edge IPs (hundreds of IPs across 20+ global regions)</li>
+              <li>Vercel serves millions of apps — providers can&apos;t block Vercel IPs without affecting legitimate traffic</li>
+              <li>Free tier: 100GB bandwidth/month, 500K edge invocations</li>
+              <li>Deploy multiple relays on different accounts for more IP diversity</li>
+            </ul>
+          </div>
+          <Input
+            label="Vercel API Token"
+            value={vercelForm.vercelToken}
+            onChange={(e) => setVercelForm((prev) => ({ ...prev, vercelToken: e.target.value }))}
+            placeholder="your-vercel-api-token"
+            hint={<>Token is used once for deployment and not stored. <a href="https://vercel.com/account/tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            type="password"
+          />
+          <Input
+            label="Project Name"
+            value={vercelForm.projectName}
+            onChange={(e) => setVercelForm((prev) => ({ ...prev, projectName: e.target.value }))}
+            placeholder="my-relay"
+            hint="Unique name for your Vercel project. Leave empty for auto-generated name."
+          />
+          <div className="flex gap-2">
+            <Button
+              fullWidth
+              onClick={handleVercelDeploy}
+              disabled={!vercelForm.vercelToken.trim() || deploying}
+            >
+              {deploying ? "Deploying... (may take ~1 min)" : "Deploy"}
+            </Button>
+            <Button fullWidth variant="ghost" onClick={closeVercelModal} disabled={deploying}>
               Cancel
             </Button>
           </div>

@@ -28,6 +28,20 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
     const noProxy = normalizeString(proxyPool?.noProxy);
 
     if (proxyPool && proxyPool.isActive === true && proxyUrl) {
+      // Vercel relay: rewrite base URL instead of using HTTP_PROXY
+      if (proxyPool.type === "vercel") {
+        return {
+          source: "vercel",
+          proxyPoolId,
+          proxyPool,
+          connectionProxyEnabled: false,
+          connectionProxyUrl: "",
+          connectionNoProxy: noProxy,
+          strictProxy: proxyPool.strictProxy === true,
+          vercelRelayUrl: proxyUrl,
+        };
+      }
+
       return {
         source: "pool",
         proxyPoolId,
