@@ -178,6 +178,11 @@ export async function GET() {
           rawModelIds = await fetchCompatibleModelIds(conn);
         }
 
+        // Strip any known provider prefix from remote model IDs to avoid double-prefixing.
+        // Remote APIs may return model IDs with their own provider prefix (e.g.
+        // "myprefix/gpt-4" from a proxy) while the user also configured a prefix for
+        // routing. We normalise to bare model IDs here so they get re-prefixed correctly
+        // with outputAlias below.
         const modelIds = rawModelIds
           .map((modelId) => {
             if (modelId.startsWith(`${outputAlias}/`)) {
