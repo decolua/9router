@@ -6,6 +6,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { isModelAllowed } from "../services/modelAccess.js";
+import { getCachedApiKeyRecord } from "../services/apiKeyCache.js";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -60,6 +62,24 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  // Check per-key model/connection restrictions
+  let allowedConnections = null;
+  if (apiKey) {
+    const keyRecord = await getCachedApiKeyRecord(apiKey);
+    if (keyRecord?.isActive !== false) {
+      if (keyRecord?.allowedModels?.length > 0) {
+        const allowed = await isModelAllowed(modelStr, keyRecord.allowedModels);
+        if (!allowed) {
+          log.warn("AUTH", `Model "${modelStr}" not allowed for key "${keyRecord.name}"`);
+          return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+        }
+      }
+      if (keyRecord?.allowedConnections?.length > 0) {
+        allowedConnections = keyRecord.allowedConnections;
+      }
+    }
+  }
+
   if (!body.input) {
     log.warn("EMBEDDINGS", "Missing input");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
@@ -85,7 +105,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, allowedConnections);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

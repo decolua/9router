@@ -94,11 +94,19 @@ function ensureDbShape(data) {
       }
     }
 
-    // Migrate existing API keys to have isActive
+    // Migrate existing API keys to have isActive, allowedModels, and allowedConnections
     if (key === "apiKeys" && Array.isArray(next.apiKeys)) {
       for (const apiKey of next.apiKeys) {
         if (apiKey.isActive === undefined || apiKey.isActive === null) {
           apiKey.isActive = true;
+          changed = true;
+        }
+        if (apiKey.allowedModels === undefined) {
+          apiKey.allowedModels = [];
+          changed = true;
+        }
+        if (apiKey.allowedConnections === undefined) {
+          apiKey.allowedConnections = [];
           changed = true;
         }
       }
@@ -635,8 +643,17 @@ function generateShortKey() {
   return result;
 }
 
-export async function createApiKey(name, machineId) {
-  if (!machineId) throw new Error("machineId is required");
+/**
+ * Create API key
+ * @param {string} name - Key name
+ * @param {string} machineId - MachineId (required)
+ * @param {string[]} [allowedModels] - Optional model restrictions
+ * @param {string[]} [allowedConnections] - Optional connection restrictions (connection IDs)
+ */
+export async function createApiKey(name, machineId, allowedModels, allowedConnections) {
+  if (!machineId) {
+    throw new Error("machineId is required");
+  }
 
   const db = await getDb();
   const now = new Date().toISOString();
@@ -650,6 +667,8 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId: machineId,
     isActive: true,
+    allowedModels: Array.isArray(allowedModels) ? allowedModels : [],
+    allowedConnections: Array.isArray(allowedConnections) ? allowedConnections : [],
     createdAt: now,
   };
 
@@ -688,6 +707,20 @@ export async function validateApiKey(key) {
   return found && found.isActive !== false;
 }
 
+/**
+ * Get API key record by key string (sk-...)
+ * Returns full key object or null
+ */
+export async function getApiKeyByKey(key) {
+  const db = await getDb();
+  return db.data.apiKeys.find(k => k.key === key) || null;
+}
+
+// ============ Data Cleanup ============
+
+/**
+ * Remove null/empty fields from all provider connections to reduce db size
+ */
 export async function cleanupProviderConnections() {
   const db = await getDb();
   const fieldsToCheck = [

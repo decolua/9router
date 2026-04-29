@@ -1,6 +1,8 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { getCachedApiKeyRecord } from "@/sse/services/apiKeyCache";
+import { parseModel } from "open-sse/services/model.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -84,7 +86,7 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list
  * Returns models from all active providers and combos in OpenAI format
  */
-export async function GET() {
+export async function GET(request) {
   try {
     // Get active provider connections
     let connections = [];
@@ -207,9 +209,50 @@ export async function GET() {
       }
     }
 
+    // Filter models by API key restrictions when a key is provided
+    let filteredModels = models;
+    try {
+      const authHeader = request.headers.get("Authorization");
+      const apiKeyStr = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : request.headers.get("x-api-key");
+      if (apiKeyStr) {
+        const keyRecord = await getCachedApiKeyRecord(apiKeyStr);
+        if (keyRecord?.isActive !== false && keyRecord?.allowedModels?.length > 0) {
+          // Normalize allowed entries once
+          const normalizedAllowed = keyRecord.allowedModels.map(entry => {
+            if (!entry.includes("/")) return entry;
+            const parsed = parseModel(entry);
+            return parsed.provider ? `${parsed.provider}/${parsed.model}` : entry;
+          });
+
+          filteredModels = models.filter(m => {
+            const modelId = m.id;
+            // Normalize model id
+            const normalized = modelId.includes("/")
+              ? (() => { const p = parseModel(modelId); return p.provider ? `${p.provider}/${p.model}` : modelId; })()
+              : modelId;
+
+            // Exact match
+            if (normalizedAllowed.includes(normalized)) return true;
+            // Also check raw id (for combos etc.)
+            if (normalizedAllowed.includes(modelId)) return true;
+            // Wildcard match
+            for (const pattern of normalizedAllowed) {
+              if (pattern.endsWith("/*")) {
+                const prefix = pattern.slice(0, -1);
+                if (normalized.startsWith(prefix) || modelId.startsWith(prefix)) return true;
+              }
+            }
+            return false;
+          });
+        }
+      }
+    } catch (err) {
+      console.log("Error filtering models by API key:", err);
+    }
+
     return Response.json({
       object: "list",
-      data: models,
+      data: filteredModels,
     }, {
       headers: {
         "Access-Control-Allow-Origin": "*",

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { invalidateApiKeyCacheById } from "@/sse/services/apiKeyCache";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -21,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, allowedModels, allowedConnections } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,8 +31,21 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (allowedModels !== undefined) {
+      updateData.allowedModels = Array.isArray(allowedModels)
+        ? allowedModels.filter(m => typeof m === "string" && m.trim() !== "")
+        : [];
+    }
+    if (allowedConnections !== undefined) {
+      updateData.allowedConnections = Array.isArray(allowedConnections)
+        ? allowedConnections.filter(c => typeof c === "string" && c.trim() !== "")
+        : [];
+    }
 
     const updated = await updateApiKey(id, updateData);
+
+    // Invalidate cache so new restrictions take effect immediately
+    invalidateApiKeyCacheById(id);
 
     return NextResponse.json({ key: updated });
   } catch (error) {
@@ -45,6 +59,7 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
 
+    invalidateApiKeyCacheById(id);
     const deleted = await deleteApiKey(id);
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });

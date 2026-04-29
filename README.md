@@ -359,6 +359,7 @@ Default URLs:
 | 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
 | 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
 | 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
+| 🔒 **Per-Key Restrictions** | Limit models and accounts per API key | Fine-grained access control |
 | 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
 
 <details>
@@ -411,6 +412,28 @@ Seamless translation between formats:
 - Add multiple accounts per provider
 - Auto round-robin or priority-based routing
 - Fallback to next account when one hits quota
+
+### 🔒 Per-Key Access Restrictions
+
+Control which models and provider accounts each API key can access. Manage everything from the Dashboard (Endpoint page) — click the restriction icons next to any key.
+
+**Model Restrictions** — limit which models a key can use:
+- Exact model: `openai/gpt-4.1` or `cc/claude-opus-4-6`
+- Wildcard: `openai/*` (all models from a provider)
+- Combo names: `my-coding-stack`
+- When set, all accounts remain available, but only the allowed models can be requested
+
+**Account Restrictions** — limit which provider accounts a key can use:
+- Pick specific accounts from the full list of connected provider accounts
+- When set, all models remain available, but requests are routed only through the selected accounts
+- Useful when you have multiple subscriptions and want certain keys to consume quota from specific accounts only
+
+**Combining both** — for maximum control:
+- Set both model and account restrictions on the same key
+- Example: key can only use `openai/*` models **and** only through your "Team" OpenAI account
+- Requests that don't match both filters are rejected with HTTP 403
+
+> **Note:** restrictions only take effect when "Require API key" is enabled in settings. Without it, requests without a key bypass all restrictions.
 
 ### 🔄 Auto Token Refresh
 
