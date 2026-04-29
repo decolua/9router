@@ -20,13 +20,43 @@ if (!isCloud && !fs.existsSync(DATA_DIR)) {
 
 let dbInstance = null;
 
+/**
+ * Backup a corrupted DB file so it can be inspected later.
+ */
+function backupCorruptedFile(filePath) {
+  try {
+    const backupDir = path.join(DATA_DIR, "corrupted-dumps");
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = path.join(backupDir, `request-details.corrupt.${ts}.json`);
+    fs.copyFileSync(filePath, backupPath);
+    console.warn(`[requestDetailsDb] Backed up corrupted DB to: ${backupPath}`);
+  } catch (err) {
+    console.error("[requestDetailsDb] Failed to backup corrupted DB file:", err.message);
+  }
+}
+
 async function getDb() {
   if (isCloud) return null;
   if (!dbInstance) {
     const adapter = new JSONFile(DB_FILE);
     const db = new Low(adapter, { records: [] });
-    await db.read();
-    if (!db.data?.records) db.data = { records: [] };
+    try {
+      await db.read();
+      if (!db.data?.records) db.data = { records: [] };
+    } catch (err) {
+      // Corrupted JSON file — back it up and reinitialise
+      if (err instanceof SyntaxError || (err.message && err.message.includes("JSON"))) {
+        console.error(`[requestDetailsDb] DB file is corrupted (${err.message}). Backing up and reinitialising.`);
+        backupCorruptedFile(DB_FILE);
+        db.data = { records: [] };
+        await db.write();
+      } else {
+        throw err;
+      }
+    }
     dbInstance = db;
   }
   return dbInstance;
