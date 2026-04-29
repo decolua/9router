@@ -1,4 +1,4 @@
-import { FORMATS } from "./formats.js";
+﻿import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./helpers/toolCallHelper.js";
 import { prepareClaudeRequest } from "./helpers/claudeHelper.js";
 import { cloakClaudeTools } from "../utils/claudeCloaking.js";
@@ -41,6 +41,8 @@ function ensureInitialized() {
   require("./request/openai-to-kiro.js");
   require("./request/openai-to-cursor.js");
   require("./request/openai-to-ollama.js");
+  require("./request/claude-to-kiro.js");
+  require("./request/claude-to-gemini.js");
 
   // Response translators
   require("./response/claude-to-openai.js");
@@ -51,6 +53,8 @@ function ensureInitialized() {
   require("./response/kiro-to-openai.js");
   require("./response/cursor-to-openai.js");
   require("./response/ollama-to-openai.js");
+  require("./response/kiro-to-claude.js");
+  require("./response/gemini-to-claude.js");
 }
 
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
