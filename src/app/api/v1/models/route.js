@@ -1,5 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider } from "@/shared/constants/providers";
+import { getProviderAlias, isAnthropicCompatibleProvider, isOpenAICompatibleProvider, isPassthroughProvider } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
 
 const parseOpenAIStyleModels = (data) => {
@@ -160,6 +160,7 @@ export async function GET() {
           Array.isArray(enabledModels) && enabledModels.length > 0;
         const isCompatibleProvider =
           isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+        const isPassthrough = isPassthroughProvider(providerId);
 
         // Default: if no explicit selection, all static models are active.
         // For compatible providers with no explicit selection, fetch remote /models dynamically.
@@ -176,6 +177,12 @@ export async function GET() {
 
         if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
           rawModelIds = await fetchCompatibleModelIds(conn);
+        }
+
+        // Passthrough providers (e.g. openrouter) also use OpenAI-compatible endpoints — fetch models dynamically.
+        if (isPassthrough && rawModelIds.length === 0) {
+          const fetched = await fetchCompatibleModelIds(conn);
+          if (fetched.length > 0) rawModelIds = fetched;
         }
 
         const modelIds = rawModelIds

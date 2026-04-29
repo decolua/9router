@@ -130,6 +130,11 @@ export const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 export const ANTHROPIC_COMPATIBLE_PREFIX = "anthropic-compatible-";
 export const CUSTOM_EMBEDDING_PREFIX = "custom-embedding-";
 
+export function isPassthroughProvider(providerId) {
+  const provider = AI_PROVIDERS[providerId];
+  return !!(provider && provider.passthroughModels && provider.modelsFetcher);
+}
+
 export function isOpenAICompatibleProvider(providerId) {
   return typeof providerId === "string" && providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
 }
