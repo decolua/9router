@@ -7,7 +7,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
-import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, LOCAL_UPSTREAM_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -141,10 +141,50 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
   }
 
+  const upstreamTimeoutMs = Number(process.env.API_TIMEOUT_MS) > 0 ? Number(process.env.API_TIMEOUT_MS) : LOCAL_UPSTREAM_TIMEOUT_MS;
+  const isUpstreamTimeoutError = (error) => error?.name === "TimeoutError" || error?.cause?.name === "TimeoutError";
+  const buildAbortStatus = (error) => isUpstreamTimeoutError(error) ? HTTP_STATUS.REQUEST_TIMEOUT : 499;
+  const createUpstreamSignal = () => {
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      const timeoutError = new Error(`Upstream request timed out after ${upstreamTimeoutMs}ms`);
+      timeoutError.name = "TimeoutError";
+      timeoutController.abort(timeoutError);
+    }, upstreamTimeoutMs);
+    timeoutId.unref?.();
+
+    const combinedController = new AbortController();
+    const forwardAbort = (event) => {
+      const reason = event?.target?.reason || timeoutController.signal.reason || streamController.signal.reason;
+      combinedController.abort(reason);
+    };
+
+    timeoutController.signal.addEventListener("abort", forwardAbort, { once: true });
+    streamController.signal.addEventListener("abort", forwardAbort, { once: true });
+
+    return {
+      signal: combinedController.signal,
+      cleanup: () => {
+        clearTimeout(timeoutId);
+        timeoutController.signal.removeEventListener("abort", forwardAbort);
+        streamController.signal.removeEventListener("abort", forwardAbort);
+      },
+    };
+  };
+
+  const executeUpstream = async () => {
+    const { signal, cleanup } = createUpstreamSignal();
+    try {
+      return await executor.execute({ model, body: translatedBody, stream, credentials, signal, log, proxyOptions });
+    } finally {
+      cleanup();
+    }
+  };
+
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executeUpstream();
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -152,20 +192,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => {});
+    const abortStatus = buildAbortStatus(error);
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? abortStatus : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => {});
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: error.name === "AbortError" ? abortStatus : 502, thinking: null },
       status: "error"
     })).catch(() => {});
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return createErrorResult(abortStatus, isUpstreamTimeoutError(error) ? `Upstream request timed out after ${upstreamTimeoutMs}ms` : "Request aborted");
     }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
@@ -183,7 +224,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executeUpstream();
           if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {

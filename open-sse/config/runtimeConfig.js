@@ -45,10 +45,12 @@ export const RETRY_CONFIG = {
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
-  502: { attempts: 3, delayMs: 3000 },
-  503: { attempts: 3, delayMs: 2000 },
-  504: { attempts: 2, delayMs: 3000 }
+  502: { attempts: 2, delayMs: 1500 },
+  503: { attempts: 2, delayMs: 1500 },
+  504: { attempts: 0, delayMs: 0 }
 };
+
+export const LOCAL_UPSTREAM_TIMEOUT_MS = 45000;
 
 // Normalize a retry entry to { attempts, delayMs }
 export function resolveRetryEntry(entry) {

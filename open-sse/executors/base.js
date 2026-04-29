@@ -81,7 +81,8 @@ export class BaseExecutor {
   }
 
   shouldRetry(status, urlIndex) {
-    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
+    return [HTTP_STATUS.RATE_LIMITED, HTTP_STATUS.BAD_GATEWAY, HTTP_STATUS.SERVICE_UNAVAILABLE, HTTP_STATUS.GATEWAY_TIMEOUT].includes(status)
+      && urlIndex + 1 < this.getFallbackCount();
   }
 
   // Override in subclass for provider-specific refresh

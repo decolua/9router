@@ -89,8 +89,92 @@ function migrateHistoryToDailySummary(db) {
   return true;
 }
 
+function buildRecentRequests(history = [], limit = 20) {
+  const seen = new Set();
+  return [...history]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .map((entry) => {
+      const tokens = entry.tokens || {};
+      return {
+        timestamp: entry.timestamp,
+        model: entry.model,
+        provider: entry.provider || "",
+        promptTokens: tokens.prompt_tokens || tokens.input_tokens || 0,
+        completionTokens: tokens.completion_tokens || tokens.output_tokens || 0,
+        status: entry.status || "ok",
+      };
+    })
+    .filter((entry) => {
+      if (entry.promptTokens === 0 && entry.completionTokens === 0) return false;
+      const minute = entry.timestamp ? entry.timestamp.slice(0, 16) : "";
+      const key = `${entry.model}|${entry.provider}|${entry.promptTokens}|${entry.completionTokens}|${minute}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
+async function getConnectionMap() {
+  try {
+    const { getProviderConnections } = await import("@/lib/localDb.js");
+    const allConnections = await getProviderConnections();
+    return Object.fromEntries(allConnections.map((conn) => [conn.id, conn.name || conn.email || conn.id]));
+  } catch {
+    return {};
+  }
+}
+
+function buildActiveRequests(connectionMap = {}) {
+  const activeRequests = [];
+  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    for (const [modelKey, count] of Object.entries(models)) {
+      if (count > 0) {
+        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
+        const match = modelKey.match(/^(.*) \((.*)\)$/);
+        const modelName = match ? match[1] : modelKey;
+        const providerName = match ? match[2] : "unknown";
+        activeRequests.push({ model: modelName, provider: providerName, account: accountName, count });
+      }
+    }
+  }
+  return activeRequests;
+}
+
+function getLiveErrorProvider() {
+  return (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
+}
+
+export async function getLiveUsageSnapshot() {
+  const db = await getUsageDb();
+  const history = db.data.history || [];
+  const connectionMap = await getConnectionMap();
+  return {
+    activeRequests: buildActiveRequests(connectionMap),
+    recentRequests: buildRecentRequests(history),
+    errorProvider: getLiveErrorProvider(),
+  };
+}
+
+export async function getActiveRequests() {
+  return getLiveUsageSnapshot();
+}
+
+export { buildRecentRequests };
+
 // Singleton instance
 let dbInstance = null;
+
+let requestLogBuffer = [];
+let bufferedFlushTimer = null;
+let requestLogIsFlushing = false;
+let requestLogInitialized = false;
+let requestLogTail = [];
+let usageWritePending = false;
+const REQUEST_LOG_LIMIT = 200;
+const DISK_FLUSH_INTERVAL_MS = 3000;
+const REQUEST_LOG_LOAD_LIMIT = REQUEST_LOG_LIMIT * 4;
+const MAX_HISTORY = 10000;
 
 // Use global to share pending state across Next.js route modules
 if (!global._pendingRequests) {
@@ -171,63 +255,6 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
 }
 
 /**
- * Lightweight: get only activeRequests + recentRequests without full stats recalc
- */
-export async function getActiveRequests() {
-  const activeRequests = [];
-
-  // Build active requests from pending state
-  let connectionMap = {};
-  try {
-    const { getProviderConnections } = await import("@/lib/localDb.js");
-    const allConnections = await getProviderConnections();
-    for (const conn of allConnections) {
-      connectionMap[conn.id] = conn.name || conn.email || conn.id;
-    }
-  } catch {}
-
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
-    for (const [modelKey, count] of Object.entries(models)) {
-      if (count > 0) {
-        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        const match = modelKey.match(/^(.*) \((.*)\)$/);
-        const modelName = match ? match[1] : modelKey;
-        const providerName = match ? match[2] : "unknown";
-        activeRequests.push({ model: modelName, provider: providerName, account: accountName, count });
-      }
-    }
-  }
-
-  // Get recent requests from history (re-read to get latest)
-  const db = await getUsageDb();
-  await db.read();
-  const history = db.data.history || [];
-  const seen = new Set();
-  const recentRequests = [...history]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      const promptTokens = t.prompt_tokens || t.input_tokens || 0;
-      const completionTokens = t.completion_tokens || t.output_tokens || 0;
-      return { timestamp: e.timestamp, model: e.model, provider: e.provider || "", promptTokens, completionTokens, status: e.status || "ok" };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20);
-
-  // Error provider (auto-clear after 10s)
-  const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-
-  return { activeRequests, recentRequests, errorProvider };
-}
-
-/**
  * Get usage database instance (singleton)
  */
 export async function getUsageDb() {
@@ -278,18 +305,72 @@ export async function getUsageDb() {
  * Save request usage
  * @param {object} entry - Usage entry { provider, model, tokens: { prompt_tokens, completion_tokens, ... }, connectionId?, apiKey? }
  */
+async function flushUsageDb() {
+  if (isCloud || usageWritePending) return;
+  usageWritePending = true;
+
+  try {
+    const db = await getUsageDb();
+    await db.write();
+  } catch (error) {
+    console.error("Failed to flush usage stats:", error);
+  } finally {
+    usageWritePending = false;
+  }
+}
+
+async function flushBufferedState() {
+  await Promise.allSettled([
+    flushUsageDb(),
+    flushRequestLogBuffer(),
+  ]);
+}
+
+function scheduleBufferedFlush() {
+  if (isCloud || bufferedFlushTimer) return;
+  bufferedFlushTimer = setTimeout(() => {
+    bufferedFlushTimer = null;
+    flushBufferedState().catch(() => {});
+  }, DISK_FLUSH_INTERVAL_MS);
+  bufferedFlushTimer.unref?.();
+}
+
+function clearBufferedFlushTimer() {
+  if (!bufferedFlushTimer) return;
+  clearTimeout(bufferedFlushTimer);
+  bufferedFlushTimer = null;
+}
+
+const flushBufferedStateOnExit = async () => {
+  clearBufferedFlushTimer();
+  await flushBufferedState();
+};
+
+if (!isCloud) {
+  process.off("beforeExit", flushBufferedStateOnExit);
+  process.off("SIGINT", flushBufferedStateOnExit);
+  process.off("SIGTERM", flushBufferedStateOnExit);
+  process.off("exit", flushBufferedStateOnExit);
+  process.on("beforeExit", flushBufferedStateOnExit);
+  process.on("SIGINT", flushBufferedStateOnExit);
+  process.on("SIGTERM", flushBufferedStateOnExit);
+  process.on("exit", flushBufferedStateOnExit);
+}
+
+function scheduleUsageDbFlush() {
+  scheduleBufferedFlush();
+}
+
 export async function saveRequestUsage(entry) {
   if (isCloud) return; // Skip saving in Workers
 
   try {
     const db = await getUsageDb();
 
-    // Add timestamp if not present
     if (!entry.timestamp) {
       entry.timestamp = new Date().toISOString();
     }
 
-    // Ensure history array exists
     if (!Array.isArray(db.data.history)) {
       db.data.history = [];
     }
@@ -305,13 +386,12 @@ export async function saveRequestUsage(entry) {
     if (!db.data.dailySummary) db.data.dailySummary = {};
     aggregateEntryToDailySummary(db.data.dailySummary, entry);
 
-    const MAX_HISTORY = 10000;
     if (db.data.history.length > MAX_HISTORY) {
       db.data.history.splice(0, db.data.history.length - MAX_HISTORY);
     }
 
-    await db.write();
     statsEmitter.emit("update");
+    scheduleUsageDbFlush();
   } catch (error) {
     console.error("Failed to save usage stats:", error);
   }
@@ -361,6 +441,55 @@ function formatLogDate(date = new Date()) {
   return `${d}-${m}-${y} ${h}:${min}:${s}`;
 }
 
+async function ensureRequestLogLoaded() {
+  if (requestLogInitialized || isCloud || !LOG_FILE || !fs?.promises) return;
+  requestLogInitialized = true;
+
+  try {
+    const content = await fs.promises.readFile(LOG_FILE, "utf-8");
+    requestLogTail = content.split("\n").filter(Boolean).slice(-REQUEST_LOG_LOAD_LIMIT);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.error("Failed to load log.txt:", error.message);
+    }
+    requestLogTail = [];
+  }
+}
+
+async function flushRequestLogBuffer() {
+  if (isCloud || requestLogIsFlushing || requestLogBuffer.length === 0 || !LOG_FILE || !fs?.promises) return;
+
+  requestLogIsFlushing = true;
+
+  let pendingLines = [];
+  try {
+    await ensureRequestLogLoaded();
+
+    pendingLines = requestLogBuffer;
+    requestLogBuffer = [];
+    requestLogTail.push(...pendingLines);
+    if (requestLogTail.length > REQUEST_LOG_LOAD_LIMIT) {
+      requestLogTail = requestLogTail.slice(-REQUEST_LOG_LOAD_LIMIT);
+    }
+
+    const nextTail = requestLogTail.slice(-REQUEST_LOG_LIMIT);
+    await fs.promises.writeFile(LOG_FILE, `${nextTail.join("\n")}\n`, "utf-8");
+    requestLogTail = nextTail;
+  } catch (error) {
+    console.error("Failed to flush log.txt:", error.message);
+    requestLogBuffer = pendingLines.concat(requestLogBuffer);
+  } finally {
+    requestLogIsFlushing = false;
+    if (requestLogBuffer.length > 0) {
+      scheduleBufferedFlush();
+    }
+  }
+}
+
+function scheduleRequestLogFlush() {
+  scheduleBufferedFlush();
+}
+
 /**
  * Append to log.txt
  * Format: datetime(dd-mm-yyyy h:m:s) | model | provider | account | tokens sent | tokens received | status
@@ -372,31 +501,12 @@ export async function appendRequestLog({ model, provider, connectionId, tokens, 
     const timestamp = formatLogDate();
     const p = provider?.toUpperCase() || "-";
     const m = model || "-";
-
-    // Resolve account name
-    let account = connectionId ? connectionId.slice(0, 8) : "-";
-    try {
-      const { getProviderConnections } = await import("@/lib/localDb.js");
-      const connections = await getProviderConnections();
-      const conn = connections.find(c => c.id === connectionId);
-      if (conn) {
-        account = conn.name || conn.email || account;
-      }
-    } catch {}
-
+    const account = connectionId ? connectionId.slice(0, 8) : "-";
     const sent = tokens?.prompt_tokens !== undefined ? tokens.prompt_tokens : "-";
     const received = tokens?.completion_tokens !== undefined ? tokens.completion_tokens : "-";
 
-    const line = `${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}\n`;
-
-    fs.appendFileSync(LOG_FILE, line);
-
-    // Trim to keep only last 200 lines
-    const content = fs.readFileSync(LOG_FILE, "utf-8");
-    const lines = content.trim().split("\n");
-    if (lines.length > 200) {
-      fs.writeFileSync(LOG_FILE, lines.slice(-200).join("\n") + "\n");
-    }
+    requestLogBuffer.push(`${timestamp} | ${m} | ${p} | ${account} | ${sent} | ${received} | ${status}`);
+    scheduleRequestLogFlush();
   } catch (error) {
     console.error("Failed to append to log.txt:", error.message);
   }
@@ -527,27 +637,7 @@ export async function getUsageStats(period = "all") {
   }
 
   // Recent requests (always from live history)
-  const seen = new Set();
-  const recentRequests = [...history]
-    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-    .map((e) => {
-      const t = e.tokens || {};
-      return {
-        timestamp: e.timestamp, model: e.model, provider: e.provider || "",
-        promptTokens: t.prompt_tokens || t.input_tokens || 0,
-        completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
-      };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 20);
+  const recentRequests = buildRecentRequests(history);
 
   const lifetimeTotalRequests = typeof db.data.totalRequestsLifetime === "number"
     ? db.data.totalRequestsLifetime
@@ -561,23 +651,11 @@ export async function getUsageStats(period = "all") {
     pending: pendingRequests,
     activeRequests: [],
     recentRequests,
-    errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
+    errorProvider: getLiveErrorProvider(),
   };
 
   // Active requests from pending
-  for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
-    for (const [modelKey, count] of Object.entries(models)) {
-      if (count > 0) {
-        const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
-        const match = modelKey.match(/^(.*) \((.*)\)$/);
-        stats.activeRequests.push({
-          model: match ? match[1] : modelKey,
-          provider: match ? match[2] : "unknown",
-          account: accountName, count,
-        });
-      }
-    }
-  }
+  stats.activeRequests = buildActiveRequests(connectionMap);
 
   // last10Minutes — always from live history
   const now = new Date();
