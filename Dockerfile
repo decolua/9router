@@ -24,6 +24,7 @@ ENV NODE_ENV=production
 ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV DATA_DIR=/app/data
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
@@ -36,9 +37,9 @@ COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 
 RUN mkdir -p /app/data && chown -R bun:bun /app
 
-# Fix permissions at runtime (handles mounted volumes)
+# Fix permissions at runtime (handles mounted volumes and custom DATA_DIR)
 RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
-  printf '#!/bin/sh\nchown -R bun:bun /app/data 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
+  printf '#!/bin/sh\nDIR="${DATA_DIR:-/app/data}"\nmkdir -p "$DIR"\nchown -R bun:bun "$DIR" 2>/dev/null\nexec su-exec bun "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
 EXPOSE 20128
