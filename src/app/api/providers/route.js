@@ -8,6 +8,7 @@ import {
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { backfillCodexEmails } from "@/lib/oauth/providers";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ async function normalizeProxyPoolId(proxyPoolId) {
 // GET /api/providers - List all connections
 export async function GET() {
   try {
+    await backfillCodexEmails();
     const connections = await getProviderConnections();
 
     // Build nodeNameMap for compatible providers (id → name)

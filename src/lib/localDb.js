@@ -372,12 +372,86 @@ export async function createProviderConnection(data) {
   const db = await getDb();
   const now = new Date().toISOString();
 
-  // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
+  // Upsert: codex oauth uses account/workspace/plan identity; others keep legacy behavior
   let existingIndex = -1;
-  if (data.authType === "oauth" && data.email) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
-    );
+  if (data.authType === "oauth") {
+    if (data.provider === "codex") {
+      const normalize = (value) => (typeof value === "string" ? value.trim() : "");
+      const incomingEmail = normalize(data.email);
+      const incomingAccountId = normalize(data.providerSpecificData?.chatgptAccountId);
+      const incomingWorkspaceId = normalize(data.providerSpecificData?.chatgptWorkspaceId);
+      const incomingPlanType = normalize(data.providerSpecificData?.chatgptPlanType);
+
+      const codexOAuthConnections = db.data.providerConnections
+        .map((connection, index) => ({ connection, index }))
+        .filter(({ connection }) => connection.provider === "codex" && connection.authType === "oauth");
+
+      const findCodexExistingIndex = (matcher) => {
+        const found = codexOAuthConnections.find(({ connection }) => {
+          const email = normalize(connection.email);
+          const accountId = normalize(connection.providerSpecificData?.chatgptAccountId);
+          const workspaceId = normalize(connection.providerSpecificData?.chatgptWorkspaceId);
+          const planType = normalize(connection.providerSpecificData?.chatgptPlanType);
+          return matcher({ email, accountId, workspaceId, planType });
+        });
+        return found ? found.index : -1;
+      };
+
+      if (incomingAccountId && incomingWorkspaceId && incomingPlanType) {
+        existingIndex = findCodexExistingIndex(
+          ({ accountId, workspaceId, planType }) =>
+            accountId === incomingAccountId &&
+            workspaceId === incomingWorkspaceId &&
+            planType === incomingPlanType,
+        );
+      }
+      if (existingIndex === -1 && incomingAccountId && incomingWorkspaceId) {
+        existingIndex = findCodexExistingIndex(
+          ({ accountId, workspaceId }) =>
+            accountId === incomingAccountId && workspaceId === incomingWorkspaceId,
+        );
+      }
+      if (existingIndex === -1 && incomingAccountId && incomingPlanType) {
+        existingIndex = findCodexExistingIndex(
+          ({ accountId, planType }) =>
+            accountId === incomingAccountId && planType === incomingPlanType,
+        );
+      }
+      if (existingIndex === -1 && incomingAccountId) {
+        existingIndex = findCodexExistingIndex(
+          ({ accountId }) => accountId === incomingAccountId,
+        );
+      }
+      if (existingIndex === -1 && incomingEmail && incomingWorkspaceId && incomingPlanType) {
+        existingIndex = findCodexExistingIndex(
+          ({ email, workspaceId, planType }) =>
+            email === incomingEmail &&
+            workspaceId === incomingWorkspaceId &&
+            planType === incomingPlanType,
+        );
+      }
+      if (existingIndex === -1 && incomingEmail && incomingPlanType) {
+        existingIndex = findCodexExistingIndex(
+          ({ email, planType }) =>
+            email === incomingEmail && planType === incomingPlanType,
+        );
+      }
+      if (
+        existingIndex === -1 &&
+        incomingEmail &&
+        !incomingAccountId &&
+        !incomingWorkspaceId &&
+        !incomingPlanType
+      ) {
+        existingIndex = findCodexExistingIndex(
+          ({ email }) => email === incomingEmail,
+        );
+      }
+    } else if (data.email) {
+      existingIndex = db.data.providerConnections.findIndex(
+        c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
+      );
+    }
   } else if (data.authType === "apikey" && data.name) {
     existingIndex = db.data.providerConnections.findIndex(
       c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
