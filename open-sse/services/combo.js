@@ -12,6 +12,42 @@ import { unavailableResponse } from "../utils/error.js";
 const comboRotationState = new Map();
 
 /**
+ * Track per-model quota exhaustion: modelStr → timestamp when it becomes available again.
+ * This persists across requests so exhausted models are skipped until their cooldown expires,
+ * rather than being retried from the top of the combo on every new request.
+ * @type {Map<string, number>}
+ */
+const modelSkipUntil = new Map();
+
+/**
+ * Mark a model as quota-exhausted for the given cooldown window.
+ * @param {string} modelStr - The model identifier
+ * @param {number} cooldownMs - How long (ms) to skip this model
+ */
+function markModelExhausted(modelStr, cooldownMs) {
+  if (!cooldownMs || cooldownMs <= 0) return;
+  const existing = modelSkipUntil.get(modelStr) || 0;
+  const next = Date.now() + cooldownMs;
+  // Only extend the window, never shorten it
+  if (next > existing) modelSkipUntil.set(modelStr, next);
+}
+
+/**
+ * Return true if the model is still within its quota-exhaustion cooldown.
+ * @param {string} modelStr - The model identifier
+ * @returns {boolean}
+ */
+function isModelExhausted(modelStr) {
+  const until = modelSkipUntil.get(modelStr);
+  if (!until) return false;
+  if (Date.now() >= until) {
+    modelSkipUntil.delete(modelStr); // expired — clean up
+    return false;
+  }
+  return true;
+}
+
+/**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
@@ -89,6 +125,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+
+    // Skip models that are still within their quota-exhaustion cooldown from a previous request
+    if (isModelExhausted(modelStr)) {
+      log.info("COMBO", `Skipping exhausted model ${i + 1}/${rotatedModels.length}: ${modelStr} (quota cooldown active)`);
+      lastError = lastError || `${modelStr} quota exhausted`;
+      if (!lastStatus) lastStatus = 429;
+      continue;
+    }
+
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -136,6 +181,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           (result.status === 503 || result.status === 502 || result.status === 504)) {
         log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
         await new Promise(r => setTimeout(r, cooldownMs));
+      }
+
+      // For quota/auth errors with a long cooldown, mark the model as exhausted so
+      // subsequent requests skip it immediately instead of wasting time retrying.
+      // Only apply to substantial cooldowns (>5 s) to avoid skipping on transient errors.
+      if (cooldownMs && cooldownMs > 5000) {
+        markModelExhausted(modelStr, cooldownMs);
+        log.info("COMBO", `Model ${modelStr} marked exhausted for ${Math.round(cooldownMs / 1000)}s`);
       }
 
       // Fallback to next model
