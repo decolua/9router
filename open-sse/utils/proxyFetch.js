@@ -195,8 +195,45 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+// SDK-related header keys that upstream providers may block
+const STRIP_HEADERS = new Set([
+  "user-agent",
+  "x-stainless-retry-count",
+  "x-stainless-timeout",
+  "x-stainless-lang",
+  "x-stainless-package-version",
+  "x-stainless-os",
+  "x-stainless-arch",
+  "x-stainless-runtime",
+  "x-stainless-runtime-version",
+]);
+
+/**
+ * Strip SDK metadata headers that upstream providers may block.
+ * Returns a new headers object without the stripped keys.
+ */
+function stripSdkHeaders(headers) {
+  if (!headers) return {};
+  const result = {};
+  let stripped = false;
+  for (const [key, value] of Object.entries(headers)) {
+    if (STRIP_HEADERS.has(key.toLowerCase())) {
+      stripped = true;
+      continue;
+    }
+    result[key] = value;
+  }
+  if (stripped) console.log("[ProxyFetch] Stripped SDK metadata headers from upstream request");
+  return result;
+}
+
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+
+  // Strip SDK metadata headers before forwarding upstream
+  if (options.headers) {
+    options = { ...options, headers: stripSdkHeaders(options.headers) };
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
