@@ -123,9 +123,9 @@ export default function ModelSelectModal({
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
+          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${alias}/`, ""),
+            id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
             value: fullModel,
           }));
