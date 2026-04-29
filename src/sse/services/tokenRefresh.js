@@ -197,12 +197,14 @@ export async function checkAndRefreshToken(provider, credentials) {
     const now       = Date.now();
     const remaining = expiresAt - now;
 
-    const refreshLead = _getRefreshLeadMs(provider);
+    // Allow per-connection override via providerSpecificData.refreshLeadMs
+    const refreshLead = creds.providerSpecificData?.refreshLeadMs ?? _getRefreshLeadMs(provider);
     if (remaining < refreshLead) {
       log.info("TOKEN_REFRESH", "Token expiring soon, refreshing proactively", {
         provider,
         expiresIn: Math.round(remaining / 1000),
         refreshLeadMs: refreshLead,
+        refreshLeadOverridden: creds.providerSpecificData?.refreshLeadMs != null,
       });
 
       const newCreds = await getAccessToken(provider, creds);
