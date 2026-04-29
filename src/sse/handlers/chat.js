@@ -162,6 +162,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
+    // If the model is a bare name (no "/" — e.g. "auto" resolved from a connection alias),
+    // and the connection has a defaultModel, use that so the upstream receives a real model ID
+    let effectiveModel = model;
+    if (!modelStr.includes("/") && credentials?.defaultModel) {
+      effectiveModel = credentials.defaultModel;
+    }
+
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -197,8 +204,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
+      body: { ...body, model: `${provider}/${effectiveModel}` },
+      modelInfo: { provider, model: effectiveModel },
       credentials: refreshedCredentials,
       log,
       clientRawRequest,
