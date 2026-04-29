@@ -170,6 +170,13 @@ function normalizeToolParameters(params) {
 }
 
 /**
+ * Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
+ */
+function requiresMaxCompletionTokens(model) {
+  return /gpt-5|o[134]-/i.test(model);
+}
+
+/**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
@@ -279,10 +286,18 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     });
   }
 
-  // Pass through other relevant fields
-  if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
+  // Translate max_tokens to max_completion_tokens for newer models that require it
+  if (requiresMaxCompletionTokens(model) && body.max_tokens !== undefined) {
+    result.max_completion_tokens = body.max_tokens;
+  } else if (body.max_tokens !== undefined) {
+    result.max_tokens = body.max_tokens;
+  }
+  // gpt-5.4 doesn't support temperature
+  if (body.temperature !== undefined && !/gpt-5\.4/i.test(model)) {
+    result.temperature = body.temperature;
+  }
   if (body.top_p !== undefined) result.top_p = body.top_p;
+
 
   return result;
 }
