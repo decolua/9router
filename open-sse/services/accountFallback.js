@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, msUntilMidnightVN, msUntilNextMinute } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -25,24 +25,28 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
-  for (const rule of ERROR_RULES) {
-    // Text-based rule: match substring in error message
-    if (rule.text && lowerError && lowerError.includes(rule.text)) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+  const resolveCooldown = (rule) => {
+    if (rule.backoff) {
+      const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+      return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
     }
+    if (rule.untilMidnightVN) {
+      return { shouldFallback: true, cooldownMs: msUntilMidnightVN(), newBackoffLevel: 0 };
+    }
+    if (rule.untilNextMinute) {
+      return { shouldFallback: true, cooldownMs: msUntilNextMinute(), newBackoffLevel: 0 };
+    }
+    return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+  };
 
-    // Status-based rule: match HTTP status code
-    if (rule.status && rule.status === status) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
-    }
+  const rawError = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText))
+    : "";
+
+  for (const rule of ERROR_RULES) {
+    if (rule.text && lowerError && lowerError.includes(rule.text)) return resolveCooldown(rule);
+    if (rule.pattern && rawError && rule.pattern.test(rawError)) return resolveCooldown(rule);
+    if (rule.status && rule.status === status) return resolveCooldown(rule);
   }
 
   // Default: transient cooldown for any unmatched error

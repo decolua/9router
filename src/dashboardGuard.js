@@ -26,6 +26,7 @@ async function hasValidCliToken(request) {
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
   "/api/settings/database",
+  "/api/settings/migrate-sqlite",
 ];
 
 // Require auth, but allow through if requireLogin is disabled

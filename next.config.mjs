@@ -15,6 +15,15 @@ const nextConfig = {
         path: false,
       };
     }
+    // Mark `bun:sqlite` as external on the server so webpack doesn't try to
+    // resolve it at build time. At runtime it's only required when running
+    // under Bun, where createRequire resolves it via Bun's builtin loader.
+    if (isServer) {
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : config.externals ? [config.externals] : []),
+        { "bun:sqlite": "commonjs bun:sqlite" },
+      ];
+    }
     // Stop watching logs directory to prevent HMR during streaming
     config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next)[\\/]/ };
     return config;

@@ -15,6 +15,9 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [migrateLoading, setMigrateLoading] = useState(false);
+  const [migrateStatus, setMigrateStatus] = useState({ type: "", message: "" });
+  const [legacyInfo, setLegacyInfo] = useState({ hasLegacyData: false, legacyFilesFound: [] });
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
     outboundProxyEnabled: false,
@@ -24,6 +27,15 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/migrate-sqlite")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data && !data.error) setLegacyInfo(data);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -329,6 +341,38 @@ export default function ProfilePage() {
     }
   };
 
+  const handleMigrateSqlite = async () => {
+    if (!confirm("Import legacy JSON files (db.json / usage.json / request-details.json) into SQLite? Originals will be renamed to .bak on success.")) {
+      return;
+    }
+    setMigrateLoading(true);
+    setMigrateStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings/migrate-sqlite", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Migration failed");
+
+      const rows = data.imported ?? 0;
+      const files = Array.isArray(data.files) && data.files.length
+        ? ` (${data.files.map((f) => `${f.file}: ${f.rows}`).join(", ")})`
+        : "";
+      setMigrateStatus({
+        type: "success",
+        message: rows > 0
+          ? `Imported ${rows} rows into SQLite${files}`
+          : (data.message || "No legacy JSON files found to migrate"),
+      });
+
+      const info = await fetch("/api/settings/migrate-sqlite").then((r) => r.json()).catch(() => null);
+      if (info && !info.error) setLegacyInfo(info);
+      if (rows > 0) await reloadSettings();
+    } catch (err) {
+      setMigrateStatus({ type: "error", message: err.message || "Migration failed" });
+    } finally {
+      setMigrateLoading(false);
+    }
+  };
+
   const observabilityEnabled = settings.enableObservability === true;
 
   return (
@@ -370,8 +414,8 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex items-center justify-between p-3 rounded-lg bg-bg border border-border">
               <div>
-                <p className="font-medium">Database Location</p>
-                <p className="text-sm text-text-muted font-mono">~/.9router/db.json</p>
+                <p className="font-medium">Database</p>
+                <p className="text-sm text-text-muted font-mono">SQLite (~/.9router/9router.sqlite)</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -391,6 +435,18 @@ export default function ProfilePage() {
               >
                 Import Backup
               </Button>
+              <Button
+                variant="primary"
+                icon="swap_horiz"
+                onClick={handleMigrateSqlite}
+                loading={migrateLoading}
+                disabled={!legacyInfo.hasLegacyData}
+                title={legacyInfo.hasLegacyData
+                  ? `Found: ${legacyInfo.legacyFilesFound.join(", ")}`
+                  : "No legacy JSON files detected"}
+              >
+                Migrate JSON → SQLite
+              </Button>
               <input
                 ref={importFileRef}
                 type="file"
@@ -399,9 +455,19 @@ export default function ProfilePage() {
                 onChange={handleImportDatabase}
               />
             </div>
+            {legacyInfo.hasLegacyData && (
+              <p className="text-sm text-text-muted">
+                Legacy files detected: <span className="font-mono">{legacyInfo.legacyFilesFound.join(", ")}</span>
+              </p>
+            )}
             {dbStatus.message && (
               <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
                 {dbStatus.message}
+              </p>
+            )}
+            {migrateStatus.message && (
+              <p className={`text-sm ${migrateStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {migrateStatus.message}
               </p>
             )}
           </div>

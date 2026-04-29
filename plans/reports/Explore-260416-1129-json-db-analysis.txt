@@ -1,0 +1,37 @@
+9ROUTER JSON DATABASE LAYER - COMPREHENSIVE ANALYSIS
+=====================================================
+Date: 2026-04-16 | Project: 9router-sqlite
+
+---
+1. CORE DATABASE FILES
+---
+
+1.1 localDb.js (844 lines)
+File: src/lib/localDb.js
+Storage: db.json (Windows: %APPDATA%\9router, Unix: ~/.9router)
+Framework: lowdb v7.0.1 + proper-lockfile v4.1.2
+
+EXPORTED FUNCTIONS (60+):
+
+Provider Connections: getProviderConnections, getProviderConnectionById, createProviderConnection,
+  updateProviderConnection, deleteProviderConnection, deleteProviderConnectionsByProvider, reorderProviderConnections
+
+Provider Nodes: getProviderNodes, getProviderNodeById, createProviderNode, updateProviderNode, deleteProviderNode
+
+Proxy Pools: getProxyPools, getProxyPoolById, createProxyPool, updateProxyPool, deleteProxyPool
+
+Model Aliases: getModelAliases, setModelAlias, deleteModelAlias
+
+MITM Alias: getMitmAlias, setMitmAliasAll
+
+Combos: getCombos, getComboById, getComboByName, createCombo, updateCombo, deleteCombo
+
+API Keys: getApiKeys, getApiKeyById, createApiKey, deleteApiKey, updateApiKey, validateApiKey, cleanupProviderConnections
+
+Settings: getSettings, updateSettings
+
+Pricing: getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing
+
+Cloud Integration: isCloudEnabled, getCloudUrl
+
+Core: getDb, exportDb, importDb

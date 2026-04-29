@@ -77,10 +77,19 @@ const normalize = (value) => {
  * This is the preferred strategy — no external CLI required.
  */
 function extractTokensViaBetterSqlite(dbPath) {
-  // Dynamic require so the route stays importable even if native bindings fail
+  // Dynamic require so the route stays importable even if native bindings fail.
+  // `bun:sqlite` is marked external in next.config.mjs so webpack passes the
+  // require through to the runtime resolver.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const Database = require("better-sqlite3");
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const isBun = typeof Bun !== "undefined";
+  const Database = isBun
+    ? require("bun:sqlite").Database
+    : require("better-sqlite3");
+  // bun:sqlite uses `create: false` to require an existing file;
+  // better-sqlite3 uses `fileMustExist: true`.
+  const db = isBun
+    ? new Database(dbPath, { readonly: true, create: false })
+    : new Database(dbPath, { readonly: true, fileMustExist: true });
 
   const query = (key) => {
     const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);

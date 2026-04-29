@@ -47,6 +47,19 @@ const COOLDOWN = {
   short: 5 * 1000,
 };
 
+// Compute ms until next 00:00 Asia/Saigon (UTC+7)
+export function msUntilMidnightVN() {
+  const msInDay = 24 * 60 * 60 * 1000;
+  const vnOffset = 7 * 60 * 60 * 1000;
+  const msSinceVNMidnight = (Date.now() + vnOffset) % msInDay;
+  return msInDay - msSinceVNMidnight;
+}
+
+// Compute ms until next minute boundary (for per-minute rate limits)
+export function msUntilNextMinute() {
+  return 60_000 - (Date.now() % 60_000);
+}
+
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
@@ -58,6 +71,10 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  // Daily token quota — lock until 00:00 Asia/Saigon (per-call dynamic cooldown)
+  { text: "daily token limit",        untilMidnightVN: true },
+  // Per-minute rate limit (e.g. "max 30 req/min", "30 RPM", "requests per minute") — lock until next minute boundary
+  { pattern: /(req(uests?)?[\s/]?(per\s)?min(ute)?|\/min\b|\brpm\b)/i, untilNextMinute: true },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

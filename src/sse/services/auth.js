@@ -5,8 +5,50 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// In-memory rotation state per provider for round-robin (Node single-thread → safe)
+// Map<providerId, { lastConnectionId: string, consecutiveCount: number }>
+const rotationState = new Map();
+
+// Debounced async persist of rotation metadata (avoid awaiting DB write on hot path).
+// Map<connectionId, { lastUsedAt, consecutiveUseCount, timer }>
+const persistQueue = new Map();
+const PERSIST_DEBOUNCE_MS = 1000;
+
+// Short-TTL cache of provider connections to avoid SELECT on every request
+// when many concurrent calls hit the same provider.
+// Map<providerId, { connections: [], fetchedAt: ms }>
+const connectionsCache = new Map();
+const CONNECTIONS_CACHE_TTL_MS = 1000;
+
+export function invalidateConnectionsCache(providerId) {
+  if (providerId) connectionsCache.delete(providerId);
+  else connectionsCache.clear();
+}
+
+async function getCachedActiveConnections(providerId) {
+  const entry = connectionsCache.get(providerId);
+  const now = Date.now();
+  if (entry && (now - entry.fetchedAt) < CONNECTIONS_CACHE_TTL_MS) {
+    return entry.connections;
+  }
+  const connections = await getProviderConnections({ provider: providerId, isActive: true });
+  connectionsCache.set(providerId, { connections, fetchedAt: now });
+  return connections;
+}
+
+function schedulePersist(connectionId, fields) {
+  const existing = persistQueue.get(connectionId);
+  if (existing?.timer) clearTimeout(existing.timer);
+  const merged = { ...(existing || {}), ...fields };
+  merged.timer = setTimeout(() => {
+    const { timer, ...payload } = persistQueue.get(connectionId) || {};
+    persistQueue.delete(connectionId);
+    updateProviderConnection(connectionId, payload).catch((err) => {
+      log.debug("AUTH", `Persist rotation failed: ${err?.message || err}`);
+    });
+  }, PERSIST_DEBOUNCE_MS);
+  persistQueue.set(connectionId, merged);
+}
 
 /**
  * Get provider credentials from localDb
@@ -21,14 +63,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
 
   try {
-    await currentMutex;
-
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
@@ -52,7 +88,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = await getCachedActiveConnections(providerId);
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -115,42 +151,45 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
+      // Use in-memory rotation state for hot path (no DB read/write).
+      // Falls back to DB lastUsedAt only when memory state is empty (cold start).
+      let state = rotationState.get(providerId);
+      let current = state ? availableConnections.find(c => c.id === state.lastConnectionId) : null;
 
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+      if (!current) {
+        // Cold start: pick by DB lastUsedAt (most recent) so rotation continues across restarts
+        const byRecency = [...availableConnections].sort((a, b) => {
+          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+          if (!a.lastUsedAt) return 1;
+          if (!b.lastUsedAt) return -1;
+          return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
         });
+        current = byRecency[0];
+        state = { lastConnectionId: current?.id, consecutiveCount: current?.consecutiveUseCount || 0 };
+      }
+
+      if (current && state.consecutiveCount < stickyLimit) {
+        connection = current;
+        state.consecutiveCount += 1;
       } else {
-        // Pick the least recently used (excluding current if possible)
+        // Pick least-recently-used among available connections
         const sortedByOldest = [...availableConnections].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
           return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
         });
-
         connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
+        state = { lastConnectionId: connection.id, consecutiveCount: 1 };
       }
+
+      rotationState.set(providerId, state);
+
+      // Persist async (debounced) — does not block request
+      schedulePersist(connection.id, {
+        lastUsedAt: new Date().toISOString(),
+        consecutiveUseCount: state.consecutiveCount,
+      });
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = availableConnections[0];
@@ -180,8 +219,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // Pass full connection for clearAccountError to read modelLock_* keys
       _connection: connection
     };
-  } finally {
-    if (resolveMutex) resolveMutex();
+  } catch (err) {
+    log.error("AUTH", `getProviderCredentials failed: ${err?.message || err}`);
+    throw err;
   }
 }
 
@@ -223,6 +263,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
+  if (provider) invalidateConnectionsCache(resolveProviderId(provider));
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
@@ -277,6 +318,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   }
 
   await updateProviderConnection(connectionId, clearObj);
+  if (conn?.provider) invalidateConnectionsCache(resolveProviderId(conn.provider));
 }
 
 /**

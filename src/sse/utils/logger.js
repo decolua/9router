@@ -7,7 +7,15 @@ const LOG_LEVELS = {
   ERROR: 3
 };
 
-const LEVEL = LOG_LEVELS.DEBUG;
+// Configurable log level (default: INFO; set LOG_LEVEL=debug for verbose dev mode).
+const LEVEL = (() => {
+  const env = (process.env.LOG_LEVEL || "").toLowerCase();
+  if (env === "debug") return LOG_LEVELS.DEBUG;
+  if (env === "info") return LOG_LEVELS.INFO;
+  if (env === "warn") return LOG_LEVELS.WARN;
+  if (env === "error") return LOG_LEVELS.ERROR;
+  return LOG_LEVELS.INFO;
+})();
 
 function formatTime() {
   return new Date().toLocaleTimeString("en-US", { hour12: false });

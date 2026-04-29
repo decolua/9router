@@ -1,0 +1,12 @@
+services:
+  9router:
+    build: .
+    container_name: 9router
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - '20128:20128'
+    volumes:
+      - 9router-data:/app/data
+volumes:
+  9router-data:
