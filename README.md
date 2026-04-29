@@ -1076,9 +1076,9 @@ Notes:
 ### Runtime Files and Storage
 
 - Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
-- Usage history and logs: `~/.9router/usage.json` and `~/.9router/log.txt`, managed by `src/lib/usageDb.js`.
+- Usage history and logs: `${DATA_DIR}/usage.json` and `${DATA_DIR}/log.txt`, managed by `src/lib/usageDb.js`.
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
-- Usage storage currently follows `~/.9router` path logic and is independent from `DATA_DIR`.
+- Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
 
 </details>
 
