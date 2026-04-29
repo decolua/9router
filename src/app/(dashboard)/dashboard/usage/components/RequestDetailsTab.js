@@ -7,6 +7,7 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { LOCAL_NO_API_KEY_LABEL, UNKNOWN_API_KEY_LABEL } from "@/shared/constants/apiKeys";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -100,9 +101,11 @@ export default function RequestDetailsTab() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
+  const [apiKeys, setApiKeys] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    apiKeyName: "",
     startDate: "",
     endDate: ""
   });
@@ -112,6 +115,10 @@ export default function RequestDetailsTab() {
       const res = await fetch("/api/usage/providers");
       const data = await res.json();
       setProviders(data.providers || []);
+
+      const keysRes = await fetch("/api/keys");
+      const keysData = await keysRes.json();
+      setApiKeys(keysData.keys || []);
 
       const cache = await fetchProviderNames();
       setProviderNameCache(cache.providerNameCache);
@@ -128,6 +135,7 @@ export default function RequestDetailsTab() {
         pageSize: pagination.pageSize.toString()
       });
       if (filters.provider) params.append("provider", filters.provider);
+      if (filters.apiKeyName) params.append("apiKeyName", filters.apiKeyName);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
@@ -165,7 +173,7 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", apiKeyName: "", startDate: "", endDate: "" });
   };
 
   return (
@@ -189,6 +197,27 @@ export default function RequestDetailsTab() {
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
                 </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label htmlFor="api-key-filter" className="text-sm font-medium text-text-main">API Key</label>
+            <select
+              id="api-key-filter"
+              value={filters.apiKeyName}
+              onChange={(e) => setFilters({ ...filters, apiKeyName: e.target.value })}
+              className={cn(
+                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "cursor-pointer min-w-[180px]"
+              )}
+            >
+              <option value="">All API Keys</option>
+              <option value={LOCAL_NO_API_KEY_LABEL}>{LOCAL_NO_API_KEY_LABEL}</option>
+              <option value={UNKNOWN_API_KEY_LABEL}>{UNKNOWN_API_KEY_LABEL}</option>
+              {apiKeys.map((key) => (
+                <option key={key.id} value={key.name}>{key.name}</option>
               ))}
             </select>
           </div>
@@ -226,7 +255,7 @@ export default function RequestDetailsTab() {
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
+              disabled={!filters.provider && !filters.apiKeyName && !filters.startDate && !filters.endDate}
             >
               Clear Filters
             </Button>

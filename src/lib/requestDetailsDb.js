@@ -2,6 +2,7 @@ import { Low } from "lowdb";
 import { JSONFile } from "lowdb/node";
 import path from "node:path";
 import fs from "node:fs";
+import { LOCAL_NO_API_KEY_LABEL, UNKNOWN_API_KEY_LABEL } from "@/shared/constants/apiKeys.js";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
 const isCloud = typeof caches !== "undefined" && typeof caches === "object";
@@ -128,6 +129,7 @@ async function flushToDatabase() {
         provider: item.provider || null,
         model: item.model || null,
         connectionId: item.connectionId || null,
+        apiKey: item.apiKey || null,
         timestamp: item.timestamp,
         status: item.status || null,
         latency: item.latency || {},
@@ -203,6 +205,26 @@ export async function getRequestDetails(filter = {}) {
 
   const db = await getDb();
   let records = [...db.data.records];
+  let apiKeyMap = {};
+
+  try {
+    const { getApiKeys } = await import("@/lib/localDb");
+    const allApiKeys = await getApiKeys();
+    for (const item of allApiKeys) {
+      apiKeyMap[item.key] = item.name;
+    }
+  } catch {}
+
+  if (filter.apiKeyName) {
+    records = records.filter((r) => {
+      if (!r.apiKey) return filter.apiKeyName === LOCAL_NO_API_KEY_LABEL;
+      const keyName = apiKeyMap[r.apiKey];
+      if (filter.apiKeyName === UNKNOWN_API_KEY_LABEL) {
+        return !keyName;
+      }
+      return (keyName || UNKNOWN_API_KEY_LABEL) === filter.apiKeyName;
+    });
+  }
 
   // Apply filters
   if (filter.provider) records = records.filter(r => r.provider === filter.provider);
@@ -219,7 +241,10 @@ export async function getRequestDetails(filter = {}) {
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
   const totalPages = Math.ceil(totalItems / pageSize);
-  const details = records.slice((page - 1) * pageSize, page * pageSize);
+  const details = records.slice((page - 1) * pageSize, page * pageSize).map((record) => ({
+    ...record,
+    keyName: record.apiKey ? (apiKeyMap[record.apiKey] || UNKNOWN_API_KEY_LABEL) : LOCAL_NO_API_KEY_LABEL,
+  }));
 
   return {
     details,

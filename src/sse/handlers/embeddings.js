@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  authorizeApiKeyRequest,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -73,6 +74,18 @@ export async function handleEmbeddings(request) {
 
   const { provider, model } = modelInfo;
 
+  let apiKeyAuthz = null;
+  if (apiKey) {
+    apiKeyAuthz = await authorizeApiKeyRequest(apiKey, {
+      provider,
+      model,
+      originalModel: modelStr,
+    });
+    if (!apiKeyAuthz.ok) {
+      return errorResponse(apiKeyAuthz.status || HTTP_STATUS.FORBIDDEN, apiKeyAuthz.error || "API key authorization failed");
+    }
+  }
+
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
   } else {
@@ -85,7 +98,9 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      allowedConnectionIds: apiKeyAuthz?.policy?.restrictions?.connectionIds || [],
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

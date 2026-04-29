@@ -1,6 +1,6 @@
 import {
   extractApiKey, isValidApiKey,
-  getProviderCredentials, markAccountUnavailable,
+  getProviderCredentials, markAccountUnavailable, authorizeApiKeyRequest,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -22,12 +22,13 @@ export async function handleTts(request) {
 
   const url = new URL(request.url);
   const modelStr = body.model;
+  // Extract once because key can be validated (requireApiKey) and authorized (policy checks).
+  const apiKey = extractApiKey(request);
   const responseFormat = url.searchParams.get("response_format") || "mp3"; // mp3 (default) | json
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}`);
 
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -42,6 +43,18 @@ export async function handleTts(request) {
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
+  let apiKeyAuthz = null;
+  if (apiKey) {
+    apiKeyAuthz = await authorizeApiKeyRequest(apiKey, {
+      provider,
+      model,
+      originalModel: modelStr,
+    });
+    if (!apiKeyAuthz.ok) {
+      return errorResponse(apiKeyAuthz.status || HTTP_STATUS.FORBIDDEN, apiKeyAuthz.error || "API key authorization failed");
+    }
+  }
+
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleTtsCore({ provider, model, input: body.input, responseFormat });
@@ -55,7 +68,9 @@ export async function handleTts(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      allowedConnectionIds: apiKeyAuthz?.policy?.restrictions?.connectionIds || [],
+    });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
