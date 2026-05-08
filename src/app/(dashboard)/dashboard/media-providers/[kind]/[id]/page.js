@@ -42,6 +42,27 @@ const DEFAULT_RESPONSE_EXAMPLE = `{
   "usage": { "prompt_tokens": 9, "total_tokens": 9 }
 }`;
 
+const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
+const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
+
+function getImageEditDefaults(providerId, modelId) {
+  if (providerId !== "cloudflare-ai") return {};
+  if (modelId === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
+    return { image: CLOUDFLARE_TEST_IMAGE_URL };
+  }
+  if (modelId === "@cf/runwayml/stable-diffusion-v1-5-inpainting") {
+    return { image: CLOUDFLARE_TEST_IMAGE_URL, mask_image: CLOUDFLARE_TEST_MASK_URL };
+  }
+  return {};
+}
+
+function toImagePreviewSrc(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) return "";
+  if (/^(data:image\/|https?:\/\/)/i.test(trimmed)) return trimmed;
+  return `data:image/png;base64,${trimmed}`;
+}
+
 // Config-driven example defaults per kind
 const KIND_EXAMPLE_CONFIG = {
   webSearch: {
@@ -909,9 +930,11 @@ function GenericExampleCard({ providerId, kind }) {
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
   const selectedModelObj = kindModels.find((m) => m.id === selectedModel);
   const supportsEdit = !!selectedModelObj?.capabilities?.includes("edit");
+  const supportsMask = !!selectedModelObj?.capabilities?.includes("mask");
 
   const [input, setInput] = useState(safeExConfig.defaultInput || "");
   const [refImage, setRefImage] = useState("");
+  const [maskImage, setMaskImage] = useState("");
   const [extraValues, setExtraValues] = useState(() =>
     (safeExConfig.extraFields || []).reduce((acc, f) => { acc[f.key] = f.default ?? ""; return acc; }, {})
   );
@@ -960,6 +983,11 @@ function GenericExampleCard({ providerId, kind }) {
   const modelFull = !needsModel
     ? providerAlias
     : (selectedModel ? `${providerAlias}/${selectedModel}` : (allowManualModel ? "" : providerAlias));
+  const imageEditDefaults = getImageEditDefaults(providerId, selectedModel);
+  const effectiveRefImage = refImage.trim() || imageEditDefaults.image || "";
+  const effectiveMaskImage = maskImage.trim() || imageEditDefaults.mask_image || "";
+  const refImagePreviewSrc = toImagePreviewSrc(effectiveRefImage);
+  const maskImagePreviewSrc = toImagePreviewSrc(effectiveMaskImage);
 
   // Build request body with optional extra fields (only non-empty values)
   const extraBodyFromFields = Object.entries(extraValues).reduce((acc, [k, v]) => {
@@ -973,7 +1001,8 @@ function GenericExampleCard({ providerId, kind }) {
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
     ...extraBodyFromFields,
-    ...(supportsEdit && refImage.trim() ? { image: refImage.trim() } : {}),
+    ...(supportsEdit && effectiveRefImage ? { image: effectiveRefImage } : {}),
+    ...(supportsMask && effectiveMaskImage ? { mask_image: effectiveMaskImage } : {}),
   };
 
   // Streaming supported for codex image (Plus/Pro accounts) — disabled when binary output requested
@@ -1186,7 +1215,7 @@ function GenericExampleCard({ providerId, kind }) {
                 <input
                   value={refImage}
                   onChange={(e) => setRefImage(e.target.value)}
-                  placeholder="https://example.com/source.png"
+                  placeholder={imageEditDefaults.image || "https://example.com/source.png"}
                   className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                 />
                 {refImage && (
@@ -1199,10 +1228,43 @@ function GenericExampleCard({ providerId, kind }) {
                   </button>
                 )}
               </div>
-              {refImage.trim() && (
+              {refImagePreviewSrc && (
                 <img
-                  src={refImage.trim()}
+                  src={refImagePreviewSrc}
                   alt="Reference"
+                  className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  onLoad={(e) => { e.currentTarget.style.display = "block"; }}
+                />
+              )}
+            </div>
+          </Row>
+        )}
+
+        {supportsMask && (
+          <Row label="Mask (URL)">
+            <div className="flex flex-col gap-2">
+              <div className="relative">
+                <input
+                  value={maskImage}
+                  onChange={(e) => setMaskImage(e.target.value)}
+                  placeholder={imageEditDefaults.mask_image || "https://example.com/mask.png"}
+                  className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                />
+                {maskImage && (
+                  <button
+                    type="button"
+                    onClick={() => setMaskImage("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">close</span>
+                  </button>
+                )}
+              </div>
+              {maskImagePreviewSrc && (
+                <img
+                  src={maskImagePreviewSrc}
+                  alt="Mask"
                   className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                   onLoad={(e) => { e.currentTarget.style.display = "block"; }}
