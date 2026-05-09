@@ -13,6 +13,7 @@ worker/
 shared-sse/
 copilot-api/
 CLIProxyAPI/
+cli/
 
 # Config files
 *.md
