@@ -52,15 +52,33 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
+function firstObject(value) {
+  if (Array.isArray(value)) return value.find((item) => item && typeof item === "object") || null;
+  if (value && typeof value === "object") return value;
+  return null;
+}
+
+function extractCodexOrganization(chatgpt) {
+  const organization = firstObject(chatgpt.organizations || chatgpt.organization || chatgpt.workspace || chatgpt.workspaces);
+  if (!organization) return {};
+  return {
+    organizationId: organization.id || organization.organization_id || organization.workspace_id,
+    organizationName: organization.name || organization.title || organization.display_name,
+  };
+}
+
 // Extract codex account info from id_token
 export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
   if (!payload) return {};
   const chatgpt = payload["https://api.openai.com/auth"] || {};
+  const organization = extractCodexOrganization(chatgpt);
   return {
     email: payload.email,
     chatgptAccountId: chatgpt.chatgpt_account_id,
     chatgptPlanType: chatgpt.chatgpt_plan_type,
+    organizationId: organization.organizationId,
+    organizationName: organization.organizationName,
   };
 }
 
@@ -172,13 +190,16 @@ const PROVIDERS = {
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
+        idToken: tokens.id_token,
         expiresIn: tokens.expires_in,
       };
       if (info.email) mapped.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
+      if (info.chatgptAccountId || info.chatgptPlanType || info.organizationId || info.organizationName) {
         mapped.providerSpecificData = {
           chatgptAccountId: info.chatgptAccountId,
           chatgptPlanType: info.chatgptPlanType,
+          organizationId: info.organizationId,
+          organizationName: info.organizationName,
         };
       }
       return mapped;
@@ -1305,11 +1326,13 @@ export async function backfillCodexEmails() {
       if (!info.email && !info.chatgptAccountId) continue;
       const patch = {};
       if (!conn.email && info.email) patch.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
+      if (info.chatgptAccountId || info.chatgptPlanType || info.organizationId || info.organizationName) {
         patch.providerSpecificData = {
           ...(conn.providerSpecificData || {}),
           chatgptAccountId: info.chatgptAccountId,
           chatgptPlanType: info.chatgptPlanType,
+          organizationId: info.organizationId,
+          organizationName: info.organizationName,
         };
       }
       if (Object.keys(patch).length) {

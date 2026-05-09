@@ -357,21 +357,47 @@ export async function getProviderConnectionById(id) {
   return db.data.providerConnections.find(c => c.id === id) || null;
 }
 
+function getCodexWorkspaceIdentity(data) {
+  if (data.provider !== "codex" || data.authType !== "oauth") return null;
+  const specific = data.providerSpecificData || {};
+  const accountId = specific.chatgptAccountId;
+  const workspaceId = specific.organizationId || specific.workspaceId;
+  if (!accountId || !workspaceId) return null;
+  return { accountId, workspaceId };
+}
+
+function findExistingProviderConnection(connections, data) {
+  const codexIdentity = getCodexWorkspaceIdentity(data);
+  if (codexIdentity) {
+    return connections.findIndex((c) => {
+      const existingIdentity = getCodexWorkspaceIdentity(c);
+      return existingIdentity &&
+        existingIdentity.accountId === codexIdentity.accountId &&
+        existingIdentity.workspaceId === codexIdentity.workspaceId;
+    });
+  }
+
+  if (data.authType === "oauth" && data.email) {
+    return connections.findIndex(
+      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
+    );
+  }
+
+  if (data.authType === "apikey" && data.name) {
+    return connections.findIndex(
+      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
+    );
+  }
+
+  return -1;
+}
+
 export async function createProviderConnection(data) {
   const db = await getDb();
   const now = new Date().toISOString();
 
-  // Upsert: check existing by provider + email (oauth) or provider + name (apikey)
-  let existingIndex = -1;
-  if (data.authType === "oauth" && data.email) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "oauth" && c.email === data.email
-    );
-  } else if (data.authType === "apikey" && data.name) {
-    existingIndex = db.data.providerConnections.findIndex(
-      c => c.provider === data.provider && c.authType === "apikey" && c.name === data.name
-    );
-  }
+  // Upsert: Codex workspaces need account+workspace identity; other OAuth providers use email.
+  const existingIndex = findExistingProviderConnection(db.data.providerConnections, data);
 
   if (existingIndex !== -1) {
     db.data.providerConnections[existingIndex] = {
@@ -416,7 +442,7 @@ export async function createProviderConnection(data) {
   const optionalFields = [
     "displayName", "email", "globalPriority", "defaultModel",
     "accessToken", "refreshToken", "expiresAt", "tokenType",
-    "scope", "projectId", "apiKey", "testStatus",
+    "scope", "idToken", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
     "consecutiveUseCount"
   ];
