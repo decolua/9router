@@ -1,0 +1,59 @@
+{
+  "name": "better-sqlite3",
+  "version": "12.8.0",
+  "description": "The fastest and simplest library for SQLite in Node.js.",
+  "homepage": "http://github.com/WiseLibs/better-sqlite3",
+  "author": "Joshua Wise <joshuathomaswise@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/WiseLibs/better-sqlite3.git"
+  },
+  "main": "lib/index.js",
+  "files": [
+    "binding.gyp",
+    "src/**/*.[ch]pp",
+    "lib/**",
+    "deps/**"
+  ],
+  "engines": {
+    "node": "20.x || 22.x || 23.x || 24.x || 25.x"
+  },
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "prebuild-install": "^7.1.1"
+  },
+  "overrides": {
+    "prebuild": {
+      "node-abi": "^4.25.0"
+    }
+  },
+  "devDependencies": {
+    "chai": "^4.3.8",
+    "cli-color": "^2.0.3",
+    "fs-extra": "^11.1.1",
+    "mocha": "^10.2.0",
+    "nodemark": "^0.3.0",
+    "prebuild": "^13.0.1",
+    "sqlite": "^5.0.1",
+    "sqlite3": "^5.1.6"
+  },
+  "scripts": {
+    "install": "prebuild-install || node-gyp rebuild --release",
+    "build-release": "node-gyp rebuild --release",
+    "build-debug": "node-gyp rebuild --debug",
+    "test": "mocha --exit --slow=75 --timeout=5000",
+    "benchmark": "node benchmark",
+    "download": "bash ./deps/download.sh"
+  },
+  "license": "MIT",
+  "keywords": [
+    "sql",
+    "sqlite",
+    "sqlite3",
+    "transactions",
+    "user-defined functions",
+    "aggregate functions",
+    "window functions",
+    "database"
+  ]
+}
