@@ -1,0 +1,33 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+  pull_request:
+    branches: [ main ]
+    
+  workflow_dispatch:     # Cho phép chạy thủ công
+    
+jobs:
+  build:
+    runs-on: ubuntu-latest  # Máy ảo GitHub có RAM 7GB
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - run: npm ci
+      - run: npm run build
+
+      - name: Check for changes
+        run: |
+          git status
