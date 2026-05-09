@@ -51,7 +51,10 @@ jobs:
         run: |
           npm pkg set name="@diepxuan/9router"
           npm pkg delete scripts.prepublishOnly
-          cat cli/package.json
+          rm -rf app/.next && cp -r ../.next app/
+          rm -rf app/node_modules && cp -r ../node_modules app/
+          rm -rf app/public && cp -r ../public app/
+          cat package.json
           tree -L 2 .
       
       - name: Push changes to GitHub
