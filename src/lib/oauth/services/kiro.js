@@ -257,7 +257,7 @@ export class KiroService {
    * List available models from CodeWhisperer API
    */
   async listAvailableModels(accessToken, profileArn) {
-    const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
+    const endpoint = "https://runtime.us-east-1.kiro.dev";
     const target = "AmazonCodeWhispererService.ListAvailableModels";
 
     const response = await fetch(endpoint, {

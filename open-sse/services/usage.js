@@ -752,7 +752,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
     {
       name: "codewhisperer-get",
       run: async () => proxyAwareFetch(
-        `https://codewhisperer.us-east-1.amazonaws.com/getUsageLimits?${getUsageParams.toString()}`,
+        `https://runtime.us-east-1.kiro.dev/getUsageLimits?${getUsageParams.toString()}`,
         {
           method: "GET",
           headers: {
@@ -767,7 +767,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
     },
     {
       name: "codewhisperer-post",
-      run: async () => proxyAwareFetch("https://codewhisperer.us-east-1.amazonaws.com", {
+      run: async () => proxyAwareFetch("https://runtime.us-east-1.kiro.dev", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
@@ -790,7 +790,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
           profileArn,
           resourceType: "AGENTIC_REQUEST",
         });
-        return proxyAwareFetch(`https://q.us-east-1.amazonaws.com/getUsageLimits?${params}`, {
+        return proxyAwareFetch(`https://runtime.us-east-1.kiro.dev/getUsageLimits?${params}`, {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${accessToken}`,

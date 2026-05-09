@@ -40,7 +40,7 @@ export const MITM_TOOLS = {
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
-    mitmDomain: "q.us-east-1.amazonaws.com",
+    mitmDomain: "runtime.us-east-1.kiro.dev",
     defaultModels: [
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },

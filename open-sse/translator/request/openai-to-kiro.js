@@ -13,14 +13,13 @@ import { v4 as uuidv4 } from "uuid";
 function convertMessages(messages, tools, model) {
   let history = [];
   let currentMessage = null;
-  
+
   let pendingUserContent = [];
   let pendingAssistantContent = [];
   let pendingToolResults = [];
   let pendingImages = [];
   let currentRole = null;
 
-  // Image support is pre-filtered by caps in translateRequest before reaching here
   const supportsImages = true;
 
   const flushPending = () => {
@@ -28,8 +27,7 @@ function convertMessages(messages, tools, model) {
       const content = pendingUserContent.join("\n\n").trim() || "continue";
       const userMsg = {
         userInputMessage: {
-          content: content,
-          modelId: ""
+          content: content
         }
       };
 
@@ -43,20 +41,22 @@ function convertMessages(messages, tools, model) {
           toolResults: pendingToolResults
         };
       }
-      
+
       // Add tools to first user message
       if (tools && tools.length > 0 && history.length === 0) {
         if (!userMsg.userInputMessage.userInputMessageContext) {
           userMsg.userInputMessage.userInputMessageContext = {};
         }
         userMsg.userInputMessage.userInputMessageContext.tools = tools.map(t => {
-          const name = t.function?.name || t.name;
+          let name = t.function?.name || t.name;
+          name = sanitizeToolName(name);
+
           let description = t.function?.description || t.description || "";
-          
+
           if (!description.trim()) {
             description = `Tool: ${name}`;
           }
-          
+
           const schema = t.function?.parameters || t.parameters || t.input_schema || {};
           // Normalize schema: Kiro requires required[] and proper type/properties
           const normalizedSchema = Object.keys(schema).length === 0
@@ -72,7 +72,7 @@ function convertMessages(messages, tools, model) {
           };
         });
       }
-      
+
       history.push(userMsg);
       currentMessage = userMsg;
       pendingUserContent = [];
@@ -93,18 +93,18 @@ function convertMessages(messages, tools, model) {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     let role = msg.role;
-    
+
     // Normalize: system/tool -> user
     if (role === "system" || role === "tool") {
       role = "user";
     }
-    
+
     // If role changes, flush pending
     if (role !== currentRole && currentRole !== null) {
       flushPending();
     }
     currentRole = role;
-    
+
     if (role === "user") {
       // Extract content
       let content = "";
@@ -137,15 +137,15 @@ function convertMessages(messages, tools, model) {
           }
         }
         content = textParts.join("\n");
-        
+
         // Check for tool_result blocks
         const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
         if (toolResultBlocks.length > 0) {
           toolResultBlocks.forEach(block => {
-            const text = Array.isArray(block.content) 
+            const text = Array.isArray(block.content)
               ? block.content.map(c => c.text || "").join("\n")
               : (typeof block.content === "string" ? block.content : "");
-            
+
             pendingToolResults.push({
               toolUseId: block.tool_use_id,
               status: "success",
@@ -154,7 +154,7 @@ function convertMessages(messages, tools, model) {
           });
         }
       }
-      
+
       // Handle tool role (from normalized)
       if (msg.role === "tool") {
         const toolContent = typeof msg.content === "string" ? msg.content : "";
@@ -170,65 +170,71 @@ function convertMessages(messages, tools, model) {
       // Extract text content and tool uses
       let textContent = "";
       let toolUses = [];
-      
+
       if (Array.isArray(msg.content)) {
         const textBlocks = msg.content.filter(c => c.type === "text");
         textContent = textBlocks.map(b => b.text).join("\n").trim();
-        
+
         const toolUseBlocks = msg.content.filter(c => c.type === "tool_use");
         toolUses = toolUseBlocks;
       } else if (typeof msg.content === "string") {
         textContent = msg.content.trim();
       }
-      
+
       if (msg.tool_calls && msg.tool_calls.length > 0) {
         toolUses = msg.tool_calls;
       }
-      
+
       if (textContent) {
         pendingAssistantContent.push(textContent);
       }
-      
+
       // Store tool uses in last assistant message
       if (toolUses.length > 0) {
         if (pendingAssistantContent.length === 0) {
           // pendingAssistantContent.push("Call tools");
         }
-        
+
         // Flush to create assistant message with toolUses
         flushPending();
-        
+
         const lastMsg = history[history.length - 1];
         if (lastMsg?.assistantResponseMessage) {
           lastMsg.assistantResponseMessage.toolUses = toolUses.map(tc => {
+            let name = tc.function?.name || tc.name;
+            name = sanitizeToolName(name);
+
+
             if (tc.function) {
               return {
-                toolUseId: tc.id || uuidv4(),
-                name: tc.function.name,
-                input: typeof tc.function.arguments === "string" 
-                  ? JSON.parse(tc.function.arguments) 
+                toolUseId: tc.id || require('crypto').randomUUID(),
+                name: name,
+                input: typeof tc.function.arguments === "string"
+                  ? JSON.parse(tc.function.arguments || "{}")
                   : (tc.function.arguments || {})
               };
             } else {
               return {
-                toolUseId: tc.id || uuidv4(),
-                name: tc.name,
-                input: tc.input || {}
+                toolUseId: tc.id || require('crypto').randomUUID(),
+                name: name,
+                input: typeof tc.input === "string"
+                  ? JSON.parse(tc.input || "{}")
+                  : (tc.input || {})
               };
             }
           });
         }
-        
+
         currentRole = null;
       }
     }
   }
-  
+
   // Flush remaining
   if (currentRole !== null) {
     flushPending();
   }
-  
+
   // Pop last userInputMessage as currentMessage (search from end, skip trailing assistant messages)
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].userInputMessage) {
@@ -246,12 +252,10 @@ function convertMessages(messages, tools, model) {
       delete item.userInputMessage.userInputMessageContext.tools;
     }
     if (item.userInputMessage?.userInputMessageContext &&
-        Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
+      Object.keys(item.userInputMessage.userInputMessageContext).length === 0) {
       delete item.userInputMessage.userInputMessageContext;
     }
-    if (item.userInputMessage && !item.userInputMessage.modelId) {
-      item.userInputMessage.modelId = model;
-    }
+    // Removed modelId assignment to history.userInputMessage for Kiro API strict validation
   });
 
   // Merge consecutive user messages (Kiro requires alternating user/assistant)
@@ -259,8 +263,8 @@ function convertMessages(messages, tools, model) {
   for (let i = 0; i < history.length; i++) {
     const current = history[i];
     if (current.userInputMessage &&
-        mergedHistory.length > 0 &&
-        mergedHistory[mergedHistory.length - 1].userInputMessage) {
+      mergedHistory.length > 0 &&
+      mergedHistory[mergedHistory.length - 1].userInputMessage) {
       const prev = mergedHistory[mergedHistory.length - 1];
       prev.userInputMessage.content += "\n\n" + current.userInputMessage.content;
     } else {
@@ -270,7 +274,7 @@ function convertMessages(messages, tools, model) {
 
   // Inject tools into currentMessage AFTER cleanup
   if (firstHistoryTools && currentMessage?.userInputMessage &&
-      !currentMessage.userInputMessage.userInputMessageContext?.tools) {
+    !currentMessage.userInputMessage.userInputMessageContext?.tools) {
     if (!currentMessage.userInputMessage.userInputMessageContext) {
       currentMessage.userInputMessage.userInputMessageContext = {};
     }
@@ -278,6 +282,57 @@ function convertMessages(messages, tools, model) {
   }
 
   return { history: mergedHistory, currentMessage };
+}
+
+/**
+ * Sanitizes tool name to fit within Kiro's 64-character limit
+ * and stores mapping for retrieval in the response.
+ */
+function sanitizeToolName(name) {
+  if (!name || name.length <= 64) return name;
+
+  const hash = require('crypto').createHash('md5').update(name).digest('hex').substring(0, 4);
+  const shortName = name.substring(0, 59) + '_' + hash;
+
+  global._kiroToolMap = global._kiroToolMap || new Map();
+  global._kiroToolMap.set(shortName, name);
+
+  return shortName;
+}
+
+/**
+ * Generates a stable conversationId for multi-turn consistency.
+ */
+function generateStableConversationId(messages) {
+  if (!messages || messages.length === 0) return uuidv4();
+
+  const firstContent = typeof messages[0].content === "string"
+    ? messages[0].content
+    : JSON.stringify(messages[0].content);
+
+  return require('crypto')
+    .createHash('md5')
+    .update(firstContent)
+    .digest('hex')
+    .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+}
+
+const VALID_RUNTIME_MODEL_IDS = new Set([
+  "auto",
+  "claude-sonnet-4",
+  "claude-sonnet-4.5",
+  "claude-sonnet-4.6",
+  "claude-opus-4.5",
+  "claude-opus-4.6",
+  "claude-opus-4.7",
+  "claude-haiku-4.5"
+]);
+
+function toRuntimeModelId(model) {
+  if (VALID_RUNTIME_MODEL_IDS.has(model)) {
+    return model;
+  }
+  return "auto";
 }
 
 /**
@@ -297,17 +352,31 @@ export function buildKiroPayload(model, body, stream, credentials) {
   let finalContent = currentMessage?.userInputMessage?.content || "";
   const timestamp = new Date().toISOString();
   finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
-  
+
+  const runtimeModelId = toRuntimeModelId(model);
+
+  history.forEach(item => {
+    if (item.userInputMessage) {
+      if (!item.userInputMessage.modelId) item.userInputMessage.modelId = runtimeModelId;
+      if (!item.userInputMessage.origin) item.userInputMessage.origin = "AI_EDITOR";
+    }
+  });
+
+  // Stabilize conversationId for multi-turn consistency
+  const conversationId = generateStableConversationId(messages);
+
+
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId: uuidv4(),
+      conversationId: conversationId,
       currentMessage: {
         userInputMessage: {
           content: finalContent,
-          modelId: model,
+          modelId: runtimeModelId,
           origin: "AI_EDITOR",
-          ...(currentMessage?.userInputMessage?.userInputMessageContext && {
+          ...(currentMessage?.userInputMessage?.userInputMessageContext &&
+            Object.keys(currentMessage.userInputMessage.userInputMessageContext).length > 0 && {
             userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
           })
         }
@@ -316,9 +385,8 @@ export function buildKiroPayload(model, body, stream, credentials) {
     }
   };
 
-  if (profileArn) {
-    payload.profileArn = profileArn;
-  }
+  const DEFAULT_PROFILE_ARN = "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX";
+  payload.profileArn = profileArn || DEFAULT_PROFILE_ARN;
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {
     payload.inferenceConfig = {};
@@ -326,6 +394,7 @@ export function buildKiroPayload(model, body, stream, credentials) {
     if (temperature !== undefined) payload.inferenceConfig.temperature = temperature;
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
   }
+
 
   return payload;
 }

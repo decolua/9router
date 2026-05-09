@@ -185,11 +185,11 @@ export const PROVIDERS = {
     clientId: "Iv1.b507a08c87ecfe98"
   },
   kiro: {
-    baseUrl: "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse",
+    baseUrl: "https://runtime.us-east-1.kiro.dev/",
     format: "kiro",
     retry: { 429: 2 },
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/x-amz-json-1.0",
       "Accept": "application/vnd.amazon.eventstream",
       "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
       "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",

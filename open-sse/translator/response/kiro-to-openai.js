@@ -114,7 +114,13 @@ export function convertKiroToOpenAI(chunk, state) {
   if (eventType === "toolUseEvent" || data.toolUseEvent) {
     const toolUse = data.toolUseEvent || data;
     const toolCallId = toolUse.toolUseId || `call_${Date.now()}`;
-    const toolName = toolUse.name || "";
+    let toolName = toolUse.name || "";
+    
+    // Restore original name if it was truncated due to Kiro's 64-char limit
+    if (global._kiroToolMap && global._kiroToolMap.has(toolName)) {
+      toolName = global._kiroToolMap.get(toolName);
+    }
+
     const toolInput = toolUse.input || {};
 
     const openaiChunk = {
