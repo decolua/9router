@@ -15,6 +15,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,12 +25,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          
-      - shell: bash
-        run: |
-          npm install
-          npm run build
+          registry-url: 'https://npm.pkg.github.com'
 
-      - name: Check for changes
-        run: |
-          git status
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Publish to GitHub Packages
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
