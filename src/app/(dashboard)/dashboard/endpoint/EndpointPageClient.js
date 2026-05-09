@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -15,6 +15,7 @@ const TUNNEL_BENEFITS = [
 const TUNNEL_PING_INTERVAL_MS = 2000;
 const TUNNEL_PING_MAX_MS = 300000;
 const STATUS_POLL_INTERVAL_MS = 5000;
+const REACHABLE_MISS_THRESHOLD = 2;
 
 const CAVEMAN_LEVELS = [
   { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
@@ -39,6 +40,7 @@ export default function APIPageClient({ machineId }) {
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
+  const [tunnelReachable, setTunnelReachable] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
   const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
   const [tunnelLoading, setTunnelLoading] = useState(false);
@@ -49,6 +51,7 @@ export default function APIPageClient({ machineId }) {
 
   // Tailscale state
   const [tsEnabled, setTsEnabled] = useState(false);
+  const [tsReachable, setTsReachable] = useState(false);
   const [tsUrl, setTsUrl] = useState("");
   const [tsLoading, setTsLoading] = useState(false);
   const [tsProgress, setTsProgress] = useState("");
@@ -61,6 +64,17 @@ export default function APIPageClient({ machineId }) {
   const [showTsModal, setShowTsModal] = useState(false);
   const [showDisableTsModal, setShowDisableTsModal] = useState(false);
   const tsLogRef = useRef(null);
+
+  // Debounce reachable=false: server may briefly return false during background refresh.
+  // Only flip UI to "reconnecting" after N consecutive misses to avoid spinner flicker.
+  const tunnelMissRef = useRef(0);
+  const tsMissRef = useRef(0);
+  // Track whether reachable=true was ever observed in this session.
+  // Distinguishes "Checking..." (initial cold cache) from "Reconnecting..." (lost connection).
+  const tunnelEverReachableRef = useRef(false);
+  const tsEverReachableRef = useRef(false);
+  const [tunnelEverReachable, setTunnelEverReachable] = useState(false);
+  const [tsEverReachable, setTsEverReachable] = useState(false);
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
@@ -85,6 +99,23 @@ export default function APIPageClient({ machineId }) {
     };
   }, []);
 
+  // Update reachable state with miss-debounce: avoids spinner flicker when server
+  // briefly returns reachable=false during background probe refresh.
+  // Also flips everReachable on first success (UI uses it to distinguish Checking vs Reconnecting).
+  const updateReachable = useCallback((reachable, missRef, setter, everRef, everSetter) => {
+    if (reachable) {
+      missRef.current = 0;
+      setter(true);
+      if (!everRef.current) {
+        everRef.current = true;
+        everSetter(true);
+      }
+    } else {
+      missRef.current += 1;
+      if (missRef.current >= REACHABLE_MISS_THRESHOLD) setter(false);
+    }
+  }, []);
+
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
   const syncTunnelStatus = async () => {
     try {
@@ -97,11 +128,13 @@ export default function APIPageClient({ machineId }) {
       setTunnelUrl(tUrl);
       setTunnelPublicUrl(tPublicUrl);
       setTunnelEnabled(tEnabled);
+      updateReachable(!!data.tunnel?.reachable, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
       const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
       const tsUrlVal = data.tailscale?.tunnelUrl || "";
       setTsUrl(tsUrlVal);
       setTsEnabled(tsEn);
+      updateReachable(!!data.tailscale?.reachable, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
   };
 
@@ -129,26 +162,14 @@ export default function APIPageClient({ machineId }) {
         const tPublicUrl = data.tunnel?.publicUrl || "";
         setTunnelUrl(tUrl);
         setTunnelPublicUrl(tPublicUrl);
-        // Trust user intent: stays enabled while watchdog restores process
         setTunnelEnabled(tEnabled);
+        updateReachable(!!data.tunnel?.reachable, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
         const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
         const tsUrlVal = data.tailscale?.tunnelUrl || "";
         setTsUrl(tsUrlVal);
         setTsEnabled(tsEn);
-
-        // Background reachability probes (non-blocking, only show warning)
-        if (tEnabled && (tPublicUrl || tUrl)) {
-          const healthUrl = `${tPublicUrl || tUrl}/api/health`;
-          fetch(healthUrl, { cache: "no-store" })
-            .then((r) => { if (!r.ok) setTunnelStatus({ type: "warning", message: "Tunnel reconnecting..." }); })
-            .catch(() => setTunnelStatus({ type: "warning", message: "Tunnel reconnecting..." }));
-        }
-        if (tsEn && tsUrlVal) {
-          fetch(`${tsUrlVal}/api/health`, { mode: "no-cors", cache: "no-store" })
-            .then((r) => { if (!(r.ok || r.type === "opaque")) setTsStatus({ type: "warning", message: "Tailscale reconnecting..." }); })
-            .catch(() => setTsStatus({ type: "warning", message: "Tailscale reconnecting..." }));
-        }
+        updateReachable(!!data.tailscale?.reachable, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
       }
     } catch (error) {
       console.log("Error loading settings:", error);
@@ -428,8 +449,15 @@ export default function APIPageClient({ machineId }) {
     return false;
   };
 
-  const handleConnectTailscale = async (preOpenedTab) => {
-    const tab = preOpenedTab || null;
+  // Open auth URL only when actually needed (avoids blank popup flash on success path).
+  // Falls back to status message with clickable link if popup blocker prevents opening.
+  const openAuthUrl = (url) => {
+    const w = window.open(url, "tailscale_auth", "width=600,height=700");
+    if (!w) setTsStatus({ type: "warning", message: `Popup blocked. Open manually: ${url}` });
+    return w;
+  };
+
+  const handleConnectTailscale = async () => {
     setShowTsModal(false);
     setTsConnecting(true);
     setTsLoading(true);
@@ -440,23 +468,15 @@ export default function APIPageClient({ machineId }) {
       const data = await res.json();
 
       if (res.ok && data.success) {
-        if (tab) tab.close();
         setTsUrl(data.tunnelUrl || "");
         const reachable = await pingTsHealth(data.tunnelUrl);
-        if (reachable) {
-          setTsEnabled(true);
-          setTsStatus(null);
-        } else {
-          setTsEnabled(true);
-          setTsStatus({ type: "warning", message: "Connected but not reachable yet." });
-        }
+        setTsEnabled(true);
+        setTsStatus(reachable ? null : { type: "warning", message: "Connected but not reachable yet." });
         return;
       }
 
-      // Needs login: redirect pre-opened tab or open new
       if (data.needsLogin && data.authUrl) {
-        if (tab) tab.location.href = data.authUrl;
-        else window.open(data.authUrl, "tailscale_auth", "width=600,height=700");
+        openAuthUrl(data.authUrl);
         setTsProgress("Waiting for login...");
         for (let i = 0; i < 40; i++) {
           await new Promise((r) => setTimeout(r, 3000));
@@ -469,18 +489,12 @@ export default function APIPageClient({ machineId }) {
                 const res2 = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
                 const data2 = await res2.json();
                 if (res2.ok && data2.success) {
-                  if (tab) tab.close();
                   setTsUrl(data2.tunnelUrl || "");
                   const ok2 = await pingTsHealth(data2.tunnelUrl);
-                  if (ok2) {
-                    setTsEnabled(true);
-                    setTsStatus(null);
-                  } else {
-                    setTsEnabled(true);
-                    setTsStatus({ type: "warning", message: "Connected but not reachable yet." });
-                  }
+                  setTsEnabled(true);
+                  setTsStatus(ok2 ? null : { type: "warning", message: "Connected but not reachable yet." });
                 } else if (data2.funnelNotEnabled && data2.enableUrl) {
-                  await pollFunnelEnable(data2.enableUrl, tab);
+                  await pollFunnelEnable(data2.enableUrl);
                 } else {
                   setTsStatus({ type: "error", message: data2.error || "Failed to start funnel" });
                 }
@@ -493,16 +507,13 @@ export default function APIPageClient({ machineId }) {
         return;
       }
 
-      // Funnel not enabled: redirect pre-opened tab
       if (data.funnelNotEnabled && data.enableUrl) {
-        await pollFunnelEnable(data.enableUrl, tab);
+        await pollFunnelEnable(data.enableUrl);
         return;
       }
 
-      if (tab) tab.close();
       setTsStatus({ type: "error", message: data.error || "Failed to connect" });
     } catch (error) {
-      if (tab) tab.close();
       setTsStatus({ type: "error", message: error.message });
     } finally {
       setTsLoading(false);
@@ -511,9 +522,8 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const pollFunnelEnable = async (enableUrl, tab) => {
-    if (tab) tab.location.href = enableUrl;
-    else window.open(enableUrl, "tailscale_auth", "width=600,height=700");
+  const pollFunnelEnable = async (enableUrl) => {
+    openAuthUrl(enableUrl);
     setTsProgress("Enable Funnel in browser, waiting...");
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
@@ -521,16 +531,10 @@ export default function APIPageClient({ machineId }) {
         const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
         const data = await res.json();
         if (res.ok && data.success) {
-          if (tab) tab.close();
           setTsUrl(data.tunnelUrl || "");
           const ok3 = await pingTsHealth(data.tunnelUrl);
-          if (ok3) {
-            setTsEnabled(true);
-            setTsStatus(null);
-          } else {
-            setTsEnabled(true);
-            setTsStatus({ type: "warning", message: "Connected but not reachable yet." });
-          }
+          setTsEnabled(true);
+          setTsStatus(ok3 ? null : { type: "warning", message: "Connected but not reachable yet." });
           return;
         }
         if (data.funnelNotEnabled) continue;
@@ -685,7 +689,7 @@ export default function APIPageClient({ machineId }) {
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
               tunnelEnabled ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
             }`}>Tunnel</span>
-            {tunnelEnabled && !tunnelLoading ? (
+            {tunnelEnabled && !tunnelLoading && tunnelReachable ? (
               <>
                 <Input value={`${tunnelPublicUrl || tunnelUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
@@ -694,6 +698,20 @@ export default function APIPageClient({ machineId }) {
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "tunnel_url" ? "check" : "content_copy"}</span>
                 </button>
+                <button
+                  onClick={() => setShowDisableTunnelModal(true)}
+                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  title="Disable Tunnel"
+                >
+                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                </button>
+              </>
+            ) : tunnelEnabled && !tunnelLoading && !tunnelReachable ? (
+              <>
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  {tunnelEverReachable ? "Tunnel reconnecting..." : "Tunnel checking..."}
+                </div>
                 <button
                   onClick={() => setShowDisableTunnelModal(true)}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
@@ -759,7 +777,7 @@ export default function APIPageClient({ machineId }) {
             <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
               tsEnabled ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
             }`}>Tailscale</span>
-            {tsEnabled && !tsLoading ? (
+            {tsEnabled && !tsLoading && tsReachable ? (
               <>
                 <Input value={`${tsUrl}/v1`} readOnly className="flex-1 font-mono text-sm" />
                 <button
@@ -768,6 +786,20 @@ export default function APIPageClient({ machineId }) {
                 >
                   <span className="material-symbols-outlined text-[18px]">{copied === "ts_url" ? "check" : "content_copy"}</span>
                 </button>
+                <button
+                  onClick={() => setShowDisableTsModal(true)}
+                  className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
+                  title="Disable Tailscale"
+                >
+                  <span className="material-symbols-outlined text-[18px]">power_settings_new</span>
+                </button>
+              </>
+            ) : tsEnabled && !tsLoading && !tsReachable ? (
+              <>
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded border border-amber-300 dark:border-amber-800 bg-amber-500/5 text-sm text-amber-600 dark:text-amber-400">
+                  <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
+                  {tsEverReachable ? "Tailscale reconnecting..." : "Tailscale checking..."}
+                </div>
                 <button
                   onClick={() => setShowDisableTsModal(true)}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
@@ -1211,11 +1243,7 @@ export default function APIPageClient({ machineId }) {
               </div>
               <div className="flex gap-2">
                 <Button
-                  onClick={() => {
-                    const tab = window.open("", "tailscale_auth", "width=600,height=700");
-                    if (tab) tab.document.write("<p style='font-family:sans-serif;text-align:center;margin-top:40px'>Connecting to Tailscale...</p>");
-                    handleConnectTailscale(tab);
-                  }}
+                  onClick={() => handleConnectTailscale()}
                   fullWidth
                 >
                   Connect

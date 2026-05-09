@@ -16,10 +16,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-
-  // Model list management
-  const [modelInput, setModelInput] = useState("");
-  const [modelList, setModelList] = useState([]);
+  const [selectedModels, setSelectedModels] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
@@ -40,12 +37,12 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
-  // Pre-fill model list from existing config
+  // Pre-fill from existing config
   useEffect(() => {
-    if (status?.config && Array.isArray(status.config) && modelList.length === 0) {
+    if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
       const entry = status.config.find((e) => e.name === "9Router");
       if (entry?.models?.length > 0) {
-        setModelList(entry.models.map((m) => m.id));
+        setSelectedModels(entry.models.map((m) => m.id));
       }
     }
   }, [status]);
@@ -68,20 +65,16 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   };
 
   const configStatus = getConfigStatus();
+
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
+
+  const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
   const hasCustomSelectedApiKey = selectedApiKey && !apiKeys.some((key) => key.key === selectedApiKey);
 
-  const addModel = () => {
-    const val = modelInput.trim();
-    if (!val || modelList.includes(val)) return;
-    setModelList((prev) => [...prev, val]);
-    setModelInput("");
-  };
-
-  const removeModel = (id) => setModelList((prev) => prev.filter((m) => m !== id));
+  const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
 
   const checkStatus = async () => {
     setChecking(true);
@@ -107,11 +100,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       const res = await fetch("/api/cli-tools/copilot-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models: modelList }),
+        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models: selectedModels }),
       });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: data.message || "Settings applied successfully!" });
+        setMessage({ type: "success", text: data.message || "Settings applied! Reload VS Code." });
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
@@ -131,7 +124,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
-        setModelList([]);
+        setSelectedModels([]);
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -148,6 +141,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
     const effectiveBaseUrl = getEffectiveBaseUrl();
+    const modelsToShow = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
 
     return [{
       filename: "~/Library/Application Support/Code/User/chatLanguageModels.json",
@@ -155,7 +149,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
         name: "9Router",
         vendor: "azure",
         apiKey: keyToUse,
-        models: modelList.map((id) => ({
+        models: modelsToShow.map((id) => ({
           id, name: id,
           url: `${effectiveBaseUrl}/chat/completions#models.ai.azure.com`,
           toolCalling: true, vision: false,
@@ -166,14 +160,14 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   };
 
   return (
-    <Card padding="sm" className="overflow-hidden">
-      <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
-        <div className="flex items-center gap-3">
+    <Card padding="xs" className="overflow-hidden">
+      <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
+        <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
             <Image src="/providers/copilot.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <h3 className="font-medium text-sm">{tool.name}</h3>
               {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">Connected</span>}
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">Not configured</span>}
@@ -196,7 +190,6 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
           {!checking && (
             <>
-              {/* Info */}
               <div className="flex items-start gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                 <span className="material-symbols-outlined text-blue-500 text-lg">info</span>
                 <div className="text-xs text-blue-700 dark:text-blue-300">
@@ -205,11 +198,13 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-text-muted">Select Endpoint</label>
+              <div className="flex flex-col gap-2">
+                {/* Endpoint */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
-                    value={customBaseUrl || getEffectiveBaseUrl()}
+                    value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
                     tunnelEnabled={tunnelEnabled}
@@ -220,53 +215,43 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                 </div>
 
                 {/* API Key */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-text-muted">API Key</label>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   {apiKeys.length > 0 || selectedApiKey ? (
-                    <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50">
+                    <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5">
                       {hasCustomSelectedApiKey && <option value={selectedApiKey}>{selectedApiKey}</option>}
                       {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
                     </select>
                   ) : (
-                    <span className="text-sm text-text-muted">
+                    <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
                       {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
                     </span>
                   )}
                 </div>
 
-                {/* Model input + Add */}
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-text-muted">
-                    Models {modelList.length > 0 && <span className="text-primary">({modelList.length} added)</span>}
-                  </label>
-
-                  {/* Model list */}
-                  {modelList.length > 0 && (
-                    <div className="flex flex-col gap-1 mb-1">
-                      {modelList.map((id) => (
-                        <div key={id} className="flex items-center gap-2 px-3 py-1.5 bg-bg-secondary rounded-lg border border-border">
-                          <span className="flex-1 text-sm font-mono truncate">{id}</span>
-                          <button onClick={() => removeModel(id)} className="text-text-muted hover:text-red-500 transition-colors" title="Remove">
-                            <span className="material-symbols-outlined text-[14px]">close</span>
-                          </button>
-                        </div>
-                      ))}
+                {/* Models */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                      {selectedModels.length === 0 ? (
+                        <span className="text-xs text-text-muted">No models selected</span>
+                      ) : (
+                        selectedModels.map((model) => (
+                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                            {model}
+                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-red-500">
+                              <span className="material-symbols-outlined text-[12px]">close</span>
+                            </button>
+                          </span>
+                        ))
+                      )}
                     </div>
-                  )}
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
-                    <input
-                      type="text"
-                      value={modelInput}
-                      onChange={(e) => setModelInput(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && addModel()}
-                      placeholder="provider/model-id"
-                      className="min-w-0 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
-                    />
-                    <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`rounded-lg border px-3 py-2 text-sm transition-colors sm:shrink-0 ${activeProviders?.length ? "bg-bg-secondary border-border hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
-                    <button onClick={addModel} disabled={!modelInput.trim()} className="rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm transition-colors hover:border-primary disabled:opacity-50 sm:shrink-0" title="Add model">
-                      <span className="material-symbols-outlined text-[16px]">add</span>
-                    </button>
+                    <div>
+                      <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -279,13 +264,13 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
               )}
 
               <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={modelList.length === 0} loading={applying}>
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={selectedModels.length === 0} loading={applying}>
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!status?.has9Router} loading={restoring}>
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} disabled={modelList.length === 0}>
+                <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} disabled={selectedModels.length === 0}>
                   <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
               </div>
@@ -297,11 +282,16 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       <ModelSelectModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        onSelect={(model) => { setModelInput(model.value); setModalOpen(false); }}
-        selectedModel={modelInput}
+        onSelect={(model) => {
+          if (!selectedModels.includes(model.value)) {
+            setSelectedModels([...selectedModels, model.value]);
+          }
+          setModalOpen(false);
+        }}
+        selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
-        title="Select Model for GitHub Copilot"
+        title="Add Model for GitHub Copilot"
       />
 
       <ManualConfigModal

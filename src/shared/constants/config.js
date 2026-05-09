@@ -2,7 +2,7 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router proxy",
+  name: "9Router Proxy",
   description: "AI Infrastructure Management",
   version: pkg.version,
 };
@@ -55,6 +55,9 @@ export const CONSOLE_LOG_CONFIG = {
   maxLines: 200,
   pollIntervalMs: 1000,
 };
+
+// Client-side store TTL: how long fetched data stays fresh before re-fetching
+export const CLIENT_STORE_TTL_MS = 60000;
 
 // Provider API endpoints (for display only)
 export const PROVIDER_ENDPOINTS = {

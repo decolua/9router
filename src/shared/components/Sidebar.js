@@ -51,7 +51,7 @@ export default function Sidebar({ onClose }) {
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmd;
-  const STATUS_URL = `http://localhost:${UPDATER_CONFIG.statusPort}/update/status`;
+  const STATUS_URL = `http://127.0.0.1:${UPDATER_CONFIG.statusPort}/update/status`;
 
   useEffect(() => {
     fetch("/api/settings")
