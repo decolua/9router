@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { normalizeChutesModels, parseOpenAIStyleModels } from "@/shared/utils/providerModelCatalog";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
-
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
 
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
@@ -64,6 +60,12 @@ const createOpenAIModelsConfig = (url) => ({
   authHeader: "Authorization",
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
+});
+
+const createChutesModelsConfig = () => ({
+  ...createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
+  allowAnonymous: true,
+  parseResponse: normalizeChutesModels,
 });
 
 const resolveQwenModelsUrl = (connection) => {
@@ -197,7 +199,7 @@ const PROVIDER_MODELS_CONFIG = {
   ollama: createOpenAIModelsConfig("https://ollama.com/api/tags"),
   // ollama-local: url resolved dynamically below via providerSpecificData.baseUrl
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
-  chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
+  chutes: createChutesModelsConfig(),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models")
 };
@@ -445,7 +447,7 @@ export async function GET(request, { params }) {
 
     // Get auth token
     const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
-    if (!token) {
+    if (!token && !config.allowAnonymous) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
@@ -454,13 +456,13 @@ export async function GET(request, { params }) {
     if (connection.provider === "qwen") {
       url = resolveQwenModelsUrl(connection);
     }
-    if (config.authQuery) {
+    if (config.authQuery && token) {
       url += `?${config.authQuery}=${token}`;
     }
 
     // Build headers
     const headers = { ...config.headers };
-    if (config.authHeader && !config.authQuery) {
+    if (config.authHeader && !config.authQuery && token) {
       headers[config.authHeader] = (config.authPrefix || "") + token;
     }
 
@@ -474,7 +476,7 @@ export async function GET(request, { params }) {
       fetchOptions.body = JSON.stringify(config.body);
     }
 
-    const response = await fetch(url, fetchOptions);
+    const response = await fetch(url, { ...fetchOptions, cache: "no-store" });
 
     if (!response.ok) {
       const errorText = await response.text();

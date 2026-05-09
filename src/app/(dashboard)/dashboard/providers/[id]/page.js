@@ -8,7 +8,7 @@ import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthW
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
+import { fetchProviderModelCatalog } from "@/shared/utils/providerModelsFetcher";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -45,7 +45,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null); // null = use global, "round-robin" = override
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
-  const [suggestedModels, setSuggestedModels] = useState([]);
+  const [providerCatalog, setProviderCatalog] = useState({ key: "", status: "idle", models: [], error: null });
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const { copied, copy } = useCopyToClipboard();
@@ -63,6 +63,11 @@ export default function ProviderDetailPage() {
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId];
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
+  const providerModelsFetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+  const providerCatalogKey = providerModelsFetcher ? `${providerModelsFetcher.type}:${providerModelsFetcher.url}` : "";
+  const activeProviderCatalog = providerCatalog.key === providerCatalogKey
+    ? providerCatalog
+    : { key: providerCatalogKey, status: providerModelsFetcher ? "loading" : "idle", models: [], error: null };
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   
@@ -75,6 +80,7 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+  const isChutesProvider = providerId === "chutes";
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -298,12 +304,36 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchDisabledModels]);
 
-  // Fetch suggested models from provider's public API (if configured)
+  // Fetch provider catalog/suggested models from provider's public API (if configured)
   useEffect(() => {
-    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
-    if (!fetcher) return;
-    fetchSuggestedModels(fetcher).then(setSuggestedModels);
-  }, [providerId]);
+    if (!providerModelsFetcher) return;
+
+    let ignore = false;
+    fetchProviderModelCatalog(providerModelsFetcher)
+      .then((result) => {
+        if (ignore) return;
+        const models = result.data || [];
+        setProviderCatalog({
+          key: providerCatalogKey,
+          status: result.error ? "error" : models.length > 0 ? "loaded" : "empty",
+          models,
+          error: result.error || null,
+        });
+      })
+      .catch((error) => {
+        if (ignore) return;
+        setProviderCatalog({
+          key: providerCatalogKey,
+          status: "error",
+          models: [],
+          error: error?.message || "Failed to fetch provider models",
+        });
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [providerModelsFetcher, providerCatalogKey]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -315,12 +345,15 @@ export default function ProviderDetailPage() {
       });
       if (res.ok) {
         await fetchAliases();
+        return true;
       } else {
         const data = await res.json();
         alert(data.error || "Failed to set alias");
+        return false;
       }
     } catch (error) {
       console.log("Error setting alias:", error);
+      return false;
     }
   };
 
@@ -690,8 +723,8 @@ export default function ProviderDetailPage() {
         if (!fullModel.startsWith(prefix)) return false;
         const modelId = fullModel.slice(prefix.length);
         // Only show if not already in hardcoded list
-        // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
-        if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
+        // For passthrough/Chutes catalogs, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
+        if (providerInfo.passthroughModels || isChutesProvider) return !models.some((m) => m.id === modelId);
         return !models.some((m) => m.id === modelId) && alias === modelId;
       })
       .map(([alias, fullModel]) => ({
@@ -755,32 +788,75 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Suggested models from provider API — show only models not yet added */}
-        {suggestedModels.length > 0 && (() => {
+        {/* Provider catalog/suggested models — show only models not yet added */}
+        {activeProviderCatalog.status !== "idle" && (() => {
+          const sectionLabel = isChutesProvider ? "Available Chutes models" : "Suggested free models (≥200k context):";
+          const loadingCopy = isChutesProvider ? "Loading Chutes model catalog..." : "Loading suggested models...";
+
+          if (activeProviderCatalog.status === "loading") {
+            return (
+              <div className="w-full mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-muted">
+                {loadingCopy}
+              </div>
+            );
+          }
+
+          if (activeProviderCatalog.status === "error") {
+            return (
+              <div className="w-full mt-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-500">
+                {isChutesProvider ? "Could not load Chutes models." : "Could not load suggested models."} {activeProviderCatalog.error}
+              </div>
+            );
+          }
+
           const addedFullModels = new Set(Object.values(modelAliases));
           const hardcodedIds = new Set(models.map((m) => m.id));
-          const notAdded = suggestedModels.filter(
-            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
+          const notAdded = activeProviderCatalog.models.filter(
+            (m) =>
+              !addedFullModels.has(`${providerStorageAlias}/${m.id}`) &&
+              !addedFullModels.has(`${providerId}/${m.id}`) &&
+              !hardcodedIds.has(m.id)
           );
-          if (notAdded.length === 0) return null;
+
+          if (activeProviderCatalog.status === "empty") {
+            if (!isChutesProvider) return null;
+            return (
+              <div className="w-full mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-muted">
+                <p className="mb-1 font-medium text-text-main">Available Chutes models</p>
+                <p>No Chutes models were returned. You can still add a model manually.</p>
+              </div>
+            );
+          }
+
+          if (notAdded.length === 0) {
+            if (!isChutesProvider) return null;
+            return (
+              <div className="w-full mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-text-muted">
+                <p className="mb-1 font-medium text-text-main">Available Chutes models</p>
+                <p>All available Chutes models are already added.</p>
+              </div>
+            );
+          }
+
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <p className="text-xs text-text-muted mb-2">{sectionLabel}</p>
               <div className="flex flex-wrap gap-2">
-                {notAdded.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={async () => {
-                      const alias = m.id.split("/").pop();
-                      await handleSetAlias(m.id, alias, providerStorageAlias);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
-                  >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
-                    {m.id.split("/").pop()}
-                  </button>
-                ))}
+                {notAdded.map((m) => {
+                  const alias = m.id.split("/").pop();
+                  const contextTitle = m.contextLength ? ` · ${(m.contextLength / 1000).toFixed(0)}k ctx` : "";
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => handleSetAlias(m.id, alias, providerStorageAlias)}
+                      className="flex max-w-full items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                      title={`${m.name || m.id}${contextTitle}`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">add</span>
+                      <span className="max-w-[72vw] truncate sm:max-w-[360px]">{isChutesProvider ? m.id : alias}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );

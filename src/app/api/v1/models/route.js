@@ -7,11 +7,13 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { normalizeChutesModels, parseOpenAIStyleModels } from "@/shared/utils/providerModelCatalog";
 
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
+const CHUTES_PROVIDER_ID = "chutes";
+const CHUTES_MODELS_URL = "https://llm.chutes.ai/v1/models";
+const CHUTES_MODELS_CACHE_TTL_MS = 10 * 60 * 1000;
+const CHUTES_MODELS_FAILURE_CACHE_TTL_MS = 60 * 1000;
+const chutesModelIdsCache = new Map();
 
 // Matches provider IDs that are upstream/cross-instance connections (contain a UUID suffix)
 const UPSTREAM_CONNECTION_RE = /[-_][0-9a-f]{8,}$/i;
@@ -97,6 +99,60 @@ async function fetchCompatibleModelIds(connection) {
       )
     );
   } catch {
+    return [];
+  }
+}
+
+function getConnectionToken(connection) {
+  const token = connection?.providerSpecificData?.copilotToken
+    || connection?.accessToken
+    || connection?.apiKey;
+  return typeof token === "string" && token.trim() ? token.trim() : "";
+}
+
+async function fetchChutesModelIds(connection) {
+  const token = getConnectionToken(connection);
+  const hasToken = Boolean(token);
+  const cacheKey = hasToken ? `credentialed:${connection?.id || "active"}` : "anonymous";
+  const cached = chutesModelIdsCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.modelIds;
+
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(CHUTES_MODELS_URL, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn(`[Models] Chutes model catalog fetch failed with status ${response.status}`);
+      chutesModelIdsCache.set(cacheKey, {
+        modelIds: [],
+        expiresAt: Date.now() + CHUTES_MODELS_FAILURE_CACHE_TTL_MS,
+      });
+      return [];
+    }
+
+    const data = await response.json();
+    const modelIds = normalizeChutesModels(data).map((model) => model.id);
+    chutesModelIdsCache.set(cacheKey, {
+      modelIds,
+      expiresAt: Date.now() + CHUTES_MODELS_CACHE_TTL_MS,
+    });
+    return modelIds;
+  } catch (error) {
+    console.warn(`[Models] Chutes model catalog fetch failed: ${error?.message || "unknown error"}`);
+    chutesModelIdsCache.set(cacheKey, {
+      modelIds: [],
+      expiresAt: Date.now() + CHUTES_MODELS_FAILURE_CACHE_TTL_MS,
+    });
     return [];
   }
 }
@@ -250,12 +306,19 @@ export async function buildModelsList(kindFilter) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+      const usesDynamicChutesCatalog = providerId === CHUTES_PROVIDER_ID
+        && rawModelIds.length === 0
+        && !hasExplicitEnabledModels;
+
+      if (usesDynamicChutesCatalog) {
+        rawModelIds = await fetchChutesModelIds(conn);
+      } else if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
       const modelIds = rawModelIds
         .map((modelId) => {
+          if (usesDynamicChutesCatalog) return modelId;
           if (modelId.startsWith(`${outputAlias}/`)) {
             return modelId.slice(outputAlias.length + 1);
           }
