@@ -37,7 +37,6 @@ jobs:
           rm -rf cli/
           mv temp-cli/node_modules/9router ./cli
           rm -rf temp-cli
-          cat cli/package.json
       
       - name: Install dependencies
         run: npm install
@@ -47,9 +46,12 @@ jobs:
           npm run build
           tree -L 2 .
     
-      - name: Update cli
+      - name: Patch CLI
         working-directory: cli
         run: |
+          npm pkg set name="@diepxuan/9router"
+          npm pkg delete scripts.prepublishOnly
+          cat cli/package.json
           tree -L 2 .
       
       - name: Push changes to GitHub
