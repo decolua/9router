@@ -26,15 +26,16 @@ export function checkInternet() {
 }
 
 async function resolveDns(hostname, timeoutMs) {
-  try {
-    await Promise.race([
-      resolver.resolve4(hostname),
-      new Promise((_, rej) => setTimeout(() => rej(new Error("dns timeout")), timeoutMs)),
-    ]);
-    return true;
-  } catch {
-    return false;
-  }
+  // Try custom public DNS first (bypasses negative-cached NXDOMAIN on macOS).
+  // Fall back to OS resolver for hostnames blocked or unsupported by Cloudflare DNS
+  // (e.g. *.ts.net not always resolvable via 1.1.1.1).
+  const tryResolver = (fn) => Promise.race([
+    fn(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("dns timeout")), timeoutMs)),
+  ]).then(() => true).catch(() => false);
+
+  if (await tryResolver(() => resolver.resolve4(hostname))) return true;
+  return tryResolver(() => dns.promises.resolve4(hostname));
 }
 
 // Single health probe: DNS via 1.1.1.1 → fetch /api/health

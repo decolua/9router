@@ -100,7 +100,7 @@ export const CLI_TOOLS = {
   },
   codex: {
     id: "codex",
-    name: "OpenAI Codex CLI",
+    name: "OpenAI Codex CLI / App", 
     image: "/providers/codex.png",
     color: "#10A37F",
     description: "OpenAI Codex CLI",

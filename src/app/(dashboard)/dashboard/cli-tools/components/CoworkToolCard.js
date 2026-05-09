@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, ManualConfigModal, ComboFormModal } from "@/shared/components";
+import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 
@@ -39,9 +39,9 @@ export default function CoworkToolCard({
   const [selectedModels, setSelectedModels] = useState([]);
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [selectedPlugins, setSelectedPlugins] = useState([]);
-  const [pluginsExpanded, setPluginsExpanded] = useState(false);
+  const [plugins, setPlugins] = useState([]);
   const [comboModalOpen, setComboModalOpen] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -64,8 +64,11 @@ export default function CoworkToolCard({
     if (status?.cowork?.baseUrl && !customBaseUrl) {
       setCustomBaseUrl(stripV1(status.cowork.baseUrl));
     }
-    if (Array.isArray(status?.cowork?.selectedPlugins)) {
-      setSelectedPlugins(status.cowork.selectedPlugins);
+    // Initialize plugins: from current config, fallback to defaultPlugins
+    if (Array.isArray(status?.cowork?.plugins) && status.cowork.plugins.length > 0) {
+      setPlugins(status.cowork.plugins);
+    } else if (plugins.length === 0 && Array.isArray(status?.defaultPlugins)) {
+      setPlugins(status.defaultPlugins);
     }
   }, [status]);
 
@@ -116,7 +119,7 @@ export default function CoworkToolCard({
           baseUrl: effectiveUrl,
           apiKey: keyToUse,
           models: selectedModels,
-          plugins: selectedPlugins,
+          plugins,
         }),
       });
       const data = await res.json();
@@ -145,7 +148,6 @@ export default function CoworkToolCard({
         setMessage({ type: "error", text: err.error || "Failed to create combo" });
         return;
       }
-      // Add combo name into selected models for Cowork
       if (!selectedModels.includes(name)) {
         setSelectedModels([...selectedModels, name]);
       }
@@ -165,6 +167,7 @@ export default function CoworkToolCard({
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully" });
         setSelectedModels([]);
+        setPlugins(status?.defaultPlugins || []);
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset" });
@@ -174,6 +177,15 @@ export default function CoworkToolCard({
     } finally {
       setRestoring(false);
     }
+  };
+
+  const addPlugin = (p) => {
+    if (plugins.some((x) => x.name === p.name)) return;
+    setPlugins([...plugins, p]);
+  };
+
+  const removePlugin = (name) => {
+    setPlugins(plugins.filter((p) => p.name !== name));
   };
 
   const getManualConfigs = () => {
@@ -307,51 +319,33 @@ export default function CoworkToolCard({
                   </div>
                 </div>
 
-                {false && (<div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
-                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Connectors</span>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Plugins</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-text-muted">{selectedPlugins.length} of {(status?.availablePlugins || []).length} selected</span>
-                      <button onClick={() => setPluginsExpanded(!pluginsExpanded)} className="text-xs text-primary hover:underline">
-                        {pluginsExpanded ? "Hide" : "Show"} all
-                      </button>
-                    </div>
-                    {pluginsExpanded && (
-                      <div className="flex flex-col gap-1 max-h-64 overflow-y-auto px-2 py-2 bg-surface rounded border border-border">
-                        {(status?.availablePlugins || []).map((p) => {
-                          const checked = selectedPlugins.includes(p.name);
-                          return (
-                            <label key={p.name} className="flex items-start gap-2 text-xs cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 px-1 py-0.5 rounded">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => setSelectedPlugins((prev) => checked ? prev.filter((n) => n !== p.name) : [...prev, p.name])}
-                                className="mt-0.5"
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium">{p.name}</div>
-                                {p.description && <div className="text-text-muted text-[10px] truncate">{p.description}</div>}
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {!pluginsExpanded && selectedPlugins.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-surface rounded border border-border">
-                        {selectedPlugins.map((name) => (
-                          <span key={name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
-                            {name}
-                            <button onClick={() => setSelectedPlugins((prev) => prev.filter((x) => x !== name))} className="ml-0.5 hover:text-red-500">
+                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                      {plugins.filter((p) => p.name !== "exa").length === 0 ? (
+                        <span className="text-xs text-text-muted">No plugins</span>
+                      ) : (
+                        plugins.filter((p) => p.name !== "exa").map((p) => (
+                          <span key={p.name} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                            {p.title || p.name}
+                            {p.oauth && <span className="text-[8px] text-amber-600">OAuth</span>}
+                            <button onClick={() => removePlugin(p.name)} className="ml-0.5 hover:text-red-500">
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
                           </span>
-                        ))}
-                      </div>
-                    )}
+                        ))
+                      )}
+                    </div>
+                    <button onClick={() => setMarketplaceOpen(true)} className="self-start px-2 py-1 rounded border text-xs bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer">
+                      + Browse MCP marketplace
+                    </button>
+                    <p className="text-[10px] text-text-muted leading-snug">
+                      💡 Exa is auto-installed. Prefer <code className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">web_search_exa</code> for web search and <code className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">web_fetch_exa</code> for reading pages.
+                    </p>
                   </div>
-                </div>)}
+                </div>
               </div>
 
               {message && (
@@ -372,7 +366,6 @@ export default function CoworkToolCard({
                   <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
               </div>
-
             </>
           )}
         </div>
@@ -393,6 +386,13 @@ export default function CoworkToolCard({
         activeProviders={activeProviders}
         forcePrefix="claude-"
         title="Create Cowork Combo"
+      />
+
+      <McpMarketplaceModal
+        isOpen={marketplaceOpen}
+        onClose={() => setMarketplaceOpen(false)}
+        onAdd={addPlugin}
+        addedNames={plugins.map((p) => p.name)}
       />
     </Card>
   );

@@ -1,10 +1,13 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { execSync, spawn } from "child_process";
+import { execSync, exec, spawn } from "child_process";
+import { promisify } from "util";
 import { execWithPassword } from "@/mitm/dns/dnsConfig";
 import { saveTailscalePid, loadTailscalePid, clearTailscalePid } from "./state.js";
 import { DATA_DIR } from "@/lib/dataDir.js";
+
+const execAsync = promisify(exec);
 
 const BIN_DIR = path.join(DATA_DIR, "bin");
 const IS_MAC = os.platform() === "darwin";
@@ -20,15 +23,56 @@ const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 // Well-known Windows install path
 const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
 
-// Prefer system tailscale, fallback to local bin, then Windows default path
-function getTailscaleBin() {
-  try {
-    const systemPath = execSync("which tailscale 2>/dev/null || where tailscale 2>nul", { encoding: "utf8", windowsHide: true }).trim();
-    if (systemPath) return systemPath;
-  } catch (e) { /* not in PATH */ }
+// Common Unix install paths to probe synchronously (system tailscale)
+const UNIX_TAILSCALE_CANDIDATES = [
+  "/usr/local/bin/tailscale",
+  "/opt/homebrew/bin/tailscale",
+  "/usr/bin/tailscale",
+];
+
+// ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
+const PROBE_TTL_MS = 10000;
+const PROBE_TIMEOUT_MS = 1500;
+
+const binCache = { value: undefined, fetchedAt: 0, refreshing: false };
+const runningCache = { value: false, fetchedAt: 0, refreshing: false };
+const funnelUrlCache = { value: null, port: null, fetchedAt: 0, refreshing: false };
+
+function fallbackBin() {
   if (fs.existsSync(TAILSCALE_BIN)) return TAILSCALE_BIN;
   if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) return WINDOWS_TAILSCALE_BIN;
+  if (!IS_WINDOWS) return UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p)) || null;
   return null;
+}
+
+function bgRefreshBin() {
+  if (binCache.refreshing) return;
+  binCache.refreshing = true;
+  execAsync("which tailscale 2>/dev/null || where tailscale 2>nul", { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+    .then(({ stdout }) => {
+      const sys = stdout.trim();
+      binCache.value = sys || fallbackBin();
+    })
+    .catch(() => { binCache.value = fallbackBin(); })
+    .finally(() => {
+      binCache.fetchedAt = Date.now();
+      binCache.refreshing = false;
+    });
+}
+
+// Sync getter: returns cached value, triggers background refresh if stale
+function getTailscaleBin() {
+  if (Date.now() - binCache.fetchedAt > PROBE_TTL_MS) bgRefreshBin();
+  // First call: synchronously probe common install paths (no exec, no event-loop block)
+  if (binCache.value === undefined) {
+    if (fs.existsSync(TAILSCALE_BIN)) binCache.value = TAILSCALE_BIN;
+    else if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) binCache.value = WINDOWS_TAILSCALE_BIN;
+    else if (!IS_WINDOWS) {
+      const found = UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p));
+      binCache.value = found || null;
+    } else binCache.value = null;
+  }
+  return binCache.value;
 }
 
 export function isTailscaleInstalled() {
@@ -58,29 +102,83 @@ export function isTailscaleLoggedIn() {
   }
 }
 
+function bgRefreshRunning() {
+  if (runningCache.refreshing) return;
+  const bin = getTailscaleBin();
+  if (!bin) {
+    runningCache.value = false;
+    runningCache.fetchedAt = Date.now();
+    return;
+  }
+  runningCache.refreshing = true;
+  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json`, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+    .then(({ stdout }) => {
+      try {
+        const json = JSON.parse(stdout);
+        runningCache.value = Object.keys(json.AllowFunnel || {}).length > 0;
+      } catch { runningCache.value = false; }
+    })
+    .catch(() => { runningCache.value = false; })
+    .finally(() => {
+      runningCache.fetchedAt = Date.now();
+      runningCache.refreshing = false;
+    });
+}
+
+// Sync getter: never blocks; returns last known state, refreshes in background
 export function isTailscaleRunning() {
+  if (Date.now() - runningCache.fetchedAt > PROBE_TTL_MS) bgRefreshRunning();
+  return runningCache.value;
+}
+
+// Synchronous strict probe for hot user-initiated paths (enable/connect flow).
+// Blocks ~PROBE_TIMEOUT_MS at most; updates cache as a side effect.
+export function isTailscaleRunningStrict() {
   const bin = getTailscaleBin();
   if (!bin) return false;
   try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json 2>/dev/null`, { encoding: "utf8", windowsHide: true });
+    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} funnel status --json 2>/dev/null`, {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: PROBE_TIMEOUT_MS,
+    });
     const json = JSON.parse(out);
-    return Object.keys(json.AllowFunnel || {}).length > 0;
-  } catch (e) {
+    const running = Object.keys(json.AllowFunnel || {}).length > 0;
+    runningCache.value = running;
+    runningCache.fetchedAt = Date.now();
+    return running;
+  } catch {
     return false;
   }
 }
 
-/** Get funnel URL from tailscale status */
-export function getTailscaleFunnelUrl(port) {
+function bgRefreshFunnelUrl(port) {
+  if (funnelUrlCache.refreshing) return;
   const bin = getTailscaleBin();
-  if (!bin) return null;
-  try {
-    const out = execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, { encoding: "utf8", windowsHide: true });
-    const json = JSON.parse(out);
-    const dnsName = json.Self?.DNSName?.replace(/\.$/, "");
-    if (dnsName) return `https://${dnsName}`;
-  } catch (e) { /* ignore */ }
-  return null;
+  if (!bin) return;
+  funnelUrlCache.refreshing = true;
+  execAsync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
+    .then(({ stdout }) => {
+      try {
+        const json = JSON.parse(stdout);
+        const dnsName = json.Self?.DNSName?.replace(/\.$/, "");
+        funnelUrlCache.value = dnsName ? `https://${dnsName}` : null;
+      } catch { /* keep prev */ }
+    })
+    .catch(() => { /* keep prev */ })
+    .finally(() => {
+      funnelUrlCache.port = port;
+      funnelUrlCache.fetchedAt = Date.now();
+      funnelUrlCache.refreshing = false;
+    });
+}
+
+/** Get funnel URL from tailscale status (cached, non-blocking) */
+export function getTailscaleFunnelUrl(port) {
+  if (Date.now() - funnelUrlCache.fetchedAt > PROBE_TTL_MS || funnelUrlCache.port !== port) {
+    bgRefreshFunnelUrl(port);
+  }
+  return funnelUrlCache.value;
 }
 
 /**
@@ -280,8 +378,46 @@ async function installTailscaleWindows(log) {
   throw new Error("Installation finished but tailscale.exe not found");
 }
 
-/** Start tailscaled with sudo (TUN mode required for Funnel) */
-export async function startDaemonWithPassword(sudoPassword) {
+// Self-heal: if state dir/files were previously created by root (e.g. legacy sudo daemon),
+// reclaim ownership recursively so the user-mode daemon can read/write state files.
+async function ensureUserOwnedDir(dir) {
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      return;
+    }
+    const uid = process.getuid();
+    const gid = process.getgid();
+
+    // Walk dir + all entries to find any non-user-owned items
+    const needsChown = (() => {
+      const stack = [dir];
+      while (stack.length) {
+        const cur = stack.pop();
+        try {
+          const st = fs.statSync(cur);
+          if (st.uid !== uid) return true;
+          if (st.isDirectory()) {
+            for (const name of fs.readdirSync(cur)) stack.push(path.join(cur, name));
+          }
+        } catch { /* ignore */ }
+      }
+      return false;
+    })();
+
+    if (!needsChown) return;
+
+    // Try direct chown first (works if already owned). Fallback to passwordless sudo.
+    try {
+      execSync(`chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 });
+    } catch {
+      try { execSync(`sudo -n chown -R ${uid}:${gid} "${dir}"`, { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+}
+
+/** Start tailscaled in userspace-networking mode (no root, no sudo prompt). */
+export async function startDaemonWithPassword(_sudoPasswordUnused) {
   if (IS_WINDOWS) {
     // Windows: tailscale runs as a Windows Service, try to start it
     try {
@@ -298,29 +434,63 @@ export async function startDaemonWithPassword(sudoPassword) {
     return;
   }
 
-  // Check if daemon already responds
+  // Detect unhealthy state: dir/files not owned by current user OR multiple daemons running.
+  // Either condition blocks userspace daemon → must kill all + reclaim ownership.
+  let needsRestart = false;
   try {
-    const bin = getTailscaleBin() || "tailscale";
-    execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
-      stdio: "ignore",
-      windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
-      timeout: 3000
-    });
-    return; // Already running
-  } catch { /* not running, start it */ }
+    const st = fs.statSync(TAILSCALE_DIR);
+    if (st.uid !== process.getuid()) needsRestart = true;
+    // Also check state file (the actual unhealthy resource)
+    const stateFile = path.join(TAILSCALE_DIR, "tailscaled.state");
+    if (fs.existsSync(stateFile) && fs.statSync(stateFile).uid !== process.getuid()) needsRestart = true;
+  } catch { /* dir doesn't exist yet */ }
 
-  // Ensure config dir exists
-  if (!fs.existsSync(TAILSCALE_DIR)) fs.mkdirSync(TAILSCALE_DIR, { recursive: true });
+  // Detect duplicate daemons on same socket → also requires restart
+  if (!needsRestart) {
+    try {
+      const ps = execSync(`pgrep -f "tailscaled.*${TAILSCALE_SOCKET}"`, { encoding: "utf8", timeout: 2000 }).trim();
+      if (ps && ps.split("\n").length > 1) needsRestart = true;
+    } catch { /* no match → ok */ }
+  }
 
-  // tailscaled requires root for TUN (needed for Funnel)
+  if (needsRestart) {
+    // Kill ALL tailscaled processes (root + user duplicates). Best-effort with/without sudo.
+    try { execSync("pkill -9 -x tailscaled", { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+    try { execSync("sudo -n pkill -9 -x tailscaled", { stdio: "ignore", timeout: 3000 }); } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 1500));
+  } else {
+    // Check if our userspace daemon already responds
+    try {
+      const bin = getTailscaleBin() || "tailscale";
+      execSync(`"${bin}" ${SOCKET_FLAG.join(" ")} status --json`, {
+        stdio: "ignore",
+        windowsHide: true,
+        env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: 3000
+      });
+      return; // Already running and user-owned
+    } catch { /* not running, start it */ }
+  }
+
+  // Reclaim folder ownership if a previous root daemon left it locked
+  await ensureUserOwnedDir(TAILSCALE_DIR);
+
+  // Userspace-networking mode: no TUN device → no root needed → no sudo prompt
   const tailscaledBin = IS_MAC ? "/usr/local/bin/tailscaled" : "tailscaled";
-  const daemonCmd = `${tailscaledBin} --socket=${TAILSCALE_SOCKET} --statedir=${TAILSCALE_DIR}`;
+  const args = [
+    `--socket=${TAILSCALE_SOCKET}`,
+    `--statedir=${TAILSCALE_DIR}`,
+    "--tun=userspace-networking",
+  ];
 
-  // Start via sudo in background (nohup keeps it alive)
-  await execWithPassword(`nohup ${daemonCmd} > /dev/null 2>&1 &`, sudoPassword || "");
+  const child = spawn(tailscaledBin, args, {
+    detached: true,
+    stdio: "ignore",
+    env: { ...process.env, PATH: EXTENDED_PATH },
+  });
+  child.unref();
 
-  // Wait for daemon to be ready
+  // Wait for daemon socket to be ready
   await new Promise((r) => setTimeout(r, 3000));
 }
 
@@ -403,7 +573,7 @@ export function startLogin(hostname) {
       const url = parseAuthUrl(output);
       if (url) resolve({ authUrl: url });
       else if (code === 0 || isTailscaleLoggedIn()) resolve({ alreadyLoggedIn: true });
-      else reject(new Error(`tailscale up exited with code ${code}`));
+      else reject(new Error(`tailscale up exited with code ${code}: ${output.trim() || "no output"}`));
     });
   });
 }

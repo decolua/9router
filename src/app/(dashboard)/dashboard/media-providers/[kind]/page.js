@@ -3,7 +3,7 @@
 import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Card, Badge, Button, AddCustomEmbeddingModal } from "@/shared/components";
+import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
@@ -19,7 +19,7 @@ function getEffectiveStatus(conn) {
   return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
 }
 
-function MediaProviderCard({ provider, kind, connections, isCustom }) {
+function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) {
   const providerInfo = AI_PROVIDERS[provider.id];
   const isNoAuth = !!providerInfo?.noAuth;
 
@@ -28,6 +28,12 @@ function MediaProviderCard({ provider, kind, connections, isCustom }) {
   const error = providerConns.filter((c) => { const s = getEffectiveStatus(c); return s === "error" || s === "expired" || s === "unavailable"; }).length;
   const total = providerConns.length;
   const allDisabled = total > 0 && providerConns.every((c) => c.isActive === false);
+
+  const handleToggleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onToggle) onToggle(provider.id, allDisabled);
+  };
 
   const renderStatus = () => {
     if (isNoAuth) return <Badge variant="success" size="sm">Ready</Badge>;
@@ -48,27 +54,42 @@ function MediaProviderCard({ provider, kind, connections, isCustom }) {
         padding="xs"
         className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
       >
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className="size-8 rounded-lg flex items-center justify-center shrink-0"
-            style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
-          >
-            <ProviderIcon
-              src={`/providers/${provider.id}.png`}
-              alt={provider.name}
-              size={30}
-              className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
-              fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
-              fallbackColor={provider.color}
-            />
-          </div>
-          <div>
-            <h3 className="font-semibold text-sm">{provider.name}</h3>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-              {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
-              {renderStatus()}
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className="size-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
+            >
+              <ProviderIcon
+                src={`/providers/${provider.id}.png`}
+                alt={provider.name}
+                size={30}
+                className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
+                fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
+                fallbackColor={provider.color}
+              />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-sm">{provider.name}</h3>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
+                {renderStatus()}
+              </div>
             </div>
           </div>
+          {total > 0 && (
+            <div
+              className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+              onClick={handleToggleClick}
+            >
+              <Toggle
+                size="sm"
+                checked={!allDisabled}
+                onChange={() => {}}
+                title={allDisabled ? "Enable provider" : "Disable provider"}
+              />
+            </div>
+          )}
         </div>
       </Card>
     </Link>
@@ -170,6 +191,22 @@ export default function MediaProviderKindPage() {
 
   const allProviders = [...providers, ...customProviders];
 
+  const handleToggleProvider = async (providerId, newActive) => {
+    const providerConns = connections.filter((c) => c.provider === providerId);
+    setConnections((prev) =>
+      prev.map((c) => (c.provider === providerId ? { ...c, isActive: newActive } : c))
+    );
+    await Promise.allSettled(
+      providerConns.map((c) =>
+        fetch(`/api/providers/${c.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive: newActive }),
+        })
+      )
+    );
+  };
+
   const handleCreateCombo = async () => {
     const base = COMBO_BASE_NAMES[kind] || `${kind}-combo`;
     let name = base;
@@ -221,6 +258,7 @@ export default function MediaProviderKindPage() {
               provider={provider}
               kind={kind}
               connections={connections}
+              onToggle={handleToggleProvider}
             />
           ))}
           {customProviders.map((provider) => (
@@ -230,6 +268,7 @@ export default function MediaProviderKindPage() {
               kind={kind}
               connections={connections}
               isCustom
+              onToggle={handleToggleProvider}
             />
           ))}
         </div>
