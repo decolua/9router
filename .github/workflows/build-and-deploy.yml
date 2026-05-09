@@ -27,12 +27,25 @@ jobs:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
       
-      - name: Build app
+      - name: Download latest CLI
         run: |
-          cd app
-          npm install
-          npm run build
+          mkdir -p temp-cli
+          cd temp-cli
+          npm init -y
+          npm install 9router@latest
           cd ..
+          rm -rf cli/
+          mv temp-cli/node_modules/@diepxuan/9router ./cli
+          rm -rf temp-cli
+      
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build
+        run: |
+          tree -L 3 .
+          npm run build
+          tree -L 3 .
       
       - name: Commit build changes
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
