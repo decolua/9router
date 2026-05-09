@@ -35,7 +35,7 @@ jobs:
           npm install 9router@latest
           cd ..
           rm -rf cli/
-          mv temp-cli/node_modules/@diepxuan/9router ./cli
+          mv temp-cli/node_modules/9router ./cli
           rm -rf temp-cli
       
       - name: Install dependencies
@@ -46,6 +46,12 @@ jobs:
           tree -L 3 .
           npm run build
           tree -L 3 .
+
+      - name: Bump version
+        run: |
+          TIMESTAMP=$(date +%s)
+          npm version patch --no-git-tag-version
+          npm version prerelease --preid=patch.$TIMESTAMP --no-git-tag-version
       
       - name: Publish to GitHub Packages
         run: npm publish
