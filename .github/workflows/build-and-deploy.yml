@@ -2,38 +2,49 @@ name: Build and Deploy
 
 on:
   push:
-    branches: [ main ]
-
+    branches: [main]
   pull_request:
-    branches: [ main ]
-    
-  workflow_dispatch:     # Cho phép chạy thủ công
-    
+    branches: [main]
+  workflow_dispatch:
+
 jobs:
   build:
-    runs-on: ubuntu-latest  # Máy ảo GitHub có RAM 7GB
+    runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
       packages: write
+    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
       
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build
-        run: npm run build
-
+      
+      - name: Build app
+        run: |
+          cd app
+          npm install
+          npm run build
+          cd ..
+      
+      - name: Commit build changes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/.next app/public
+          git commit -m "chore: rebuild app output [skip ci]" || echo "No changes to commit"
+          git push origin main || echo "Push failed"
+      
       - name: Publish to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
