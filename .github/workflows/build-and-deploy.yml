@@ -43,17 +43,14 @@ jobs:
 
       - name: Build
         run: |
+          mv next.config.mjs base.config.mjs
           npm run build
-          tree -L 2 .
-          tree -L 2 .next
-          tree -L 2 .next/standalone
     
       - name: Patch CLI
         working-directory: cli
         run: |
           npm pkg set name="@diepxuan/9router"
           npm pkg delete scripts.prepublishOnly
-          rm -rf app/.next && cp -r ../.next app/
           cat package.json
           tree -L 2 .
       
