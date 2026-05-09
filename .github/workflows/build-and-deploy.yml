@@ -37,23 +37,44 @@ jobs:
           rm -rf cli/
           mv temp-cli/node_modules/9router ./cli
           rm -rf temp-cli
+          cat cli/package.json
       
       - name: Install dependencies
         run: npm install
 
       - name: Build
         run: |
-          tree -L 3 .
           npm run build
-          tree -L 3 .
+          tree -L 2 .
+    
+      - name: Update cli
+        working-directory: cli
+        env:
+          REPOSITORY: ${{ github.repository }}
+          GIT_COMMITTER_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          tree -L 2 .
+      
+      - name: Push changes to GitHub
+        run: |
+          git add cli/
+          git commit -m "${GIT_COMMITTER_MESSAGE:-'Auto-commit update 9router cli'}" || true
+          if ! git push; then
+            git stash
+            git pull --rebase
+            git stash pop
+            git push || true
+          fi
 
       - name: Bump version
+        working-directory: cli
         run: |
           TIMESTAMP=$(date +%s)
           npm version patch --no-git-tag-version
           npm version prerelease --preid=patch.$TIMESTAMP --no-git-tag-version
       
       - name: Publish to GitHub Packages
+        working-directory: cli
         run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
