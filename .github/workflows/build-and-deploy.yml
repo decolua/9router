@@ -45,6 +45,8 @@ jobs:
         run: |
           npm run build
           tree -L 2 .
+          tree -L 2 .next
+          tree -L 2 .next/standalone
     
       - name: Patch CLI
         working-directory: cli
