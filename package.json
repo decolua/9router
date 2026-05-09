@@ -1,8 +1,11 @@
 {
-  "name": "9router",
+  "name": "@diepxuan/9router",
   "version": "0.4.20",
   "description": "9Router web dashboard",
   "private": false,
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "dev": "next dev --webpack --port 20128",
     "build": "NODE_ENV=production next build --webpack",
@@ -52,5 +55,13 @@
   },
   "bin": {
     "9router": "./cli.js"
-  }
+  },
+  "files": [
+    ".next",
+    "public",
+    "cli.js",
+    "package.json",
+    "next.config.js",
+    "tsconfig.json"
+  ]
 }
