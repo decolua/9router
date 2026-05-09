@@ -25,7 +25,10 @@ jobs:
         with:
           node-version: '20'
           
-      - run: npm run build
+      - shell: bash
+        run: |
+          npm install
+          npm run build
 
       - name: Check for changes
         run: |
