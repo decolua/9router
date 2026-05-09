@@ -1200,7 +1200,7 @@ Authorization: Bearer your-api-key
 
 ## 📄 ライセンス
 
-MITライセンス - 詳細は [LICENSE](LICENSE) を参照してください。
+MITライセンス - 詳細は [LICENSE](../LICENSE) を参照してください。
 
 ---
 

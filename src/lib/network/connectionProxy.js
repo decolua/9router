@@ -1,14 +1,25 @@
 import { getProxyPoolById } from "@/models";
 
+// Safely normalize any value into a trimmed string.
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
 }
 
+/**
+ * Normalize legacy proxy configuration.
+ */
 function normalizeLegacyProxy(providerSpecificData = {}) {
-  const connectionProxyEnabled = providerSpecificData?.connectionProxyEnabled === true;
-  const connectionProxyUrl = normalizeString(providerSpecificData?.connectionProxyUrl);
-  const connectionNoProxy = normalizeString(providerSpecificData?.connectionNoProxy);
+  const connectionProxyEnabled =
+    providerSpecificData?.connectionProxyEnabled === true;
+
+  const connectionProxyUrl = normalizeString(
+    providerSpecificData?.connectionProxyUrl
+  );
+
+  const connectionNoProxy = normalizeString(
+    providerSpecificData?.connectionNoProxy
+  );
 
   return {
     connectionProxyEnabled,
@@ -17,56 +28,133 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
   };
 }
 
-export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
-  const proxyPoolIdRaw = normalizeString(providerSpecificData?.proxyPoolId);
-  const proxyPoolId = proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
-  const legacy = normalizeLegacyProxy(providerSpecificData);
+/**
+ * Resolve final proxy configuration.
+ *
+ * Priority:
+ * 1. Proxy Pool
+ * 2. Legacy Proxy
+ * 3. No Proxy
+ */
+export async function resolveConnectionProxyConfig(
+  providerSpecificData = {}
+) {
+  try {
+    const proxyPoolIdRaw = normalizeString(
+      providerSpecificData?.proxyPoolId
+    );
 
-  if (proxyPoolId) {
-    const proxyPool = await getProxyPoolById(proxyPoolId);
-    const proxyUrl = normalizeString(proxyPool?.proxyUrl);
-    const noProxy = normalizeString(proxyPool?.noProxy);
+    // "__none__" means explicitly disabled
+    const proxyPoolId =
+      proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
 
-    if (proxyPool && proxyPool.isActive === true && proxyUrl) {
-      // Vercel relay: rewrite base URL instead of using HTTP_PROXY
-      if (proxyPool.type === "vercel") {
+    const legacy = normalizeLegacyProxy(providerSpecificData);
+
+    /**
+     * -----------------------------
+     * Proxy Pool Resolution
+     * -----------------------------
+     */
+    if (proxyPoolId) {
+      const proxyPool = await getProxyPoolById(proxyPoolId);
+
+      const proxyUrl = normalizeString(proxyPool?.proxyUrl);
+      const noProxy = normalizeString(proxyPool?.noProxy);
+
+      const isValidPool =
+        proxyPool &&
+        proxyPool.isActive === true &&
+        proxyUrl;
+
+      if (isValidPool) {
+        /**
+         * Vercel relay proxies use base URL rewriting
+         * instead of HTTP_PROXY environment variables.
+         */
+        if (proxyPool.type === "vercel") {
+          return {
+            source: "vercel",
+
+            proxyPoolId,
+            proxyPool,
+
+            connectionProxyEnabled: false,
+            connectionProxyUrl: "",
+            connectionNoProxy: noProxy,
+
+            strictProxy: proxyPool.strictProxy === true,
+
+            vercelRelayUrl: proxyUrl,
+          };
+        }
+
+        /**
+         * Standard proxy pool
+         */
         return {
-          source: "vercel",
+          source: "pool",
+
           proxyPoolId,
           proxyPool,
-          connectionProxyEnabled: false,
-          connectionProxyUrl: "",
+
+          connectionProxyEnabled: true,
+          connectionProxyUrl: proxyUrl,
           connectionNoProxy: noProxy,
+
           strictProxy: proxyPool.strictProxy === true,
-          vercelRelayUrl: proxyUrl,
         };
       }
+    }
 
+    /**
+     * -----------------------------
+     * Legacy Proxy Fallback
+     * -----------------------------
+     */
+    if (
+      legacy.connectionProxyEnabled &&
+      legacy.connectionProxyUrl
+    ) {
       return {
-        source: "pool",
-        proxyPoolId,
-        proxyPool,
-        connectionProxyEnabled: true,
-        connectionProxyUrl: proxyUrl,
-        connectionNoProxy: noProxy,
-        strictProxy: proxyPool.strictProxy === true,
+        source: "legacy",
+
+        proxyPoolId: proxyPoolId || null,
+        proxyPool: null,
+
+        ...legacy,
       };
     }
-  }
 
-  if (legacy.connectionProxyEnabled && legacy.connectionProxyUrl) {
+    /**
+     * -----------------------------
+     * No Proxy Config
+     * -----------------------------
+     */
     return {
-      source: "legacy",
+      source: "none",
+
       proxyPoolId: proxyPoolId || null,
       proxyPool: null,
+
       ...legacy,
     };
-  }
+  } catch (error) {
+    console.error(
+      "[resolveConnectionProxyConfig] Failed to resolve proxy config:",
+      error
+    );
 
-  return {
-    source: "none",
-    proxyPoolId: proxyPoolId || null,
-    proxyPool: null,
-    ...legacy,
-  };
+    return {
+      source: "error",
+
+      proxyPoolId: null,
+      proxyPool: null,
+
+      connectionProxyEnabled: false,
+      connectionProxyUrl: "",
+      connectionNoProxy: "",
+
+      strictProxy: false,
+    };
+  }
 }

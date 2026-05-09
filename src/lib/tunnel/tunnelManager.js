@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { loadState, saveState, generateShortId } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
-import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleLoggedIn, startLogin, startDaemonWithPassword } from "./tailscale.js";
+import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, startLogin, startDaemonWithPassword } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { waitForHealth, probeUrlAlive } from "./networkProbe.js";
@@ -32,6 +32,33 @@ export function getTailscaleService() { return tailscaleSvc; }
 export function isTunnelManuallyDisabled() { return tunnelSvc.cancelToken.cancelled; }
 export function isTunnelReconnecting() { return tunnelSvc.spawnInProgress; }
 export function isTailscaleReconnecting() { return tailscaleSvc.spawnInProgress; }
+
+// ─── Reachable cache: background probe of tunnel URL /api/health ─────────────
+// UI uses this to know if the public URL actually serves content (not just process alive)
+const REACHABLE_TTL_MS = 30000;
+const tunnelReachable = { value: false, url: null, fetchedAt: 0, refreshing: false };
+const tailscaleReachable = { value: false, url: null, fetchedAt: 0, refreshing: false };
+
+function bgRefreshReachable(cache, url) {
+  if (cache.refreshing) return;
+  if (!url) { cache.value = false; cache.url = null; cache.fetchedAt = Date.now(); return; }
+  cache.refreshing = true;
+  probeUrlAlive(url)
+    .then((ok) => { cache.value = ok; })
+    .catch(() => { cache.value = false; })
+    .finally(() => {
+      cache.url = url;
+      cache.fetchedAt = Date.now();
+      cache.refreshing = false;
+    });
+}
+
+function readReachable(cache, url) {
+  // URL changed → invalidate
+  if (cache.url !== url) { cache.value = false; cache.fetchedAt = 0; }
+  if (Date.now() - cache.fetchedAt > REACHABLE_TTL_MS) bgRefreshReachable(cache, url);
+  return cache.value;
+}
 
 function getMachineId() {
   try {
@@ -94,8 +121,15 @@ export async function enableTunnel(localPort = 20128) {
     saveState({ shortId, machineId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
 
-    // Block until /api/health responds via public URL — proves DNS propagated + tunnel works
+    // Verify direct tunnel URL is reachable first (avoid CDN-cache false positive on publicUrl)
+    await waitForHealth(tunnelUrl, token);
+    // Then verify public URL (DNS propagated through 9router.com worker)
     await waitForHealth(publicUrl, token);
+
+    // Prime reachable cache so UI shows correct state immediately
+    tunnelReachable.value = true;
+    tunnelReachable.url = tunnelUrl;
+    tunnelReachable.fetchedAt = Date.now();
 
     return { success: true, tunnelUrl, shortId, publicUrl };
   } finally {
@@ -112,23 +146,31 @@ export async function disableTunnel() {
   if (state) saveState({ shortId: state.shortId, machineId: state.machineId, tunnelUrl: null });
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
+  tunnelReachable.value = false; tunnelReachable.url = null; tunnelReachable.fetchedAt = Date.now();
   return { success: true };
 }
 
 export async function getTunnelStatus() {
-  const state = loadState();
-  const running = isCloudflaredRunning();
   const settings = await getSettings();
+  const settingsEnabled = settings.tunnelEnabled === true;
+  const state = loadState();
   const shortId = state?.shortId || "";
   const publicUrl = shortId ? `https://r${shortId}.9router.com` : "";
+  const tunnelUrl = state?.tunnelUrl || "";
+
+  // Lazy: skip PID probe entirely when user disabled tunnel
+  const running = settingsEnabled ? isCloudflaredRunning() : false;
+  // Reachable: cached background probe (never blocks the request)
+  const reachable = settingsEnabled && running ? readReachable(tunnelReachable, tunnelUrl) : false;
 
   return {
-    enabled: settings.tunnelEnabled === true && running,
-    settingsEnabled: settings.tunnelEnabled === true,
-    tunnelUrl: state?.tunnelUrl || "",
+    enabled: settingsEnabled && running,
+    settingsEnabled,
+    tunnelUrl,
     shortId,
     publicUrl,
-    running
+    running,
+    reachable
   };
 }
 
@@ -163,7 +205,8 @@ export async function enableTailscale(localPort = 20128) {
       return { success: false, funnelNotEnabled: true, enableUrl: result.enableUrl };
     }
 
-    if (!isTailscaleLoggedIn() || !isTailscaleRunning()) {
+    // Strict probe: bypass cache so we don't false-negative on first invocation
+    if (!isTailscaleLoggedIn() || !isTailscaleRunningStrict()) {
       stopFunnel();
       return { success: false, error: "Tailscale not connected. Device may have been removed. Please re-login." };
     }
@@ -172,6 +215,11 @@ export async function enableTailscale(localPort = 20128) {
 
     // Verify funnel actually serves /api/health
     await waitForHealth(result.tunnelUrl, token);
+
+    // Prime reachable cache so UI shows correct state immediately
+    tailscaleReachable.value = true;
+    tailscaleReachable.url = result.tunnelUrl;
+    tailscaleReachable.fetchedAt = Date.now();
 
     return { success: true, tunnelUrl: result.tunnelUrl };
   } finally {
@@ -183,16 +231,23 @@ export async function disableTailscale() {
   tailscaleSvc.cancelToken.cancelled = true;
   stopFunnel();
   await updateSettings({ tailscaleEnabled: false, tailscaleUrl: "" });
+  tailscaleReachable.value = false; tailscaleReachable.url = null; tailscaleReachable.fetchedAt = Date.now();
   return { success: true };
 }
 
 export async function getTailscaleStatus() {
   const settings = await getSettings();
-  const running = isTailscaleRunning();
+  const settingsEnabled = settings.tailscaleEnabled === true;
+  const tunnelUrl = settings.tailscaleUrl || "";
+  // Lazy: skip execSync funnel-status probe when user disabled Tailscale
+  const running = settingsEnabled ? isTailscaleRunning() : false;
+  // Reachable: cached background probe (never blocks the request)
+  const reachable = settingsEnabled && running ? readReachable(tailscaleReachable, tunnelUrl) : false;
   return {
-    enabled: settings.tailscaleEnabled === true && running,
-    settingsEnabled: settings.tailscaleEnabled === true,
-    tunnelUrl: settings.tailscaleUrl || "",
-    running
+    enabled: settingsEnabled && running,
+    settingsEnabled,
+    tunnelUrl,
+    running,
+    reachable
   };
 }

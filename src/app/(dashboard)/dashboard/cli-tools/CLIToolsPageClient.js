@@ -4,21 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard, MitmLinkCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard, CopilotToolCard, MitmLinkCard } from "./components";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
-
-const STATUS_ENDPOINTS = {
-  claude: "/api/cli-tools/claude-settings",
-  codex: "/api/cli-tools/codex-settings",
-  opencode: "/api/cli-tools/opencode-settings",
-  droid: "/api/cli-tools/droid-settings",
-  openclaw: "/api/cli-tools/openclaw-settings",
-  hermes: "/api/cli-tools/hermes-settings",
-  cowork: "/api/cli-tools/cowork-settings",
-};
+const ALL_STATUSES_URL = "/api/cli-tools/all-statuses";
 
 export default function CLIToolsPageClient({ machineId }) {
   const [connections, setConnections] = useState([]);
@@ -42,18 +33,8 @@ export default function CLIToolsPageClient({ machineId }) {
 
   const fetchAllStatuses = async () => {
     try {
-      const entries = await Promise.all(
-        Object.entries(STATUS_ENDPOINTS).map(async ([toolId, url]) => {
-          try {
-            const res = await fetch(url);
-            const data = await res.json();
-            return [toolId, data];
-          } catch {
-            return [toolId, null];
-          }
-        })
-      );
-      setToolStatuses(Object.fromEntries(entries));
+      const res = await fetch(ALL_STATUSES_URL);
+      if (res.ok) setToolStatuses(await res.json());
     } catch (error) {
       console.log("Error fetching tool statuses:", error);
     }
@@ -138,7 +119,7 @@ export default function CLIToolsPageClient({ machineId }) {
     if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
     if (typeof window !== "undefined") return window.location.origin;
-    return "http://localhost:20128";
+    return "http://127.0.0.1:20128";
   };
 
   if (loading) {
@@ -207,6 +188,8 @@ export default function CLIToolsPageClient({ machineId }) {
         return <OpenClawToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.openclaw} />;
       case "hermes":
         return <HermesToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.hermes} />;
+      case "copilot":
+        return <CopilotToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.copilot} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }

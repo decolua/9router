@@ -1,28 +1,31 @@
 import os from "os";
-import { execSync } from "child_process";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { NextResponse } from "next/server";
 import { isTailscaleInstalled, isTailscaleLoggedIn, TAILSCALE_SOCKET } from "@/lib/tunnel/tailscale";
 
+const execAsync = promisify(exec);
 const EXTENDED_PATH = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${process.env.PATH || ""}`;
+const PROBE_TIMEOUT_MS = 1500;
 
-function hasBrew() {
-  try { execSync("which brew", { stdio: "ignore", windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH } }); return true; } catch { return false; }
+async function hasBrew() {
+  try {
+    await execAsync("which brew", { windowsHide: true, env: { ...process.env, PATH: EXTENDED_PATH }, timeout: PROBE_TIMEOUT_MS });
+    return true;
+  } catch { return false; }
 }
 
-function isDaemonRunning() {
+async function isDaemonRunning() {
   try {
-    // Use custom socket + --json; exit 0 even when not logged in
-    execSync(`tailscale --socket ${TAILSCALE_SOCKET} status --json`, {
-      stdio: "ignore",
+    await execAsync(`tailscale --socket ${TAILSCALE_SOCKET} status --json`, {
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
-      timeout: 3000
+      timeout: PROBE_TIMEOUT_MS
     });
     return true;
   } catch {
-    // Fallback: check if tailscaled process is alive
     try {
-      execSync("pgrep -x tailscaled", { stdio: "ignore", windowsHide: true, timeout: 2000 });
+      await execAsync("pgrep -x tailscaled", { windowsHide: true, timeout: PROBE_TIMEOUT_MS });
       return true;
     } catch { return false; }
   }
@@ -32,8 +35,11 @@ export async function GET() {
   try {
     const installed = isTailscaleInstalled();
     const platform = os.platform();
-    const brewAvailable = platform === "darwin" && hasBrew();
-    const daemonRunning = installed ? isDaemonRunning() : false;
+    // Run independent probes in parallel — none blocks the event loop
+    const [brewAvailable, daemonRunning] = await Promise.all([
+      platform === "darwin" ? hasBrew() : Promise.resolve(false),
+      installed ? isDaemonRunning() : Promise.resolve(false),
+    ]);
     const loggedIn = daemonRunning ? isTailscaleLoggedIn() : false;
     return NextResponse.json({ installed, loggedIn, platform, brewAvailable, daemonRunning });
   } catch (error) {
