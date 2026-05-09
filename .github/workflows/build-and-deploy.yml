@@ -49,9 +49,6 @@ jobs:
     
       - name: Update cli
         working-directory: cli
-        env:
-          REPOSITORY: ${{ github.repository }}
-          GIT_COMMITTER_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           tree -L 2 .
       
@@ -65,6 +62,13 @@ jobs:
             git stash pop
             git push || true
           fi
+        env:
+          REPOSITORY: ${{ github.repository }}
+          GIT_COMMITTER_MESSAGE: ${{ github.event.head_commit.message }}
+          GIT_AUTHOR_NAME: Tran Ngoc Duc
+          GIT_AUTHOR_EMAIL: ductn@diepxuan.com
+          GIT_COMMITTER_NAME: Tran Ngoc Duc
+          GIT_COMMITTER_EMAIL: ductn@diepxuan.com
 
       - name: Bump version
         working-directory: cli
