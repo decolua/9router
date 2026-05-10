@@ -79,12 +79,33 @@ function filterUnsupportedTools(body, targetFormat) {
   const filtered = body.tools.filter(t => !t.type || t.type === "function");
   if (filtered.length < body.tools.length) {
     body.tools = filtered;
-    // Also clean up tool_choice if it references a removed tool
     if (body.tool_choice && typeof body.tool_choice === "object" && body.tool_choice.type === "tool") {
       const name = body.tool_choice.function?.name;
       if (name && !filtered.some(t => t.function?.name === name)) {
         body.tool_choice = "auto";
       }
+    }
+  }
+}
+
+// Fix orphaned tool messages: remove tool messages that don't have preceding assistant with matching tool_calls
+function fixOrphanedToolMessages(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return;
+  const validCallIds = new Set();
+  for (const msg of body.messages) {
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        if (tc.id) validCallIds.add(tc.id);
+      }
+    }
+  }
+  for (const msg of body.messages) {
+    if (msg.role === "tool" && msg.tool_call_id && !validCallIds.has(msg.tool_call_id)) {
+      msg.invalid = true;
+    }
+  }
+  body.messages = body.messages.filter(m => !m.invalid);
+}
     }
   }
 }
@@ -105,6 +126,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   
   // Fix missing tool responses (insert empty tool_result if needed)
   fixMissingToolResponses(result);
+
+  // Fix orphaned tool messages (DeepSeek requires every tool message has preceding tool_calls)
+  fixOrphanedToolMessages(result);
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
