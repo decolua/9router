@@ -88,38 +88,42 @@ function filterUnsupportedTools(body, targetFormat) {
   }
 }
 
-// Fix orphaned tool messages: remove tool messages that don't have preceding assistant with matching tool_calls.
-// DeepSeek also requires tool messages to immediately follow their assistant with no non-tool messages in between.
+// Restructure messages: ensure tool results immediately follow their assistant with matching tool_calls.
+// DeepSeek requires tool messages to be contiguous with their preceding assistant.
 function fixOrphanedToolMessages(body) {
   if (!body.messages || !Array.isArray(body.messages)) return;
 
-  // First pass: mark tool messages that have a valid assistant with matching tool_call_id
-  // and no non-tool/non-assistant messages between them
+  const restructured = [];
+  const pendingTools = {}; // tool_call_id → tool message (waiting to be placed after assistant)
+  let removed = 0;
+
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-    if (msg.role !== "tool" || !msg.tool_call_id) continue;
 
-    let found = false;
-    // Walk backwards from the tool message to find a preceding assistant with matching tool_calls
-    for (let j = i - 1; j >= 0; j--) {
-      const prev = body.messages[j];
-      if (prev.role === "assistant" && Array.isArray(prev.tool_calls)) {
-        if (prev.tool_calls.some(tc => tc.id === msg.tool_call_id)) {
-          found = true;
-        }
-        break; // Stop at the first assistant (matching or not)
-      }
-      if (prev.role !== "tool") break; // Non-tool, non-assistant blocks the chain
+    if (msg.role === "tool" && msg.tool_call_id) {
+      // Collect tool messages, place them after matching assistant later
+      pendingTools[msg.tool_call_id] = msg;
+      continue;
     }
-    if (!found) msg.invalid = true;
+
+    restructured.push(msg);
+
+    // If this is an assistant with tool_calls, immediately append matching tool results
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        if (tc.id && pendingTools[tc.id]) {
+          restructured.push(pendingTools[tc.id]);
+          delete pendingTools[tc.id];
+        }
+      }
+    }
   }
 
-  // Also find tool messages whose assistant has already been split by a non-tool message
-  // Re-scan: mark orphaned tool messages that follow a system/user message after an assistant
-  const removed = body.messages.filter(m => m.invalid).length;
-  if (removed > 0) {
-    body.messages = body.messages.filter(m => !m.invalid);
-    console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages`);
+  // Count orphaned tool messages (no matching assistant found)
+  removed = Object.keys(pendingTools).length;
+  if (removed > 0 || restructured.length !== body.messages.length) {
+    body.messages = restructured;
+    if (removed > 0) console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages`);
   }
 }
 
