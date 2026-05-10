@@ -12,6 +12,8 @@ export {
   isValidModel,
   findModelName,
   getModelTargetFormat,
+  getModelStrip,
+  getModelConvertDeveloperRole,
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId
 } from "./config/providerModels.js";

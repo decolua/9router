@@ -134,7 +134,7 @@ export const PROVIDER_MODELS = {
     // { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
     { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
-    { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"] },
+    { id: "deepseek-3.2", name: "DeepSeek 3.2", strip: ["image", "audio"], convertDeveloperRole: true },
     { id: "qwen3-coder-next", name: "Qwen3 Coder Next", strip: ["image", "audio"] },
     { id: "glm-5", name: "GLM 5" },
     { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
@@ -727,4 +727,11 @@ export function getModelsByProviderId(providerId) {
 export function getModelStrip(alias, modelId) {
   const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
   return entry?.strip || [];
+}
+
+// Check if model should convert developer role to system
+// Set convertDeveloperRole: true on a model entry to enable this
+export function getModelConvertDeveloperRole(alias, modelId) {
+  const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
+  return !!entry?.convertDeveloperRole;
 }

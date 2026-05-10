@@ -5,7 +5,7 @@ import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import { getModelTargetFormat, getModelStrip, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelTargetFormat, getModelStrip, getModelConvertDeveloperRole, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -40,6 +40,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
   const stripList = getModelStrip(alias, model);
+  const convertDeveloperRole = getModelConvertDeveloperRole(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -92,6 +93,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
     translatedBody.model = model;
+  }
+
+  // Per-model: convert developer role to system (before RTK/token savers)
+  if (convertDeveloperRole) {
+    for (const arr of [translatedBody.messages, translatedBody.input, translatedBody.contents, translatedBody?.request?.contents]) {
+      if (Array.isArray(arr)) {
+        for (const msg of arr) {
+          if (msg && msg.role === "developer") msg.role = "system";
+        }
+      }
+    }
+    log?.debug?.("ROLE", "developer → system (per-model config)");
   }
 
   // Token savers: applied at the final body just before dispatch
