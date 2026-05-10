@@ -1,6 +1,6 @@
 # 9Router Architecture
 
-_Last updated: 2026-02-06_
+_Last updated: 2026-05-09_
 
 ## Executive Summary
 
@@ -17,6 +17,12 @@ Core capabilities:
 - Local persistence for providers, keys, aliases, combos, settings, pricing
 - Usage/cost tracking and request logging
 - Optional cloud sync for multi-device/state sync
+- RTK Token Saver (20-40% input token savings)
+- Caveman Mode (up to 65% output token savings)
+- Speech-to-Text (STT), Text-to-Speech (TTS), Image Generation, Web Search, Web Fetch endpoints
+- MCP Marketplace for plugin management
+- Tailscale tunnel integration
+- Skills system for custom AI workflows
 
 Primary runtime model:
 
@@ -33,6 +39,10 @@ Primary runtime model:
 - Request translation and SSE streaming
 - Local state + usage persistence
 - Optional cloud sync orchestration
+- RTK compression filters
+- STT/TTS/Image/Search/Fetch proxy endpoints
+- MCP plugin management
+- Tailscale tunnel
 
 ### Out of Scope
 
@@ -42,55 +52,45 @@ Primary runtime model:
 
 ## High-Level System Context
 
-```mermaid
-flowchart LR
-    subgraph Clients[Developer Clients]
-        C1[Claude Code]
-        C2[Codex CLI]
-        C3[OpenClaw / Droid / Cline / Continue / Roo]
-        C4[Custom OpenAI-compatible clients]
-        BROWSER[Browser Dashboard]
-    end
-
-    subgraph Router[9Router Local Process]
-        API[V1 Compatibility API\n/v1/*]
-        DASH[Dashboard + Management API\n/api/*]
-        CORE[SSE + Translation Core\nopen-sse + src/sse]
-        DB[(db.json)]
-        UDB[(usage.json + log.txt)]
-    end
-
-    subgraph Upstreams[Upstream Providers]
-        P1[OAuth Providers\nClaude/Codex/Gemini/Qwen/iFlow/GitHub/Kiro/Cursor/Antigravity]
-        P2[API Key Providers\nOpenAI/Anthropic/OpenRouter/GLM/Kimi/MiniMax]
-        P3[Compatible Nodes\nOpenAI-compatible / Anthropic-compatible]
-    end
-
-    subgraph Cloud[Optional Cloud Sync]
-        CLOUD[Cloud Sync Endpoint\nNEXT_PUBLIC_CLOUD_URL]
-    end
-
-    C1 --> API
-    C2 --> API
-    C3 --> API
-    C4 --> API
-    BROWSER --> DASH
-
-    API --> CORE
-    DASH --> DB
-    CORE --> DB
-    CORE --> UDB
-
-    CORE --> P1
-    CORE --> P2
-    CORE --> P3
-
-    DASH --> CLOUD
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        Developer Clients                          │
+│  Claude Code │ Codex │ OpenClaw │ Cursor │ Cline │ Custom Tools   │
+│                        Browser Dashboard                         │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ http://localhost:20128/v1
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                       9Router Gateway                             │
+│                                                                   │
+│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────────────┐  │
+│  │ V1 Compat   │  │ Management   │  │ RTK Token Saver         │  │
+│  │ /v1/*       │  │ /api/*       │  │ open-sse/rtk/*          │  │
+│  └──────┬──────┘  └──────┬───────┘  └────────────┬────────────┘  │
+│         │                │                        │               │
+│  ┌──────┴────────────────┴────────────────────────┴──────────┐  │
+│  │              SSE + Translation Core                        │  │
+│  │  src/sse/* │ open-sse/* │ open-sse/executors/*            │  │
+│  └──────┬────────────────────────────────────────────────────┘  │
+│         │                                                       │
+│  ┌──────┴──────────┐  ┌──────────────┐  ┌──────────────────┐   │
+│  │ SQLite DB       │  │ Tailscale    │  │ MCP Plugins      │   │
+│  │ src/lib/db/*    │  │ Tunnel       │  │ Marketplace      │   │
+│  └─────────────────┘  └──────────────┘  └──────────────────┘   │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │
+          ┌───────────────┼────────────────┐
+          ▼               ▼                ▼
+   ┌────────────┐  ┌─────────────┐  ┌─────────────┐
+   │ OAuth      │  │ API Key     │  │ Custom      │
+   │ Providers  │  │ Providers   │  │ Nodes       │
+   │ (10+)      │  │ (40+)       │  │ (Ollama...) │
+   └────────────┘  └─────────────┘  └─────────────┘
 ```
 
 ## Core Runtime Components
 
-## 1) API and Routing Layer (Next.js App Routes)
+### 1) API and Routing Layer (Next.js App Routes)
 
 Main directories:
 
@@ -100,26 +100,44 @@ Main directories:
 
 Important compatibility routes:
 
-- `src/app/api/v1/chat/completions/route.js`
-- `src/app/api/v1/messages/route.js`
-- `src/app/api/v1/responses/route.js`
-- `src/app/api/v1/models/route.js`
-- `src/app/api/v1/messages/count_tokens/route.js`
-- `src/app/api/v1beta/models/route.js`
-- `src/app/api/v1beta/models/[...path]/route.js`
+- `src/app/api/v1/chat/completions/route.js` — main chat endpoint
+- `src/app/api/v1/responses/route.js` — OpenAI Responses format
+- `src/app/api/v1/models/route.js` — list available models
+- `src/app/api/v1/messages/count_tokens/route.js` — token counting
+- `src/app/api/v1beta/models/*` — v1beta model discovery
 
-Management domains:
+Extended endpoints (v0.4.18+):
 
-- Auth/settings: `src/app/api/auth/*`, `src/app/api/settings/*`
-- Providers/connections: `src/app/api/providers*`
-- Provider nodes: `src/app/api/provider-nodes*`
-- OAuth: `src/app/api/oauth/*`
-- Keys/aliases/combos/pricing: `src/app/api/keys*`, `src/app/api/models/alias`, `src/app/api/combos*`, `src/app/api/pricing`
-- Usage: `src/app/api/usage/*`
-- Sync/cloud: `src/app/api/sync/*`, `src/app/api/cloud/*`
-- CLI tooling helpers: `src/app/api/cli-tools/*`
+- `src/app/api/v1/audio/transcriptions` — STT (Speech-to-Text)
+- `src/app/api/v1/audio/speech` — TTS (Text-to-Speech)
+- `src/app/api/v1/images/generations` — Image generation
+- `src/app/api/v1/search` — Web search
+- `src/app/api/v1/fetch` — Web fetch (URL → markdown)
 
-## 2) SSE + Translation Core
+Management APIs:
+
+| Route | Purpose |
+|-------|---------|
+| `/api/auth/*` | Login/logout, session management |
+| `/api/settings/*` | App settings (auth, sync, etc.) |
+| `/api/providers*` | Provider CRUD, validation, testing |
+| `/api/provider-nodes*` | Custom compatible node management |
+| `/api/oauth/*` | OAuth/device-code flows |
+| `/api/keys*` | API key lifecycle |
+| `/api/models/*` | Model aliases, disabled models, info |
+| `/api/combos*` | Fallback combo management |
+| `/api/pricing` | Pricing overrides |
+| `/api/usage/*` | Usage statistics and logs |
+| `/api/sync/*` | Cloud sync control |
+| `/api/cloud/*` | Cloud-facing helpers |
+| `/api/cli-tools/*` | Local CLI config writers |
+| `/api/proxy-pools` | Proxy pool management |
+| `/api/health` | Health check |
+| `/api/version` | Version info |
+| `/api/shutdown` | Graceful shutdown |
+| `/api/tags` | Tag management |
+
+### 2) SSE + Translation Core
 
 Main flow modules:
 
@@ -131,286 +149,267 @@ Main flow modules:
 - Account fallback logic: `open-sse/services/accountFallback.js`
 - Translation registry: `open-sse/translator/index.js`
 - Stream transformations: `open-sse/utils/stream.js`, `open-sse/utils/streamHandler.js`
-- Usage extraction/normalization: `open-sse/utils/usageTracking.js`
+- Usage extraction/normalization: `open-sse/services/usage.js`
+- Token refresh: `open-sse/services/tokenRefresh.js`, `src/sse/services/tokenRefresh.js`
+- RTK compression: `open-sse/rtk/*`
+- Combo handling: `open-sse/services/combo.js`
 
-## 3) Persistence Layer
+### 3) Persistence Layer
 
-Primary state DB:
+#### SQLite Database (v0.4.25+)
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+Migrated from lowdb (`db.json`) to SQLite with modular repository pattern:
+
+```
+src/lib/db/
+├── adapters/          # better-sqlite3 (primary) + sql.js (fallback)
+├── backup.js          # DB backup/restore utilities
+├── driver.js          # SQLite driver abstraction
+├── helpers/           # SQL helpers and utilities
+├── index.js           # DB initialization and exports
+├── migrate.js         # Migration runner
+├── migrations/        # Versioned SQL migrations
+├── paths.js           # DB file path resolution
+├── repos/             # Repository pattern implementations
+│   ├── providers.js
+│   ├── keys.js
+│   ├── combos.js
+│   ├── aliases.js
+│   ├── settings.js
+│   ├── pricing.js
+│   ├── nodes.js
+│   └── ...
+├── schema.js          # Table definitions
+└── version.js         # DB version tracking
+```
+
+Legacy compatibility:
+
+- `src/lib/localDb.js` — thin wrapper over SQLite for backward compatibility
+- `src/lib/usageDb.js` — usage stats wrapper
 
 Usage DB:
 
-- `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- note: currently independent from `DATA_DIR`
+- `src/lib/usage/*` — request usage persistence
+- `src/lib/requestDetailsDb.js` — per-request detail storage
 
-## 4) Auth + Security Surfaces
+### 4) Auth + Security Surfaces
 
-- Dashboard cookie auth: `src/proxy.js`, `src/app/api/auth/login/route.js`
+- Dashboard cookie auth: `src/app/api/auth/login/route.js`
 - API key generation/verification: `src/shared/utils/apiKey.js`
-- Provider secrets persisted in `providerConnections` entries
-- Optional proxy support for upstream calls via env proxy variables (`open-sse/utils/proxyFetch.js`)
+- Provider secrets persisted in SQLite `provider_connections` table
+- Optional proxy support via `open-sse/utils/proxyFetch.js`
 
-## 5) Cloud Sync
+### 5) Cloud Sync
 
-- Scheduler init: `src/lib/initCloudSync.js`, `src/shared/services/initializeCloudSync.js`
+- Scheduler init: `src/lib/initCloudSync.js`
 - Periodic task: `src/shared/services/cloudSyncScheduler.js`
 - Control route: `src/app/api/sync/cloud/route.js`
 
+### 6) RTK Token Saver
+
+```
+open-sse/rtk/
+├── applyFilter.js     # Apply compression filter to content
+├── autodetect.js      # Auto-detect tool_result type from first 1KB
+├── caveman.js         # Caveman mode filter
+├── cavemanPrompts.js  # Caveman prompt templates
+├── constants.js       # Filter constants
+├── filters/           # Individual filter implementations
+│   ├── gitDiff.js
+│   ├── gitStatus.js
+│   ├── grep.js
+│   ├── find.js
+│   ├── ls.js
+│   ├── tree.js
+│   ├── dedupLog.js
+│   ├── smartTruncate.js
+│   ├── readNumbered.js
+│   └── searchList.js
+├── index.js           # RTK entry point
+└── registry.js        # Filter registry
+```
+
+Filters: `git-diff`, `git-status`, `grep`, `find`, `ls`, `tree`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`
+
+### 7) Speech-to-Text / Text-to-Speech (v0.4.18+)
+
+```
+src/sse/handlers/
+├── stt.js             # STT request handler
+├── tts.js             # TTS request handler
+├── embeddings.js      # Embeddings handler
+├── imageGeneration.js # Image generation handler
+├── search.js          # Web search handler
+└── fetch.js           # Web fetch handler
+
+open-sse/handlers/
+├── sttCore.js         # STT pipeline orchestration
+├── ttsCore.js         # TTS pipeline orchestration
+├── ttsProviders/      # TTS provider implementations
+└── ...
+
+open-sse/translator/
+├── request/           # Request translators (openai, claude, gemini, etc.)
+└── response/          # Response translators
+```
+
+STT providers: OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI, HuggingFace, NVIDIA Parakeet
+TTS providers: OpenAI, ElevenLabs, Deepgram, Edge TTS, Google TTS, Hyperbolic, Inworld
+
+### 8) Extended Endpoints (v0.4.18+)
+
+| Endpoint | Handler | Description |
+|----------|---------|-------------|
+| `/v1/audio/transcriptions` | `stt.js` / `sttCore.js` | Speech-to-Text |
+| `/v1/audio/speech` | `tts.js` / `ttsCore.js` | Text-to-Speech |
+| `/v1/audio/voices` | API route | List available TTS voices |
+| `/v1/images/generations` | `imageGeneration.js` | Image generation (incl. Cloudflare Workers AI) |
+| `/v1/search` | `search.js` | Web search |
+| `/v1/fetch` | `fetch.js` | Web fetch (URL → markdown) |
+| `/v1/models/info` | API route | Model metadata |
+
+### 9) Tailscale Tunnel (v0.4.25+)
+
+- Status check API for tunnel connectivity
+- Configurable tunnel transport protocols
+- Auto-resume guard (once-per-process)
+
+### 10) MCP Marketplace (v0.4.25+)
+
+- MCP plugin management via dashboard modal
+- Plugin discovery and activation
+- Integrated with Cowork Tool Card
+
 ## Request Lifecycle (`/v1/chat/completions`)
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant Client as CLI/SDK Client
-    participant Route as /api/v1/chat/completions
-    participant Chat as src/sse/handlers/chat
-    participant Core as open-sse/handlers/chatCore
-    participant Model as Model Resolver
-    participant Auth as Credential Selector
-    participant Exec as Provider Executor
-    participant Prov as Upstream Provider
-    participant Stream as Stream Translator
-    participant Usage as usageDb
-
-    Client->>Route: POST /v1/chat/completions
-    Route->>Chat: handleChat(request)
-    Chat->>Model: parse/resolve model or combo
-
-    alt Combo model
-        Chat->>Chat: iterate combo models (handleComboChat)
-    end
-
-    Chat->>Auth: getProviderCredentials(provider)
-    Auth-->>Chat: active account + tokens/api key
-
-    Chat->>Core: handleChatCore(body, modelInfo, credentials)
-    Core->>Core: detect source format
-    Core->>Core: translate request to target format
-    Core->>Exec: execute(provider, transformedBody)
-    Exec->>Prov: upstream API call
-    Prov-->>Exec: SSE/JSON response
-    Exec-->>Core: response + metadata
-
-    alt 401/403
-        Core->>Exec: refreshCredentials()
-        Exec-->>Core: updated tokens
-        Core->>Exec: retry request
-    end
-
-    Core->>Stream: translate/normalize stream to client format
-    Stream-->>Client: SSE chunks / JSON response
-
-    Stream->>Usage: extract usage + persist history/log
+```
+Client POST /v1/chat/completions
+  → Route: /api/v1/chat/completions
+    → Handler: src/sse/handlers/chat.js
+      → Model Resolver: parse/resolve model or combo
+        → Combo? → iterate combo models
+        → Auth: getProviderCredentials(provider)
+          → SSE Core: open-sse/handlers/chatCore.js
+            → Detect source format (openai/claude/gemini/openai-responses)
+            → Translate request to target format
+            → RTK: compress tool_results before sending
+            → Executor: open-sse/executors/{provider}.js
+              → Upstream API call
+              → 401/403? → refreshCredentials() → retry
+            ← SSE/JSON response
+            → Translate stream to client format
+            → Extract usage → persist to DB
+            ← SSE chunks / JSON response to client
 ```
 
 ## Combo + Account Fallback Flow
 
-```mermaid
-flowchart TD
-    A[Incoming model string] --> B{Is combo name?}
-    B -- Yes --> C[Load combo models sequence]
-    B -- No --> D[Single model path]
-
-    C --> E[Try model N]
-    E --> F[Resolve provider/model]
-    D --> F
-
-    F --> G[Select account credentials]
-    G --> H{Credentials available?}
-    H -- No --> I[Return provider unavailable]
-    H -- Yes --> J[Execute request]
-
-    J --> K{Success?}
-    K -- Yes --> L[Return response]
-    K -- No --> M{Fallback-eligible error?}
-
-    M -- No --> N[Return error]
-    M -- Yes --> O[Mark account unavailable cooldown]
-    O --> P{Another account for provider?}
-    P -- Yes --> G
-    P -- No --> Q{In combo with next model?}
-    Q -- Yes --> E
-    Q -- No --> R[Return all unavailable]
+```
+Incoming model string
+  → Is combo name?
+    Yes → Load combo models sequence
+    No  → Single model path
+  → Resolve provider/model
+  → Select account credentials
+    → Credentials available?
+      No  → Return provider unavailable
+      Yes → Execute request (with RTK compression)
+        → Success? → Return response
+        → Error:
+          → Fallback-eligible?
+            No  → Return error
+            Yes → Mark account cooldown
+              → Another account for provider?
+                Yes → Retry with next account
+                No  → Next combo model?
+                  Yes → Try next model
+                  No  → Return all unavailable
 ```
 
-Fallback decisions are driven by `open-sse/services/accountFallback.js` using status codes and error-message heuristics.
+Fallback decisions driven by `open-sse/services/accountFallback.js` using status codes and error-message heuristics.
 
 ## OAuth Onboarding and Token Refresh Lifecycle
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as Dashboard UI
-    participant OAuth as /api/oauth/[provider]/[action]
-    participant ProvAuth as Provider Auth Server
-    participant DB as localDb
-    participant Test as /api/providers/[id]/test
-    participant Exec as Provider Executor
-
-    UI->>OAuth: GET authorize or device-code
-    OAuth->>ProvAuth: create auth/device flow
-    ProvAuth-->>OAuth: auth URL or device code payload
-    OAuth-->>UI: flow data
-
-    UI->>OAuth: POST exchange or poll
-    OAuth->>ProvAuth: token exchange/poll
-    ProvAuth-->>OAuth: access/refresh tokens
-    OAuth->>DB: createProviderConnection(oauth data)
-    OAuth-->>UI: success + connection id
-
-    UI->>Test: POST /api/providers/[id]/test
-    Test->>Exec: validate credentials / optional refresh
-    Exec-->>Test: valid or refreshed token info
-    Test->>DB: update status/tokens/errors
-    Test-->>UI: validation result
 ```
+Dashboard UI → /api/oauth/[provider]/[action]
+  → GET authorize or device-code
+    → Provider Auth Server → auth URL or device code
+  → POST exchange or poll
+    → Token exchange/poll → access/refresh tokens
+    → CreateProviderConnection(oauth data)
 
-Refresh during live traffic is executed inside `open-sse/handlers/chatCore.js` via executor `refreshCredentials()`.
-
-## Cloud Sync Lifecycle (Enable / Sync / Disable)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant UI as Endpoint Page UI
-    participant Sync as /api/sync/cloud
-    participant DB as localDb
-    participant Cloud as External Cloud Sync
-    participant Claude as ~/.claude/settings.json
-
-    UI->>Sync: POST action=enable
-    Sync->>DB: set cloudEnabled=true
-    Sync->>DB: ensure API key exists
-    Sync->>Cloud: POST /sync/{machineId} (providers/aliases/combos/keys)
-    Cloud-->>Sync: sync result
-    Sync->>Cloud: GET /{machineId}/v1/verify
-    Sync-->>UI: enabled + verification status
-
-    UI->>Sync: POST action=sync
-    Sync->>Cloud: POST /sync/{machineId}
-    Cloud-->>Sync: remote data
-    Sync->>DB: update newer local tokens/status
-    Sync-->>UI: synced
-
-    UI->>Sync: POST action=disable
-    Sync->>DB: set cloudEnabled=false
-    Sync->>Cloud: DELETE /sync/{machineId}
-    Sync->>Claude: switch ANTHROPIC_BASE_URL back to local (if needed)
-    Sync-->>UI: disabled
+Live traffic:
+  → open-sse/handlers/chatCore.js
+    → 401/403 detected
+      → executor.refreshCredentials()
+        → Retry with updated tokens
 ```
-
-Periodic sync is triggered by `CloudSyncScheduler` when cloud is enabled.
 
 ## Data Model and Storage Map
 
-```mermaid
-erDiagram
-    SETTINGS ||--o{ PROVIDER_CONNECTION : controls
-    PROVIDER_NODE ||--o{ PROVIDER_CONNECTION : backs_compatible_provider
-    PROVIDER_CONNECTION ||--o{ USAGE_ENTRY : emits_usage
+### SQLite Tables (v0.4.25+)
 
-    SETTINGS {
-      boolean cloudEnabled
-      number stickyRoundRobinLimit
-      boolean requireLogin
-      string password_hash
-    }
-
-    PROVIDER_CONNECTION {
-      string id
-      string provider
-      string authType
-      string name
-      number priority
-      boolean isActive
-      string apiKey
-      string accessToken
-      string refreshToken
-      string expiresAt
-      string testStatus
-      string lastError
-      string rateLimitedUntil
-      json providerSpecificData
-    }
-
-    PROVIDER_NODE {
-      string id
-      string type
-      string name
-      string prefix
-      string apiType
-      string baseUrl
-    }
-
-    MODEL_ALIAS {
-      string alias
-      string targetModel
-    }
-
-    COMBO {
-      string id
-      string name
-      string[] models
-    }
-
-    API_KEY {
-      string id
-      string name
-      string key
-      string machineId
-      boolean isActive
-    }
-
-    USAGE_ENTRY {
-      string provider
-      string model
-      number prompt_tokens
-      number completion_tokens
-      string connectionId
-      string timestamp
-    }
-```
+| Table | Purpose |
+|-------|---------|
+| `provider_connections` | Auth credentials, status, rate limits |
+| `provider_nodes` | Custom compatible endpoints |
+| `model_aliases` | Model name aliases |
+| `combos` | Fallback model sequences |
+| `api_keys` | Local API key lifecycle |
+| `settings` | App configuration |
+| `pricing` | Pricing overrides |
+| `disabled_models` | Disabled model list |
+| `usage_entries` | Request usage history |
+| `tags` | Resource tagging |
+| `proxy_pools` | Proxy configuration |
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
-- usage stats: `~/.9router/usage.json`
-- request log lines: `~/.9router/log.txt`
-- optional translator/request debug sessions: `<repo>/logs/...`
+- SQLite DB: `${DATA_DIR}/9router.db` (or `~/.9router/9router.db`)
+- Usage stats: `~/.9router/usage.json`
+- Request logs: `~/.9router/log.txt`
+- Optional debug logs: `<repo>/logs/...`
 
 ## Deployment Topology
 
-```mermaid
-flowchart LR
-    subgraph LocalHost[Developer Host]
-        CLI[CLI Tools]
-        Browser[Dashboard Browser]
-    end
-
-    subgraph ContainerOrProcess[9Router Runtime]
-        Next[Next.js Server\nPORT=20128]
-        Core[SSE Core + Executors]
-        MainDB[(db.json)]
-        UsageDB[(usage.json/log.txt)]
-    end
-
-    subgraph External[External Services]
-        Providers[AI Providers]
-        SyncCloud[Cloud Sync Service]
-    end
-
-    CLI --> Next
-    Browser --> Next
-    Next --> Core
-    Next --> MainDB
-    Core --> MainDB
-    Core --> UsageDB
-    Core --> Providers
-    Next --> SyncCloud
+```
+┌──────────────────────────────────────────────────────┐
+│                     Developer Host                    │
+│                                                       │
+│  ┌────────────┐    ┌──────────────────────┐          │
+│  │ CLI Tools  │───→│  9Router (Next.js)   │          │
+│  │ Browser    │───→│  PORT=20128          │          │
+│  └────────────┘    │                      │          │
+│                    │  ┌────────────────┐  │          │
+│                    │  │ SSE Core       │  │          │
+│                    │  │ + RTK + Trans  │  │          │
+│                    │  └───────┬────────┘  │          │
+│                    │  ┌───────┴────────┐  │          │
+│                    │  │ SQLite DB      │  │          │
+│                    │  │ (db/)          │  │          │
+│                    │  └────────────────┘  │          │
+│                    │  ┌────────────────┐  │          │
+│                    │  │ Tailscale      │  │          │
+│                    │  │ MCP Plugins    │  │          │
+│                    │  └────────────────┘  │          │
+│                    └──────────┬───────────┘          │
+└───────────────────────────────┼──────────────────────┘
+                                │
+            ┌───────────────────┼──────────────────┐
+            ▼                   ▼                  ▼
+     ┌────────────┐    ┌─────────────┐    ┌─────────────┐
+     │ OAuth      │    │ API Key     │    │ Custom      │
+     │ Providers  │    │ Providers   │    │ Nodes       │
+     │ (10+)      │    │ (40+)       │    │ (Ollama...) │
+     └────────────┘    └─────────────┘    └─────────────┘
+            │                   │                  │
+            └───────────────────┼──────────────────┘
+                                ▼
+                       ┌────────────────┐
+                       │ Cloud Sync     │
+                       │ (Optional)     │
+                       └────────────────┘
 ```
 
 ## Module Mapping (Decision-Critical)
@@ -424,15 +423,18 @@ flowchart LR
 - `src/app/api/keys*`: local API key lifecycle
 - `src/app/api/models/alias`: alias management
 - `src/app/api/combos*`: fallback combo management
-- `src/app/api/pricing`: pricing overrides for cost calculation
+- `src/app/api/pricing`: pricing overrides
 - `src/app/api/usage/*`: usage and logs APIs
-- `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
+- `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync
 - `src/app/api/cli-tools/*`: local CLI config writers/checkers
+- `src/app/api/proxy-pools`: proxy pool management
+- `src/app/api/settings/*`: app settings
+- `src/app/api/health`: health check
 
 ### Routing and Execution Core
 
-- `src/sse/handlers/chat.js`: request parse, combo handling, account selection loop
-- `open-sse/handlers/chatCore.js`: translation, executor dispatch, retry/refresh handling, stream setup
+- `src/sse/handlers/chat.js`: request parse, combo handling, account selection
+- `open-sse/handlers/chatCore.js`: translation, executor dispatch, retry/refresh
 - `open-sse/executors/*`: provider-specific network and format behavior
 
 ### Translation Registry and Format Converters
@@ -444,114 +446,135 @@ flowchart LR
 
 ### Persistence
 
-- `src/lib/localDb.js`: persistent config/state
-- `src/lib/usageDb.js`: usage history and rolling request logs
+- `src/lib/db/*`: SQLite database layer (adapters, repos, migrations, schema)
+- `src/lib/localDb.js`: backward-compatible wrapper
+- `src/lib/usageDb.js`: usage history wrapper
+- `src/lib/requestDetailsDb.js`: per-request details
+
+### RTK Token Saver
+
+- `open-sse/rtk/index.js`: entry point
+- `open-sse/rtk/autodetect.js`: auto-detect content type
+- `open-sse/rtk/applyFilter.js`: apply compression
+- `open-sse/rtk/filters/*`: individual filter implementations
+- `open-sse/rtk/caveman.js`: Caveman mode
 
 ## Provider Executor Coverage
 
 Specialized executors:
 
-- `antigravity`
-- `gemini-cli`
-- `github`
-- `kiro`
-- `codex`
-- `cursor`
+| Executor | Provider |
+|----------|----------|
+| `antigravity.js` | Antigravity |
+| `codex.js` | Codex |
+| `commandcode.js` | CommandCode |
+| `cursor.js` | Cursor |
+| `gemini-cli.js` | Gemini CLI |
+| `github.js` | GitHub |
+| `kiro.js` | Kiro |
+| `ollama-local.js` | Local Ollama |
+| `opencode.js` | OpenCode |
+| `opencode-go.js` | OpenCode Go |
+| `perplexity-web.js` | Perplexity Web |
+| `qoder.js` | Qoder |
+| `qwen.js` | Qwen |
+| `vertex.js` | Vertex AI |
+| `azure.js` | Azure |
+| `grok-web.js` | Grok Web |
+| `iflow.js` | iFlow |
 
-Default executor path:
+Default executor:
 
-- all other providers (including compatible node providers) use `open-sse/executors/default.js`
+- All other providers use `open-sse/executors/default.js`
 
 ## Format Translation Coverage
 
-Detected source formats include:
+Detected source formats:
 
 - `openai`
 - `openai-responses`
 - `claude`
 - `gemini`
 
-Target formats include:
+Target formats:
 
 - OpenAI chat/Responses
 - Claude
 - Gemini/Gemini-CLI/Antigravity envelope
 - Kiro
 - Cursor
+- Vertex
+- Cursor IDE
 
-Translations are selected dynamically based on source payload shape and provider target format.
+Translations selected dynamically based on source payload shape and provider target format.
 
 ## Failure Modes and Resilience
 
-## 1) Account/Provider Availability
+### 1) Account/Provider Availability
 
-- provider account cooldown on transient/rate/auth errors
-- account fallback before failing request
-- combo model fallback when current model/provider path is exhausted
+- Provider account cooldown on transient/rate/auth errors
+- Account fallback before failing request
+- Combo model fallback when current model/provider path is exhausted
 
-## 2) Token Expiry
+### 2) Token Expiry
 
-- pre-check and refresh with retry for refreshable providers
+- Pre-check and refresh for refreshable providers
 - 401/403 retry after refresh attempt in core path
+- In-flight request caching to prevent race conditions (v0.4.14+)
 
-## 3) Stream Safety
+### 3) Stream Safety
 
-- disconnect-aware stream controller
-- translation stream with end-of-stream flush and `[DONE]` handling
-- usage estimation fallback when provider usage metadata is missing
+- Disconnect-aware stream controller
+- Translation stream with end-of-stream flush and `[DONE]` handling
+- Usage estimation fallback when provider usage metadata is missing
 
-## 4) Cloud Sync Degradation
+### 4) Cloud Sync Degradation
 
-- sync errors are surfaced but local runtime continues
-- scheduler has retry-capable logic, but periodic execution currently calls single-attempt sync by default
+- Sync errors surfaced but local runtime continues
+- Scheduler has retry-capable logic
 
-## 5) Data Integrity
+### 5) Data Integrity
 
-- DB shape migration/repair for missing keys
-- corrupt JSON reset safeguards for localDb and usageDb
+- SQLite schema migrations for backward compatibility
+- DB backup/restore utilities (`src/lib/db/backup.js`)
+- Corrupt JSON reset safeguards for legacy files
+
+### 6) RTK Safety
+
+- If a filter fails, throws, or makes output bigger → silently keep original
+- Errors never break requests
+- Runs before format translation (universal compatibility)
 
 ## Observability and Operational Signals
 
-Runtime visibility sources:
+Runtime visibility:
 
-- console logs from `src/sse/utils/logger.js`
-- per-request usage aggregates in `usage.json`
-- textual request status log in `log.txt`
-- optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
-- dashboard usage endpoints (`/api/usage/*`) for UI consumption
+- Console logs from `src/sse/utils/logger.js`
+- Per-request usage in `usage.json` / SQLite
+- Textual request status log in `log.txt`
+- Deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
+- Dashboard usage endpoints (`/api/usage/*`)
+- Health check (`/api/health`)
 
 ## Security-Sensitive Boundaries
 
-- JWT secret (`JWT_SECRET`) secures dashboard session cookie verification/signing
-- Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
-- API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
-- Provider secrets (API keys/tokens) are persisted in local DB and should be protected at filesystem level
-- Cloud sync endpoints rely on API key auth + machine id semantics
+- JWT secret (`JWT_SECRET`) — dashboard session cookie signing
+- Initial password fallback (`INITIAL_PASSWORD`, default `123456`) — override in production
+- API key HMAC secret (`API_KEY_SECRET`) — API key generation
+- Provider secrets persisted in SQLite — protect at filesystem level
+- Cloud sync uses API key auth + machine ID
 
 ## Environment and Runtime Matrix
 
-Environment variables actively used by code:
-
-- App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
-- Storage: `DATA_DIR`
-- Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
-- Logging: `ENABLE_REQUEST_LOGS`
-- Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
-- Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
-- Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
-
-## Known Architectural Notes
-
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
-2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
-3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
-4. Cloud behavior depends on correct `NEXT_PUBLIC_BASE_URL` and cloud endpoint reachability.
-
-## Operational Verification Checklist
-
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
-- Start service and verify:
-- `GET /api/settings`
-- `GET /api/v1/models`
-- CLI target base URL should be `http://<host>:20128/v1` when `PORT=20128`
+| Variable | Purpose |
+|----------|---------|
+| `PORT` | Server port (default: 20128) |
+| `HOSTNAME` | Bind address (default: localhost) |
+| `NEXT_PUBLIC_BASE_URL` | Dashboard base URL |
+| `DATA_DIR` | SQLite DB directory |
+| `JWT_SECRET` | Dashboard session signing |
+| `INITIAL_PASSWORD` | Default admin password |
+| `API_KEY_SECRET` | API key HMAC secret |
+| `MACHINE_ID_SALT` | Machine ID generation |
+| `ENABLE_REQUEST_LOGS` | Enable detailed logging |
+| `NEXT_PUBLIC_CLOUD_URL` | Cloud sync endpoint |

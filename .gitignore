@@ -49,6 +49,11 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/SETUP.md
+!docs/PROVIDERS.md
+!docs/RTK.md
+!docs/TROUBLESHOOTING.md
+!docs/UPDATE-*.md
 test/*
 bin/*
 open-sse/test/*
