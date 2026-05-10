@@ -111,16 +111,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Per-model: filter unsupported tool types (web_search, code_interpreter, etc.)
   // Priority: connection-level config > model-level config
+  // Only filter if no existing tool interaction in message history
   const filterToolTypes = !!credentials?.providerSpecificData?.filterToolTypes || modelFilterToolTypes;
   if (filterToolTypes && translatedBody.tools && Array.isArray(translatedBody.tools)) {
-    const filtered = translatedBody.tools.filter(t => !t.type || t.type === "function");
-    if (filtered.length < translatedBody.tools.length) {
-      log?.debug?.("TOOLS", `filtered ${translatedBody.tools.length - filtered.length} unsupported tool types`);
-      translatedBody.tools = filtered;
-      if (translatedBody.tool_choice && typeof translatedBody.tool_choice === "object" && translatedBody.tool_choice.type === "tool") {
-        const name = translatedBody.tool_choice.function?.name;
-        if (name && !filtered.some(t => t.function?.name === name)) {
-          translatedBody.tool_choice = "auto";
+    const hasToolHistory = translatedBody.messages?.some(m =>
+      m.role === "tool" || (m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0)
+    );
+    if (!hasToolHistory) {
+      const filtered = translatedBody.tools.filter(t => !t.type || t.type === "function");
+      if (filtered.length < translatedBody.tools.length) {
+        log?.debug?.("TOOLS", `filtered ${translatedBody.tools.length - filtered.length} unsupported tool types`);
+        translatedBody.tools = filtered;
+        if (translatedBody.tool_choice && typeof translatedBody.tool_choice === "object" && translatedBody.tool_choice.type === "tool") {
+          const name = translatedBody.tool_choice.function?.name;
+          if (name && !filtered.some(t => t.function?.name === name)) {
+            translatedBody.tool_choice = "auto";
+          }
         }
       }
     }
