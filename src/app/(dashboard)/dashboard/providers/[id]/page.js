@@ -998,7 +998,7 @@ export default function ProviderDetailPage() {
                 </Button>
               )}
               {/* Thinking config */}
-              {/* {thinkingConfig && (
+              {thinkingConfig && (
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-text-muted font-medium">Thinking</span>
                   <select
@@ -1007,11 +1007,11 @@ export default function ProviderDetailPage() {
                     className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                   >
                     {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+                      <option key={opt} value={opt}>{opt === "auto" ? "Default" : opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
                     ))}
                   </select>
                 </div>
-              )} */}
+              )}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
