@@ -96,13 +96,13 @@ function ensureSqliteRuntime({ silent = false } = {}) {
   };
 }
 
-// Inject runtime node_modules into NODE_PATH so child Node processes resolve them.
+// Inject runtime + bundled node_modules into NODE_PATH so child Node processes
+// resolve sql.js (bundled in bin/app/node_modules) and better-sqlite3 (runtime).
 function buildEnvWithRuntime(baseEnv = process.env) {
   const runtimeNm = getRuntimeNodeModules();
+  const bundledNm = path.join(__dirname, "..", "app", "node_modules");
   const existing = baseEnv.NODE_PATH || "";
-  const NODE_PATH = existing
-    ? `${runtimeNm}${path.delimiter}${existing}`
-    : runtimeNm;
+  const NODE_PATH = [runtimeNm, bundledNm, existing].filter(Boolean).join(path.delimiter);
   return { ...baseEnv, NODE_PATH };
 }
 

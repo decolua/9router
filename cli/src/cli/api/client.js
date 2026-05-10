@@ -393,6 +393,30 @@ async function getAvailableModels() {
 }
 
 // ============================================================================
+// PROVIDER NODES API (custom providers)
+// ============================================================================
+
+async function getProviderNodes() {
+  return makeRequest("GET", "/api/provider-nodes");
+}
+
+async function createProviderNode(data) {
+  return makeRequest("POST", "/api/provider-nodes", data);
+}
+
+async function updateProviderNode(id, data) {
+  return makeRequest("PUT", `/api/provider-nodes/${id}`, data);
+}
+
+async function deleteProviderNode(id) {
+  return makeRequest("DELETE", `/api/provider-nodes/${id}`);
+}
+
+async function validateProviderNode(data) {
+  return makeRequest("POST", "/api/provider-nodes/validate", data);
+}
+
+// ============================================================================
 // TUNNEL API
 // ============================================================================
 
@@ -475,4 +499,11 @@ module.exports = {
   // Models
   getModels,
   getAvailableModels,
+
+  // Provider Nodes (custom providers)
+  getProviderNodes,
+  createProviderNode,
+  updateProviderNode,
+  deleteProviderNode,
+  validateProviderNode,
 };
