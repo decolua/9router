@@ -106,9 +106,6 @@ function fixOrphanedToolMessages(body) {
   }
   body.messages = body.messages.filter(m => !m.invalid);
 }
-    }
-  }
-}
 
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
