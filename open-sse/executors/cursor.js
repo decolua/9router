@@ -238,6 +238,20 @@ export class CursorExecutor extends BaseExecutor {
         return { response: errorResponse, url, headers, transformedBody: body };
       }
 
+      if (!response.body) {
+        const errorResponse = new Response(JSON.stringify({
+          error: {
+            message: `[${response.status}]: Empty response body from Cursor`,
+            type: "server_error",
+            code: ""
+          }
+        }), {
+          status: response.status || 502,
+          headers: { "Content-Type": "application/json" }
+        });
+        return { response: errorResponse, url, headers, transformedBody: body };
+      }
+
       const transformedResponse = stream !== false
         ? this.transformProtobufToSSE(response.body, model, body)
         : this.transformProtobufToJSON(response.body, model, body);

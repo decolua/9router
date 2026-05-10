@@ -62,12 +62,14 @@ function resolveConversationSessionId(input, machineId) {
 }
 
 // Cleanup expired entries periodically
-setInterval(() => {
+const _cleanupTimer = setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of assistantSessionMap) {
     if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
   }
 }, 10 * 60 * 1000);
+// Allow Node.js to exit even if interval is still active (matches sessionManager.js)
+if (_cleanupTimer.unref) _cleanupTimer.unref();
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
