@@ -47,6 +47,7 @@ jobs:
           mv .next/standalone cli/app
           rm -rf cli/app/.env
           cp -r public cli/app/public
+          cp -r .next/static cli/app/.next/static
 
       - name: Patch CLI with built app
         working-directory: cli
