@@ -1,3 +1,20 @@
+# v0.4.28 (2026-05-10)
+
+## Features
+- Add bun:sqlite adapter with automatic runtime detection (Bun/Node)
+- Add bulk API key import (format: `name|sk-key`, one per line)
+
+## Fixes
+- Fix add API key for custom providers
+
+# v0.4.27 (2026-05-09)
+
+## Features
+- Add 3-tier DB driver fallback: better-sqlite3 → node:sqlite (Node ≥22.5) → sql.js
+
+## Fixes
+- Fix authentication logic for several providers
+
 # v0.4.25 (2026-05-09)
 
 ## Features
