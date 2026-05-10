@@ -8,26 +8,25 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     permissions:
       contents: write
       packages: write
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
-      
-      - name: Download latest CLI
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Download latest global CLI (9router từ npm)
         run: |
           mkdir -p temp-cli
           cd temp-cli
@@ -37,27 +36,34 @@ jobs:
           rm -rf cli/
           mv temp-cli/node_modules/9router ./cli
           rm -rf temp-cli
-      
+
       - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Build Next.js app
         run: |
-          mv next.config.mjs base.config.mjs
           npm run build
-    
-      - name: Patch CLI
+          rm -rf cli/app
+          mv .next/standalone cli/app
+          rm -rf cli/app/.env
+          cp -r public cli/app/public
+
+      - name: Patch CLI with built app
         working-directory: cli
         run: |
           npm pkg set name="@diepxuan/9router"
-          npm pkg delete scripts.prepublishOnly
+          npm pkg set publishConfig.registry="https://npm.pkg.github.com/"
+          npm pkg delete scripts.prepublishOnly || true
+
+          echo "=== CLI structure after patching ==="
           cat package.json
           tree -L 2 .
-      
+
       - name: Push changes to GitHub
         run: |
           git add cli/
-          git commit -m "${GIT_COMMITTER_MESSAGE:-'Auto-commit update 9router cli'}" || true
+          # git commit -m "${GIT_COMMITTER_MESSAGE:-'Auto-commit update 9router cli'}" || true
+          git commit -m "chore: update @diepxuan/9router built from ${{ github.sha }} [skip ci]" || echo "No changes to commit"
           if ! git push; then
             git stash
             git pull --rebase
@@ -72,13 +78,13 @@ jobs:
           GIT_COMMITTER_NAME: Tran Ngoc Duc
           GIT_COMMITTER_EMAIL: ductn@diepxuan.com
 
-      - name: Bump version
+      - name: Bump version before publish
         working-directory: cli
         run: |
           TIMESTAMP=$(date +%s)
           npm version patch --no-git-tag-version
           npm version prerelease --preid=patch.$TIMESTAMP --no-git-tag-version
-      
+
       - name: Publish to GitHub Packages
         working-directory: cli
         run: npm publish
