@@ -1,10 +1,10 @@
 {
   "name": "9router-app",
-  "version": "0.4.20",
+  "version": "0.4.25",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20128",
+    "dev": "next dev --webpack --hostname 127.0.0.1 --port 20128",
     "build": "NODE_ENV=production next build --webpack",
     "start": "NODE_ENV=production next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",
@@ -20,7 +20,6 @@
     "fs": "^0.0.1-security",
     "http-proxy-middleware": "^3.0.5",
     "jose": "^6.1.3",
-    "lowdb": "^7.0.1",
     "marked": "^18.0.1",
     "monaco-editor": "^0.55.1",
     "next": "^16.1.6",
@@ -28,7 +27,6 @@
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
-    "proper-lockfile": "^4.1.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-is": "^16.13.1",
@@ -43,6 +41,7 @@
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2"
   },
+  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",

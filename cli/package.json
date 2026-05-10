@@ -1,6 +1,6 @@
 {
   "name": "@diepxuan/9router",
-  "version": "0.4.20",
+  "version": "0.4.28",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"
@@ -23,6 +23,7 @@
     "react-dom": "19.2.1",
     "systray": "^1.0.5"
   },
+  "comment_sqlite": "sql.js + better-sqlite3 are NOT bundled here. They are installed into ~/.9router/runtime/node_modules by hooks/postinstall.js (and re-checked at runtime by cli.js). This avoids Windows EBUSY errors when updating the global CLI, since native .node files no longer live under the locked install dir.",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -33,5 +34,8 @@
     "ai",
     "api"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/"
+  }
 }

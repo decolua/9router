@@ -104,7 +104,7 @@
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "/Users/Working/router4",
+    "outputFileTracingRoot": "/home/runner/work/9router/9router",
     "cacheComponents": false,
     "cacheLife": {
       "default": {
@@ -166,7 +166,7 @@
       "proxyPrefetch": "flexible",
       "optimisticClientCache": true,
       "manualClientBasePath": false,
-      "cpus": 7,
+      "cpus": 3,
       "memoryBasedWorkersCount": false,
       "imgOptConcurrency": null,
       "imgOptTimeoutInSeconds": 7,
@@ -307,7 +307,7 @@
       "better-sqlite3"
     ],
     "turbopack": {
-      "root": "/Users/Working/router4"
+      "root": "/home/runner/work/9router/9router"
     },
     "distDirRoot": ".next",
     "_originalRewrites": {
@@ -337,8 +337,8 @@
       "fallback": []
     }
   },
-  "appDir": "/Users/Working/router4/app",
-  "relativeAppDir": "app",
+  "appDir": "/home/runner/work/9router/9router",
+  "relativeAppDir": "",
   "files": [
     ".next/routes-manifest.json",
     ".next/server/pages-manifest.json",

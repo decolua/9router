@@ -219,6 +219,12 @@
       "namedRegex": "^/api/auth/logout(?:/)?$"
     },
     {
+      "page": "/api/cli-tools/all-statuses",
+      "regex": "^/api/cli\\-tools/all\\-statuses(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/cli\\-tools/all\\-statuses(?:/)?$"
+    },
+    {
       "page": "/api/cli-tools/antigravity-mitm",
       "regex": "^/api/cli\\-tools/antigravity\\-mitm(?:/)?$",
       "routeKeys": {},
@@ -253,6 +259,12 @@
       "regex": "^/api/cli\\-tools/cowork\\-mcp\\-registry(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/cli\\-tools/cowork\\-mcp\\-registry(?:/)?$"
+    },
+    {
+      "page": "/api/cli-tools/cowork-mcp-tools",
+      "regex": "^/api/cli\\-tools/cowork\\-mcp\\-tools(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/cli\\-tools/cowork\\-mcp\\-tools(?:/)?$"
     },
     {
       "page": "/api/cli-tools/cowork-settings",
