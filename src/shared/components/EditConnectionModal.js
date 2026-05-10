@@ -6,6 +6,7 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
+import Toggle from "@/shared/components/Toggle";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
@@ -21,6 +22,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [convertDeveloperRole, setConvertDeveloperRole] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,6 +48,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      setConvertDeveloperRole(!!connection.providerSpecificData?.convertDeveloperRole);
       setTestResult(null);
       setValidationResult(null);
     }
@@ -151,6 +154,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
       
+      updates.providerSpecificData = {
+        ...(updates.providerSpecificData || {}),
+        ...(connection?.providerSpecificData || {}),
+        convertDeveloperRole,
+      };
+      
       await onSave(updates);
     } finally {
       setSaving(false);
@@ -183,7 +192,19 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
         {!isOAuth && (
           <>
-            <div className="flex gap-2">
+        <div className="flex items-center justify-between bg-sidebar/50 p-3 rounded-lg">
+          <div>
+            <p className="text-sm font-medium">Convert Developer Role → System</p>
+            <p className="text-xs text-text-muted">Convert `developer` role messages to `system` before sending to provider</p>
+          </div>
+          <Toggle
+            size="sm"
+            checked={convertDeveloperRole}
+            onChange={setConvertDeveloperRole}
+          />
+        </div>
+
+        <div className="flex gap-2">
               <Input
                 label="API Key"
                 type="password"

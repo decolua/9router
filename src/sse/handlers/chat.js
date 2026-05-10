@@ -214,6 +214,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       providerThinking,
+      convertDeveloperRole: !!refreshedCredentials.providerSpecificData?.convertDeveloperRole,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

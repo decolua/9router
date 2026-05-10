@@ -26,7 +26,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, cavemanEnabled, cavemanLevel, sourceFormatOverride, providerThinking, convertDeveloperRole }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -40,7 +40,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelTargetFormat = getModelTargetFormat(alias, model);
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
   const stripList = getModelStrip(alias, model);
-  const convertDeveloperRole = getModelConvertDeveloperRole(alias, model);
+  const modelConvertDeveloperRole = getModelConvertDeveloperRole(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -96,7 +96,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Per-model: convert developer role to system (before RTK/token savers)
-  if (convertDeveloperRole) {
+  // Priority: connection-level config > model-level config
+  if (convertDeveloperRole || modelConvertDeveloperRole) {
     for (const arr of [translatedBody.messages, translatedBody.input, translatedBody.contents, translatedBody?.request?.contents]) {
       if (Array.isArray(arr)) {
         for (const msg of arr) {
@@ -104,7 +105,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         }
       }
     }
-    log?.debug?.("ROLE", "developer → system (per-model config)");
+    log?.debug?.("ROLE", `developer → system (connection=${!!convertDeveloperRole}, model=${!!modelConvertDeveloperRole})`);
   }
 
   // Token savers: applied at the final body just before dispatch

@@ -55,8 +55,8 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   return { hasProxyPoolField: true, proxyPoolId };
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField, hasConvertDeveloperRole) {
+  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField || hasConvertDeveloperRole;
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -132,12 +132,14 @@ export async function PUT(request, { params }) {
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField,
+        body.convertDeveloperRole !== undefined
       )
     ) {
       updateData.providerSpecificData = {
         ...(existing.providerSpecificData || {}),
         ...(providerSpecificData || {}),
+        ...(body.convertDeveloperRole !== undefined ? { convertDeveloperRole: body.convertDeveloperRole } : {}),
       };
 
       if (proxyConfig.hasAnyProxyField) {
