@@ -807,6 +807,12 @@
       "namedRegex": "^/api/version(?:/)?$"
     },
     {
+      "page": "/api/version/shutdown",
+      "regex": "^/api/version/shutdown(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/version/shutdown(?:/)?$"
+    },
+    {
       "page": "/api/version/update",
       "regex": "^/api/version/update(?:/)?$",
       "routeKeys": {},

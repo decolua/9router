@@ -304,7 +304,10 @@
     "bundlePagesRouterDependencies": false,
     "configFileName": "next.config.mjs",
     "serverExternalPackages": [
-      "better-sqlite3"
+      "better-sqlite3",
+      "sql.js",
+      "node:sqlite",
+      "bun:sqlite"
     ],
     "turbopack": {
       "root": "/home/runner/work/9router/9router"
