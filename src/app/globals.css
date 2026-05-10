@@ -114,6 +114,22 @@
   color-scheme: dark;
 }
 
+/* ============================================================
+   Fix native select dropdowns in dark mode
+   ============================================================ */
+select {
+  color-scheme: light;
+}
+
+.dark select {
+  color-scheme: dark;
+}
+
+.dark select option {
+  background-color: var(--color-surface);
+  color: var(--color-text-main);
+}
+
 @theme inline {
   /* Brand scale */
   --color-brand-50: var(--color-brand-50);
