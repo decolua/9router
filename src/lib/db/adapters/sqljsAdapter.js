@@ -86,14 +86,15 @@ export async function createSqlJsAdapter(filePath) {
   }
 
   function transaction(fn) {
-    db.exec("BEGIN");
+    const sp = `sp_${Math.random().toString(36).slice(2)}`;
+    db.exec(`SAVEPOINT ${sp}`);
     try {
       const result = fn();
-      db.exec("COMMIT");
+      db.exec(`RELEASE ${sp}`);
       scheduleSave();
       return result;
     } catch (e) {
-      db.exec("ROLLBACK");
+      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch { }
       throw e;
     }
   }
@@ -105,7 +106,7 @@ export async function createSqlJsAdapter(filePath) {
   }
 
   // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
+  const flush = () => { if (dirty) try { persist(); } catch { } };
   process.on("beforeExit", flush);
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);

@@ -22,7 +22,10 @@ function killMitmByPidFile() {
     if (!pid) return;
 
     if (process.platform === "win32") {
-      execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 });
+      // taskkill first (works if same user); fallback to PowerShell Stop-Process which can kill admin process if our token allows
+      try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {
+        try { execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${pid} -Force"`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch { /* best effort */ }
+      }
     } else {
       try {
         execSync(`sudo -n kill -9 ${pid} 2>/dev/null`, { stdio: "ignore", timeout: 3000 });
@@ -45,7 +48,13 @@ function collectAppPids() {
       const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
-        const isAppProcess = line.toLowerCase().includes("9router") || line.toLowerCase().includes("next-server");
+        const lower = line.toLowerCase();
+        // Match anything running from 9router install dir or wrapper cli.js
+        const isAppProcess = lower.includes("9router") ||
+          lower.includes("next-server") ||
+          lower.includes("\\bin\\app\\") ||
+          lower.includes("/bin/app/") ||
+          lower.includes("cli.js");
         if (isAppProcess) {
           const match = line.match(/^"(\d+)"/);
           if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
@@ -53,19 +62,27 @@ function collectAppPids() {
       });
     } catch { /* no processes */ }
 
-    try {
-      const cfCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process cloudflared -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
-      const cfOut = execSync(cfCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
-      cfOut.split("\n").forEach(l => {
-        const pid = l.trim();
-        if (pid && !isNaN(pid)) pids.push(pid);
-      });
-    } catch { /* no cloudflared */ }
+    // Kill cloudflared + tray binaries (giữ lock app dir)
+    for (const procName of ["cloudflared", "tray_windows_release"]) {
+      try {
+        const cmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process ${procName} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
+        const out = execSync(cmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
+        out.split("\n").forEach(l => {
+          const pid = l.trim();
+          if (pid && !isNaN(pid)) pids.push(pid);
+        });
+      } catch { /* not running */ }
+    }
   } else {
     try {
       const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
       output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") || line.includes("next-server") || line.includes("cloudflared");
+        const isAppProcess = line.includes("9router") ||
+          line.includes("next-server") ||
+          line.includes("cloudflared") ||
+          line.includes("/bin/app/") ||
+          line.includes("tray_darwin") ||
+          line.includes("tray_linux");
         if (isAppProcess) {
           const parts = line.trim().split(/\s+/);
           const pid = parts[1];
