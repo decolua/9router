@@ -137,10 +137,8 @@ function fixOrphanedToolMessages(body) {
 
   // Count orphaned tool messages (no matching assistant found)
   removed = Object.keys(toolMessages).length;
-  if (removed > 0 || restructured.length !== body.messages.length) {
-    body.messages = restructured;
-    if (removed > 0) console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages (no matching assistant)`);
-  }
+  body.messages = restructured;
+  if (removed > 0) console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages (no matching assistant)`);
 }
 
 // Translate request: source -> openai -> target
