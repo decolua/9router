@@ -136,6 +136,30 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         // Only convert when a non-empty name is present; skip hosted tools without one.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
+
+        // Custom/freeform tools (e.g. Codex apply_patch with type:"custom" and grammar format)
+        // have no `parameters` field. Converting them to an empty function schema causes downstream
+        // models to invoke them with {}, but the Codex runtime expects { input: string }.
+        // Normalize all custom tools to a well-defined { input: string } schema so the model
+        // produces valid arguments.
+        if (tool.type === "custom") {
+          return {
+            type: "function",
+            function: {
+              name,
+              description: String(tool.description || ""),
+              parameters: {
+                type: "object",
+                properties: {
+                  input: { type: "string" }
+                },
+                required: ["input"],
+                additionalProperties: false
+              }
+            }
+          };
+        }
+
         return {
           type: "function",
           function: {
