@@ -71,6 +71,24 @@ function stripContentTypes(body, stripList = []) {
   }
 }
 
+// Strip unsupported tool types for providers that only support "function" tools
+// e.g. DeepSeek, OpenAI-compatible APIs reject web_search, code_interpreter
+function filterUnsupportedTools(body, targetFormat) {
+  if (targetFormat !== FORMATS.OPENAI) return;
+  if (!body.tools || !Array.isArray(body.tools)) return;
+  const filtered = body.tools.filter(t => !t.type || t.type === "function");
+  if (filtered.length < body.tools.length) {
+    body.tools = filtered;
+    // Also clean up tool_choice if it references a removed tool
+    if (body.tool_choice && typeof body.tool_choice === "object" && body.tool_choice.type === "tool") {
+      const name = body.tool_choice.function?.name;
+      if (name && !filtered.some(t => t.function?.name === name)) {
+        body.tool_choice = "auto";
+      }
+    }
+  }
+}
+
 // Translate request: source -> openai -> target
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();

@@ -5,7 +5,7 @@ import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import { getModelTargetFormat, getModelStrip, getModelConvertDeveloperRole, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelTargetFormat, getModelStrip, getModelConvertDeveloperRole, getModelFilterToolTypes, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -41,6 +41,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || getTargetFormat(provider);
   const stripList = getModelStrip(alias, model);
   const modelConvertDeveloperRole = getModelConvertDeveloperRole(alias, model);
+  const modelFilterToolTypes = getModelFilterToolTypes(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -106,6 +107,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     }
     log?.debug?.("ROLE", `developer → system (connection=${!!convertDeveloperRole}, model=${!!modelConvertDeveloperRole})`);
+  }
+
+  // Per-model: filter unsupported tool types (web_search, code_interpreter, etc.)
+  // Priority: connection-level config > model-level config
+  const filterToolTypes = !!credentials?.providerSpecificData?.filterToolTypes || modelFilterToolTypes;
+  if (filterToolTypes && translatedBody.tools && Array.isArray(translatedBody.tools)) {
+    const filtered = translatedBody.tools.filter(t => !t.type || t.type === "function");
+    if (filtered.length < translatedBody.tools.length) {
+      log?.debug?.("TOOLS", `filtered ${translatedBody.tools.length - filtered.length} unsupported tool types`);
+      translatedBody.tools = filtered;
+      if (translatedBody.tool_choice && typeof translatedBody.tool_choice === "object" && translatedBody.tool_choice.type === "tool") {
+        const name = translatedBody.tool_choice.function?.name;
+        if (name && !filtered.some(t => t.function?.name === name)) {
+          translatedBody.tool_choice = "auto";
+        }
+      }
+    }
   }
 
   // Token savers: applied at the final body just before dispatch

@@ -23,6 +23,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [convertDeveloperRole, setConvertDeveloperRole] = useState(false);
+  const [filterToolTypes, setFilterToolTypes] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -49,6 +50,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
       setConvertDeveloperRole(!!connection.providerSpecificData?.convertDeveloperRole);
+      setFilterToolTypes(!!connection.providerSpecificData?.filterToolTypes);
       setTestResult(null);
       setValidationResult(null);
     }
@@ -158,6 +160,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         ...(updates.providerSpecificData || {}),
         ...(connection?.providerSpecificData || {}),
         convertDeveloperRole,
+        filterToolTypes,
       };
       
       await onSave(updates);
@@ -192,19 +195,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
         {!isOAuth && (
           <>
-        <div className="flex items-center justify-between bg-sidebar/50 p-3 rounded-lg">
-          <div>
-            <p className="text-sm font-medium">Convert Developer Role → System</p>
-            <p className="text-xs text-text-muted">Convert `developer` role messages to `system` before sending to provider</p>
-          </div>
-          <Toggle
-            size="sm"
-            checked={convertDeveloperRole}
-            onChange={setConvertDeveloperRole}
-          />
-        </div>
-
-        <div className="flex gap-2">
+            <div className="flex gap-2">
               <Input
                 label="API Key"
                 type="password"
@@ -227,6 +218,30 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             )}
           </>
         )}
+
+        <div className="flex items-center justify-between bg-sidebar/50 p-3 rounded-lg">
+          <div>
+            <p className="text-sm font-medium">Convert Developer Role → System</p>
+            <p className="text-xs text-text-muted">Convert `developer` role messages to `system` before sending to provider</p>
+          </div>
+          <Toggle
+            size="sm"
+            checked={convertDeveloperRole}
+            onChange={setConvertDeveloperRole}
+          />
+        </div>
+
+        <div className="flex items-center justify-between bg-sidebar/50 p-3 rounded-lg">
+          <div>
+            <p className="text-sm font-medium">Filter Unsupported Tools</p>
+            <p className="text-xs text-text-muted">Strip tool types like web_search, code_interpreter that this provider doesn't support</p>
+          </div>
+          <Toggle
+            size="sm"
+            checked={filterToolTypes}
+            onChange={setFilterToolTypes}
+          />
+        </div>
 
         {isAzure && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">

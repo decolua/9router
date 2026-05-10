@@ -14,6 +14,7 @@ export {
   getModelTargetFormat,
   getModelStrip,
   getModelConvertDeveloperRole,
+  getModelFilterToolTypes,
   PROVIDER_ID_TO_ALIAS,
   getModelsByProviderId
 } from "./config/providerModels.js";

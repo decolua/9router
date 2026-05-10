@@ -415,10 +415,10 @@ export const PROVIDER_MODELS = {
     { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B" },
   ],
   deepseek: [
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
-    { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
-    { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", filterToolTypes: true },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", filterToolTypes: true },
+    { id: "deepseek-chat", name: "DeepSeek V3.2 Chat", filterToolTypes: true },
+    { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner", filterToolTypes: true },
   ],
   commandcode: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
@@ -734,4 +734,11 @@ export function getModelStrip(alias, modelId) {
 export function getModelConvertDeveloperRole(alias, modelId) {
   const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
   return !!entry?.convertDeveloperRole;
+}
+
+// Check if model should filter unsupported tool types (web_search, code_interpreter, etc.)
+// Set filterToolTypes: true on a model entry to enable this
+export function getModelFilterToolTypes(alias, modelId) {
+  const entry = PROVIDER_MODELS[alias]?.find(m => m.id === modelId);
+  return !!entry?.filterToolTypes;
 }
