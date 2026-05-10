@@ -20,9 +20,12 @@ export async function ensureAppInitialized() {
   return g.inProgress;
 }
 
-// Auto-initialize at runtime only, not during next build
+// Auto-initialize at runtime only, not during next build.
+// Defer to next tick so HTTP server can accept connections before heavy init runs.
 if (process.env.NEXT_PHASE !== "phase-production-build") {
-  ensureAppInitialized().catch(console.log);
+  setImmediate(() => {
+    ensureAppInitialized().catch(console.log);
+  });
 }
 
 export default ensureAppInitialized;

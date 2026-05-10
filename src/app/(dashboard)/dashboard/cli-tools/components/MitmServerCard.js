@@ -306,11 +306,11 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
             <div className="flex items-start gap-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
               <span className="material-symbols-outlined text-yellow-500 text-[20px]">warning</span>
               <div className="flex flex-col gap-1 text-xs text-text-muted">
-                <p>Port 443 đang bị process khác chiếm:</p>
+                <p>Port 443 is currently used by another process:</p>
                 <p className="font-mono text-text-main" data-i18n-skip="true">
                   {port443Conflict.owner.name} (PID {port443Conflict.owner.pid})
                 </p>
-                <p>Kill process này để chạy MITM Server?</p>
+                <p>Kill this process to start MITM Server?</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">

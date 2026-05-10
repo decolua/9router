@@ -63,6 +63,7 @@ export default function Pagination({
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
                 "cursor-pointer"
               )}
+              style={{ colorScheme: 'auto' }}
             >
               {[10, 20, 50].map((size) => (
                 <option key={size} value={size}>

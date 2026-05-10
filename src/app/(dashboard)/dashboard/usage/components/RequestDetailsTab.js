@@ -183,6 +183,7 @@ export default function RequestDetailsTab() {
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
                 "w-full min-w-0 cursor-pointer"
               )}
+              style={{ colorScheme: 'auto' }}
             >
               <option value="">All Providers</option>
               {providers.map((provider) => (

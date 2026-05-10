@@ -172,6 +172,29 @@ function runInstall() {
   });
 }
 
+function openBrowser(url) {
+  const platform = process.platform;
+  const cmd = platform === "darwin" ? `open "${url}"`
+    : platform === "win32" ? `start "" "${url}"`
+    : `xdg-open "${url}"`;
+  try { spawn(cmd, { shell: true, detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+}
+
+// Wait until app port is listening (server alive again), then open dashboard
+async function waitForAppAndOpenBrowser() {
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    const busy = await isAppPortBusy();
+    if (busy) {
+      openBrowser(`http://localhost:${appPort}/dashboard`);
+      pushLog(`[updater] app ready, opened dashboard`);
+      return;
+    }
+    await sleep(1000);
+  }
+  pushLog(`[updater] app not responding within 30s, skip browser open`);
+}
+
 function relaunchApp() {
   if (process.env.UPDATER_RELAUNCH !== "1") return;
   const cmd = process.env.UPDATER_RELAUNCH_CMD;
@@ -189,6 +212,8 @@ function relaunchApp() {
     });
     child.unref();
     pushLog(`[updater] relaunched: ${cmd} ${args.join(" ")} (pid=${child.pid})`);
+    // Wait for new app to come up, then auto-open browser so user sees the result
+    waitForAppAndOpenBrowser();
   } catch (e) {
     pushLog(`[updater] relaunch failed: ${e.message}`);
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 /**
  * Get an active API key to pass through auth when requireApiKey is enabled.
@@ -64,10 +65,12 @@ export async function POST(request, { params }) {
 
     let models = getProviderModels(alias);
 
+    const baseUrl = `http://127.0.0.1:${UPDATER_CONFIG.appPort}`;
+
     // Compatible providers: fetch live model list
     if (isCompatible && models.length === 0) {
       try {
-        const modelsRes = await fetch(`${getBaseUrl(request)}/api/providers/${id}/models`);
+        const modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`);
         if (modelsRes.ok) {
           const data = await modelsRes.json();
           models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
@@ -79,7 +82,6 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "No models configured for this provider" }, { status: 400 });
     }
 
-    const baseUrl = getBaseUrl(request);
     const apiKey = await getInternalApiKey();
 
     // Warm up with first model to trigger token refresh (if needed) before parallel calls.
@@ -103,9 +105,4 @@ export async function POST(request, { params }) {
     console.log("Error testing models:", error);
     return NextResponse.json({ error: "Test failed" }, { status: 500 });
   }
-}
-
-function getBaseUrl(request) {
-  const url = new URL(request.url);
-  return `${url.protocol}//${url.host}`;
 }

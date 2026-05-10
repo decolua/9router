@@ -147,7 +147,7 @@ export const PATTERN_PRICING = [
   { pattern: "claude-haiku-*",  pricing: { input: 1.00,  output: 5.00,  cached: 0.10,  reasoning: 5.00,   cache_creation: 1.25  } },
   { pattern: "claude-*",        pricing: { input: 3.00,  output: 15.00, cached: 0.30,  reasoning: 15.00,  cache_creation: 3.75  } },
 
-  // --- Gemini (specific trước, chung sau) ---
+  // --- Gemini (specific first, generic last) ---
   { pattern: "gemini-*-flash-lite", pricing: { input: 0.15, output: 1.25, cached: 0.015, reasoning: 1.875, cache_creation: 0.15 } },
   { pattern: "gemini-*-flash",  pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*-pro",    pricing: { input: 2.00,  output: 12.00, cached: 0.25,  reasoning: 18.00,  cache_creation: 2.00  } },
@@ -155,7 +155,7 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-2.5-*",    pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*",        pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
 
-  // --- GPT (specific trước, chung sau) ---
+  // --- GPT (specific first, generic last) ---
   { pattern: "gpt-5.3-*",       pricing: { input: 6.00,  output: 24.00, cached: 3.00,  reasoning: 36.00,  cache_creation: 6.00  } },
   { pattern: "gpt-5.2-*",       pricing: { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  } },
   { pattern: "gpt-5.1-*",       pricing: { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  } },

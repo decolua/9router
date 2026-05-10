@@ -100,7 +100,7 @@ export const CLI_TOOLS = {
   },
   codex: {
     id: "codex",
-    name: "OpenAI Codex CLI",
+    name: "OpenAI Codex CLI / App", 
     image: "/providers/codex.png",
     color: "#10A37F",
     description: "OpenAI Codex CLI",
@@ -165,14 +165,7 @@ export const CLI_TOOLS = {
     image: "/providers/cline.png",
     color: "#00D1B2",
     description: "Cline AI Coding Assistant",
-    configType: "guide",
-    guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Cline Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
+    configType: "custom",
   },
   kilo: {
     id: "kilo",
@@ -180,14 +173,7 @@ export const CLI_TOOLS = {
     image: "/providers/kilocode.png",
     color: "#FF6B6B",
     description: "Kilo Code AI Assistant",
-    configType: "guide",
-    guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Kilo Code Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
+    configType: "custom",
   },
   roo: {
     id: "roo",

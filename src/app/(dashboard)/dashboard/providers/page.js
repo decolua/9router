@@ -94,10 +94,13 @@ function getConnectionErrorTag(connection) {
   return "ERR";
 }
 
+const APIKEY_INITIAL_VISIBLE = 20;
+
 export default function ProvidersPage() {
   const [connections, setConnections] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
@@ -116,6 +119,13 @@ export default function ProvidersPage() {
   const matchSearch = (name) =>
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+
+  const sortByConnections = (entries, authType) =>
+    [...entries].sort(
+      (a, b) =>
+        getProviderStats(b[0], authType).total -
+        getProviderStats(a[0], authType).total,
+    );
 
   useEffect(() => {
     const fetchData = async () => {
@@ -259,10 +269,19 @@ export default function ProvidersPage() {
   const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS).filter(
     ([, info]) => matchSearch(info.name),
   );
-  const apikeyEntries = Object.entries(APIKEY_PROVIDERS).filter(
-    ([, info]) =>
-      (info.serviceKinds ?? ["llm"]).includes("llm") && matchSearch(info.name),
+  const apikeyEntries = sortByConnections(
+    Object.entries(APIKEY_PROVIDERS).filter(
+      ([, info]) =>
+        (info.serviceKinds ?? ["llm"]).includes("llm") && matchSearch(info.name),
+    ),
+    "apikey",
   );
+  const isApikeySearching = !!searchQuery.trim();
+  const visibleApikeyEntries =
+    isApikeySearching || showAllApikey
+      ? apikeyEntries
+      : apikeyEntries.slice(0, APIKEY_INITIAL_VISIBLE);
+  const hiddenApikeyCount = apikeyEntries.length - APIKEY_INITIAL_VISIBLE;
 
   if (loading) {
     return (
@@ -466,7 +485,7 @@ export default function ProvidersPage() {
           </button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {apikeyEntries.map(([key, info]) => (
+          {visibleApikeyEntries.map(([key, info]) => (
             <ApiKeyProviderCard
               key={key}
               providerId={key}
@@ -477,6 +496,15 @@ export default function ProvidersPage() {
             />
           ))}
         </div>
+        {!isApikeySearching && !showAllApikey && hiddenApikeyCount > 0 && (
+          <button
+            onClick={() => setShowAllApikey(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:border-primary hover:bg-primary/5"
+          >
+            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            Show all {apikeyEntries.length} providers
+          </button>
+        )}
       </div>
       )}
 
