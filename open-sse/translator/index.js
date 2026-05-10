@@ -94,6 +94,15 @@ function filterUnsupportedTools(body, targetFormat) {
 function fixOrphanedToolMessages(body) {
   if (!body.messages || !Array.isArray(body.messages)) return;
 
+  // Quick check: skip if no tool messages or tool_calls exist
+  let hasTools = false, hasToolCalls = false;
+  for (let i = 0; i < body.messages.length && (!hasTools || !hasToolCalls); i++) {
+    const msg = body.messages[i];
+    if (msg.role === "tool" && msg.tool_call_id) hasTools = true;
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) hasToolCalls = true;
+  }
+  if (!hasTools && !hasToolCalls) return;
+
   // Pass 1: collect all tool messages by tool_call_id, skipping them from the output
   const toolMessages = {}; // tool_call_id → tool message
   const nonToolMessages = [];
