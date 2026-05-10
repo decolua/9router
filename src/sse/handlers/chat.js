@@ -34,6 +34,15 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
 
+  // Convert Responses API format to Chat Completions format early
+  // This prevents the OPENAI_RESPONSES SSE transform pipeline that can cause ResponseAborted
+  const isResponsesApi = body.input && !body.messages;
+  if (isResponsesApi) {
+    const { convertResponsesApiFormat } = await import("open-sse/translator/helpers/responsesApiHelper.js");
+    body = convertResponsesApiFormat(body);
+    log.debug("FORMAT", "Responses API → Chat Completions (converted)");
+  }
+
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
     const url = new URL(request.url);

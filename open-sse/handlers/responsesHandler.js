@@ -4,6 +4,7 @@
  */
 
 import { handleChatCore } from "./chatCore.js";
+import { FORMATS } from "../translator/formats.js";
 import { convertResponsesApiFormat } from "../translator/helpers/responsesApiHelper.js";
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
@@ -42,7 +43,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onRequestSuccess,
     onDisconnect,
     connectionId,
-    sourceFormatOverride: "openai-responses"
+    sourceFormatOverride: FORMATS.OPENAI
   });
 
   if (!result.success || !result.response) {

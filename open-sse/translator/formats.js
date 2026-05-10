@@ -20,8 +20,8 @@ export const FORMATS = {
  * Returns null to fall back to body-based detection.
  */
 export function detectFormatByEndpoint(pathname, body) {
-  // /v1/responses is always openai-responses
-  if (pathname.includes("/v1/responses")) return FORMATS.OPENAI_RESPONSES;
+  // /v1/responses — body is converted to Chat Completions in handleChat, treat as openai
+  if (pathname.includes("/v1/responses")) return FORMATS.OPENAI;
 
   // /v1/messages is always Claude
   if (pathname.includes("/v1/messages")) return FORMATS.CLAUDE;
