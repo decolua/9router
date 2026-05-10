@@ -52,6 +52,10 @@ export const MODEL_PRICING = {
   "gpt-5.3-codex-low":           { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  },
   "gpt-5.3-codex-none":          { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
   "gpt-5.3-codex-spark":         { input: 3.00,  output: 12.00, cached: 0.30,  reasoning: 12.00,  cache_creation: 3.00  },
+  "gpt-5.4":                      { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 22.50,  cache_creation: 2.50  },
+  "gpt-5.4-pro":                  { input: 30.00, output: 180.00, cached: 3.00, reasoning: 270.00, cache_creation: 30.00 },
+  "gpt-5.5":                      { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 45.00,  cache_creation: 5.00  },
+  "gpt-5.5-pro":                  { input: 30.00, output: 180.00, cached: 3.00, reasoning: 270.00, cache_creation: 30.00 },
   "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
   "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
 
@@ -156,6 +160,8 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-*",        pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
 
   // --- GPT (specific trước, chung sau) ---
+  { pattern: "gpt-5.5-*",       pricing: { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 45.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-5.4-*",       pricing: { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 22.50,  cache_creation: 2.50  } },
   { pattern: "gpt-5.3-*",       pricing: { input: 6.00,  output: 24.00, cached: 3.00,  reasoning: 36.00,  cache_creation: 6.00  } },
   { pattern: "gpt-5.2-*",       pricing: { input: 5.00,  output: 20.00, cached: 2.50,  reasoning: 30.00,  cache_creation: 5.00  } },
   { pattern: "gpt-5.1-*",       pricing: { input: 4.00,  output: 16.00, cached: 2.00,  reasoning: 24.00,  cache_creation: 4.00  } },
