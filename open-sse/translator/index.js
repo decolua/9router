@@ -89,41 +89,57 @@ function filterUnsupportedTools(body, targetFormat) {
 }
 
 // Restructure messages: ensure tool results immediately follow their assistant with matching tool_calls.
-// DeepSeek requires tool messages to be contiguous with their preceding assistant.
+// DeepSeek requires tool messages to be contiguous with their preceding assistant,
+// and every tool_call_id in an assistant must have a corresponding tool message immediately after.
 function fixOrphanedToolMessages(body) {
   if (!body.messages || !Array.isArray(body.messages)) return;
 
-  const restructured = [];
-  const pendingTools = {}; // tool_call_id → tool message (waiting to be placed after assistant)
-  let removed = 0;
-
+  // Pass 1: collect all tool messages by tool_call_id, skipping them from the output
+  const toolMessages = {}; // tool_call_id → tool message
+  const nonToolMessages = [];
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-
     if (msg.role === "tool" && msg.tool_call_id) {
-      // Collect tool messages, place them after matching assistant later
-      pendingTools[msg.tool_call_id] = msg;
-      continue;
+      toolMessages[msg.tool_call_id] = msg;
+    } else {
+      nonToolMessages.push(msg);
     }
+  }
 
-    restructured.push(msg);
-
-    // If this is an assistant with tool_calls, immediately append matching tool results
-    if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
-      for (const tc of msg.tool_calls) {
-        if (tc.id && pendingTools[tc.id]) {
-          restructured.push(pendingTools[tc.id]);
-          delete pendingTools[tc.id];
+  // Pass 2: rebuild, inserting tool messages immediately after their assistant.
+  // Also filter out tool_calls that lack matching tool responses.
+  const restructured = [];
+  let removed = 0;
+  for (const msg of nonToolMessages) {
+    if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      // Only keep tool_calls that have matching tool messages
+      const matchedCalls = msg.tool_calls.filter(tc => tc.id && toolMessages[tc.id]);
+      const unmatched = msg.tool_calls.length - matchedCalls.length;
+      if (unmatched > 0) {
+        console.log(`[TRANSLATOR] Stripping ${unmatched} tool_calls with no matching tool message`);
+        // If NO tool_calls could be matched, skip this assistant message entirely
+        if (matchedCalls.length === 0) {
+          removed += msg.tool_calls.length;
+          continue;
         }
+        msg.tool_calls = matchedCalls;
       }
+      restructured.push(msg);
+      // Immediately append matching tool results
+      for (const tc of matchedCalls) {
+        restructured.push(toolMessages[tc.id]);
+        delete toolMessages[tc.id];
+      }
+    } else {
+      restructured.push(msg);
     }
   }
 
   // Count orphaned tool messages (no matching assistant found)
-  removed = Object.keys(pendingTools).length;
+  removed = Object.keys(toolMessages).length;
   if (removed > 0 || restructured.length !== body.messages.length) {
     body.messages = restructured;
-    if (removed > 0) console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages`);
+    if (removed > 0) console.log(`[TRANSLATOR] Removed ${removed} orphaned tool messages (no matching assistant)`);
   }
 }
 
