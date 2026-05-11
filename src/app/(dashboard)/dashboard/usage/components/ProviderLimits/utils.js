@@ -164,6 +164,23 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "alicode":
+      case "alicode-intl":
+        // Manual counter: quotas already returned as array
+        if (Array.isArray(data.quotas)) {
+          data.quotas.forEach((quota) => {
+            normalizedQuotas.push({
+              name: quota.name || "Unknown",
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              resetCountdown: quota.resetCountdown,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

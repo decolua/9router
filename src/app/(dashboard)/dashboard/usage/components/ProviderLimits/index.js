@@ -649,13 +649,26 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
-                      {(() => {
-                        const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-                        const label = isEmail(conn.email) ? conn.email : (isEmail(conn.name) ? conn.name : conn.name);
-                        return label ? (
-                          <p className="text-xs text-text-muted truncate">{label}</p>
-                        ) : null;
-                      })()}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {(() => {
+                          const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+                          const label = isEmail(conn.email) ? conn.email : (isEmail(conn.name) ? conn.name : conn.name);
+                          return label ? (
+                            <p className="text-xs text-text-muted truncate">{label}</p>
+                          ) : null;
+                        })()}
+                        {quota?.raw?.source === "manual-counter" && (
+                          <span className="shrink-0 inline-flex items-center gap-0.5 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500 border border-blue-500/20" title="Counted locally from request logs">
+                            <span className="material-symbols-outlined text-[10px]">analytics</span>
+                            Local
+                          </span>
+                        )}
+                        {quota?.plan && (
+                          <span className="shrink-0 inline-flex items-center gap-0.5 rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-medium text-violet-500 border border-violet-500/20">
+                            {quota.plan}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
