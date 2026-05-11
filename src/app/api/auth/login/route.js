@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
-import { SignJWT } from "jose";
 import { cookies } from "next/headers";
-
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { isOidcConfigured } from "@/lib/auth/oidc";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -28,6 +25,10 @@ export async function POST(request) {
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
+    if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
+      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+    }
+
     let isValid = false;
     if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
@@ -38,23 +39,8 @@ export async function POST(request) {
     }
 
     if (isValid) {
-      const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
-      const forwardedProto = request.headers.get("x-forwarded-proto");
-      const isHttpsRequest = forwardedProto === "https";
-      const useSecureCookie = forceSecureCookie || isHttpsRequest;
-
-      const token = await new SignJWT({ authenticated: true })
-        .setProtectedHeader({ alg: "HS256" })
-        .setExpirationTime("24h")
-        .sign(SECRET);
-
       const cookieStore = await cookies();
-      cookieStore.set("auth_token", token, {
-        httpOnly: true,
-        secure: useSecureCookie,
-        sameSite: "lax",
-        path: "/",
-      });
+      await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json({ success: true });
     }
