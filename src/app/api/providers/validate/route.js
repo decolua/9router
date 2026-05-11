@@ -350,6 +350,8 @@ export async function POST(request) {
         }
 
         case "deepseek":
+        case "bai":
+        case "qiniu":
         case "groq":
         case "xai":
         case "mistral":
@@ -367,9 +369,32 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "xiaomi-mimo":
+        case "xiaomi-mimo-plan-sgp":
+        case "canopywave":
+        case "swiftrouter":
+        case "routeway":
+        case "morph": {
+          const morphRes = await fetch("https://api.morphllm.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "morph-v3-fast",
+              messages: [{ role: "user", content: "test" }],
+              max_tokens: 1,
+            }),
+          });
+          isValid = morphRes.status !== 401 && morphRes.status !== 403;
+          break;
+        }
+
         case "nvidia": {
           const endpoints = {
             deepseek: "https://api.deepseek.com/models",
+            bai: "https://api.b.ai/v1/models",
+            qiniu: "https://api.qnaigc.com/v1/models",
             groq: "https://api.groq.com/openai/v1/models",
             xai: "https://api.x.ai/v1/models",
             mistral: "https://api.mistral.ai/v1/models",
@@ -387,7 +412,11 @@ export async function POST(request) {
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",
             nvidia: "https://integrate.api.nvidia.com/v1/models",
-            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models"
+            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
+            "xiaomi-mimo-plan-sgp": "https://token-plan-sgp.xiaomimimo.com/v1/models",
+            canopywave: "https://inference.canopywave.io/v1/models",
+            swiftrouter: "https://api.swiftrouter.com/v1/models",
+            routeway: "https://api.routeway.ai/v1/models"
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;

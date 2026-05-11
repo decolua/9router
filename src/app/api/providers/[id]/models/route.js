@@ -150,7 +150,15 @@ const PROVIDER_MODELS_CONFIG = {
     }
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
+  bai: createOpenAIModelsConfig("https://api.b.ai/v1/models"),
+  qiniu: createOpenAIModelsConfig("https://api.qnaigc.com/v1/models"),
+  morph: createOpenAIModelsConfig("https://api.morphllm.com/v1/models"),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
+  "xiaomi-mimo": createOpenAIModelsConfig("https://api.xiaomimimo.com/v1/models"),
+  "xiaomi-mimo-plan-sgp": createOpenAIModelsConfig("https://token-plan-sgp.xiaomimimo.com/v1/models"),
+  canopywave: createOpenAIModelsConfig("https://inference.canopywave.io/v1/models"),
+  swiftrouter: createOpenAIModelsConfig("https://api.swiftrouter.com/v1/models"),
+  routeway: createOpenAIModelsConfig("https://api.routeway.ai/v1/models"),
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
