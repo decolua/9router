@@ -145,6 +145,10 @@ export function createSSEStream(options = {}) {
               }
             } catch { }
           }
+          else if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            // Upstream [DONE] — suppress, flush handler emits its own
+            continue;
+          }
 
           if (!injectedUsage) {
             if (line.startsWith("data:") && !line.startsWith("data: ")) {
@@ -279,13 +283,13 @@ export function createSSEStream(options = {}) {
             appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
           }
           
-          // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
-          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
-          //   data: [DONE]\n\n
-          // Without it they can hang until timeout and trigger failover.
-          const doneOutput = "data: [DONE]\n\n";
-          reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
+           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
+           //   data: [DONE]\n\n
+           // Without it they can hang until timeout and trigger failover.
+           const doneOutput = "data: [DONE]\n\n";
+           reqLogger?.appendConvertedChunk?.(doneOutput);
+           controller.enqueue(sharedEncoder.encode(doneOutput));
 
           if (onStreamComplete) {
             onStreamComplete({
