@@ -3,7 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+function CompatibleModelRow({ modelId, fullModel, displayModel, originModel, isRenamed, copied, onCopy, onDeleteAlias, onRenameDisplay, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -25,12 +25,13 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{modelId}</p>
+        <p className="text-sm font-medium truncate">{displayModel || modelId}</p>
+        {isRenamed && originModel && <p className="mt-0.5 truncate font-mono text-[10px] text-text-muted/70">origin: {originModel}</p>}
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
             <button
-              onClick={() => onCopy(fullModel, `model-${modelId}`)}
+              onClick={() => onCopy(displayModel || fullModel, `model-${modelId}`)}
               className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
               <span className="material-symbols-outlined text-sm">
@@ -39,6 +40,17 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
             </button>
             <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
               {copied === `model-${modelId}` ? "Copied!" : "Copy"}
+            </span>
+          </div>
+          <div className="relative group/btn">
+            <button
+              onClick={onRenameDisplay}
+              className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
+            >
+              <span className="material-symbols-outlined text-sm">drive_file_rename_outline</span>
+            </button>
+            <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              Rename display ID
             </span>
           </div>
           {onTest && (
@@ -70,7 +82,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, modelDisplayNames, copied, onCopy, onSetAlias, onDeleteAlias, onRenameDisplay, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -215,19 +227,27 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
 
       {allModels.length > 0 && (
         <div className="flex flex-col gap-3">
-          {allModels.map(({ modelId, fullModel, alias }) => (
-            <CompatibleModelRow
-              key={fullModel}
-              modelId={modelId}
-              fullModel={`${providerDisplayAlias}/${modelId}`}
-              copied={copied}
-              onCopy={onCopy}
-              onDeleteAlias={() => onDeleteAlias(alias)}
-              onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
-              testStatus={modelTestResults[modelId]}
-              isTesting={testingModelId === modelId}
-            />
-          ))}
+          {allModels.map(({ modelId, fullModel, alias }) => {
+            const originModelId = `${providerDisplayAlias}/${modelId}`;
+            const displayModelId = modelDisplayNames[originModelId] || originModelId;
+            return (
+              <CompatibleModelRow
+                key={fullModel}
+                modelId={modelId}
+                fullModel={originModelId}
+                displayModel={displayModelId}
+                originModel={originModelId}
+                isRenamed={!!modelDisplayNames[originModelId]}
+                copied={copied}
+                onCopy={onCopy}
+                onDeleteAlias={() => onDeleteAlias(alias)}
+                onRenameDisplay={() => onRenameDisplay(originModelId, originModelId)}
+                onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
+                testStatus={modelTestResults[modelId]}
+                isTesting={testingModelId === modelId}
+              />
+            );
+          })}
         </div>
       )}
     </div>
@@ -238,10 +258,12 @@ CompatibleModelsSection.propTypes = {
   providerStorageAlias: PropTypes.string.isRequired,
   providerDisplayAlias: PropTypes.string.isRequired,
   modelAliases: PropTypes.object.isRequired,
+  modelDisplayNames: PropTypes.object.isRequired,
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onSetAlias: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
+  onRenameDisplay: PropTypes.func.isRequired,
   connections: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     isActive: PropTypes.bool,

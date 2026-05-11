@@ -34,6 +34,11 @@ export default function ProviderDetailPage() {
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
+  const [modelDisplayNames, setModelDisplayNames] = useState({});
+  const [editingDisplayModel, setEditingDisplayModel] = useState(null);
+  const [displayNameValue, setDisplayNameValue] = useState("");
+  const [displayNameError, setDisplayNameError] = useState("");
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
@@ -142,6 +147,16 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching aliases:", error);
+    }
+  }, []);
+
+  const fetchDisplayNames = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models/display-name", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setModelDisplayNames(data.displayNames || {});
+    } catch (error) {
+      console.log("Error fetching display names:", error);
     }
   }, []);
 
@@ -295,8 +310,76 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     fetchConnections();
     fetchAliases();
+    fetchDisplayNames();
     fetchDisabledModels();
-  }, [fetchConnections, fetchAliases, fetchDisabledModels]);
+  }, [fetchConnections, fetchAliases, fetchDisplayNames, fetchDisabledModels]);
+
+  const openDisplayNameModal = (originModelId, defaultDisplayModelId) => {
+    setEditingDisplayModel({ originModelId, defaultDisplayModelId });
+    setDisplayNameValue(modelDisplayNames[originModelId] || defaultDisplayModelId);
+    setDisplayNameError("");
+  };
+
+  const closeDisplayNameModal = () => {
+    setEditingDisplayModel(null);
+    setDisplayNameValue("");
+    setDisplayNameError("");
+  };
+
+  const saveDisplayName = async () => {
+    if (!editingDisplayModel || savingDisplayName) return;
+    const originModelId = editingDisplayModel.originModelId;
+    const displayModelId = displayNameValue.trim();
+    if (!displayModelId) {
+      setDisplayNameError("Display model ID is required.");
+      return;
+    }
+    setSavingDisplayName(true);
+    setDisplayNameError("");
+    try {
+      const shouldReset = displayModelId === originModelId || displayModelId === editingDisplayModel.defaultDisplayModelId;
+      const res = shouldReset
+        ? await fetch(`/api/models/display-name?originModelId=${encodeURIComponent(originModelId)}`, { method: "DELETE" })
+        : await fetch("/api/models/display-name", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ originModelId, displayModelId }),
+        });
+      const data = await res.json();
+      if (!res.ok) {
+        setDisplayNameError(data.error || "Failed to save display model ID.");
+        return;
+      }
+      await fetchDisplayNames();
+      closeDisplayNameModal();
+    } catch (error) {
+      console.log("Error saving display name:", error);
+      setDisplayNameError("Failed to save display model ID.");
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
+
+  const resetDisplayName = async () => {
+    if (!editingDisplayModel || savingDisplayName) return;
+    setSavingDisplayName(true);
+    setDisplayNameError("");
+    try {
+      const res = await fetch(`/api/models/display-name?originModelId=${encodeURIComponent(editingDisplayModel.originModelId)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        setDisplayNameError(data.error || "Failed to reset display model ID.");
+        return;
+      }
+      await fetchDisplayNames();
+      closeDisplayNameModal();
+    } catch (error) {
+      console.log("Error resetting display name:", error);
+      setDisplayNameError("Failed to reset display model ID.");
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -665,10 +748,12 @@ export default function ProviderDetailPage() {
           providerStorageAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
           modelAliases={modelAliases}
+          modelDisplayNames={modelDisplayNames}
           copied={copied}
           onCopy={copy}
           onSetAlias={handleSetAlias}
           onDeleteAlias={handleDeleteAlias}
+          onRenameDisplay={openDisplayNameModal}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
         />
@@ -703,23 +788,32 @@ export default function ProviderDetailPage() {
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {customModels.map((model) => (
-          <ModelRow
-            key={model.id}
-            model={{ id: model.id }}
-            fullModel={`${providerDisplayAlias}/${model.id}`}
-            alias={model.alias}
-            copied={copied}
-            onCopy={copy}
-            onSetAlias={() => {}}
-            onDeleteAlias={() => handleDeleteAlias(model.alias)}
-            testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelId === model.id}
-            isCustom
-            isFree={false}
-          />
-        ))}
+        {customModels.map((model) => {
+          const originModelId = `${providerStorageAlias}/${model.id}`;
+          const defaultDisplayModelId = `${providerDisplayAlias}/${model.id}`;
+          const displayModelId = modelDisplayNames[originModelId] || defaultDisplayModelId;
+          return (
+            <ModelRow
+              key={model.id}
+              model={{ id: model.id }}
+              fullModel={defaultDisplayModelId}
+              displayModel={displayModelId}
+              originModel={originModelId}
+              isRenamed={!!modelDisplayNames[originModelId]}
+              alias={model.alias}
+              copied={copied}
+              onCopy={copy}
+              onSetAlias={() => {}}
+              onDeleteAlias={() => handleDeleteAlias(model.alias)}
+              onRenameDisplay={() => openDisplayNameModal(originModelId, defaultDisplayModelId)}
+              testStatus={modelTestResults[model.id]}
+              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+              isTesting={testingModelId === model.id}
+              isCustom
+              isFree={false}
+            />
+          );
+        })}
 
         {displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
@@ -727,16 +821,22 @@ export default function ProviderDetailPage() {
           const existingAlias = Object.entries(modelAliases).find(
             ([, m]) => m === fullModel || m === oldFormatModel
           )?.[0];
+          const defaultDisplayModelId = `${providerDisplayAlias}/${model.id}`;
+          const displayModelId = modelDisplayNames[fullModel] || defaultDisplayModelId;
           return (
             <ModelRow
               key={model.id}
               model={model}
-              fullModel={`${providerDisplayAlias}/${model.id}`}
+              fullModel={defaultDisplayModelId}
+              displayModel={displayModelId}
+              originModel={fullModel}
+              isRenamed={!!modelDisplayNames[fullModel]}
               alias={existingAlias}
               copied={copied}
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+              onRenameDisplay={() => openDisplayNameModal(fullModel, defaultDisplayModelId)}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
@@ -1132,6 +1232,42 @@ export default function ProviderDetailPage() {
         )}
         {renderModelsSection()}
       </Card>
+
+      <Modal
+        isOpen={!!editingDisplayModel}
+        onClose={closeDisplayNameModal}
+        title="Rename display model ID"
+        size="md"
+        footer={
+          <>
+            {editingDisplayModel && modelDisplayNames[editingDisplayModel.originModelId] && (
+              <Button variant="secondary" onClick={resetDisplayName} disabled={savingDisplayName}>Reset</Button>
+            )}
+            <Button variant="ghost" onClick={closeDisplayNameModal} disabled={savingDisplayName}>Cancel</Button>
+            <Button onClick={saveDisplayName} disabled={savingDisplayName}>{savingDisplayName ? "Saving..." : "Save"}</Button>
+          </>
+        }
+      >
+        {editingDisplayModel && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-text-muted">Original model ID</label>
+              <code className="block break-all rounded-lg bg-sidebar px-3 py-2 font-mono text-xs text-text-muted">{editingDisplayModel.originModelId}</code>
+            </div>
+            <div>
+              <label htmlFor="display-model-id-input" className="mb-1 block text-xs font-medium text-text-muted">Display model ID</label>
+              <Input
+                id="display-model-id-input"
+                value={displayNameValue}
+                onChange={(e) => { setDisplayNameValue(e.target.value); setDisplayNameError(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") saveDisplayName(); }}
+                placeholder={editingDisplayModel.defaultDisplayModelId}
+              />
+              {!!displayNameError && <p className="mt-2 text-xs text-red-500">{displayNameError}</p>}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {bulkActionModal}
 

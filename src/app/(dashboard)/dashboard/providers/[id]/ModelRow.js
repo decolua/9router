@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable }) {
+export default function ModelRow({ model, fullModel, displayModel, originModel, isRenamed, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, onRenameDisplay }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -23,7 +23,8 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{fullModel}</code>
+          <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{displayModel || fullModel}</code>
+          {isRenamed && originModel && <code className="max-w-[72vw] truncate pl-1 font-mono text-[9px] text-text-muted/70 sm:max-w-[360px]">origin: {originModel}</code>}
           {model.name && <span className="truncate pl-1 text-[9px] italic text-text-muted/70">{model.name}</span>}
         </div>
         {onTest && (
@@ -44,7 +45,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         )}
         <div className="relative shrink-0 group/btn">
           <button
-            onClick={() => onCopy(fullModel, `model-${model.id}`)}
+            onClick={() => onCopy(displayModel || fullModel, `model-${model.id}`)}
             className="rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
           >
             <span className="material-symbols-outlined text-sm">
@@ -55,6 +56,19 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
+        {onRenameDisplay && (
+          <div className="relative shrink-0 group/btn">
+            <button
+              onClick={onRenameDisplay}
+              className="rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
+            >
+              <span className="material-symbols-outlined text-sm">drive_file_rename_outline</span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              Rename display ID
+            </span>
+          </div>
+        )}
         {isCustom ? (
           <button
             onClick={onDeleteAlias}
@@ -82,6 +96,9 @@ ModelRow.propTypes = {
     id: PropTypes.string.isRequired,
   }).isRequired,
   fullModel: PropTypes.string.isRequired,
+  displayModel: PropTypes.string,
+  originModel: PropTypes.string,
+  isRenamed: PropTypes.bool,
   alias: PropTypes.string,
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
@@ -92,4 +109,5 @@ ModelRow.propTypes = {
   onTest: PropTypes.func,
   isTesting: PropTypes.bool,
   onDisable: PropTypes.func,
+  onRenameDisplay: PropTypes.func,
 };

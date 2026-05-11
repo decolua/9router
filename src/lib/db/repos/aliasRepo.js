@@ -5,6 +5,7 @@ import { makeKv } from "../helpers/kvStore.js";
 const aliasKv = makeKv("modelAliases");
 const customKv = makeKv("customModels");
 const mitmKv = makeKv("mitmAlias");
+const displayNameKv = makeKv("modelDisplayNames");
 
 // modelAliases: key=alias, value=modelString
 export async function getModelAliases() {
@@ -17,6 +18,19 @@ export async function setModelAlias(alias, model) {
 
 export async function deleteModelAlias(alias) {
   await aliasKv.remove(alias);
+}
+
+// modelDisplayNames: key=originModelId, value=displayModelId
+export async function getModelDisplayNames() {
+  return await displayNameKv.getAll();
+}
+
+export async function setModelDisplayName(originModelId, displayModelId) {
+  await displayNameKv.set(originModelId, displayModelId);
+}
+
+export async function deleteModelDisplayName(originModelId) {
+  await displayNameKv.remove(originModelId);
 }
 
 // customModels: key=`${providerAlias}|${id}|${type}`, value=full model object

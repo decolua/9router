@@ -7,6 +7,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { applyModelDisplayNames, getModelDisplayNameMap } from "@/shared/utils/modelDisplayNames";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -122,11 +123,13 @@ function comboMatchesKinds(combo, kindFilter) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter) {
+export async function buildModelsList(kindFilter, { applyDisplayNames: shouldApplyDisplayNames = true } = {}) {
   let connections = [];
+  let connectionsLoaded = false;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
+    connectionsLoaded = true;
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }
@@ -183,7 +186,7 @@ export async function buildModelsList(kindFilter) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
+  if (!connectionsLoaded) {
     // DB unavailable -> return static models, filtered by per-model kind
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
@@ -366,7 +369,8 @@ export async function buildModelsList(kindFilter) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  if (!shouldApplyDisplayNames) return dedupedModels;
+  return applyModelDisplayNames(dedupedModels, await getModelDisplayNameMap());
 }
 
 /**

@@ -1,8 +1,19 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getModelAliases, getModelDisplayNames, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 
 export { parseModel };
+
+/**
+ * Resolve custom display model ID back to the origin model ID.
+ */
+export async function resolveDisplayModelId(modelStr) {
+  if (!modelStr) return { model: modelStr, changed: false };
+  const displayNames = await getModelDisplayNames();
+  const match = Object.entries(displayNames || {}).find(([, displayModelId]) => displayModelId === modelStr);
+  if (!match) return { model: modelStr, changed: false };
+  return { model: match[0], changed: true, displayModel: modelStr };
+}
 
 /**
  * Resolve model alias from localDb
@@ -16,6 +27,8 @@ export async function resolveModelAlias(alias) {
  * Get full model info (parse or resolve)
  */
 export async function getModelInfo(modelStr) {
+  const displayResolved = await resolveDisplayModelId(modelStr);
+  modelStr = displayResolved.model;
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -60,6 +73,8 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
+  const displayResolved = await resolveDisplayModelId(modelStr);
+  modelStr = displayResolved.model;
   // Only check if it's not in provider/model format
   if (modelStr.includes("/")) return null;
 

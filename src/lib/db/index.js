@@ -41,6 +41,7 @@ export {
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
+  getModelDisplayNames, setModelDisplayName, deleteModelDisplayName,
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
 } from "./repos/aliasRepo.js";
@@ -80,12 +81,14 @@ export async function exportDb() {
     apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
+    modelDisplayNames: {},
     customModels: [],
     mitmAlias: {},
     pricing: {},
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelDisplayNames'`)) out.modelDisplayNames[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
@@ -107,7 +110,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
-    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'modelDisplayNames', 'customModels', 'mitmAlias', 'pricing')`);
 
     // Settings
     if (payload.settings) {
@@ -149,6 +152,9 @@ export async function importDb(payload) {
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [a, stringifyJson(m)]);
+    }
+    for (const [origin, display] of Object.entries(payload.modelDisplayNames || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelDisplayNames', ?, ?)`, [origin, stringifyJson(display)]);
     }
     for (const m of payload.customModels || []) {
       const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
