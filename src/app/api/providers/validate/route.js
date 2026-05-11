@@ -401,6 +401,23 @@ export async function POST(request) {
           break;
         }
 
+        case "morph": {
+          const morphRes = await fetch("https://api.morphllm.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "morph-v3-fast",
+              messages: [{ role: "user", content: "test" }],
+              max_tokens: 1,
+            }),
+          });
+          isValid = morphRes.status !== 401 && morphRes.status !== 403;
+          break;
+        }
+
         case "opencode-go": {
           const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
             method: "POST",

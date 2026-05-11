@@ -1026,6 +1026,31 @@ export default function APIPageClient({ machineId }) {
             />
           </div>
         </div>
+
+        {/* Morph Compact Info */}
+        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Morph Compact{" "}
+              <a
+                href="https://morphllm.com/products/compact"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-normal text-primary underline hover:opacity-80"
+              >
+                (docs)
+              </a>
+            </p>
+            <p className="text-sm text-text-muted">
+              Compress chat history via Morph API (33,000 tok/s). Call{" "}
+              <code className="text-xs bg-surface-2 px-1 py-0.5 rounded">POST /api/v1/compact</code>{" "}
+              with{" "}<code className="text-xs bg-surface-2 px-1 py-0.5 rounded">messages[]</code>{" "}
+              and optional{" "}
+              <code className="text-xs bg-surface-2 px-1 py-0.5 rounded">query</code>.
+              Requires Morph provider connection.
+            </p>
+          </div>
+        </div>
       </Card>
 
       {/* API Keys */}

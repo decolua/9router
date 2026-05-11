@@ -5,7 +5,7 @@ import openaiCompatNode from "./openaiCompatNode.js";
 
 const OPENAI_COMPAT_PROVIDERS = [
   "openai", "openrouter", "mistral", "voyage-ai", "fireworks",
-  "together", "nebius", "github", "nvidia", "jina-ai",
+  "together", "nebius", "github", "nvidia", "jina-ai", "morph",
 ];
 
 const ADAPTERS = {

@@ -586,6 +586,11 @@ export const PROVIDER_MODELS = {
     { id: "nanobanana-flash", name: "NanoBanana Flash", type: "image", params: ["n", "size"] },
     { id: "nanobanana-pro", name: "NanoBanana Pro", type: "image", params: ["n", "size"] },
   ],
+  morph: [
+    { id: "morph-v3-fast", name: "Morph V3 Fast" },
+    { id: "morph-compactor", name: "Morph Compactor" },
+    { id: "morph-embedding-v4", name: "Morph Embedding V4", type: "embedding" },
+  ],
   sdwebui: [
     { id: "stable-diffusion-v1-5", name: "Stable Diffusion v1.5", type: "image", params: ["n", "size"] },
     { id: "sdxl-base-1.0", name: "SDXL Base 1.0", type: "image", params: ["n", "size"] },

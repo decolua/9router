@@ -315,6 +315,10 @@ export const PROVIDERS = {
     baseUrl: "https://api.nanobananaapi.ai/v1/chat/completions",
     format: "openai"
   },
+  morph: {
+    baseUrl: "https://api.morphllm.com/v1/chat/completions",
+    format: "openai"
+  },
   chutes: {
     baseUrl: "https://llm.chutes.ai/v1/chat/completions",
     format: "openai"
