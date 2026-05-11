@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "updatedAt": "2026-05-10T18:46:43.084Z",
+  "entries": {
+    "memory:memory/2026-05-09.md:1:13": {
+      "key": "memory:memory/2026-05-09.md:1:13",
+      "path": "memory/2026-05-09.md",
+      "startLine": 1,
+      "endLine": 13,
+      "source": "memory",
+      "snippet": "# Daily Memory — 2026-05-09 ## 9Router Agent Setup - Repo `git@github.com:diepxuan/9router.git` đã clone sẵn tại `/root/.openclaw/workspace/projects/9router/` - Agent `9router` được thêm vào openclaw.json config - Tạo identity files: - `SOUL.md` — bản sắc agent 9router - `IDENTITY.md` — định danh - `AGENTS.md` — workspace protocol - Tech stack: Next.js 16, Express.js 5, SQLite, Zustand, TailwindCSS 4 - Project: AI Router & Token Saver, 40+ providers, RTK compression",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.42338535785675047,
+      "maxScore": 0.42338535785675047,
+      "firstRecalledAt": "2026-05-10T18:46:43.084Z",
+      "lastRecalledAt": "2026-05-10T18:46:43.084Z",
+      "queryHashes": [
+        "2b272a2156b7"
+      ],
+      "recallDays": [
+        "2026-05-11"
+      ],
+      "conceptTags": [
+        "router",
+        "github.com",
+        "diepxuan/9router.git",
+        "openclaw.json",
+        "soul.md",
+        "identity.md",
+        "agents.md",
+        "next.js"
+      ]
+    }
+  }
+}

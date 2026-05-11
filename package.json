@@ -4,7 +4,7 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --hostname 127.0.0.1 --port 20128",
+    "dev": "next dev --webpack --hostname 0.0.0.0 --port 3000",
     "build": "NODE_ENV=production next build --webpack",
     "start": "NODE_ENV=production next start",
     "dev:bun": "bun --bun next dev --webpack --port 20128",

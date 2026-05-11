@@ -2,6 +2,7 @@
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
+  allowedDevOrigins: ["10.0.0.122", "localhost"],
   images: {
     unoptimized: true
   },
