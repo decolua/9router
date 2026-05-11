@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeChutesModels, parseOpenAIStyleModels } from "@/shared/utils/providerModelCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,8 @@ const FILTERS = {
     models
       .filter((m) => m.id?.endsWith("-free"))
       .map((m) => ({ id: m.id, name: m.id })),
+
+  "chutes-all": (models) => normalizeChutesModels(models),
 };
 
 export async function GET(request) {
@@ -35,15 +38,15 @@ export async function GET(request) {
   }
 
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) {
-      return NextResponse.json({ data: [] });
+      return NextResponse.json({ data: [], error: `Failed to fetch provider models: ${res.status}` });
     }
     const json = await res.json();
-    const raw = json.data ?? json.models ?? json;
+    const raw = parseOpenAIStyleModels(json);
     const data = filter(Array.isArray(raw) ? raw : []);
-    return NextResponse.json({ data });
-  } catch {
-    return NextResponse.json({ data: [] });
+    return NextResponse.json({ data, error: null });
+  } catch (error) {
+    return NextResponse.json({ data: [], error: error?.message || "Failed to fetch provider models" });
   }
 }
