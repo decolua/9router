@@ -65,7 +65,7 @@ export async function POST(request, { params }) {
 
     let models = getProviderModels(alias);
 
-    const baseUrl = `http://127.0.0.1:${UPDATER_CONFIG.appPort}`;
+    const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
 
     // Compatible providers: fetch live model list
     if (isCompatible && models.length === 0) {
