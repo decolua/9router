@@ -2,7 +2,6 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo } from "react";
-import Link from "next/link";
 import PropTypes from "prop-types";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import HeaderMenu from "@/shared/components/HeaderMenu";
@@ -26,7 +25,6 @@ const getPageInfo = (pathname) => {
       title: provider?.name || providerId,
       description: "",
       breadcrumbs: [
-        { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
         { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
       ],
@@ -51,7 +49,7 @@ const getPageInfo = (pathname) => {
   if (providerMatch) {
     const providerId = providerMatch[1];
     const providerInfo =
-      OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId];
+      OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || AI_PROVIDERS[providerId];
     if (providerInfo) {
       return {
         title: providerInfo.name,
@@ -205,45 +203,37 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
       {/* Page title with breadcrumbs */}
       <div className="flex flex-col min-w-0 flex-1">
-        {breadcrumbs.length > 0 ? (
-          <div className="flex items-center gap-2">
-            {breadcrumbs.map((crumb, index) => (
-              <div
-                key={`${crumb.label}-${crumb.href || "current"}`}
-                className="flex items-center gap-2"
-              >
-                {index > 0 && (
-                  <span className="material-symbols-outlined text-text-muted text-base">
-                    chevron_right
-                  </span>
-                )}
-                {crumb.href ? (
-                  <Link
-                    href={crumb.href}
-                    className="text-text-muted hover:text-primary transition-colors"
-                  >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {crumb.image && (
-                      <ProviderIcon
-                        src={crumb.image}
-                        alt={crumb.label}
-                        size={28}
-                        className="object-contain rounded max-w-[28px] max-h-[28px]"
-                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
-                      />
-                    )}
-                    <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
-                      {translate(crumb.label)}
-                    </h1>
+        {breadcrumbs.length > 0 ? (() => {
+          const current = breadcrumbs[breadcrumbs.length - 1];
+          const parent = [...breadcrumbs].reverse().find((crumb) => crumb.href);
+          return (
+            <div className="flex min-w-0 items-center gap-2 lg:gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                {current.image && (
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-xl border border-border-subtle bg-bg/70 shadow-sm lg:size-9">
+                    <ProviderIcon
+                      src={current.image}
+                      alt={current.label}
+                      size={30}
+                      className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
+                      fallbackText={current.label.slice(0, 2).toUpperCase()}
+                    />
                   </div>
                 )}
+                <div className="min-w-0">
+                  <h1 className="truncate text-base font-semibold tracking-tight text-text-main lg:text-2xl">
+                    {translate(current.label)}
+                  </h1>
+                  {parent && (
+                    <p className="hidden text-xs text-text-muted lg:block">
+                      {translate(parent.label)} settings
+                    </p>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-        ) : title ? (
+            </div>
+          );
+        })() : title ? (
           <div>
             <div className="flex items-center gap-2">
               {icon && (
