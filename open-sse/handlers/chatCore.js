@@ -86,7 +86,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model };
   } else {
+    const msgRoles = (body.messages || []).map(m => m.role + (m.tool_calls ? `(tc:${m.tool_calls.length})` : "") + (m.tool_call_id ? `(tid:${m.tool_call_id.slice(-8)})` : "")).join(", ");
+    log?.debug?.("TRANSLATE", `Before translate: ${body.messages?.length || 0} msgs [${msgRoles}]`);
     translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    const msgRoles2 = (translatedBody?.messages || []).map(m => m.role + (m.tool_calls ? `(tc:${m.tool_calls.length})` : "") + (m.tool_call_id ? `(tid:${m.tool_call_id.slice(-8)})` : "")).join(", ");
+    log?.debug?.("TRANSLATE", `After translate: ${translatedBody?.messages?.length || 0} msgs [${msgRoles2}]`);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);

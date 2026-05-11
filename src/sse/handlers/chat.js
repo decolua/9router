@@ -39,8 +39,11 @@ export async function handleChat(request, clientRawRequest = null) {
   const isResponsesApi = body.input && !body.messages;
   if (isResponsesApi) {
     const { convertResponsesApiFormat } = await import("open-sse/translator/helpers/responsesApiHelper.js");
+    const itemTypes = (body.input || []).map(item => item.type || item.role || "?").join(",");
+    log.debug("FORMAT", `Responses API → Chat Completions | input items: [${itemTypes}]`);
     body = convertResponsesApiFormat(body);
-    log.debug("FORMAT", "Responses API → Chat Completions (converted)");
+    const msgRoles = (body.messages || []).map(m => m.role + (m.tool_calls ? `(tc:${m.tool_calls.length})` : "") + (m.tool_call_id ? `(tid:${m.tool_call_id.slice(-8)})` : "")).join(", ");
+    log.debug("FORMAT", `Responses API converted: [${msgRoles}]`);
   }
 
   // Build clientRawRequest for logging (if not provided)

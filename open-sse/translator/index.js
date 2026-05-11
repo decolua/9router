@@ -103,7 +103,8 @@ function fixOrphanedToolMessages(body) {
   }
   if (!hasTools && !hasToolCalls) return;
 
-  // Pass 1: collect all tool messages by tool_call_id, skipping them from the output
+  // Pass 1: collect all tool messages by tool_call_id, skipping them from the output.
+  // Also skip tool messages without tool_call_id (can't be matched, useless downstream).
   const toolMessages = {}; // tool_call_id → tool message
   const nonToolMessages = [];
   for (let i = 0; i < body.messages.length; i++) {
@@ -171,7 +172,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Fix orphaned tool messages (DeepSeek requires every tool message has preceding tool_calls)
   try {
+    if (result.messages && Array.isArray(result.messages)) {
+      console.log(`[TRANSLATOR] Before fix: ${result.messages.length} msgs, order:`, result.messages.map(m => m.role + (m.tool_calls ? `(tc:${m.tool_calls.length})` : "") + (m.tool_call_id ? `(tid:${m.tool_call_id.slice(-8)})` : "")) );
+    }
     fixOrphanedToolMessages(result);
+    if (result.messages && Array.isArray(result.messages)) {
+      console.log(`[TRANSLATOR] After fix: ${result.messages.length} msgs, order:`, result.messages.map(m => m.role + (m.tool_calls ? `(tc:${m.tool_calls.length})` : "") + (m.tool_call_id ? `(tid:${m.tool_call_id.slice(-8)})` : "")) );
+    }
   } catch (e) {
     console.error("[TRANSLATOR] fixOrphanedToolMessages error:", e.message);
   }
