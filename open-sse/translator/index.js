@@ -170,7 +170,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   fixMissingToolResponses(result);
 
   // Fix orphaned tool messages (DeepSeek requires every tool message has preceding tool_calls)
-  fixOrphanedToolMessages(result);
+  try {
+    fixOrphanedToolMessages(result);
+  } catch (e) {
+    console.error("[TRANSLATOR] fixOrphanedToolMessages error:", e.message);
+  }
 
   // If same format, skip translation steps
   if (sourceFormat !== targetFormat) {
