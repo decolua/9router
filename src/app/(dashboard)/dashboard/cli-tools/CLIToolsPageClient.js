@@ -24,13 +24,6 @@ export default function CLIToolsPageClient({ machineId }) {
   const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
 
-  useEffect(() => {
-    fetchConnections();
-    loadCloudSettings();
-    fetchApiKeys();
-    fetchAllStatuses();
-  }, []);
-
   const fetchAllStatuses = async () => {
     try {
       const res = await fetch(ALL_STATUSES_URL);
@@ -87,6 +80,13 @@ export default function CLIToolsPageClient({ machineId }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchConnections();
+    loadCloudSettings();
+    fetchApiKeys();
+    fetchAllStatuses();
+  }, []);
 
   const getActiveProviders = () => connections.filter(c => c.isActive !== false);
 

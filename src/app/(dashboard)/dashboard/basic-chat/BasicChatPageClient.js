@@ -170,11 +170,29 @@ export default function BasicChatPageClient() {
   const [providerGroups, setProviderGroups] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState("");
-  const [activeProviderId, setActiveProviderId] = useState("");
+  const [sessions, setSessions] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = safeParse(globalThis.localStorage.getItem(STORAGE_KEYS.sessions), []);
+      return Array.isArray(saved) ? saved.map((session) => ({
+        ...session,
+        messages: Array.isArray(session.messages) ? session.messages : [],
+      })) : [];
+    } catch { return []; }
+  });
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.activeSessionId) || "";
+  });
+  const [activeProviderId, setActiveProviderId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.activeProviderId) || "";
+  });
   const [activeModelId, setActiveModelId] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.draft) || "";
+  });
   const [attachments, setAttachments] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState("");
@@ -189,20 +207,7 @@ export default function BasicChatPageClient() {
   const historyMenuRef = useRef(null);
 
   useEffect(() => {
-    try {
-      const savedSessions = safeParse(globalThis.localStorage.getItem(STORAGE_KEYS.sessions), []);
-      setSessions(Array.isArray(savedSessions) ? savedSessions.map((session) => ({
-        ...session,
-        messages: Array.isArray(session.messages) ? session.messages : [],
-      })) : []);
-      setActiveSessionId(globalThis.localStorage.getItem(STORAGE_KEYS.activeSessionId) || "");
-      setActiveProviderId(globalThis.localStorage.getItem(STORAGE_KEYS.activeProviderId) || "");
-      setDraft(globalThis.localStorage.getItem(STORAGE_KEYS.draft) || "");
-    } catch {
-      // Ignore storage errors.
-    } finally {
-      setIsHydrated(true);
-    }
+    setIsHydrated(true);
   }, []);
 
   useEffect(() => {
