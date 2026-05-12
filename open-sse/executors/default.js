@@ -12,6 +12,11 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
+    // OpenAI API now requires max_completion_tokens instead of max_tokens
+    if (this.provider === "openai" && body.max_tokens !== undefined) {
+      body = { ...body, max_completion_tokens: body.max_tokens };
+      delete body.max_tokens;
+    }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
