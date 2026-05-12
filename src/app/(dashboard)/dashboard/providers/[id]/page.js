@@ -48,6 +48,7 @@ export default function ProviderDetailPage() {
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
+  const [isAutoFetching, setIsAutoFetching] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const providerInfo = providerNode
@@ -129,6 +130,56 @@ export default function ProviderDetailPage() {
       if (res.ok) await fetchDisabledModels();
     } catch (error) {
       console.log("Error enabling all models:", error);
+    }
+  };
+
+  const handleAutoFetchModels = async () => {
+    if (connections.length === 0) {
+      setModelsTestError("Please connect the provider (add an API key) first.");
+      return;
+    }
+    setIsAutoFetching(true);
+    setModelsTestError("");
+    try {
+      const connId = connections[0].id;
+      const res = await fetch(`/api/providers/${connId}/models`);
+      const data = await res.json();
+      if (!res.ok) {
+        setModelsTestError(data.error || "Failed to fetch models");
+        return;
+      }
+
+      const fetchedModels = data.models || [];
+      if (fetchedModels.length === 0) {
+        setModelsTestError("No models returned by provider");
+        return;
+      }
+
+      // Filter existing models
+      const addedFullModels = new Set(Object.values(modelAliases));
+      const hardcodedIds = new Set(models.map((m) => m.id));
+
+      const newModels = fetchedModels.filter(
+        (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
+      );
+
+      if (newModels.length === 0) {
+        setModelsTestError("All active models are already listed.");
+        return;
+      }
+
+      for (const m of newModels) {
+        const alias = providerInfo?.passthroughModels ? m.id.split("/").pop() : m.id;
+        await handleSetAlias(m.id, alias, providerStorageAlias);
+      }
+      
+      await fetchAliases();
+      
+    } catch (e) {
+      console.log("Auto fetch error:", e);
+      setModelsTestError("Network error while fetching models");
+    } finally {
+      setIsAutoFetching(false);
     }
   };
 
@@ -753,6 +804,17 @@ export default function ProviderDetailPage() {
         >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
+        </button>
+
+        <button
+          onClick={handleAutoFetchModels}
+          disabled={isAutoFetching}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-black/15 dark:border-white/15 px-3 py-2 text-xs text-text-muted transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto"
+        >
+          <span className="material-symbols-outlined text-sm" style={isAutoFetching ? { animation: "spin 1s linear infinite" } : {}}>
+            {isAutoFetching ? "progress_activity" : "sync"}
+          </span>
+          {isAutoFetching ? "Fetching..." : "Fetch Models"}
         </button>
 
         {/* Suggested models from provider API — show only models not yet added */}
