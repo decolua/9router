@@ -15,6 +15,7 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
+  const [availableModelIds, setAvailableModelIds] = useState(new Set());
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -23,14 +24,21 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
+        fetch("/api/v1/models"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        const ids = new Set((modelsData.data || []).map(m => m.id));
+        setAvailableModelIds(ids);
+      }
       
       // Only LLM combos here — webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind));
@@ -166,6 +174,7 @@ export default function CombosPage() {
               onDelete={() => handleDelete(combo.id)}
               roundRobinEnabled={comboStrategies[combo.name]?.fallbackStrategy === "round-robin"}
               onToggleRoundRobin={(enabled) => handleToggleRoundRobin(combo.name, enabled)}
+              availableModelIds={availableModelIds}
             />
           ))}
         </div>
@@ -178,6 +187,7 @@ export default function CombosPage() {
         onClose={() => setShowCreateModal(false)}
         onSave={handleCreate}
         activeProviders={activeProviders}
+        availableModelIds={availableModelIds}
       />
 
       {/* Edit Modal - Use key to force remount and reset state */}
@@ -188,12 +198,14 @@ export default function CombosPage() {
         onClose={() => setEditingCombo(null)}
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
+        availableModelIds={availableModelIds}
       />
     </div>
   );
 }
 
-function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin }) {
+function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled, onToggleRoundRobin, availableModelIds }) {
+  const hasInvalidModels = availableModelIds.size > 0 && combo.models.some(m => !availableModelIds.has(m));
   return (
     <Card padding="sm" className="group">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -202,7 +214,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            <code className="block truncate font-mono text-sm font-medium">{combo.name}{hasInvalidModels && <span className="text-red-500 ml-0.5">*</span>}</code>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -267,7 +279,7 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
 }
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove, isInvalid }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
 
@@ -300,9 +312,9 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         />
       ) : (
         <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          className={`min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs hover:bg-black/5 dark:hover:bg-white/5 ${isInvalid ? "text-red-500" : "text-text-main"}`}
           onClick={() => setEditing(true)}
-          title="Click to edit"
+          title={isInvalid ? "Model no longer exists" : "Click to edit"}
         >
           {model}
         </div>
@@ -340,7 +352,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, availableModelIds = new Set() }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -461,6 +473,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                     model={model}
                     isFirst={index === 0}
                     isLast={index === models.length - 1}
+                    isInvalid={availableModelIds.size > 0 && !availableModelIds.has(model)}
                     onEdit={(newVal) => {
                       const updated = [...models];
                       updated[index] = newVal;
