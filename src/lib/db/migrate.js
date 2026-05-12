@@ -84,100 +84,142 @@ function syncSchemaFromTables(adapter) {
   }
 }
 
+// Per-row guard: skip + log malformed legacy entries instead of aborting the
+// entire migration transaction (issue #1048 — upgrade from v0.4.20 → v0.4.27).
+function safeRow(label, fn) {
+  try { fn(); } catch (e) { console.warn(`[DB][migrate] skip ${label}: ${e.message}`); }
+}
+
 // ─── Legacy JSON import (one-time) ───────────────────────────────────────
 function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    safeRow("settings", () =>
+      adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)])
+    );
   }
   for (const c of data.providerConnections || []) {
+    if (!c || !c.id || !c.provider) { console.warn(`[DB][migrate] skip providerConnection: missing id/provider`); continue; }
     const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
-    adapter.run(
-      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    safeRow(`providerConnection ${id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      )
     );
   }
   for (const n of data.providerNodes || []) {
+    if (!n || !n.id) { console.warn(`[DB][migrate] skip providerNode: missing id`); continue; }
     const { id, type, name, createdAt, updatedAt, ...rest } = n;
-    adapter.run(
-      `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    safeRow(`providerNode ${id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      )
     );
   }
   for (const p of data.proxyPools || []) {
+    if (!p || !p.id) { console.warn(`[DB][migrate] skip proxyPool: missing id`); continue; }
     const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
-    adapter.run(
-      `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    safeRow(`proxyPool ${id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      )
     );
   }
   for (const k of data.apiKeys || []) {
-    adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+    if (!k || !k.id || !k.key) { console.warn(`[DB][migrate] skip apiKey: missing id/key`); continue; }
+    safeRow(`apiKey ${k.id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+      )
     );
   }
   for (const c of data.combos || []) {
-    adapter.run(
-      `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+    if (!c || !c.id || !c.name) { console.warn(`[DB][migrate] skip combo: missing id/name`); continue; }
+    safeRow(`combo ${c.id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      )
     );
   }
   for (const [alias, model] of Object.entries(data.modelAliases || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
+    safeRow(`modelAlias ${alias}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)])
+    );
   }
   for (const m of data.customModels || []) {
+    if (!m || !m.providerAlias || !m.id) { console.warn(`[DB][migrate] skip customModel: missing providerAlias/id`); continue; }
     const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
+    safeRow(`customModel ${k}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)])
+    );
   }
   for (const [tool, mappings] of Object.entries(data.mitmAlias || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
+    safeRow(`mitmAlias ${tool}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})])
+    );
   }
   for (const [provider, models] of Object.entries(data.pricing || {})) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+    safeRow(`pricing ${provider}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})])
+    );
   }
 }
 
 function importLegacyUsage(adapter, data) {
   if (!data || typeof data !== "object") return;
   for (const e of data.history || []) {
+    if (!e) { console.warn(`[DB][migrate] skip usage row: null entry`); continue; }
     const t = e.tokens || {};
-    adapter.run(
-      `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        e.timestamp || new Date().toISOString(),
-        e.provider || null, e.model || null, e.connectionId || null, e.apiKey || null, e.endpoint || null,
-        t.prompt_tokens || t.input_tokens || 0,
-        t.completion_tokens || t.output_tokens || 0,
-        e.cost || 0,
-        e.status || "ok",
-        stringifyJson(t),
-        stringifyJson({}),
-      ]
+    safeRow(`usage @ ${e.timestamp || "?"}`, () =>
+      adapter.run(
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          e.timestamp || new Date().toISOString(),
+          e.provider || null, e.model || null, e.connectionId || null, e.apiKey || null, e.endpoint || null,
+          t.prompt_tokens || t.input_tokens || 0,
+          t.completion_tokens || t.output_tokens || 0,
+          e.cost || 0,
+          e.status || "ok",
+          stringifyJson(t),
+          stringifyJson({}),
+        ]
+      )
     );
   }
   for (const [dateKey, day] of Object.entries(data.dailySummary || {})) {
-    adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)]);
+    safeRow(`usageDaily ${dateKey}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`, [dateKey, stringifyJson(day)])
+    );
   }
   if (typeof data.totalRequestsLifetime === "number") {
-    setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime);
+    safeRow("totalRequestsLifetime", () => setMetaSync(adapter, "totalRequestsLifetime", data.totalRequestsLifetime));
   }
 }
 
 function importLegacyDisabled(adapter, data) {
   if (!data || typeof data.disabled !== "object") return;
   for (const [provider, ids] of Object.entries(data.disabled)) {
-    adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [provider, stringifyJson(ids || [])]);
+    safeRow(`disabledModels ${provider}`, () =>
+      adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [provider, stringifyJson(ids || [])])
+    );
   }
 }
 
 function importLegacyDetails(adapter, data) {
   if (!data || !Array.isArray(data.records)) return;
   for (const r of data.records) {
-    adapter.run(
-      `INSERT OR REPLACE INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-      [r.id, r.timestamp || new Date().toISOString(), r.provider || null, r.model || null, r.connectionId || null, r.status || null, stringifyJson(r)]
+    if (!r || !r.id) { console.warn(`[DB][migrate] skip requestDetail: missing id`); continue; }
+    safeRow(`requestDetail ${r.id}`, () =>
+      adapter.run(
+        `INSERT OR REPLACE INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+        [r.id, r.timestamp || new Date().toISOString(), r.provider || null, r.model || null, r.connectionId || null, r.status || null, stringifyJson(r)]
+      )
     );
   }
 }

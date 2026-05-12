@@ -83,6 +83,35 @@ describe("Schema migrations", () => {
     expect(aliases).toHaveLength(1);
   });
 
+  it("fresh DB + malformed legacy db.json → skips bad rows but completes migration", async () => {
+    // Issue #1048: legacy db.json from v0.4.20 may contain entries missing
+    // required fields (e.g. apiKey without `key`, null array element). Before
+    // the fix, a single bad row aborted the import transaction and crashed
+    // the server on every restart.
+    const legacy = {
+      settings: { foo: "kept" },
+      apiKeys: [
+        { id: "k-good", key: "sk-good", name: "good", createdAt: new Date().toISOString() },
+        { id: "k-bad" }, // missing `key` (NOT NULL UNIQUE)
+        null, // null array element
+      ],
+      combos: [
+        { id: "c-good", name: "good-combo", models: ["m1"], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        { id: "c-bad" }, // missing `name`
+      ],
+      providerConnections: [{ id: "pc-bad" }], // missing `provider`
+      modelAliases: { "gpt-4": "gpt-4-turbo" },
+    };
+    fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify(legacy));
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter(); // must not throw
+
+    expect(db.all(`SELECT key FROM apiKeys`).map(r => r.key)).toContain("sk-good");
+    expect(db.all(`SELECT name FROM combos`).map(r => r.name)).toContain("good-combo");
+    expect(db.all(`SELECT key FROM kv WHERE scope='modelAliases'`)).toHaveLength(1);
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
