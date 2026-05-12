@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -15,6 +15,7 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
+  const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -84,15 +85,21 @@ export default function CombosPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Delete this combo?")) return;
-    try {
-      const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setCombos(combos.filter(c => c.id !== id));
+    setConfirmState({
+      title: "Delete Combo",
+      message: "Delete this combo?",
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            setCombos(combos.filter(c => c.id !== id));
+          }
+        } catch (error) {
+          console.log("Error deleting combo:", error);
+        }
       }
-    } catch (error) {
-      console.log("Error deleting combo:", error);
-    }
+    });
   };
 
   const handleToggleRoundRobin = async (comboName, enabled) => {
@@ -188,6 +195,16 @@ export default function CombosPage() {
         onClose={() => setEditingCombo(null)}
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
+      />
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={confirmState?.onConfirm}
+        title={confirmState?.title || "Confirm"}
+        message={confirmState?.message}
+        variant="danger"
       />
     </div>
   );
