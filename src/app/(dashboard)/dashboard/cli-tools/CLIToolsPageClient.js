@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardSkeleton } from "@/shared/components";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
-import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard, CopilotToolCard, MitmLinkCard } from "./components";
+import { ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard, HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard, CopilotToolCard, ClineToolCard, KiloToolCard, MitmLinkCard } from "./components";
 import { MITM_TOOLS } from "@/shared/constants/cliTools";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -23,13 +23,6 @@ export default function CLIToolsPageClient({ machineId }) {
   const [tailscaleUrl, setTailscaleUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
   const [toolStatuses, setToolStatuses] = useState({});
-
-  useEffect(() => {
-    fetchConnections();
-    loadCloudSettings();
-    fetchApiKeys();
-    fetchAllStatuses();
-  }, []);
 
   const fetchAllStatuses = async () => {
     try {
@@ -88,6 +81,13 @@ export default function CLIToolsPageClient({ machineId }) {
     }
   };
 
+  useEffect(() => {
+    fetchConnections();
+    loadCloudSettings();
+    fetchApiKeys();
+    fetchAllStatuses();
+  }, []);
+
   const getActiveProviders = () => connections.filter(c => c.isActive !== false);
 
   const getAllAvailableModels = () => {
@@ -119,7 +119,7 @@ export default function CLIToolsPageClient({ machineId }) {
     if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
     if (typeof window !== "undefined") return window.location.origin;
-    return "http://127.0.0.1:20128";
+    return "http://localhost:20128";
   };
 
   if (loading) {
@@ -190,6 +190,10 @@ export default function CLIToolsPageClient({ machineId }) {
         return <HermesToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.hermes} />;
       case "copilot":
         return <CopilotToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.copilot} />;
+      case "cline":
+        return <ClineToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.cline} />;
+      case "kilo":
+        return <KiloToolCard key={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} initialStatus={toolStatuses.kilo} />;
       default:
         return <DefaultToolCard key={toolId} toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }

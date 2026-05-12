@@ -15,7 +15,23 @@ const TUNNEL_BENEFITS = [
 const TUNNEL_PING_INTERVAL_MS = 2000;
 const TUNNEL_PING_MAX_MS = 300000;
 const STATUS_POLL_INTERVAL_MS = 5000;
-const REACHABLE_MISS_THRESHOLD = 2;
+const REACHABLE_MISS_THRESHOLD = 5;
+const CLIENT_PING_INTERVAL_MS = 10000;
+const CLIENT_PING_TIMEOUT_MS = 5000;
+
+// Browser-side health probe: bypasses backend DNS issues (1.1.1.1 vs OS resolver).
+// Uses no-cors → opaque response means TLS+DNS reach succeeded, which is enough.
+async function clientPingUrl(url) {
+  if (!url) return false;
+  try {
+    await fetch(`${url}/api/health`, {
+      mode: "no-cors",
+      cache: "no-store",
+      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
+    });
+    return true;
+  } catch { return false; }
+}
 
 const CAVEMAN_LEVELS = [
   { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
@@ -56,6 +72,8 @@ export default function APIPageClient({ machineId }) {
   const [tsLoading, setTsLoading] = useState(false);
   const [tsProgress, setTsProgress] = useState("");
   const [tsStatus, setTsStatus] = useState(null);
+  const [tsAuthUrl, setTsAuthUrl] = useState("");
+  const [tsAuthLabel, setTsAuthLabel] = useState("");
   const [tsInstalled, setTsInstalled] = useState(null); // null=checking, true/false
   const [tsInstalling, setTsInstalling] = useState(false);
   const [tsInstallLog, setTsInstallLog] = useState([]);
@@ -69,6 +87,9 @@ export default function APIPageClient({ machineId }) {
   // Only flip UI to "reconnecting" after N consecutive misses to avoid spinner flicker.
   const tunnelMissRef = useRef(0);
   const tsMissRef = useRef(0);
+  // Browser-side reachable cache (independent of backend DNS quirks)
+  const tunnelClientReachableRef = useRef(false);
+  const tsClientReachableRef = useRef(false);
   // Track whether reachable=true was ever observed in this session.
   // Distinguishes "Checking..." (initial cold cache) from "Reconnecting..." (lost connection).
   const tunnelEverReachableRef = useRef(false);
@@ -99,10 +120,34 @@ export default function APIPageClient({ machineId }) {
     };
   }, []);
 
-  // Update reachable state with miss-debounce: avoids spinner flicker when server
-  // briefly returns reachable=false during background probe refresh.
-  // Also flips everReachable on first success (UI uses it to distinguish Checking vs Reconnecting).
-  const updateReachable = useCallback((reachable, missRef, setter, everRef, everSetter) => {
+  // Browser-side periodic ping: probes tunnel/tailscale URLs directly so UI stays
+  // "reachable" even when backend DNS (1.1.1.1) hiccups on *.ts.net or *.trycloudflare.com.
+  useEffect(() => {
+    const probeBoth = async () => {
+      if (tunnelEnabled && (tunnelPublicUrl || tunnelUrl)) {
+        const ok = await clientPingUrl(tunnelPublicUrl || tunnelUrl);
+        tunnelClientReachableRef.current = ok;
+        if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
+      } else {
+        tunnelClientReachableRef.current = false;
+      }
+      if (tsEnabled && tsUrl) {
+        const ok = await clientPingUrl(tsUrl);
+        tsClientReachableRef.current = ok;
+        if (ok) { tsMissRef.current = 0; setTsReachable(true); if (!tsEverReachableRef.current) { tsEverReachableRef.current = true; setTsEverReachable(true); } }
+      } else {
+        tsClientReachableRef.current = false;
+      }
+    };
+    probeBoth();
+    const id = setInterval(probeBoth, CLIENT_PING_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [tunnelEnabled, tunnelPublicUrl, tunnelUrl, tsEnabled, tsUrl]);
+
+  // Effective reachable = serverReachable OR clientReachable (1 of 2 is enough).
+  // Miss-debounce: only flip to false after N consecutive misses on BOTH sides.
+  const updateReachable = useCallback((serverReachable, clientRef, missRef, setter, everRef, everSetter) => {
+    const reachable = serverReachable || clientRef.current;
     if (reachable) {
       missRef.current = 0;
       setter(true);
@@ -128,13 +173,13 @@ export default function APIPageClient({ machineId }) {
       setTunnelUrl(tUrl);
       setTunnelPublicUrl(tPublicUrl);
       setTunnelEnabled(tEnabled);
-      updateReachable(!!data.tunnel?.reachable, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+      updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
       const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
       const tsUrlVal = data.tailscale?.tunnelUrl || "";
       setTsUrl(tsUrlVal);
       setTsEnabled(tsEn);
-      updateReachable(!!data.tailscale?.reachable, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+      updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
   };
 
@@ -163,13 +208,13 @@ export default function APIPageClient({ machineId }) {
         setTunnelUrl(tUrl);
         setTunnelPublicUrl(tPublicUrl);
         setTunnelEnabled(tEnabled);
-        updateReachable(!!data.tunnel?.reachable, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+        updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
         const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
         const tsUrlVal = data.tailscale?.tunnelUrl || "";
         setTsUrl(tsUrlVal);
         setTsEnabled(tsEn);
-        updateReachable(!!data.tailscale?.reachable, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+        updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
       }
     } catch (error) {
       console.log("Error loading settings:", error);
@@ -421,6 +466,8 @@ export default function APIPageClient({ machineId }) {
           } else if (event === "done") {
             setTsInstalled(true);
             setTsInstalling(false);
+            setShowTsModal(false);
+            handleConnectTailscale();
             return;
           } else if (event === "error") {
             setTsStatus({ type: "error", message: data.error || "Install failed" });
@@ -449,12 +496,16 @@ export default function APIPageClient({ machineId }) {
     return false;
   };
 
-  // Open auth URL only when actually needed (avoids blank popup flash on success path).
-  // Falls back to status message with clickable link if popup blocker prevents opening.
-  const openAuthUrl = (url) => {
-    const w = window.open(url, "tailscale_auth", "width=600,height=700");
-    if (!w) setTsStatus({ type: "warning", message: `Popup blocked. Open manually: ${url}` });
-    return w;
+  // Show inline login button instead of auto-opening popup (browsers block popups
+  // opened after async work because the user gesture is lost).
+  const requestUserAuth = (url, label) => {
+    setTsAuthUrl(url);
+    setTsAuthLabel(label);
+  };
+
+  const clearUserAuth = () => {
+    setTsAuthUrl("");
+    setTsAuthLabel("");
   };
 
   const handleConnectTailscale = async () => {
@@ -463,6 +514,7 @@ export default function APIPageClient({ machineId }) {
     setTsLoading(true);
     setTsStatus(null);
     setTsProgress("Connecting...");
+    clearUserAuth();
     try {
       const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
       const data = await res.json();
@@ -476,8 +528,8 @@ export default function APIPageClient({ machineId }) {
       }
 
       if (data.needsLogin && data.authUrl) {
-        openAuthUrl(data.authUrl);
-        setTsProgress("Waiting for login...");
+        requestUserAuth(data.authUrl, "Open Login Page");
+        setTsProgress("Login required — click \"Open Login Page\" to continue");
         for (let i = 0; i < 40; i++) {
           await new Promise((r) => setTimeout(r, 3000));
           try {
@@ -485,6 +537,7 @@ export default function APIPageClient({ machineId }) {
             if (r2.ok) {
               const check = await r2.json();
               if (check.loggedIn) {
+                clearUserAuth();
                 setTsProgress("Starting funnel...");
                 const res2 = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
                 const data2 = await res2.json();
@@ -503,6 +556,7 @@ export default function APIPageClient({ machineId }) {
             }
           } catch { /* retry */ }
         }
+        clearUserAuth();
         setTsStatus({ type: "error", message: "Login timed out. Please try again." });
         return;
       }
@@ -519,18 +573,20 @@ export default function APIPageClient({ machineId }) {
       setTsLoading(false);
       setTsConnecting(false);
       setTsProgress("");
+      clearUserAuth();
     }
   };
 
   const pollFunnelEnable = async (enableUrl) => {
-    openAuthUrl(enableUrl);
-    setTsProgress("Enable Funnel in browser, waiting...");
+    requestUserAuth(enableUrl, "Open Funnel Settings");
+    setTsProgress("Click \"Open Funnel Settings\" to enable Funnel...");
     for (let i = 0; i < 40; i++) {
       await new Promise((r) => setTimeout(r, 3000));
       try {
         const res = await fetch("/api/tunnel/tailscale-enable", { method: "POST" });
         const data = await res.json();
         if (res.ok && data.success) {
+          clearUserAuth();
           setTsUrl(data.tunnelUrl || "");
           const ok3 = await pingTsHealth(data.tunnelUrl);
           setTsEnabled(true);
@@ -539,11 +595,13 @@ export default function APIPageClient({ machineId }) {
         }
         if (data.funnelNotEnabled) continue;
         if (data.error) {
+          clearUserAuth();
           setTsStatus({ type: "error", message: data.error });
           return;
         }
       } catch { /* retry */ }
     }
+    clearUserAuth();
     setTsStatus({ type: "error", message: "Timed out waiting for Funnel to be enabled." });
   };
 
@@ -571,8 +629,12 @@ export default function APIPageClient({ machineId }) {
   const handleOpenTsModal = async () => {
     setTsStatus(null);
     setTsInstallLog([]);
-    setShowTsModal(true);
-    await checkTailscaleInstalled();
+    const data = await checkTailscaleInstalled();
+    if (data?.installed && data?.hasCachedPassword) {
+      handleConnectTailscale();
+    } else {
+      setShowTsModal(true);
+    }
   };
 
   const handleCreateKey = async () => {
@@ -814,8 +876,17 @@ export default function APIPageClient({ machineId }) {
                   <span className="material-symbols-outlined animate-spin text-sm">progress_activity</span>
                   {tsProgress || "Connecting..."}
                 </div>
+                {tsAuthUrl && (
+                  <Button
+                    size="sm"
+                    icon="open_in_new"
+                    onClick={() => window.open(tsAuthUrl, "tailscale_auth", "width=600,height=700,noopener,noreferrer")}
+                  >
+                    {tsAuthLabel || "Open"}
+                  </Button>
+                )}
                 <button
-                  onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); }}
+                  onClick={() => { setTsLoading(false); setTsConnecting(false); setTsProgress(""); clearUserAuth(); }}
                   className="p-2 hover:bg-red-500/10 rounded text-red-500 transition-colors shrink-0"
                   title="Stop"
                 >

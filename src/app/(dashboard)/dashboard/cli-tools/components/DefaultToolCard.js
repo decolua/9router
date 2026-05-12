@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
+import ApiKeySelect from "./ApiKeySelect";
 
 export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
@@ -21,7 +22,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       : (!cloudEnabled ? "sk_9router" : "your-api-key");
     
     // Add /v1 suffix only if not already present (DRY - avoid duplicate)
-    const normalizedBaseUrl = baseUrl || "http://127.0.0.1:20128";
+    const normalizedBaseUrl = baseUrl || "http://localhost:20128";
     const baseUrlWithV1 = normalizedBaseUrl.endsWith("/v1") 
       ? normalizedBaseUrl 
       : `${normalizedBaseUrl}/v1`;
@@ -46,37 +47,11 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
 
   const hasActiveProviders = activeProviders.length > 0;
 
-  const renderApiKeySelector = () => {
-    return (
-      <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
-        {apiKeys && apiKeys.length > 0 ? (
-          <>
-            <select
-              value={selectedApiKey}
-              onChange={(e) => setSelectedApiKey(e.target.value)}
-              className="w-full sm:w-auto flex-1 px-3 py-2 bg-bg-secondary rounded-lg text-sm border border-border focus:outline-none focus:ring-1 focus:ring-primary/50"
-            >
-              {apiKeys.map((key) => (
-                <option key={key.id} value={key.key}>{key.key}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => handleCopy(selectedApiKey, "apiKey")}
-              className="shrink-0 px-3 py-2 bg-bg-secondary hover:bg-bg-tertiary rounded-lg border border-border transition-colors"
-            >
-              <span className="material-symbols-outlined text-lg">
-                {copiedField === "apiKey" ? "check" : "content_copy"}
-              </span>
-            </button>
-          </>
-        ) : (
-          <span className="text-sm text-text-muted">
-            {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router"}
-          </span>
-        )}
-      </div>
-    );
-  };
+  const renderApiKeySelector = () => (
+    <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2">
+      <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} className="flex-1" />
+    </div>
+  );
 
   const renderModelSelector = () => {
     return (

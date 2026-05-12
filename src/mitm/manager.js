@@ -16,7 +16,7 @@ const { isCertExpired } = require("./cert/rootCA");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
 
-const DEFAULT_MITM_ROUTER_BASE = "http://127.0.0.1:20128";
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
 function shellQuoteSingle(str) {
   if (str == null || str === "") return "''";
@@ -576,12 +576,14 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     }
 
     // Spawn directly — process already has admin rights
+    // cwd=tmpdir so process doesn't lock the install dir on Windows (EBUSY on update)
     serverProcess = spawn(
       process.execPath,
       [effectiveServerPath],
       {
         detached: false,
         windowsHide: true,
+        cwd: os.tmpdir(),
         stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env,
@@ -615,6 +617,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     serverProcess = spawn(process.execPath, [effectiveServerPath], {
       detached: false,
       windowsHide: true,
+      cwd: os.tmpdir(),
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,

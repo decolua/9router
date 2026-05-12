@@ -286,48 +286,34 @@ export async function POST(request) {
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
-        case "alicode": {
-          const claudeBaseUrls = {
-            glm: "https://api.z.ai/api/anthropic/v1/messages",
-            "glm-cn": "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions",
-            kimi: "https://api.kimi.com/coding/v1/messages",
-            minimax: "https://api.minimax.io/anthropic/v1/messages",
-            "minimax-cn": "https://api.minimaxi.com/anthropic/v1/messages",
-            alicode: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
-            "alicode-intl": "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
-          };
+        case "alicode":
+        case "agentrouter": {
+          // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
+          const cfg = PROVIDERS[provider];
+          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl";
 
-          // glm-cn, alicode and alicode-intl use OpenAI format
-          if (provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl") {
+          if (isOpenAiFormat) {
             const testModel = getDefaultModel(provider);
-            const glmCnRes = await fetch(claudeBaseUrls[provider], {
+            const res = await fetch(cfg.baseUrl, {
               method: "POST",
-              headers: {
-                "Authorization": `Bearer ${apiKey}`,
-                "content-type": "application/json",
-              },
-              body: JSON.stringify({
-                model: testModel,
-                max_tokens: 1,
-                messages: [{ role: "user", content: "test" }],
-              }),
+              headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
+              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
             });
-            isValid = glmCnRes.status !== 401 && glmCnRes.status !== 403;
+            isValid = res.status !== 401 && res.status !== 403;
           } else {
-            const claudeRes = await fetch(claudeBaseUrls[provider], {
+            const testModel = getDefaultModel(provider) || "claude-sonnet-4-20250514";
+            const res = await fetch(cfg.baseUrl, {
               method: "POST",
               headers: {
                 "x-api-key": apiKey,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
+                ...(cfg.headers || {}),
               },
-              body: JSON.stringify({
-                model: "claude-sonnet-4-20250514",
-                max_tokens: 1,
-                messages: [{ role: "user", content: "test" }],
-              }),
+              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
             });
-            isValid = claudeRes.status !== 401;
+            // 400 = model resolution error but auth passed (e.g. agentrouter "no available channel")
+            isValid = res.status !== 401 && res.status !== 403;
           }
           break;
         }
@@ -588,8 +574,43 @@ export async function POST(request) {
           break;
         }
 
-        default:
-          return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
+        default: {
+          // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
+          const cfg = PROVIDERS[provider];
+          if (!cfg || cfg.format !== "openai" || !cfg.baseUrl) {
+            return NextResponse.json({ error: "Provider validation not supported" }, { status: 400 });
+          }
+          if (cfg.noAuth) {
+            isValid = true;
+            break;
+          }
+          // Build auth headers based on cfg.authHeader (default: bearer)
+          const headers = { "Content-Type": "application/json", ...(cfg.headers || {}) };
+          if (cfg.authHeader === "x-api-key") headers["X-API-Key"] = apiKey;
+          else headers["Authorization"] = `Bearer ${apiKey}`;
+          // Try /models first (fast GET), fallback to chat probe on ambiguous response
+          const modelsUrl = cfg.baseUrl.replace(/\/chat\/completions$/, "/models").replace(/\/chatbot$/, "/models");
+          let probeOk = null;
+          try {
+            const probeRes = await fetch(modelsUrl, { headers, signal: AbortSignal.timeout(8000) });
+            if (probeRes.status === 401 || probeRes.status === 403) probeOk = false;
+            else if (probeRes.ok) probeOk = true;
+          } catch { /* fallback to chat */ }
+          if (probeOk !== null) {
+            isValid = probeOk;
+            break;
+          }
+          // Fallback: minimal chat probe
+          const defaultModel = getDefaultModel(provider) || "test";
+          const chatRes = await fetch(cfg.baseUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ model: defaultModel, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+            signal: AbortSignal.timeout(10000),
+          });
+          isValid = chatRes.status !== 401 && chatRes.status !== 403;
+          break;
+        }
       }
     } catch (err) {
       error = err.message;

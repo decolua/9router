@@ -5,7 +5,11 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { DEFAULT_PLUGINS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
+import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
+import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { DATA_DIR } from "@/lib/dataDir";
+
+const APP_PORT = UPDATER_CONFIG.appPort;
 
 const PROVIDER = "gateway";
 
@@ -89,19 +93,85 @@ const get1pRoot = () => {
   return path.join(os.homedir(), ".config", "Claude");
 };
 
-const bootstrapDeploymentMode = async () => {
-  const cfgPath = path.join(get1pRoot(), "claude_desktop_config.json");
-  let cfg = {};
-  try {
-    cfg = JSON.parse(await fs.readFile(cfgPath, "utf-8"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+const get1pConfigPath = () => path.join(get1pRoot(), "claude_desktop_config.json");
+
+const read1pConfig = async () => {
+  try { return JSON.parse(await fs.readFile(get1pConfigPath(), "utf-8")) || {}; }
+  catch (error) {
+    if (error.code === "ENOENT") return {};
+    throw error;
   }
+};
+
+const write1pConfig = async (cfg) => {
+  await fs.mkdir(get1pRoot(), { recursive: true });
+  await fs.writeFile(get1pConfigPath(), JSON.stringify(cfg, null, 2));
+};
+
+const bootstrapDeploymentMode = async () => {
+  const cfg = await read1pConfig();
   if (cfg.deploymentMode === "3p") return false;
   cfg.deploymentMode = "3p";
-  await fs.mkdir(get1pRoot(), { recursive: true });
-  await fs.writeFile(cfgPath, JSON.stringify(cfg, null, 2));
+  await write1pConfig(cfg);
   return true;
+};
+
+// Remove any legacy stdio entries previously written into 1p claude_desktop_config.json.
+const cleanup1pLegacy = async () => {
+  const cfg = await read1pConfig();
+  if (!cfg.mcpServers || typeof cfg.mcpServers !== "object") return;
+  const managedNames = new Set(LOCAL_STDIO_PLUGINS.map((p) => p.name));
+  for (const k of Object.keys(cfg.mcpServers)) {
+    if (managedNames.has(k)) delete cfg.mcpServers[k];
+  }
+  if (Object.keys(cfg.mcpServers).length === 0) delete cfg.mcpServers;
+  await write1pConfig(cfg);
+};
+
+// Build SSE bridge entries pointing at this app's inline /api/mcp/{name} endpoint.
+const buildLocalBridgeEntries = (localPluginNames) => {
+  const names = Array.isArray(localPluginNames) ? localPluginNames : [];
+  const out = [];
+  for (const n of names) {
+    const def = LOCAL_STDIO_PLUGINS.find((p) => p.name === n);
+    if (!def) continue;
+    const entry = {
+      name: def.name,
+      url: `http://localhost:${APP_PORT}/api/mcp/${def.name}/sse`,
+      transport: "sse",
+    };
+    if (Array.isArray(def.toolNames) && def.toolNames.length > 0) {
+      const prefix = `${def.name}-`;
+      const policy = {};
+      for (const t of def.toolNames) {
+        policy[t] = "allow";
+        policy[`${prefix}${t}`] = "allow";
+      }
+      entry.toolPolicy = policy;
+    }
+    out.push(entry);
+  }
+  return out;
+};
+
+// Build entries for user-defined custom MCP plugins (URL or stdio command).
+const buildCustomEntries = (customPlugins) => {
+  if (!Array.isArray(customPlugins)) return [];
+  const out = [];
+  for (const p of customPlugins) {
+    if (!p?.name) continue;
+    if (p.url) {
+      out.push({ name: p.name, url: p.url, transport: p.transport || "sse", custom: true });
+    } else if (p.command) {
+      out.push({
+        name: p.name,
+        url: `http://localhost:${APP_PORT}/api/mcp/${encodeURIComponent(p.name)}/sse`,
+        transport: "sse",
+        custom: true,
+      });
+    }
+  }
+  return out;
 };
 
 const checkInstalled = async () => {
@@ -171,6 +241,17 @@ export async function GET() {
     const managedMcp = Array.isArray(config?.managedMcpServers) ? config.managedMcpServers : [];
     const has9Router = !!(config?.inferenceProvider === PROVIDER && baseUrl);
 
+    // Active local plugins = managedMcp entries whose URL points at our inline bridge.
+    const stdioNames = new Set(LOCAL_STDIO_PLUGINS.map((p) => p.name));
+    const activeLocalNames = managedMcp
+      .filter((m) => stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/"))
+      .map((m) => m.name);
+
+    // Custom plugins = bridge entries not in preset LOCAL_STDIO_PLUGINS (custom:true or unknown name).
+    const activeCustomPlugins = managedMcp
+      .filter((m) => m.custom || (!stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/")))
+      .map((m) => ({ name: m.name, url: m.url, transport: m.transport, custom: true }));
+
     return NextResponse.json({
       installed: true,
       config,
@@ -181,7 +262,7 @@ export async function GET() {
         baseUrl,
         models,
         provider: config?.inferenceProvider || null,
-        plugins: managedMcp.map((m) => {
+        plugins: managedMcp.filter((m) => !m.custom && !(stdioNames.has(m.name) && typeof m.url === "string" && m.url.includes("/api/mcp/"))).map((m) => {
           // Strip "{name}-" prefix and dedupe so re-applies don't multiply entries.
           const keys = m.toolPolicy ? Object.keys(m.toolPolicy) : [];
           const prefix = `${m.name}-`;
@@ -196,8 +277,11 @@ export async function GET() {
           const toolNames = def && Array.isArray(def.toolNames) ? def.toolNames : Array.from(bare);
           return { name: m.name, url: m.url, transport: m.transport, oauth: !!m.oauth, toolNames };
         }),
+        localPlugins: activeLocalNames,
+        customPlugins: activeCustomPlugins,
       },
       defaultPlugins: DEFAULT_PLUGINS,
+      localStdioPlugins: LOCAL_STDIO_PLUGINS,
     });
   } catch (error) {
     console.log("Error reading cowork settings:", error);
@@ -207,7 +291,7 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, models, plugins } = await request.json();
+    const { baseUrl, apiKey, models, plugins, localPlugins, customPlugins } = await request.json();
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "baseUrl and apiKey are required" }, { status: 400 });
@@ -217,9 +301,26 @@ export async function POST(request) {
       return NextResponse.json({ error: "At least one model is required" }, { status: 400 });
     }
 
-    // Plugins: array of {name, url, transport?, oauth?}. Default to DEFAULT_PLUGINS if absent.
-    const pluginsArray = Array.isArray(plugins) && plugins.length > 0 ? plugins : DEFAULT_PLUGINS;
-    const managedMcpServers = buildManagedMcpServers(pluginsArray);
+    // Respect empty array (user toggled all off); fallback to defaults only when undefined.
+    const pluginsArray = Array.isArray(plugins) ? plugins : DEFAULT_PLUGINS;
+    const localPluginNames = Array.isArray(localPlugins) ? localPlugins : [];
+    const customPluginsArray = Array.isArray(customPlugins) ? customPlugins : [];
+
+    // Register custom stdio plugins into bridge + persist for restart survival.
+    if (customPluginsArray.length > 0) {
+      const { registerCustomPlugin } = require("@/lib/mcp/stdioSseBridge");
+      const stdioCustoms = customPluginsArray.filter((p) => p.command).map((p) => ({ name: p.name, command: p.command, args: p.args || [] }));
+      for (const p of stdioCustoms) registerCustomPlugin(p);
+      try {
+        const dir = path.join(DATA_DIR, "mcp");
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(path.join(dir, "customPlugins.json"), JSON.stringify(stdioCustoms, null, 2));
+      } catch { /* ignore */ }
+    }
+
+    const bridgeEntries = buildLocalBridgeEntries(localPluginNames);
+    const customEntries = buildCustomEntries(customPluginsArray);
+    const managedMcpServers = [...buildManagedMcpServers(pluginsArray), ...bridgeEntries, ...customEntries];
 
     const bootstrapped = await bootstrapDeploymentMode();
     const meta = await ensureMeta();
@@ -239,6 +340,10 @@ export async function POST(request) {
     let skipResult = null;
     try { skipResult = await writeSkipApprovals(managedMcpServers); } catch (e) { skipResult = { error: e.message }; }
 
+    // Best-effort cleanup of legacy 1p mcpServers entries written by earlier versions.
+    let localMcpResult = { applied: localPluginNames, via: "3p-sse-bridge" };
+    try { await cleanup1pLegacy(); } catch { /* ignore */ }
+
     return NextResponse.json({
       success: true,
       bootstrapped,
@@ -247,6 +352,7 @@ export async function POST(request) {
         : "Cowork settings applied. Quit & reopen Claude Desktop.",
       configPath,
       skipApprovals: skipResult,
+      localMcp: localMcpResult,
     });
   } catch (error) {
     console.log("Error applying cowork settings:", error);
@@ -264,6 +370,7 @@ export async function DELETE() {
     try { await fs.writeFile(configPath, JSON.stringify({}, null, 2)); }
     catch (error) { if (error.code !== "ENOENT") throw error; }
     try { await writeSkipApprovals([]); } catch { /* ignore */ }
+    try { await cleanup1pLegacy(); } catch { /* ignore */ }
     return NextResponse.json({ success: true, message: "Cowork config reset" });
   } catch (error) {
     console.log("Error resetting cowork settings:", error);

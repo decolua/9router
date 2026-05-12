@@ -1,0 +1,50 @@
+name: Deploy GitBook to 9router.github.io
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "gitbook/**"
+      - ".github/workflows/gitbook-pages.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: gitbook-pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gitbook
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build static export
+        run: npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_BASE_PATH: ""
+
+      - name: Add .nojekyll
+        run: touch out/.nojekyll
+
+      - name: Deploy to 9router.github.io
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.GH_PAGES_DEPLOY_KEY }}
+          external_repository: 9router/9router.github.io
+          publish_branch: main
+          publish_dir: gitbook/out
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: github-actions[bot]@users.noreply.github.com
+          commit_message: "deploy: ${{ github.sha }}"

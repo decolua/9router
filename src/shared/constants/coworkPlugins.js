@@ -1,5 +1,4 @@
-// Default plugins auto-installed for Claude Cowork (3p mode).
-// Exa works without auth; Tavily uses OAuth (DCR auto-flow).
+// Default remote plugins for Claude Cowork (3p managedMcpServers, HTTPS only).
 const DEFAULT_PLUGINS = [
   {
     name: "exa",
@@ -21,20 +20,24 @@ const DEFAULT_PLUGINS = [
   },
 ];
 
-// Build managedMcpServers entries from plugin objects.
-// Schema: [{name, url, transport, oauth?, toolPolicy?}]
-// toolPolicy maps each tool to "allow" so Claude doesn't prompt.
-// Plugin name that's force-installed regardless of user selection.
-const ALWAYS_ON = "exa";
+// Local stdio plugins bridged via inline SSE endpoint on the app's port.
+const LOCAL_STDIO_PLUGINS = [
+  {
+    name: "browsermcp",
+    title: "Browser MCP",
+    description: "Control your running Chrome (requires Chrome extension)",
+    extensionUrl: "https://chromewebstore.google.com/detail/browser-mcp-automate-your/bjfgambnhccakkhmkepdoekmckoijdlc",
+    command: "npx",
+    args: ["-y", "@browsermcp/mcp@latest"],
+    toolNames: ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_get_console_logs", "browser_wait", "browser_press_key", "browser_go_back", "browser_go_forward"],
+  },
+];
 
 function buildManagedMcpServers(plugins) {
   const list = Array.isArray(plugins) ? plugins : [];
-  // Force Exa always-on at the front; drop any duplicate from user list.
-  const exaDefault = DEFAULT_PLUGINS.find((p) => p.name === ALWAYS_ON);
-  const merged = exaDefault ? [exaDefault, ...list.filter((p) => p?.name !== ALWAYS_ON)] : list;
   const out = [];
   const seen = new Set();
-  for (const p of merged) {
+  for (const p of list) {
     if (!p?.name || !p?.url || seen.has(p.name)) continue;
     seen.add(p.name);
     const entry = {
@@ -66,4 +69,4 @@ function buildManagedMcpServers(plugins) {
   return out;
 }
 
-module.exports = { DEFAULT_PLUGINS, buildManagedMcpServers, ALWAYS_ON };
+module.exports = { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers };

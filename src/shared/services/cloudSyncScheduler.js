@@ -4,7 +4,7 @@ import { isCloudEnabled } from "@/lib/localDb";
 const INTERNAL_BASE_URL =
   process.env.BASE_URL ||
   process.env.NEXT_PUBLIC_BASE_URL ||
-  "http://127.0.0.1:20128";
+  "http://localhost:20128";
 
 /**
  * Cloud sync scheduler

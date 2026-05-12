@@ -1,0 +1,39 @@
+{
+  "name": "9router",
+  "version": "0.4.33",
+  "description": "9Router CLI - Start and manage 9Router server",
+  "bin": {
+    "9router": "./cli.js"
+  },
+  "files": [
+    "cli.js",
+    "src",
+    "hooks",
+    "app",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node hooks/postinstall.js",
+    "prepublishOnly": "cd .. && npm run build:cli"
+  },
+  "dependencies": {
+    "node-forge": "^1.3.3",
+    "node-machine-id": "^1.1.12",
+    "react": "19.2.1",
+    "react-dom": "19.2.1"
+  },
+  "comment_sqlite": "sql.js + better-sqlite3 are NOT bundled here. They are installed into ~/.9router/runtime/node_modules by hooks/postinstall.js (and re-checked at runtime by cli.js). This avoids Windows EBUSY errors when updating the global CLI, since native .node files no longer live under the locked install dir.",
+  "comment_systray": "systray is NOT bundled here. It is lazy-installed into ~/.9router/runtime/node_modules by hooks/postinstall.js on macOS/Linux only. Windows uses PowerShell NotifyIcon (zero binary). This avoids shipping the unsigned Go binary tray_windows.exe that triggers antivirus false positives (Kaspersky).",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "9router",
+    "cli",
+    "proxy",
+    "ai",
+    "api"
+  ],
+  "license": "MIT"
+}
