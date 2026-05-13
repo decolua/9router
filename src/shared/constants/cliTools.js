@@ -294,6 +294,35 @@ amp --model "{{model}}"
 }`,
     },
   },
+  jcode: {
+    id: "jcode",
+    name: "jcode",
+    icon: "terminal",
+    color: "#FF6B35",
+    description: "High-performance Rust-based coding agent harness",
+    configType: "custom",
+    docsUrl: "https://github.com/1jehuang/jcode",
+    notes: [
+      {
+        type: "info",
+        text: "jcode is a Rust-based coding agent with semantic memory, multi-agent swarms, and extreme performance (27.8 MB RAM, 14ms boot)."
+      },
+      {
+        type: "info",
+        text: "Configure 9router as an OpenAI-compatible provider to route all jcode requests through 9router's optimization layer."
+      },
+      {
+        type: "warning",
+        text: "Requires jcode installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash"
+      },
+    ],
+    defaultModels: [
+      { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
+      { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
+    ],
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",
