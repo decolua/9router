@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle } from "@/shared/components";
+import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
 function getStatusVariant(status) {
@@ -45,6 +45,7 @@ export default function ProxyPoolsPage() {
   const [healthChecking, setHealthChecking] = useState(false);
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [confirmState, setConfirmState] = useState(null);
   const notify = useNotificationStore();
 
   const fetchProxyPools = useCallback(async () => {
@@ -122,27 +123,31 @@ export default function ProxyPoolsPage() {
   };
 
   const handleDelete = async (proxyPool) => {
-    const deleting = confirm(`Delete proxy pool \"${proxyPool.name}\"?`);
-    if (!deleting) return;
+    setConfirmState({
+      title: "Delete Proxy Pool",
+      message: `Delete proxy pool "${proxyPool.name}"?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
+          if (res.ok) {
+            setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
+            notify.success("Proxy pool deleted");
+            return;
+          }
 
-    try {
-      const res = await fetch(`/api/proxy-pools/${proxyPool.id}`, { method: "DELETE" });
-      if (res.ok) {
-        setProxyPools((prev) => prev.filter((item) => item.id !== proxyPool.id));
-        notify.success("Proxy pool deleted");
-        return;
+          const data = await res.json();
+          if (res.status === 409) {
+            notify.warning(`Cannot delete: ${data.boundConnectionCount || 0} connection(s) are still using this pool.`);
+          } else {
+            notify.error(data.error || "Failed to delete proxy pool");
+          }
+        } catch (error) {
+          console.log("Error deleting proxy pool:", error);
+          notify.error("Failed to delete proxy pool");
+        }
       }
-
-      const data = await res.json();
-      if (res.status === 409) {
-        notify.warning(`Cannot delete: ${data.boundConnectionCount || 0} connection(s) are still using this pool.`);
-      } else {
-        notify.error(data.error || "Failed to delete proxy pool");
-      }
-    } catch (error) {
-      console.log("Error deleting proxy pool:", error);
-      notify.error("Failed to delete proxy pool");
-    }
+    });
   };
 
   const handleTest = async (proxyPoolId) => {
@@ -215,24 +220,30 @@ export default function ProxyPoolsPage() {
 
   const bulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (!confirm(`Delete ${selectedIds.length} proxy pool(s)?`)) return;
-    setBulkBusy(true);
-    try {
-      let ok = 0; let blocked = 0; let failed = 0;
-      for (const id of selectedIds) {
+    setConfirmState({
+      title: "Delete Proxy Pools",
+      message: `Delete ${selectedIds.length} proxy pool(s)?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        setBulkBusy(true);
         try {
-          const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
-          if (res.ok) ok += 1;
-          else if (res.status === 409) blocked += 1;
-          else failed += 1;
-        } catch { failed += 1; }
+          let ok = 0; let blocked = 0; let failed = 0;
+          for (const id of selectedIds) {
+            try {
+              const res = await fetch(`/api/proxy-pools/${id}`, { method: "DELETE" });
+              if (res.ok) ok += 1;
+              else if (res.status === 409) blocked += 1;
+              else failed += 1;
+            } catch { failed += 1; }
+          }
+          await fetchProxyPools();
+          clearSelection();
+          notify.success(`Deleted ${ok}${blocked ? `, ${blocked} bound` : ""}${failed ? `, ${failed} failed` : ""}`);
+        } finally {
+          setBulkBusy(false);
+        }
       }
-      await fetchProxyPools();
-      clearSelection();
-      notify.success(`Deleted ${ok}${blocked ? `, ${blocked} bound` : ""}${failed ? `, ${failed} failed` : ""}`);
-    } finally {
-      setBulkBusy(false);
-    }
+    });
   };
 
   const handleHealthCheck = async () => {
@@ -269,23 +280,30 @@ export default function ProxyPoolsPage() {
     setHealthChecking(false);
     setHealthProgress({ current: 0, total: 0 });
 
-    if (deadIds.length > 0 && confirm(`Alive: ${alive}, Dead: ${deadIds.length}.\n\nDisable ${deadIds.length} dead proxies?`)) {
-      setBulkBusy(true);
-      try {
-        for (const id of deadIds) {
+    if (deadIds.length > 0) {
+      setConfirmState({
+        title: "Disable Dead Proxies",
+        message: `Alive: ${alive}, Dead: ${deadIds.length}.\n\nDisable ${deadIds.length} dead proxies?`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          setBulkBusy(true);
           try {
-            await fetch(`/api/proxy-pools/${id}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isActive: false }),
-            });
-          } catch {}
+            for (const id of deadIds) {
+              try {
+                await fetch(`/api/proxy-pools/${id}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ isActive: false }),
+                });
+              } catch {}
+            }
+            await fetchProxyPools();
+            notify.success(`Disabled ${deadIds.length} dead proxies`);
+          } finally {
+            setBulkBusy(false);
+          }
         }
-        await fetchProxyPools();
-        notify.success(`Disabled ${deadIds.length} dead proxies`);
-      } finally {
-        setBulkBusy(false);
-      }
+      });
     } else {
       notify.success(`Health check done. Alive: ${alive}, Dead: ${deadIds.length}`);
     }
@@ -768,6 +786,16 @@ export default function ProxyPoolsPage() {
           </div>
         </div>
       </Modal>
+
+      {/* Confirm Modal */}
+      <ConfirmModal
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={confirmState?.onConfirm}
+        title={confirmState?.title || "Confirm"}
+        message={confirmState?.message}
+        variant="danger"
+      />
     </div>
   );
 }

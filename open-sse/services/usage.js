@@ -966,14 +966,27 @@ async function getGlmUsage(apiKey, provider, proxyOptions = null) {
 }
 
 // ── MiniMax helpers ──────────────────────────────────────────────────────
-function isMiniMaxTextQuotaModel(modelName) {
-  const normalized = (modelName || "").trim().toLowerCase();
-  return normalized.startsWith("minimax-m") || normalized.startsWith("coding-plan");
-}
-
 function getMiniMaxField(model, snakeKey, camelKey) {
   if (!model || typeof model !== "object") return null;
   return model[snakeKey] ?? model[camelKey] ?? null;
+}
+
+function getMiniMaxModelName(model) {
+  return String(getMiniMaxField(model, "model_name", "modelName") || "").trim();
+}
+
+function formatMiniMaxQuotaName(model) {
+  const rawName = getMiniMaxModelName(model);
+  if (!rawName) return "MiniMax";
+
+  return rawName
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+    .replace(/\bTo\b/g, "to")
+    .replace(/\bTts\b/g, "TTS")
+    .replace(/\bHd\b/g, "HD");
 }
 
 function getMiniMaxSessionTotal(model) {
@@ -984,11 +997,8 @@ function getMiniMaxWeeklyTotal(model) {
   return Math.max(0, Number(getMiniMaxField(model, "current_weekly_total_count", "currentWeeklyTotalCount")) || 0);
 }
 
-function pickMiniMaxRepresentativeModel(models, getTotal) {
-  const withQuota = models.filter((m) => getTotal(m) > 0);
-  const pool = withQuota.length > 0 ? withQuota : models;
-  if (pool.length === 0) return null;
-  return pool.reduce((best, current) => (getTotal(current) > getTotal(best) ? current : best));
+function hasMiniMaxQuota(model) {
+  return getMiniMaxSessionTotal(model) > 0 || getMiniMaxWeeklyTotal(model) > 0;
 }
 
 function getMiniMaxResetAt(model, capturedAtMs, remainsSnake, remainsCamel, endSnake, endCamel) {
@@ -1009,6 +1019,19 @@ function buildMiniMaxQuota(total, count, resetAt, countMeansRemaining) {
     resetAt,
     unlimited: false,
   };
+}
+
+function addMiniMaxQuota(quotas, key, model, getTotal, countSnake, countCamel, resetArgs, countMeansRemaining) {
+  const total = getTotal(model);
+  if (total <= 0) return;
+
+  const count = Math.max(0, Number(getMiniMaxField(model, countSnake, countCamel)) || 0);
+  quotas[key] = buildMiniMaxQuota(
+    total,
+    count,
+    getMiniMaxResetAt(model, ...resetArgs),
+    countMeansRemaining
+  );
 }
 
 /**
@@ -1064,34 +1087,37 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
 
       const modelRemains = payload?.model_remains ?? payload?.modelRemains;
       const allModels = Array.isArray(modelRemains) ? modelRemains : [];
-      const textModels = allModels.filter((m) => isMiniMaxTextQuotaModel(String(getMiniMaxField(m, "model_name", "modelName"))));
+      const quotaModels = allModels.filter(hasMiniMaxQuota);
 
-      if (textModels.length === 0) {
-        return { message: "MiniMax connected. No text quota data was returned." };
+      if (quotaModels.length === 0) {
+        return { message: "MiniMax connected. No quota data was returned." };
       }
 
       const capturedAtMs = Date.now();
       const countMeansRemaining = usageUrl.includes("/coding_plan/remains");
       const quotas = {};
 
-      const sessionModel = pickMiniMaxRepresentativeModel(textModels, getMiniMaxSessionTotal);
-      if (sessionModel) {
-        const total = getMiniMaxSessionTotal(sessionModel);
-        const count = Math.max(0, Number(getMiniMaxField(sessionModel, "current_interval_usage_count", "currentIntervalUsageCount")) || 0);
-        quotas["session (5h)"] = buildMiniMaxQuota(
-          total, count,
-          getMiniMaxResetAt(sessionModel, capturedAtMs, "remains_time", "remainsTime", "end_time", "endTime"),
+      for (const model of quotaModels) {
+        const displayName = formatMiniMaxQuotaName(model);
+        addMiniMaxQuota(
+          quotas,
+          `${displayName} (5h)`,
+          model,
+          getMiniMaxSessionTotal,
+          "current_interval_usage_count",
+          "currentIntervalUsageCount",
+          [capturedAtMs, "remains_time", "remainsTime", "end_time", "endTime"],
           countMeansRemaining
         );
-      }
 
-      const weeklyModel = pickMiniMaxRepresentativeModel(textModels, getMiniMaxWeeklyTotal);
-      if (weeklyModel && getMiniMaxWeeklyTotal(weeklyModel) > 0) {
-        const total = getMiniMaxWeeklyTotal(weeklyModel);
-        const count = Math.max(0, Number(getMiniMaxField(weeklyModel, "current_weekly_usage_count", "currentWeeklyUsageCount")) || 0);
-        quotas["weekly (7d)"] = buildMiniMaxQuota(
-          total, count,
-          getMiniMaxResetAt(weeklyModel, capturedAtMs, "weekly_remains_time", "weeklyRemainsTime", "weekly_end_time", "weeklyEndTime"),
+        addMiniMaxQuota(
+          quotas,
+          `${displayName} (7d)`,
+          model,
+          getMiniMaxWeeklyTotal,
+          "current_weekly_usage_count",
+          "currentWeeklyUsageCount",
+          [capturedAtMs, "weekly_remains_time", "weeklyRemainsTime", "weekly_end_time", "weeklyEndTime"],
           countMeansRemaining
         );
       }
