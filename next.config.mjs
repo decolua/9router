@@ -1,17 +1,8 @@
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-
-const projectRoot = dirname(fileURLToPath(import.meta.url));
-const monorepoRoot = resolve(projectRoot, "..");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
-  turbopack: {
-    root: projectRoot
-  },
-  outputFileTracingRoot: monorepoRoot,
+
   outputFileTracingExcludes: {
     "*": ["./app/gitbook/**/*", "./gitbook/**/*"]
   },

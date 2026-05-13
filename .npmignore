@@ -2,6 +2,7 @@
 data/
 **/data/
 **/db.json
+**/data.sqlite
 
 # Development
 src/

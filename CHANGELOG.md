@@ -1,3 +1,9 @@
+# v0.4.33 (2026-05-12)
+
+## Improvements
+- Windows: replace systray (Go binary, AV flagged) with native PowerShell NotifyIcon
+- Auto-cleanup legacy `tray_windows.exe` on install/startup
+
 # v0.4.31 (2026-05-12)
 
 ## Features

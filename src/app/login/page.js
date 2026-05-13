@@ -100,7 +100,7 @@ export default function LoginPage() {
       <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
+          <h1 className="text-3xl font-bold text-primary mb-2">Simata AI Manager</h1>
           <p className="text-text-muted">
             {authMode === "oidc" && oidcConfigured
               ? "Sign in with your OIDC provider to access the dashboard"
@@ -154,14 +154,7 @@ export default function LoginPage() {
                   Login
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
-                  <p className="text-xs text-center text-text-muted">
-                    No custom password is set yet. The default password above will work until you change it.
-                  </p>
-                )}
+
               </form>
             ) : (
               error && <p className="text-xs text-red-500">{error}</p>

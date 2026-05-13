@@ -20,17 +20,11 @@ const HOST_REWRITE = {
   "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.googleapis.com",
 };
 
-// Load handlers — dev/ overrides handlers/ for private implementations
-function loadHandler(name) {
-  try { return require(`./dev/${name}`); } catch {}
-  return require(`./handlers/${name}`);
-}
-
 const handlers = {
-  antigravity: loadHandler("antigravity"),
-  copilot: loadHandler("copilot"),
-  kiro: loadHandler("kiro"),
-  cursor: loadHandler("cursor"),
+  antigravity: require("./handlers/antigravity"),
+  copilot: require("./handlers/copilot"),
+  kiro: require("./handlers/kiro"),
+  cursor: require("./handlers/cursor"),
 };
 
 // ── SSL / SNI ─────────────────────────────────────────────────

@@ -1,0 +1,31 @@
+name = "9router-tunnel-registration"
+main = "tunnel-register.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Public domain for tunnel URLs (change this to your actual domain)
+[vars]
+PUBLIC_DOMAIN = "9router.com"
+
+# KV namespace for storing tunnel mappings
+# Replace with your actual KV namespace ID
+# [[kv_namespaces]]
+# binding = "TUNNEL_KV"
+# id = "your-kv-namespace-id"
+
+# Route configuration (if using custom subdomain like r{shortId}.domain.com)
+# Add this after deploying and creating your domain
+# [routes]
+# pattern = "r*.yourdomain.com/*"
+# zone_name = "yourdomain.com"
+
+# Environment-specific configurations
+[env.production]
+name = "9router-tunnel-registration-production"
+[env.production.vars]
+PUBLIC_DOMAIN = "9router.com"
+
+[env.staging]
+name = "9router-tunnel-registration-staging"
+[env.staging.vars]
+PUBLIC_DOMAIN = "staging-9router.com"

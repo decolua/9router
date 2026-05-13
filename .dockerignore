@@ -14,6 +14,11 @@ build
 dist
 coverage
 
+# WSL2 Garbage
+**/Zone.Identifier
+**/*.Zone.Identifier
+*:Zone.Identifier
+
 # Runtime data and logs
 data
 logs

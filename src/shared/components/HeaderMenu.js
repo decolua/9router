@@ -10,38 +10,7 @@ import LanguageSwitcher from "./LanguageSwitcher";
 
 const LOCALE_INFO = {
   "en": { name: "English", flag: "🇺🇸" },
-  "vi": { name: "Tiếng Việt", flag: "🇻🇳" },
-  "zh-CN": { name: "简体中文", flag: "🇨🇳" },
-  "zh-TW": { name: "繁體中文", flag: "🇹🇼" },
-  "ja": { name: "日本語", flag: "🇯🇵" },
-  "pt-BR": { name: "Português (BR)", flag: "🇧🇷" },
-  "pt-PT": { name: "Português (PT)", flag: "🇵🇹" },
-  "ko": { name: "한국어", flag: "🇰🇷" },
-  "es": { name: "Español", flag: "🇪🇸" },
-  "de": { name: "Deutsch", flag: "🇩🇪" },
-  "fr": { name: "Français", flag: "🇫🇷" },
-  "he": { name: "עברית", flag: "🇮🇱" },
-  "ar": { name: "العربية", flag: "🇸🇦" },
-  "ru": { name: "Русский", flag: "🇷🇺" },
-  "pl": { name: "Polski", flag: "🇵🇱" },
-  "cs": { name: "Čeština", flag: "🇨🇿" },
-  "nl": { name: "Nederlands", flag: "🇳🇱" },
-  "tr": { name: "Türkçe", flag: "🇹🇷" },
-  "uk": { name: "Українська", flag: "🇺🇦" },
-  "tl": { name: "Tagalog", flag: "🇵🇭" },
   "id": { name: "Indonesia", flag: "🇮🇩" },
-  "th": { name: "ไทย", flag: "🇹🇭" },
-  "hi": { name: "हिन्दी", flag: "🇮🇳" },
-  "bn": { name: "বাংলা", flag: "🇧🇩" },
-  "ur": { name: "اردو", flag: "🇵🇰" },
-  "ro": { name: "Română", flag: "🇷🇴" },
-  "sv": { name: "Svenska", flag: "🇸🇪" },
-  "it": { name: "Italiano", flag: "🇮🇹" },
-  "el": { name: "Ελληνικά", flag: "🇬🇷" },
-  "hu": { name: "Magyar", flag: "🇭🇺" },
-  "fi": { name: "Suomi", flag: "🇫🇮" },
-  "da": { name: "Dansk", flag: "🇩🇰" },
-  "no": { name: "Norsk", flag: "🇳🇴" },
 };
 
 function getLocaleFromCookie() {
@@ -84,6 +53,7 @@ export default function HeaderMenu({ onLogout }) {
   const [isOpen, setIsOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [remoteOpen, setRemoteOpen] = useState(false);
+
   const [langOpen, setLangOpen] = useState(false);
   const [locale, setLocale] = useState("en");
   const { toggleTheme, isDark } = useTheme();
@@ -136,11 +106,13 @@ export default function HeaderMenu({ onLogout }) {
               label="Theme"
               onClick={() => { toggleTheme(); close(); }}
             />
+            {/*
             <MenuItem
               icon="computer"
               label="Remote"
               onClick={() => { close(); setRemoteOpen(true); }}
             />
+            */}
             <MenuItem
               icon="logout"
               label="Logout"

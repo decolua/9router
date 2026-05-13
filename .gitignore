@@ -22,8 +22,10 @@ product
 .idea/
 
 # misc
+*:Zone.Identifier
 .DS_Store
 *.pem
+.tmp
 
 # debug
 npm-debug.log*

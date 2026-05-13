@@ -280,7 +280,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       params.set("sortOrder", "asc");
     }
     router.replace(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, router]);
+  }, [searchParams.toString(), router]);
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {

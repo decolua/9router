@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    
     "paths": {
       "@/*": ["./src/*"],
       "open-sse": ["./open-sse"],

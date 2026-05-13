@@ -9,7 +9,8 @@ import { waitForHealth, probeUrlAlive } from "./networkProbe.js";
 initDbHooks(getSettings, updateSettings);
 
 const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://9router.com";
-const MACHINE_ID_SALT = "9router-tunnel-salt";
+const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN || process.env.TUNNEL_PUBLIC_DOMAIN || "9router.com";
+const MACHINE_ID_SALT = process.env.MACHINE_ID_SALT || "0ee8522cbc0700b33e9263c02bd00f94";
 
 // Per-service state (independent: tunnel ≠ tailscale)
 const tunnelSvc = {
@@ -95,7 +96,7 @@ export async function enableTunnel(localPort = 20128) {
     if (isCloudflaredRunning()) {
       const existing = loadState();
       if (existing?.tunnelUrl && await probeUrlAlive(existing.tunnelUrl)) {
-        const publicUrl = `https://r${existing.shortId}.9router.com`;
+        const publicUrl = `https://r${existing.shortId}.${PUBLIC_DOMAIN}`;
         console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
         return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
       }
@@ -121,7 +122,7 @@ export async function enableTunnel(localPort = 20128) {
     console.log(`[Tunnel] spawned: ${tunnelUrl}`);
     throwIfCancelled(token, "tunnel");
 
-    const publicUrl = `https://r${shortId}.9router.com`;
+    const publicUrl = `https://r${shortId}.${PUBLIC_DOMAIN}`;
     await registerTunnelUrl(shortId, tunnelUrl);
     saveState({ shortId, machineId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
@@ -168,12 +169,10 @@ export async function getTunnelStatus() {
   const settingsEnabled = settings.tunnelEnabled === true;
   const state = loadState();
   const shortId = state?.shortId || "";
-  const publicUrl = shortId ? `https://r${shortId}.9router.com` : "";
-  const tunnelUrl = state?.tunnelUrl || "";
+  const tunnelUrl = state?.tunnelUrl || settings.tunnelUrl || "";
+  const running = !!tunnelUrl && isCloudflaredRunning();
+  const publicUrl = shortId ? `https://r${shortId}.${PUBLIC_DOMAIN}` : "";
 
-  // Lazy: skip PID probe entirely when user disabled tunnel
-  const running = settingsEnabled ? isCloudflaredRunning() : false;
-  // Reachable: cached background probe (never blocks the request)
   const reachable = settingsEnabled && running ? readReachable(tunnelReachable, tunnelUrl) : false;
 
   return {

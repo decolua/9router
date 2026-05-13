@@ -28,6 +28,9 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/cli-tools",
+  "/api/translator/console-logs",
+  "/api/providers",
   "/api/providers/client",
   "/api/provider-nodes/validate",
 ];

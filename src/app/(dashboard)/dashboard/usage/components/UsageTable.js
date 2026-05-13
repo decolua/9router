@@ -158,8 +158,9 @@ export default function UsageTable({
               {columns.map((col) => (
                 <th
                   key={col.field}
-                  className={`px-6 py-3 cursor-pointer hover:bg-bg-subtle/50 ${col.align === "right" ? "text-right" : ""}`}
+                  className={`px-6 py-3 hover:bg-bg-subtle/50 clickable-header ${col.align === "right" ? "text-right" : ""}`}
                   onClick={() => onToggleSort(tableType, col.field)}
+                  style={{ cursor: "pointer" }}
                 >
                   {col.label}{" "}
                   <SortIcon field={col.field} currentSort={sortBy} currentOrder={sortOrder} />
@@ -168,8 +169,9 @@ export default function UsageTable({
               {valueColumns.map((col) => (
                 <th
                   key={col.field}
-                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  className="px-6 py-3 text-right hover:bg-bg-subtle/50 clickable-header"
                   onClick={() => onToggleSort(tableType, col.field)}
+                  style={{ cursor: "pointer" }}
                 >
                   {col.label}{" "}
                   <SortIcon field={col.field} currentSort={sortBy} currentOrder={sortOrder} />
@@ -182,8 +184,9 @@ export default function UsageTable({
               <Fragment key={group.groupKey}>
                 {/* Group summary row */}
                 <tr
-                  className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                  className="group-summary hover:bg-bg-subtle/50 transition-colors clickable-row"
                   onClick={() => toggleGroup(group.groupKey)}
+                  style={{ cursor: "pointer" }}
                 >
                   <td className="px-6 py-3">
                     <div className="flex items-center gap-2">

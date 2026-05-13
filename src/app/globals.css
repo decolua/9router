@@ -324,6 +324,29 @@ button {
   user-select: none;
 }
 
+/* Force pointer cursor on interactive elements */
+.clickable-header,
+.clickable-row,
+[onclick],
+button:not(:disabled),
+a,
+label,
+select,
+th[onclick],
+tr[onclick] {
+  cursor: pointer !important;
+}
+
+/* Ensure clickable table headers show pointer cursor */
+th.cursor-pointer {
+  cursor: pointer !important;
+}
+
+/* Ensure clickable table rows show pointer cursor */
+tr.cursor-pointer {
+  cursor: pointer !important;
+}
+
 /* ============================================================
    Animations
    ============================================================ */

@@ -1,10 +1,14 @@
 import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
+const RAW_IMAGE_SHA = process.env.NEXT_PUBLIC_APP_IMAGE_SHA || process.env.SOURCE_COMMIT || null;
+
 export const APP_CONFIG = {
-  name: "9Router Proxy",
+  name: "Simata AI",
   description: "AI Infrastructure Management",
   version: pkg.version,
+  imageSha: RAW_IMAGE_SHA ? String(RAW_IMAGE_SHA).slice(0, 7) : null,
+  isDockerImage: !!RAW_IMAGE_SHA,
 };
 
 // GitHub configuration

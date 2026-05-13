@@ -87,7 +87,7 @@ function RouterNode({ data }) {
       <Handle type="source" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
       <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
-      <span className="text-sm font-bold text-primary">9Router</span>
+      <span className="text-sm font-bold text-primary">Simata Router</span>
       {data.activeCount > 0 && (
         <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary text-white text-xs font-bold">
           {data.activeCount}

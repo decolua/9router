@@ -416,7 +416,7 @@ export default function ProxyPoolsPage() {
       let failed = 0;
 
       for (const entry of parsedEntries) {
-        const dedupeKey = `${entry.proxyUrl}|||`;
+        const dedupeKey = `${entry.proxyUrl}|||${entry.noProxy || ""}`;
         if (existingKeys.has(dedupeKey)) {
           skipped += 1;
           continue;

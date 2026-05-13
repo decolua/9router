@@ -138,7 +138,8 @@ async function safeRestartTunnel(reason) {
   // Alive check: process up + URL responds → skip
   if (isCloudflaredRunning()) {
     const state = loadState();
-    const publicUrl = state?.shortId ? `https://r${state.shortId}.9router.com` : null;
+    const publicDomain = process.env.PUBLIC_DOMAIN || process.env.TUNNEL_PUBLIC_DOMAIN || "9router.com";
+    const publicUrl = state?.shortId ? `https://r${state.shortId}.${publicDomain}` : null;
     if (publicUrl && await probeUrlAlive(publicUrl)) return;
   }
 

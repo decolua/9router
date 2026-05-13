@@ -138,7 +138,7 @@ Main flow modules:
 Primary state DB:
 
 - `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
+- file: `${DATA_DIR}/db/data.sqlite` (or `~/.9router/db/data.sqlite` when `DATA_DIR` is unset)
 - entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
 
 Usage DB:
@@ -377,7 +377,7 @@ erDiagram
 
 Physical storage files:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
+- main state: `${DATA_DIR}/db/data.sqlite` (or `~/.9router/db/data.sqlite`)
 - usage stats: `~/.9router/usage.json`
 - request log lines: `~/.9router/log.txt`
 - optional translator/request debug sessions: `<repo>/logs/...`

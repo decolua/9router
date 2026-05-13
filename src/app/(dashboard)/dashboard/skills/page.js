@@ -1,32 +1,42 @@
-"use client";
-
 import { Card, Badge } from "@/shared/components";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import CopyButton from "@/shared/components/CopyButton.client";
 import {
   SKILLS,
   SKILLS_REPO_URL,
+  SKILLS_BLOB_BASE,
   getSkillRawUrl,
-  getSkillBlobUrl,
 } from "@/shared/constants/skills";
 
-function CopyButton({ value, label = "Copy link" }) {
-  const { copied, copy } = useCopyToClipboard(2000);
-  return (
-    <button
-      onClick={() => copy(value)}
-      className="px-2 py-1 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1"
-      title={value}
-    >
-      <span className="material-symbols-outlined text-[12px]">
-        {copied ? "check" : "content_copy"}
-      </span>
-      {copied ? "Copied!" : label}
-    </button>
-  );
+const REPO = SKILLS_REPO_URL.replace("https://github.com/", "");
+const blobPath = SKILLS_BLOB_BASE.replace(`https://github.com/${REPO}/blob/`, "");
+const [BRANCH, SKILL_PATH] = blobPath.split("/");
+const GITHUB_API_BRANCH = `https://api.github.com/repos/${REPO}/git/ref/heads/${BRANCH}`;
+
+async function getGithackData() {
+  try {
+    const res = await fetch(GITHUB_API_BRANCH, { next: { revalidate: 3600 } });
+    if (!res.ok) throw new Error("Failed to fetch SHA");
+    
+    const data = await res.json();
+    const sha = data.object.sha;
+    const baseUrl = `https://rawcdn.githack.com/${REPO}/${sha}/${SKILL_PATH}`;
+    
+    const entrySkill = SKILLS.find((s) => s.isEntry);
+    const topSkillUrl = entrySkill ? `${baseUrl}/${entrySkill.id}/SKILL.md` : "";
+
+    return { baseUrl, topSkillUrl };
+  } catch {
+    const baseUrl = `https://rawcdn.githack.com/${REPO}/${BRANCH}/${SKILL_PATH}`;
+    const entrySkill = SKILLS.find((s) => s.isEntry);
+    const topSkillUrl = entrySkill ? getSkillRawUrl(entrySkill.id) : "";
+
+    return { baseUrl, topSkillUrl };
+  }
 }
 
-function SkillRow({ skill }) {
-  const url = getSkillRawUrl(skill.id);
+function SkillRow({ skill, githackBaseUrl }) {
+  const githackUrl = `${githackBaseUrl}/${skill.id}/SKILL.md`;
+
   return (
     <div
       className={`flex items-start gap-3 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors ${
@@ -57,34 +67,41 @@ function SkillRow({ skill }) {
         </div>
         <p className="text-xs text-text-muted mt-0.5">{skill.description}</p>
         <a
-          href={getSkillBlobUrl(skill.id)}
+          href={githackUrl}
           target="_blank"
           rel="noreferrer"
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
         >
-          {url}
+          {githackUrl}
           <span className="material-symbols-outlined text-[12px]">open_in_new</span>
         </a>
       </div>
 
-      <CopyButton value={url} />
+      <CopyButton value={githackUrl} />
     </div>
   );
 }
 
-export default function SkillsPage() {
+export default async function SkillsPage() {
+  const { baseUrl: githackBaseUrl, topSkillUrl } = await getGithackData();
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
-        <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
-        <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
-          Read this skill and use it: {getSkillRawUrl("9router")}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
+            <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main break-all">
+              Read this skill and use it: {topSkillUrl}
+            </div>
+          </div>
+          <CopyButton value={topSkillUrl} label="Copy" />
         </div>
       </Card>
 
       <div className="space-y-2">
         {SKILLS.map((skill) => (
-          <SkillRow key={skill.id} skill={skill} />
+          <SkillRow key={skill.id} skill={skill} githackBaseUrl={githackBaseUrl} />
         ))}
       </div>
 
@@ -97,7 +114,7 @@ export default function SkillsPage() {
             </p>
           </div>
           <a
-            href={`${SKILLS_REPO_URL}/tree/master/skills`}
+            href={`${SKILLS_REPO_URL}/tree/${BRANCH}/${SKILL_PATH}`}
             target="_blank"
             rel="noreferrer"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
