@@ -31,7 +31,7 @@
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Connect iFlow
 ```
 
@@ -91,7 +91,7 @@ Model: if/kimi-k2-thinking
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Connect Qwen
 ```
 
@@ -144,7 +144,7 @@ Model: qw/qwen3-coder-plus
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Connect Kiro
 ```
 
@@ -376,13 +376,13 @@ Models:
 1億 × $20/1M = 月$2,000
 ```
 
-**オプション2: 9Router無料階層のみ**
+**オプション2: ebRouter無料階層のみ**
 ```
 無料階層経由で1億 = 月$0
 節約: 月$2,000 (100%)
 ```
 
-**オプション3: 9Router完全戦略**
+**オプション3: ebRouter完全戦略**
 ```
 Gemini CLI経由で6000万 (無料): $0
 Claude Code経由で3000万 (サブスクリプション): $0追加

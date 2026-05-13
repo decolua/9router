@@ -1,13 +1,13 @@
 # Tích hợp Continue VSCode Extension
 
-Tích hợp 9Router với extension Continue để mang trợ lý AI trực tiếp vào Visual Studio Code.
+Tích hợp ebRouter với extension Continue để mang trợ lý AI trực tiếp vào Visual Studio Code.
 
 ## Yêu cầu
 
 - Visual Studio Code đã cài đặt
 - Extension Continue đã cài đặt từ VSCode marketplace
-- 9Router API key từ [dashboard](https://9router.com/dashboard)
-- 9Router đang chạy (cục bộ hoặc cloud)
+- ebRouter API key từ [dashboard](https://ebrouter.example.com/dashboard)
+- ebRouter đang chạy (cục bộ hoặc cloud)
 
 ## Các bước Cấu hình
 
@@ -18,7 +18,7 @@ Tích hợp 9Router với extension Continue để mang trợ lý AI trực ti�
 3. Gõ "Continue: Open Config" và chọn
 4. Mở `~/.continue/config.json`
 
-### 2. Thêm Cấu hình Model 9Router
+### 2. Thêm Cấu hình Model ebRouter
 
 Thêm cấu hình sau vào `config.json`:
 
@@ -27,7 +27,7 @@ Thêm cấu hình sau vào `config.json`:
 {
   "models": [
     {
-      "title": "9Router - Claude Opus",
+      "title": "ebRouter - Claude Opus",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
@@ -42,28 +42,28 @@ Thêm cấu hình sau vào `config.json`:
 {
   "models": [
     {
-      "title": "9Router - Claude Opus (Best)",
+      "title": "ebRouter - Claude Opus (Best)",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Sonnet (Balanced)",
+      "title": "ebRouter - Claude Sonnet (Balanced)",
       "provider": "openai",
       "model": "cc/claude-sonnet-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - DeepSeek Chat (Code)",
+      "title": "ebRouter - DeepSeek Chat (Code)",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Haiku (Fast)",
+      "title": "ebRouter - Claude Haiku (Fast)",
       "provider": "openai",
       "model": "cc/claude-haiku-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
@@ -73,10 +73,10 @@ Thêm cấu hình sau vào `config.json`:
 }
 ```
 
-**Cho Cloud 9Router:**
+**Cho Cloud ebRouter:**
 Thay `apiBase` bằng:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://ebrouter.example.com/v1"
 ```
 
 ### 3. Lưu và Reload
@@ -89,7 +89,7 @@ Thay `apiBase` bằng:
 
 1. Mở sidebar Continue (click icon Continue trong panel trái)
 2. Click dropdown chọn model ở trên cùng
-3. Chọn model 9Router ưa thích
+3. Chọn model ebRouter ưa thích
 
 ## Model có sẵn
 
@@ -139,7 +139,7 @@ Thêm system prompt tùy chỉnh cho hành vi cụ thể:
 {
   "models": [
     {
-      "title": "9Router - Code Expert",
+      "title": "ebRouter - Code Expert",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key",
@@ -158,7 +158,7 @@ Thêm system prompt tùy chỉnh cho hành vi cụ thể:
 {
   "models": [
     {
-      "title": "9Router - Creative Writer",
+      "title": "ebRouter - Creative Writer",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key",
@@ -204,13 +204,13 @@ Cấu hình context Continue gửi đến model:
 ## Troubleshooting
 
 ### Model không phản hồi
-- Kiểm tra 9Router đang chạy: `curl http://localhost:20128/health`
+- Kiểm tra ebRouter đang chạy: `curl http://localhost:20128/health`
 - Xác minh API key trong config.json
 - Kiểm tra VSCode Developer Console để xem lỗi: `Help` → `Toggle Developer Tools`
 
 ### Chọn sai Model
 - Click dropdown model trong sidebar Continue
-- Chọn đúng model 9Router
+- Chọn đúng model ebRouter
 - Tên model phải khớp chính xác (case-sensitive)
 
 ### Cấu hình không Load
@@ -221,7 +221,7 @@ Cấu hình context Continue gửi đến model:
 ### Hiệu năng Chậm
 - Chuyển sang model nhanh hơn (haiku, flash)
 - Giảm context size trong contextProviders
-- Kiểm tra độ trễ network đến 9Router
+- Kiểm tra độ trễ network đến ebRouter
 
 ## Best Practices
 

@@ -16,14 +16,14 @@ export default function GetStarted() {
           <div className="flex-1">
             <h2 className="text-3xl md:text-4xl font-bold mb-6">Get Started in 30 Seconds</h2>
             <p className="text-gray-400 text-lg mb-8">
-              Install 9Router, configure your providers via web dashboard, and start routing AI requests.
+              Install ebRouter, configure your providers via web dashboard, and start routing AI requests.
             </p>
             
             <div className="flex flex-col gap-6">
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">1</div>
                 <div>
-                  <h4 className="font-bold text-lg">Install 9Router</h4>
+                  <h4 className="font-bold text-lg">Install ebRouter</h4>
                   <p className="text-sm text-gray-500 mt-1">Run npx command to start the server instantly</p>
                 </div>
               </div>
@@ -61,17 +61,17 @@ export default function GetStarted() {
               <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
                 <div 
                   className="flex items-center gap-2 mb-4 group cursor-pointer"
-                  onClick={() => handleCopy("npx 9router")}
+                  onClick={() => handleCopy("npx ebrouter")}
                 >
                   <span className="text-green-400">$</span>
-                  <span className="text-white">npx 9router</span>
+                  <span className="text-white">npx ebrouter</span>
                   <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
                     {copied === "landing" ? "✓ Copied" : "Copy"}
                   </span>
                 </div>
                 
                 <div className="text-gray-400 mb-6">
-                  <span className="text-[#f97815]">&gt;</span> Starting 9Router...<br/>
+                  <span className="text-[#f97815]">&gt;</span> Starting ebRouter...<br/>
                   <span className="text-[#f97815]">&gt;</span> Server running on <span className="text-blue-400">http://localhost:20128</span><br/>
                   <span className="text-[#f97815]">&gt;</span> Dashboard: <span className="text-blue-400">http://localhost:20128/dashboard</span><br/>
                   <span className="text-green-400">&gt;</span> Ready to route! ✓

@@ -9,7 +9,7 @@ import os from "os";
 
 const execAsync = promisify(exec);
 
-const PROVIDER_NAME = "9router";
+const PROVIDER_NAME = "ebrouter";
 
 const getDeepSeekDir = () => path.join(os.homedir(), ".deepseek");
 const getDeepSeekConfigPath = () => path.join(getDeepSeekDir(), "config.toml");
@@ -132,7 +132,7 @@ export async function POST(request) {
         const dir = getDeepSeekDir();
         await fs.mkdir(dir, { recursive: true });
 
-        const newConfig = build9RouterConfig(baseUrl, apiKey || "sk_9router", model);
+        const newConfig = build9RouterConfig(baseUrl, apiKey || "sk_ebrouter", model);
         await fs.writeFile(getDeepSeekConfigPath(), newConfig);
 
         return NextResponse.json({

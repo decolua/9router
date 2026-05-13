@@ -2,7 +2,7 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router Proxy",
+  name: "ebRouter Proxy",
   description: "AI Infrastructure Management",
   version: pkg.version,
 };
@@ -15,9 +15,9 @@ export const GITHUB_CONFIG = {
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
-  installCmdLatest: "npm i -g 9router@latest --prefer-online",
+  npmPackageName: "ebrouter",
+  installCmd: "npm i -g ebrouter",
+  installCmdLatest: "npm i -g ebrouter@latest --prefer-online",
   shutdownCountdownSec: 3,
   exitDelayMs: 500,
   statusPort: 20129,

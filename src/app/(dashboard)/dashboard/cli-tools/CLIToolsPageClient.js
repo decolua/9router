@@ -45,6 +45,10 @@ export default function CLIToolsPageClient({ machineId }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-1 sm:px-0">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold text-text-main sm:text-2xl">CLI Tools</h1>
+        <p className="text-sm text-text-muted">Configure local coding tools to use your ebRouter providers.</p>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {regularTools.map(([toolId, tool]) => (
           <ToolSummaryCard key={toolId} toolId={toolId} tool={tool} status={toolStatuses[toolId]} />

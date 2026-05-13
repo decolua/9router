@@ -5,7 +5,7 @@ import rehypeSlug from "rehype-slug";
 import { BookOpen, Rocket, Terminal, Monitor, FolderOpen, HelpCircle, MessageCircle, Mouse, Folder, Lock, Zap, Smartphone, Lightbulb, AlertTriangle, CheckCircle, ArrowRight, Layers, Plug, Cloud, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server, PartyPopper, Siren, Link2, Target, Heart, Check, Home, Package, Wrench, OctagonX, Search, Globe, Container } from "lucide-react";
 
 const PAGE_ICONS = {
-  "Welcome to 9Router": BookOpen,
+  "Welcome to ebRouter": BookOpen,
   "Introduction": BookOpen,
   "Getting Started": Rocket,
   "Quick Start": Rocket,

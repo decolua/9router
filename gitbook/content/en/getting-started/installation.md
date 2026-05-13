@@ -1,6 +1,6 @@
 # Installation
 
-Detailed installation guide for 9Router with troubleshooting tips.
+Detailed installation guide for ebRouter with troubleshooting tips.
 
 ---
 
@@ -31,37 +31,37 @@ npm --version
 
 ### Method 1: Global Installation (Recommended)
 
-Install 9Router globally to use from anywhere:
+Install ebRouter globally to use from anywhere:
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
-**Start 9Router:**
+**Start ebRouter:**
 
 ```bash
-9router
+ebrouter
 ```
 
 **Benefits:**
 - ✅ Run from any directory
-- ✅ Simple command: `9router`
-- ✅ Auto-updates with `npm update -g 9router`
+- ✅ Simple command: `ebrouter`
+- ✅ Auto-updates with `npm update -g ebrouter`
 
 ### Method 2: Local Installation
 
 Install in a specific project:
 
 ```bash
-mkdir my-9router
-cd my-9router
-npm install 9router
+mkdir my-ebrouter
+cd my-ebrouter
+npm install ebrouter
 ```
 
-**Start 9Router:**
+**Start ebRouter:**
 
 ```bash
-npx 9router
+npx ebrouter
 ```
 
 **Benefits:**
@@ -74,8 +74,8 @@ npx 9router
 Clone and build from GitHub:
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install
 npm run build
 npm start
@@ -93,7 +93,7 @@ npm start
 ### Start the Server
 
 ```bash
-9router
+ebrouter
 ```
 
 **What happens:**
@@ -219,7 +219,7 @@ export ENABLE_REQUEST_LOGS="false"
 
 ```bash
 export DATA_DIR="/custom/path"
-9router
+ebrouter
 ```
 
 ### Port Configuration
@@ -230,13 +230,13 @@ export DATA_DIR="/custom/path"
 
 ```bash
 export PORT="3000"
-9router
+ebrouter
 ```
 
 **Or use command line:**
 
 ```bash
-9router --port 3000
+ebrouter --port 3000
 ```
 
 ---
@@ -263,14 +263,14 @@ kill -9 <PID>
 **Solution 2: Use different port**
 
 ```bash
-9router --port 3000
+ebrouter --port 3000
 ```
 
 ### Permission Denied
 
 **Error:**
 ```
-Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
+Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/ebrouter'
 ```
 
 **Solution: Use sudo (not recommended) or fix npm permissions**
@@ -283,7 +283,7 @@ echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 
 # Then install again
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 ### Node.js Version Too Old
@@ -345,23 +345,23 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### High Memory Usage
 
-**Issue:** 9Router using too much RAM
+**Issue:** ebRouter using too much RAM
 
 **Solution: Restart server**
 
 ```bash
 # Stop
-pkill -f 9router
+pkill -f ebrouter
 
 # Start
-9router
+ebrouter
 ```
 
 **Or use PM2 for auto-restart:**
 
 ```bash
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start ebrouter --name ebrouter
 pm2 save
 ```
 
@@ -372,8 +372,8 @@ pm2 save
 ### Local Development
 
 ```bash
-npm install -g 9router
-9router
+npm install -g ebrouter
+ebrouter
 ```
 
 **Use case:** Personal coding, testing
@@ -382,7 +382,7 @@ npm install -g 9router
 
 ```bash
 # Install
-npm install -g 9router
+npm install -g ebrouter
 
 # Configure
 export JWT_SECRET="your-secure-secret"
@@ -391,7 +391,7 @@ export NODE_ENV="production"
 
 # Start with PM2
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start ebrouter --name ebrouter
 pm2 save
 pm2 startup
 ```
@@ -401,15 +401,15 @@ pm2 startup
 ### Docker
 
 ```bash
-docker pull 9router/9router:latest
+docker pull ebrouter/ebrouter:latest
 
 docker run -d \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret" \
   -e INITIAL_PASSWORD="your-password" \
   -v 9router-data:/root/.9router \
-  --name 9router \
-  9router/9router:latest
+  --name ebrouter \
+  ebrouter/ebrouter:latest
 ```
 
 **Use case:** Containerized deployment, Kubernetes
@@ -444,7 +444,7 @@ server {
 ### Remove Global Installation
 
 ```bash
-npm uninstall -g 9router
+npm uninstall -g ebrouter
 ```
 
 ### Remove Data Directory
@@ -458,7 +458,7 @@ rm -rf ~/.9router
 ```bash
 # Remove environment variables from shell config
 nano ~/.bashrc  # or ~/.zshrc
-# Delete 9router-related exports
+# Delete ebrouter-related exports
 ```
 
 ---
@@ -473,6 +473,6 @@ nano ~/.bashrc  # or ~/.zshrc
 
 ## Need Help?
 
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Website**: [ebrouter.example.com](https://ebrouter.example.com)
+- **GitHub**: [github.com/YOUR_ORG/ebRouter](https://github.com/YOUR_ORG/ebRouter)
+- **Issues**: [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)

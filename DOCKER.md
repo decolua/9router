@@ -1,6 +1,6 @@
 # Docker
 
-Run 9Router in a container. Published image: [`decolua/9router`](https://hub.docker.com/r/decolua/9router) — multi-platform `linux/amd64` + `linux/arm64`.
+Run ebRouter in a container. Build from the included `Dockerfile` (multi-platform `linux/amd64` + `linux/arm64` when published).
 
 ---
 
@@ -13,8 +13,8 @@ docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
-  decolua/9router:latest
+  --name ebrouter \
+  ebrouter:latest
 ```
 
 App listens on port `20128`. Open: http://localhost:20128
@@ -22,10 +22,10 @@ App listens on port `20128`. Open: http://localhost:20128
 ## Manage container
 
 ```bash
-docker logs -f 9router        # view logs
-docker stop 9router           # stop
-docker start 9router          # start again
-docker rm -f 9router          # remove
+docker logs -f ebrouter        # view logs
+docker stop ebrouter           # stop
+docker start ebrouter          # start again
+docker rm -f ebrouter          # remove
 ```
 
 ## Data persistence
@@ -60,15 +60,15 @@ docker run -d \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
   -e DEBUG=true \
-  --name 9router \
-  decolua/9router:latest
+  --name ebrouter \
+  ebrouter:latest
 ```
 
 ## Update to latest
 
 ```bash
-docker pull decolua/9router:latest
-docker rm -f 9router
+docker pull ebrouter:latest
+docker rm -f ebrouter
 # re-run the quick start command
 ```
 
@@ -79,19 +79,17 @@ docker rm -f 9router
 ## Build image locally (test)
 
 ```bash
-cd app && docker build -t 9router .
+docker build -t ebrouter .
 
 docker run --rm -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  9router
+  ebrouter
 ```
 
 ## Publish (automatic via CI)
 
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/decolua/9router:v{version}` + `:latest`
-- `decolua/9router:v{version}` + `:latest`
+Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes images.
 
 ```bash
 # Use scripts/release.js (recommended)

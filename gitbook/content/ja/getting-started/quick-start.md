@@ -1,6 +1,6 @@
 # はじめに
 
-9Routerを5分で起動し、AIリクエストをインテリジェントにルーティングし始めましょう。
+ebRouterを5分で起動し、AIリクエストをインテリジェントにルーティングし始めましょう。
 
 ---
 
@@ -9,7 +9,7 @@
 ### 1. インストール
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 **要件:** Node.js 20+ ([インストール詳細](getting-started/installation.md))
@@ -17,7 +17,7 @@ npm install -g 9router
 ### 2. 起動
 
 ```bash
-9router
+ebrouter
 ```
 
 🎉 **ダッシュボードが自動的に開きます** (`http://localhost:20128`)
@@ -43,7 +43,7 @@ Dashboard → Providers → Connect [Provider]
 **例: Claude Code**
 1. 「Connect Claude Code」をクリック
 2. Claudeアカウントでログイン
-3. 9Routerを認可
+3. ebRouterを認可
 4. ✅ 完了! モデルを使用: `cc/claude-opus-4-5-20251101`
 
 #### オプションB: APIキー(低価格プロバイダー)
@@ -83,7 +83,7 @@ Dashboard → Providers → Connect [Free Provider]
 
 ## 4. CLIツールで使用
 
-コーディングツールを9Routerに向けます:
+コーディングツールをebRouterに向けます:
 
 ### Cursor IDE
 
@@ -101,7 +101,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-ebrouter-api-key"
 }
 ```
 
@@ -118,7 +118,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-ebrouter-api-key"
 
 codex "your prompt"
 ```
@@ -242,6 +242,6 @@ CLIで使用: premium-coding
 
 ## ヘルプが必要?
 
-- **ウェブサイト**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **ウェブサイト**: [ebrouter.example.com](https://ebrouter.example.com)
+- **GitHub**: [github.com/YOUR_ORG/ebRouter](https://github.com/YOUR_ORG/ebRouter)
+- **Issues**: [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)

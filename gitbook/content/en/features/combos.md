@@ -6,7 +6,7 @@ Create custom model combinations with automatic fallback. Combos let you define 
 
 ## What Are Combos?
 
-Combos are **custom fallback chains** that you create in the dashboard. Instead of using a single model, you define a sequence of models that 9Router tries in order.
+Combos are **custom fallback chains** that you create in the dashboard. Instead of using a single model, you define a sequence of models that ebRouter tries in order.
 
 **Example:**
 ```
@@ -22,7 +22,7 @@ Models:
 Model: premium-coding
 ```
 
-9Router automatically tries each model in sequence until one succeeds.
+ebRouter automatically tries each model in sequence until one succeeds.
 
 ---
 
@@ -354,7 +354,7 @@ Edit `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key",
+  "anthropic_api_key": "your-ebrouter-api-key",
   "model": "budget-combo"
 }
 ```
@@ -363,7 +363,7 @@ Edit `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-ebrouter-api-key"
 
 codex --model quality-first "your prompt"
 ```
@@ -480,7 +480,7 @@ Dashboard → Combos → Edit → Budget:
   Monthly limit: $50
 ```
 
-When limit reached, 9Router skips paid models and uses free tier only.
+When limit reached, ebRouter skips paid models and uses free tier only.
 
 ### Enable/Disable Models in Combo
 

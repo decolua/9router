@@ -107,7 +107,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/mitm"))
     return {
       title: "MITM Proxy",
-      description: "Intercept CLI tool traffic and route through 9Router",
+      description: "Intercept CLI tool traffic and route through ebRouter",
       icon: "security",
       breadcrumbs: [],
     };
@@ -128,7 +128,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/skills"))
     return {
       title: "Agent Skills",
-      description: "Copy a link and paste to your AI to use 9Router — no install needed",
+      description: "Copy a link and paste to your AI to use ebRouter — no install needed",
       icon: "extension",
       breadcrumbs: [],
     };

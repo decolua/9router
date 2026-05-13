@@ -6,7 +6,7 @@ import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
-const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+const RESET_HINT = "Forgot password? Reset to default via ebRouter CLI → Settings → Reset Password to Default.";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();

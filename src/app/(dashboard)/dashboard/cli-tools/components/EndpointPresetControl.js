@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "9router.cliToolEndpointPresets";
+const STORAGE_KEY = "ebrouter.cliToolEndpointPresets";
 
 function maskApiKey(apiKey) {
   if (!apiKey) return "No API key";

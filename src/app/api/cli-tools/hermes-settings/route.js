@@ -9,7 +9,7 @@ import os from "os";
 
 const execAsync = promisify(exec);
 
-const PROVIDER_NAME = "9router";
+const PROVIDER_NAME = "ebrouter";
 const API_KEY_ENV = "OPENAI_API_KEY";
 
 const getHermesDir = () => path.join(os.homedir(), ".hermes");

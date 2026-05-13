@@ -6,7 +6,7 @@
 
 ## 什么是组合?
 
-组合是你在仪表盘中创建的 **自定义回退链**。它不是单一模型,而是定义一组顺序模型,由 9Router 依次尝试。
+组合是你在仪表盘中创建的 **自定义回退链**。它不是单一模型,而是定义一组顺序模型,由 ebRouter 依次尝试。
 
 **示例:**
 ```
@@ -22,7 +22,7 @@
 Model: premium-coding
 ```
 
-9Router 会按顺序自动尝试每个模型,直到成功为止。
+ebRouter 会按顺序自动尝试每个模型,直到成功为止。
 
 ---
 
@@ -354,7 +354,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key",
+  "anthropic_api_key": "your-ebrouter-api-key",
   "model": "budget-combo"
 }
 ```
@@ -363,7 +363,7 @@ Settings → Models → Advanced:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-ebrouter-api-key"
 
 codex --model quality-first "your prompt"
 ```
@@ -480,7 +480,7 @@ quality-first: 生产代码
   每月上限: $50
 ```
 
-达到上限时,9Router 跳过付费模型,仅使用免费层。
+达到上限时,ebRouter 跳过付费模型,仅使用免费层。
 
 ### 启用/禁用组合中的模型
 

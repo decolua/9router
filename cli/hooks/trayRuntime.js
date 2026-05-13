@@ -34,9 +34,9 @@ function cleanupLegacySystray({ silent = false } = {}) {
     if (fs.existsSync(dir)) {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
-        if (!silent) console.log(`[9router][runtime] removed legacy systray: ${dir}`);
+        if (!silent) console.log(`[ebrouter][runtime] removed legacy systray: ${dir}`);
       } catch (e) {
-        if (!silent) console.warn(`[9router][runtime] failed to remove ${dir}: ${e.message}`);
+        if (!silent) console.warn(`[ebrouter][runtime] failed to remove ${dir}: ${e.message}`);
       }
     }
   }
@@ -53,7 +53,7 @@ function chmodSystrayBin({ silent = false } = {}) {
   try {
     fs.chmodSync(binPath, 0o755);
   } catch (e) {
-    if (!silent) console.warn(`[9router][runtime] chmod tray bin failed: ${e.message}`);
+    if (!silent) console.warn(`[ebrouter][runtime] chmod tray bin failed: ${e.message}`);
   }
 }
 
@@ -63,7 +63,7 @@ function ensureRuntimeDir() {
   const pkgPath = path.join(dir, "package.json");
   if (!fs.existsSync(pkgPath)) {
     fs.writeFileSync(pkgPath, JSON.stringify({
-      name: "9router-runtime",
+      name: "ebrouter-runtime",
       version: "1.0.0",
       private: true
     }, null, 2));

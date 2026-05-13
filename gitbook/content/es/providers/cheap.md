@@ -45,10 +45,10 @@ Dashboard → API Keys → Create New
 → Copia la API key (comienza con "zhipu-")
 ```
 
-**Paso 3: Agregar a 9Router**
+**Paso 3: Agregar a ebRouter**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: glm
@@ -117,10 +117,10 @@ Dashboard → API Management → Create Key
 → Copia la API key
 ```
 
-**Paso 3: Agregar a 9Router**
+**Paso 3: Agregar a ebRouter**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: minimax
@@ -190,10 +190,10 @@ Dashboard → API Keys → Create New
 → Copia la API key
 ```
 
-**Paso 3: Agregar a 9Router**
+**Paso 3: Agregar a ebRouter**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: kimi
@@ -255,7 +255,7 @@ Total: 10M tokens = $9 plano
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [desde el dashboard de 9router]
+  OpenAI API Key: [desde el dashboard de ebrouter]
   Model: glm/glm-4.7
 ```
 

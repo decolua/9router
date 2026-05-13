@@ -256,7 +256,7 @@
 # v0.4.18 (2026-05-05)
 
 ## Features
-- Speech-to-Text: full pipeline with sttCore + /v1/audio/transcriptions; configs for OpenAI, Gemini, Groq, Deepgram, AssemblyAI, HuggingFace, NVIDIA Parakeet; new 9router-stt skill
+- Speech-to-Text: full pipeline with sttCore + /v1/audio/transcriptions; configs for OpenAI, Gemini, Groq, Deepgram, AssemblyAI, HuggingFace, NVIDIA Parakeet; new ebrouter-stt skill
 - Gemini TTS: dedicated provider with 30 prebuilt voices
 - Usage quotas: GLM (intl/cn) and MiniMax (intl/cn) fetchers; Gemini CLI usage via retrieveUserQuota per-model buckets
 - Disabled models: lowdb-backed disabledModelsDb + /api/models/disabled route
@@ -270,7 +270,7 @@
 - Reorder hermes provider, drop qwen STT kind
 
 ## Fixes
-- Fix skills metadata/text in 9router, chat, embeddings, image, tts, web-fetch, web-search SKILL.md and skills page
+- Fix skills metadata/text in ebrouter, chat, embeddings, image, tts, web-fetch, web-search SKILL.md and skills page
 
 # v0.4.16 (2026-05-04)
 

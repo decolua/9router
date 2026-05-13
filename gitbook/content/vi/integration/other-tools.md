@@ -1,10 +1,10 @@
 # Tích hợp các Công cụ khác
 
-9Router tương thích với mọi công cụ hỗ trợ format API OpenAI. Hướng dẫn này bao gồm pattern tích hợp tổng quát cho nhiều công cụ và ứng dụng tùy chỉnh.
+ebRouter tương thích với mọi công cụ hỗ trợ format API OpenAI. Hướng dẫn này bao gồm pattern tích hợp tổng quát cho nhiều công cụ và ứng dụng tùy chỉnh.
 
 ## Tổng quan
 
-9Router cung cấp API endpoint tương thích OpenAI hoạt động với:
+ebRouter cung cấp API endpoint tương thích OpenAI hoạt động với:
 - Script và ứng dụng tùy chỉnh
 - API client và công cụ test
 - Công cụ CLI và utility
@@ -13,20 +13,20 @@
 
 ## Pattern Setup Tổng quát
 
-Mọi công cụ tương thích OpenAI có thể kết nối đến 9Router bằng các cài đặt sau:
+Mọi công cụ tương thích OpenAI có thể kết nối đến ebRouter bằng các cài đặt sau:
 
-**9Router cục bộ:**
+**ebRouter cục bộ:**
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
-Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
+Model: any ebRouter model (cc/*, cx/*, glm/*, etc.)
 ```
 
-**9Router cloud:**
+**ebRouter cloud:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://ebrouter.example.com/v1
 API Key: your-api-key-from-dashboard
-Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
+Model: any ebRouter model (cc/*, cx/*, glm/*, etc.)
 ```
 
 ## Model có sẵn
@@ -318,9 +318,9 @@ def chat_with_retry(prompt, max_retries=3):
 
 ### Vấn đề Connection
 
-**Vấn đề:** Không kết nối được đến 9Router
+**Vấn đề:** Không kết nối được đến ebRouter
 ```bash
-# Check if 9Router is running
+# Check if ebRouter is running
 curl http://localhost:20128/health
 
 # Expected response:
@@ -328,7 +328,7 @@ curl http://localhost:20128/health
 ```
 
 **Giải pháp:**
-- Xác minh 9Router đang chạy
+- Xác minh ebRouter đang chạy
 - Kiểm tra port 20128 không bị chặn
 - Đảm bảo base URL đúng (bao gồm `/v1`)
 
@@ -366,7 +366,7 @@ Error: Request timed out after 30s
 **Giải pháp:**
 - Tăng timeout trong cấu hình client
 - Dùng model nhanh hơn cho task nhạy cảm về thời gian
-- Kiểm tra kết nối network đến 9Router
+- Kiểm tra kết nối network đến ebRouter
 
 ### Rate Limiting
 

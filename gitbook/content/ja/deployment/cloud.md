@@ -1,6 +1,6 @@
 # ☁️ クラウドデプロイメント
 
-リモートアクセスと本番利用のため、VPSまたはDockerに9Routerをデプロイ。
+リモートアクセスと本番利用のため、VPSまたはDockerにebRouterをデプロイ。
 
 ---
 
@@ -16,8 +16,8 @@
 ### ステップ1: リポジトリをクローン
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 ```
 
 ### ステップ2: 依存関係をインストール
@@ -74,8 +74,8 @@ PM2はアプリケーションを稼働させ続け、クラッシュ時に再�
 # PM2をグローバルにインストール
 npm install -g pm2
 
-# PM2で9Routerを起動
-pm2 start npm --name 9router -- start
+# PM2でebRouterを起動
+pm2 start npm --name ebrouter -- start
 
 # PM2設定を保存
 pm2 save
@@ -89,13 +89,13 @@ pm2 startup
 
 ```bash
 # ログを表示
-pm2 logs 9router
+pm2 logs ebrouter
 
 # アプリケーションを再起動
-pm2 restart 9router
+pm2 restart ebrouter
 
 # アプリケーションを停止
-pm2 stop 9router
+pm2 stop ebrouter
 
 # ステータスを表示
 pm2 status
@@ -147,17 +147,17 @@ CMD ["npm", "run", "start"]
 
 ```bash
 # イメージをビルド
-docker build -t 9router .
+docker build -t ebrouter .
 
 # コンテナを実行
 docker run -d \
-  --name 9router \
+  --name ebrouter \
   -p 3000:3000 \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret-change-this" \
   -e INITIAL_PASSWORD="your-secure-password" \
   -v 9router-data:/app/data \
-  9router
+  ebrouter
 ```
 
 ### オプション2: Docker Compose
@@ -168,9 +168,9 @@ docker run -d \
 version: '3.8'
 
 services:
-  9router:
+  ebrouter:
     build: .
-    container_name: 9router
+    container_name: ebrouter
     ports:
       - "3000:3000"
       - "20128:20128"
@@ -223,7 +223,7 @@ sudo apt install nginx
 
 ### ステップ2: Nginxを設定
 
-`/etc/nginx/sites-available/9router` を作成:
+`/etc/nginx/sites-available/ebrouter` を作成:
 
 ```nginx
 server {
@@ -247,7 +247,7 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    # Proxy to 9Router
+    # Proxy to ebRouter
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -284,7 +284,7 @@ server {
 
 ```bash
 # シンボリックリンクを作成
-sudo ln -s /etc/nginx/sites-available/9router /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/ebrouter /etc/nginx/sites-enabled/
 
 # 設定をテスト
 sudo nginx -t
@@ -333,7 +333,7 @@ sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
-# リバースプロキシを使用しない場合、9Routerポートを許可
+# リバースプロキシを使用しない場合、ebRouterポートを許可
 sudo ufw allow 3000/tcp
 sudo ufw allow 20128/tcp
 
@@ -363,22 +363,22 @@ ssh -L 3000:localhost:3000 user@your-server.com
 # システムパッケージを更新
 sudo apt update && sudo apt upgrade -y
 
-# 9Routerを更新
-cd /path/to/9router/app
+# ebRouterを更新
+cd /path/to/ebrouter/app
 git pull
 npm install
 npm run build
-pm2 restart 9router
+pm2 restart ebrouter
 ```
 
 ### 5. バックアップ戦略
 
 ```bash
 # データディレクトリをバックアップ
-tar -czf 9router-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
+tar -czf ebrouter-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
 
 # 自動毎日バックアップ (crontabに追加)
-0 2 * * * tar -czf /backups/9router-$(date +\%Y\%m\%d).tar.gz /var/lib/9router
+0 2 * * * tar -czf /backups/ebrouter-$(date +\%Y\%m\%d).tar.gz /var/lib/9router
 ```
 
 ---
@@ -392,7 +392,7 @@ tar -czf 9router-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
 pm2 status
 
 # ログを表示
-pm2 logs 9router --lines 100
+pm2 logs ebrouter --lines 100
 
 # リソースをモニタリング
 pm2 monit
@@ -429,20 +429,20 @@ netstat -tulpn | grep -E '3000|20128'
 
 ```bash
 # ログを確認
-pm2 logs 9router
+pm2 logs ebrouter
 
 # ポートが使用中か確認
 sudo lsof -i :3000
 sudo lsof -i :20128
 
 # 環境変数を確認
-pm2 env 9router
+pm2 env ebrouter
 ```
 
 ### Nginx 502 Bad Gateway
 
 ```bash
-# 9Routerが実行中か確認
+# ebRouterが実行中か確認
 pm2 status
 
 # Nginxエラーログを確認

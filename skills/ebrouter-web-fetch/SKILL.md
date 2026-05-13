@@ -1,25 +1,25 @@
 ---
-name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+name: ebrouter-web-fetch
+description: Fetch URL → markdown / text / HTML via ebRouter /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
-# 9Router — Web Fetch
+# ebRouter — Web Fetch
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
+Requires `EBROUTER_URL` (and `EBROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/YOUR_ORG/ebRouter/refs/heads/master/skills/ebrouter/SKILL.md for setup.
 
 ## Discover
 
 ```bash
-curl $NINEROUTER_URL/v1/models/web | jq '.data[] | select(.kind=="webFetch") | .id'
+curl $EBROUTER_URL/v1/models/web | jq '.data[] | select(.kind=="webFetch") | .id'
 # Per-provider params
-curl "$NINEROUTER_URL/v1/models/info?id=firecrawl/fetch"
+curl "$EBROUTER_URL/v1/models/info?id=firecrawl/fetch"
 ```
 
 IDs end in `/fetch` (e.g. `firecrawl/fetch`, `jina/fetch`). `fetch-combo` chains providers with auto-fallback.
 
 ## Endpoint
 
-`POST $NINEROUTER_URL/v1/web/fetch`
+`POST $EBROUTER_URL/v1/web/fetch`
 
 | Field | Required | Notes |
 |---|---|---|
@@ -32,10 +32,10 @@ IDs end in `/fetch` (e.g. `firecrawl/fetch`, `jina/fetch`). `fetch-combo` chains
 
 ### Jina Reader
 ```bash
-curl -X POST $NINEROUTER_URL/v1/web/fetch \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
+curl -X POST $EBROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $EBROUTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"jina-reader","url":"https://9router.com","format":"markdown"}'
+  -d '{"model":"jina-reader","url":"https://ebrouter.example.com","format":"markdown"}'
 ```
 
 ### Exa
@@ -66,9 +66,9 @@ curl -X POST $NINEROUTER_URL/v1/web/fetch \
 JS:
 
 ```js
-const r = await fetch(`${process.env.NINEROUTER_URL}/v1/web/fetch`, {
+const r = await fetch(`${process.env.EBROUTER_URL}/v1/web/fetch`, {
   method: "POST",
-  headers: { "Authorization": `Bearer ${process.env.NINEROUTER_KEY}`, "Content-Type": "application/json" },
+  headers: { "Authorization": `Bearer ${process.env.EBROUTER_KEY}`, "Content-Type": "application/json" },
   body: JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", max_characters: 5000 }),
 });
 const { data } = await r.json();

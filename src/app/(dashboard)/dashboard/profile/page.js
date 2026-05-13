@@ -465,7 +465,7 @@ export default function ProfilePage() {
       const anchor = document.createElement("a");
       const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      anchor.download = `ebrouter-backup-${stamp}.json`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -747,7 +747,7 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-2">
                 <label className="font-medium text-sm sm:text-base">Issuer URL</label>
                 <Input
-                  placeholder="https://auth.example.com/application/o/9router/"
+                  placeholder="https://auth.example.com/application/o/ebrouter/"
                   value={oidcForm.oidcIssuerUrl}
                   onChange={(e) => updateOidcForm("oidcIssuerUrl", e.target.value)}
                   disabled={loading || oidcLoading}
@@ -757,7 +757,7 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-2">
                 <label className="font-medium text-sm sm:text-base">Client ID</label>
                 <Input
-                  placeholder="9router-dashboard"
+                  placeholder="ebrouter-dashboard"
                   value={oidcForm.oidcClientId}
                   onChange={(e) => updateOidcForm("oidcClientId", e.target.value)}
                   disabled={loading || oidcLoading}

@@ -1,7 +1,7 @@
 {
-  "name": "9router-app",
+  "name": "ebrouter-app",
   "version": "0.4.55",
-  "description": "9Router web dashboard",
+  "description": "ebRouter web dashboard",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --port 20128",
