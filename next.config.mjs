@@ -11,7 +11,7 @@ const nextConfig = {
   turbopack: {
     root: projectRoot
   },
-  outputFileTracingRoot: monorepoRoot,
+  outputFileTracingRoot: projectRoot,
   outputFileTracingExcludes: {
     "*": ["./app/gitbook/**/*", "./gitbook/**/*"]
   },
