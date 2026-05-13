@@ -8,8 +8,7 @@ const { log, err, dumpRequest, createResponseDumper } = require("./logger");
 const { TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
-
-const DB_FILE = path.join(DATA_DIR, "db.json");
+const { getMitmAlias } = require("./dbReader");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = true;
@@ -21,17 +20,11 @@ const HOST_REWRITE = {
   "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.googleapis.com",
 };
 
-// Load handlers — dev/ overrides handlers/ for private implementations
-function loadHandler(name) {
-  try { return require(`./dev/${name}`); } catch {}
-  return require(`./handlers/${name}`);
-}
-
 const handlers = {
-  antigravity: loadHandler("antigravity"),
-  copilot: loadHandler("copilot"),
-  kiro: loadHandler("kiro"),
-  cursor: loadHandler("cursor"),
+  antigravity: require("./handlers/antigravity"),
+  copilot: require("./handlers/copilot"),
+  kiro: require("./handlers/kiro"),
+  cursor: require("./handlers/cursor"),
 };
 
 // ── SSL / SNI ─────────────────────────────────────────────────
@@ -108,9 +101,7 @@ function extractModel(url, body) {
 function getMappedModel(tool, model) {
   if (!model) return null;
   try {
-    if (!fs.existsSync(DB_FILE)) return null;
-    const db = JSON.parse(fs.readFileSync(DB_FILE, "utf-8"));
-    const aliases = db.mitmAlias?.[tool];
+    const aliases = getMitmAlias(tool);
     if (!aliases) return null;
     // Normalize via synonym map (e.g., gemini-default → gemini-3-flash)
     const lookup = MODEL_SYNONYMS?.[tool]?.[model] || model;

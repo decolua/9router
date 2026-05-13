@@ -4,7 +4,7 @@ import { nowSec } from "./_base.js";
 
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CODEX_USER_AGENT = "codex-imagen/0.2.6";
-const CODEX_VERSION = "0.122.0";
+const CODEX_VERSION = "0.129.0";
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";

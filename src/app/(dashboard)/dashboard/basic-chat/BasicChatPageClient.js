@@ -170,11 +170,29 @@ export default function BasicChatPageClient() {
   const [providerGroups, setProviderGroups] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState("");
-  const [activeProviderId, setActiveProviderId] = useState("");
+  const [sessions, setSessions] = useState(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = safeParse(globalThis.localStorage.getItem(STORAGE_KEYS.sessions), []);
+      return Array.isArray(saved) ? saved.map((session) => ({
+        ...session,
+        messages: Array.isArray(session.messages) ? session.messages : [],
+      })) : [];
+    } catch { return []; }
+  });
+  const [activeSessionId, setActiveSessionId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.activeSessionId) || "";
+  });
+  const [activeProviderId, setActiveProviderId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.activeProviderId) || "";
+  });
   const [activeModelId, setActiveModelId] = useState("");
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return globalThis.localStorage.getItem(STORAGE_KEYS.draft) || "";
+  });
   const [attachments, setAttachments] = useState([]);
   const [isSending, setIsSending] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState("");
@@ -189,20 +207,7 @@ export default function BasicChatPageClient() {
   const historyMenuRef = useRef(null);
 
   useEffect(() => {
-    try {
-      const savedSessions = safeParse(globalThis.localStorage.getItem(STORAGE_KEYS.sessions), []);
-      setSessions(Array.isArray(savedSessions) ? savedSessions.map((session) => ({
-        ...session,
-        messages: Array.isArray(session.messages) ? session.messages : [],
-      })) : []);
-      setActiveSessionId(globalThis.localStorage.getItem(STORAGE_KEYS.activeSessionId) || "");
-      setActiveProviderId(globalThis.localStorage.getItem(STORAGE_KEYS.activeProviderId) || "");
-      setDraft(globalThis.localStorage.getItem(STORAGE_KEYS.draft) || "");
-    } catch {
-      // Ignore storage errors.
-    } finally {
-      setIsHydrated(true);
-    }
+    setIsHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -222,7 +227,7 @@ export default function BasicChatPageClient() {
         if (connections.length === 0) {
           if (!cancelled) {
             setProviderGroups([]);
-            setLoadError("Chưa có provider nào được connect.");
+            setLoadError("No providers connected yet.");
           }
           return;
         }
@@ -293,12 +298,12 @@ export default function BasicChatPageClient() {
         if (!cancelled) {
           setProviderGroups(normalized);
           if (normalized.length === 0) {
-            setLoadError("Đã có provider connect nhưng chưa lấy được model nào.");
+            setLoadError("Providers connected but no models available.");
           }
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(textValue(error?.message) || "Không thể tải danh sách provider/model.");
+          setLoadError(textValue(error?.message) || "Failed to load providers/models.");
           setProviderGroups([]);
         }
       } finally {
@@ -713,7 +718,7 @@ export default function BasicChatPageClient() {
           messages: currentSession.messages.map((message) => (message.id === assistantMessageId ? { ...message, content: message.content || `Error: ${errorText}`, status: "error" } : message)),
           updatedAt: new Date().toISOString(),
         }));
-        setLoadError(errorText || "Không thể gửi tin nhắn.");
+        setLoadError(errorText || "Failed to send message.");
       }
     } finally {
       setIsSending(false);
@@ -756,7 +761,7 @@ export default function BasicChatPageClient() {
               <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50">
                 <div className="border-b border-white/10 px-4 py-3">
                   <p className="text-xs uppercase tracking-[0.22em] text-white/45">Models</p>
-                  <p className="text-sm text-white/75">Chỉ lấy từ provider đã connect</p>
+                  <p className="text-sm text-white/75">Only from connected providers</p>
                 </div>
                 <div className="max-h-[60vh] overflow-y-auto p-2 custom-scrollbar">
                   {providerGroups.map((group) => (
@@ -815,7 +820,7 @@ export default function BasicChatPageClient() {
             <div className="max-h-[48vh] space-y-2 overflow-y-auto p-1 custom-scrollbar">
               {sessionItems.length === 0 ? (
                 <div className="rounded-[16px] border border-dashed border-white/10 bg-white/5 p-4 text-sm text-white/55">
-                  Chưa có cuộc trò chuyện nào.
+                  No conversations yet.
                 </div>
               ) : sessionItems.map((session) => {
                 const isActive = session.id === activeSessionId;

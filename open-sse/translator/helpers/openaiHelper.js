@@ -10,6 +10,9 @@ export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
   
   body.messages = body.messages.map(msg => {
+    // Normalize developer role to system (many providers don't support developer)
+    if (msg.role === "developer") msg = { ...msg, role: "system" };
+    
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === "tool") return msg;
     

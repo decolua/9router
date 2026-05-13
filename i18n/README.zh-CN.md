@@ -1247,7 +1247,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 8. 记录使用/日志（`src/lib/usageDb.js`）。
 9. 根据组合规则在提供商/账户/模型错误时应用回退。
 
-完整架构参考：[`docs/ARCHITECTURE`](docs/ARCHITECTURE.md)
+完整架构参考：[`docs/ARCHITECTURE`](../docs/ARCHITECTURE.md)
 
 ---
 
@@ -1263,7 +1263,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 感谢所有帮助让 9Router 变得更好的贡献者！
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
@@ -1279,7 +1279,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 4 推送到分支（`git push origin feature/amazing-feature`）
 5. 打开 Pull Request
 
-详细指南请参阅 [CONTRIBUTING.md](CONTRIBUTING.md)。
+详细指南请参阅 [Pull Requests](https://github.com/decolua/9router/pulls)。
 
 ---
 
@@ -1297,7 +1297,7 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 📄 许可证
 
-MIT License - 详情请参阅 [LICENSE](LICENSE)。
+MIT License - 详情请参阅 [LICENSE](../LICENSE)。
 
 ---
 

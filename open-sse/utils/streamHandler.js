@@ -1,4 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
+import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -98,7 +99,19 @@ export function createDisconnectAwareStream(transformStream, streamController) {
       }
 
       try {
-        const { done, value } = await reader.read();
+        // Race between chunk arrival and stall timeout
+        let stallTimer;
+        const stallPromise = new Promise((_, reject) => {
+          stallTimer = setTimeout(() => reject(new Error("stream stall timeout")), STREAM_STALL_TIMEOUT_MS);
+        });
+
+        let done, value;
+        try {
+          ({ done, value } = await Promise.race([reader.read(), stallPromise]));
+        } finally {
+          clearTimeout(stallTimer);
+        }
+
         if (done) {
           streamController.handleComplete();
           controller.close();
@@ -107,7 +120,6 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         controller.enqueue(value);
       } catch (error) {
         streamController.handleError(error);
-        // Cleanup reader/writer to avoid orphaned streams
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
         controller.error(error);

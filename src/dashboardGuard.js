@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
 import { getSettings } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -38,13 +34,7 @@ const PROTECTED_API_PATHS = [
 
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
-  if (!token) return false;
-  try {
-    await jwtVerify(token, SECRET);
-    return true;
-  } catch {
-    return false;
-  }
+  return await verifyDashboardAuthToken(token);
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -112,10 +102,9 @@ export async function proxy(request) {
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
-      try {
-        await jwtVerify(token, SECRET);
+      if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
-      } catch {
+      } else {
         return NextResponse.redirect(new URL("/login", request.url));
       }
     }

@@ -17,6 +17,7 @@ import {
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
 } from "@/lib/tunnel/tunnelConfig";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
+import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -40,6 +41,7 @@ const g = global.__appSingleton ??= {
   networkMonitorInterval: null,
   lastNetworkFingerprint: null,
   lastWatchdogTick: Date.now(),
+  lastOnline: null,
   mitmStartInProgress: false,
   tunnelAutoResumed: false,
   tailscaleAutoResumed: false,
@@ -77,6 +79,9 @@ export async function initializeApp() {
     }
 
     ensureCloudflared().catch(() => {});
+
+    // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
+    syncMitmAliasCache().catch(() => {});
 
     startWatchdog();
     startNetworkMonitor();
@@ -205,6 +210,7 @@ function startNetworkMonitor() {
 
   g.lastNetworkFingerprint = getNetworkFingerprint();
   g.lastWatchdogTick = Date.now();
+  g.lastOnline = null;
 
   g.networkMonitorInterval = setInterval(async () => {
     try {
@@ -214,15 +220,24 @@ function startNetworkMonitor() {
 
       const currentFingerprint = getNetworkFingerprint();
       const networkChanged = currentFingerprint !== g.lastNetworkFingerprint;
-      const wasSleep = elapsed > NETWORK_CHECK_INTERVAL_MS * 3;
-
+      const wasSleep = elapsed > NETWORK_CHECK_INTERVAL_MS * 6;
       if (networkChanged) g.lastNetworkFingerprint = currentFingerprint;
-      if (!networkChanged && !wasSleep) return;
+
+      // Real reachability check (TCP 1.1.1.1:443) — not just interface presence
+      const online = await checkInternet();
+      const wasOffline = g.lastOnline === false;
+      g.lastOnline = online;
+
+      if (!online) return; // no internet → idle, don't restart
+
+      const onlineEdge = wasOffline; // offline → online transition
+      if (!networkChanged && !wasSleep && !onlineEdge) return;
 
       // Wait for DHCP/DNS to settle before probing
       await new Promise((r) => setTimeout(r, NETWORK_SETTLE_MS));
 
-      const reason = wasSleep && networkChanged ? "sleep+netchange"
+      const reason = onlineEdge ? "online"
+        : wasSleep && networkChanged ? "sleep+netchange"
         : wasSleep ? "sleep" : "netchange";
       safeRestartTunnel(reason).catch(() => {});
       safeRestartTailscale(reason).catch(() => {});
