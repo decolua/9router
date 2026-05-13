@@ -1,6 +1,6 @@
 {
   "name": "9router",
-  "version": "0.4.33",
+  "version": "0.4.36",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"
@@ -14,10 +14,15 @@
     "LICENSE"
   ],
   "scripts": {
+    "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",
+    "build": "node scripts/build-cli.js",
+    "pack:cli": "npm run build && npm pack --pack-destination ../..",
+    "publish:cli": "npm run build && npm publish",
     "postinstall": "node hooks/postinstall.js",
-    "prepublishOnly": "cd .. && npm run build:cli"
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "enquirer": "^2.4.1",
     "node-forge": "^1.3.3",
     "node-machine-id": "^1.1.12",
     "react": "19.2.1",
@@ -35,5 +40,8 @@
     "ai",
     "api"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
 }

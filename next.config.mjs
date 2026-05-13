@@ -1,16 +1,19 @@
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
+// Workspace root (one level up from app/) — where npm hoists deps.
+// Next.js tracing must scan from here to find "next", "react", etc.
+const workspaceRoot = join(projectRoot, "..");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
   turbopack: {
-    root: projectRoot
+    root: workspaceRoot
   },
-  outputFileTracingRoot: projectRoot,
+  outputFileTracingRoot: workspaceRoot,
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"]
   },
@@ -28,7 +31,7 @@ const nextConfig = {
       };
     }
     // Exclude logs, .next, gitbook subapp from watcher
-    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next|gitbook)[\\/]/ };
+    config.watchOptions = { ...config.watchOptions, ignored: /[\\/](logs|\.next|gitbook|cli)[\\/]/ };
     return config;
   },
   async rewrites() {

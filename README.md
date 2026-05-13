@@ -9,6 +9,8 @@
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
+  [![Docker Hub](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/decolua/9router)
+  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
   [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
 
   <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
@@ -1048,43 +1050,47 @@ pm2 startup
 
 ### Docker
 
+Published images (multi-platform `linux/amd64` + `linux/arm64`):
+- Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
+- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
+
+**Quick start (use published image):**
+
 ```bash
-# Build image (from repository root)
+docker run -d \
+  --name 9router \
+  -p 20128:20128 \
+  -v "$HOME/.9router:/app/data" \
+  -e DATA_DIR=/app/data \
+  decolua/9router:latest
+```
+
+→ Open http://localhost:20128
+
+**Build from source (dev):**
+
+```bash
+git clone https://github.com/decolua/9router.git
+cd 9router/app
 docker build -t 9router .
-
-# Run container (command used in current setup)
-docker run -d \
-  --name 9router \
-  -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+docker run -d --name 9router -p 20128:20128 \
+  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
 ```
 
-Portable command (if you are already at repository root):
-
-```bash
-docker run -d \
-  --name 9router \
-  -p 20128:20128 \
-  --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
-```
-
-Container defaults:
+**Container defaults:**
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
-Useful commands:
+**Useful commands:**
 
 ```bash
 docker logs -f 9router
 docker restart 9router
 docker stop 9router && docker rm 9router
+docker pull decolua/9router:latest   # update to latest
 ```
+
+**Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
 ### Environment Variables
 
@@ -1092,7 +1098,7 @@ docker stop 9router && docker rm 9router
 |----------|---------|-------------|
 | `JWT_SECRET` | `9router-default-secret-change-me` | JWT signing secret for dashboard auth cookie (**change in production**) |
 | `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.9router` | Main app database location (`db.json`) |
+| `DATA_DIR` | `~/.9router` | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`) |
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
@@ -1115,9 +1121,9 @@ Notes:
 
 ### Runtime Files and Storage
 
-- Main app state: `${DATA_DIR}/db.json` (providers, combos, aliases, keys, settings), managed by `src/lib/localDb.js`.
-- Usage history and logs: `${DATA_DIR}/usage.json` and `${DATA_DIR}/log.txt`, managed by `src/lib/usageDb.js`.
-- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`.
+- Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
+- Auto backups: `${DATA_DIR}/db/backups/`
+- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
 - Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
 
 </details>
@@ -1228,7 +1234,7 @@ Notes:
 - **Runtime**: Node.js 20+
 - **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
-- **Database**: LowDB (JSON file-based)
+- **Database**: SQLite (better-sqlite3 / node:sqlite / sql.js fallback)
 - **Streaming**: Server-Sent Events (SSE)
 - **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
 

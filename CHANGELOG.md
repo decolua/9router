@@ -1,3 +1,19 @@
+# v0.4.36 (2026-05-13)
+
+## Features
+- Add MiniMax TTS provider support (#1043)
+- Docker images now published on both Docker Hub (`decolua/9router`) and GHCR — pull from your preferred registry
+
+## Improvements
+- Replace browser confirm dialogs with custom ConfirmModal (#1060)
+
+## Fixes
+- Fix Docker `Cannot find module 'next'` error in standalone build
+- Restore /app/server.js in Docker standalone build (#1064, #1067)
+- Fix CLI TUI menu arrow-key escape sequences leaking (^[[A^[[B)
+- Switch macOS/Linux tray to systray2 fork (fixes Kaspersky AV false-positive) (#1080)
+- Fix zoom controls contrast in topology view (#1066)
+
 # v0.4.33 (2026-05-12)
 
 ## Improvements
