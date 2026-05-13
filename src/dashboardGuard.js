@@ -6,6 +6,11 @@ import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
+const STRICT_AUTH_API_PATHS = [
+  "/api/providers/client",
+  "/api/keys",
+];
+
 let cachedCliToken = null;
 async function getCliToken() {
   if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
@@ -58,6 +63,11 @@ async function isAuthenticated(request) {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  if (STRICT_AUTH_API_PATHS.some((p) => pathname.startsWith(p))) {
+    if (await hasValidToken(request)) return NextResponse.next();
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {

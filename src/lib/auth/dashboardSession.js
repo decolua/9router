@@ -1,8 +1,18 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+const DEFAULT_JWT_SECRET = "9router-default-secret-change-me";
+const jwtSecret = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+
+if (process.env.NODE_ENV === "production" && jwtSecret === DEFAULT_JWT_SECRET) {
+  console.error("[Auth] Fatal: JWT_SECRET must be set to a non-default value in production.");
+  process.exit(1);
+}
+
+if (process.env.NODE_ENV !== "production" && jwtSecret === DEFAULT_JWT_SECRET) {
+  console.warn("[Auth] Warning: using default JWT_SECRET. Set JWT_SECRET before production use.");
+}
+
+const SECRET = new TextEncoder().encode(jwtSecret);
 
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";

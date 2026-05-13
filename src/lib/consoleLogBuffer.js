@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config.js";
+import { maskSecrets } from "@/lib/sanitizer.js";
 
 const consoleLevels = ["log", "info", "warn", "error", "debug"];
 
@@ -27,9 +28,26 @@ function toLogLine(level, args) {
 
 // Strip ANSI escape codes so terminal colors don't bleed into UI
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const BEARER_TOKEN_RE = /\bBearer\s+[^\s,;"')\]}]+/gi;
 
 function stripAnsi(str) {
   return str.replace(ANSI_RE, "");
+}
+
+function maskBearerTokens(str) {
+  return str.replace(BEARER_TOKEN_RE, "Bearer ********");
+}
+
+function sanitizeArg(arg) {
+  if (typeof arg === "string") return maskBearerTokens(arg);
+  if (arg instanceof Error) {
+    const sanitized = new Error(maskBearerTokens(arg.message || ""));
+    sanitized.name = arg.name;
+    sanitized.stack = arg.stack ? maskBearerTokens(arg.stack) : arg.stack;
+    return sanitized;
+  }
+  if (arg && typeof arg === "object") return maskSecrets(arg);
+  return arg;
 }
 
 function formatArg(arg) {
@@ -57,7 +75,7 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
-      appendLine(toLogLine(level, args));
+      appendLine(toLogLine(level, args.map(sanitizeArg)));
       state.originals[level](...args);
     };
   }
