@@ -1,19 +1,16 @@
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
-// Workspace root (one level up from app/) — where npm hoists deps.
-// Next.js tracing must scan from here to find "next", "react", etc.
-const workspaceRoot = join(projectRoot, "..");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
   serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite"],
   turbopack: {
-    root: workspaceRoot
+    root: projectRoot
   },
-  outputFileTracingRoot: workspaceRoot,
+  outputFileTracingRoot: projectRoot,
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"]
   },
