@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 
 const parseOpenAIStyleModels = (data) => {
@@ -181,6 +181,24 @@ export async function buildModelsList(kindFilter) {
       entry.kind = combo.kind;
     }
     models.push(entry);
+  }
+
+  let settings = {};
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    console.log("Could not fetch settings");
+  }
+
+  if (settings.comboOnlyMode === true) {
+    const dedupedCombos = [];
+    const seenComboIds = new Set();
+    for (const model of models) {
+      if (!model?.id || seenComboIds.has(model.id)) continue;
+      seenComboIds.add(model.id);
+      dedupedCombos.push(model);
+    }
+    return dedupedCombos;
   }
 
   if (connections.length === 0) {

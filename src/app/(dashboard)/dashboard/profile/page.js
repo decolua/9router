@@ -437,6 +437,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateComboOnlyMode = async (comboOnlyMode) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comboOnlyMode }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, comboOnlyMode }));
+      }
+    } catch (err) {
+      console.error("Failed to update comboOnlyMode:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -1019,6 +1034,29 @@ export default function ProfilePage() {
             <Toggle
               checked={observabilityEnabled}
               onChange={updateObservabilityEnabled}
+              disabled={loading}
+            />
+          </div>
+        </Card>
+
+        {/* API Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">api</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">API Settings</h3>
+          </div>
+          <div className="flex items-start sm:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Combo Only Mode</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Only expose combo models via API. Individual provider models will be hidden and blocked.
+              </p>
+            </div>
+            <Toggle
+              checked={settings.comboOnlyMode === true}
+              onChange={() => updateComboOnlyMode(!(settings.comboOnlyMode === true))}
               disabled={loading}
             />
           </div>

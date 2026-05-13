@@ -110,6 +110,11 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
+  if (settings.comboOnlyMode === true) {
+    log.warn("CHAT", `Combo only mode: rejecting non-combo model "${modelStr}"`);
+    return errorResponse(HTTP_STATUS.NOT_FOUND, `The model \`${modelStr}\` does not exist`);
+  }
+
   // Single model request
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
