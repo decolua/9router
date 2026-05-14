@@ -5,7 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
-import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
+import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { DATA_DIR } from "@/lib/dataDir";
 
@@ -309,8 +309,18 @@ export async function POST(request) {
     // Register custom stdio plugins into bridge + persist for restart survival.
     if (customPluginsArray.length > 0) {
       const { registerCustomPlugin } = require("@/lib/mcp/stdioSseBridge");
-      const stdioCustoms = customPluginsArray.filter((p) => p.command).map((p) => ({ name: p.name, command: p.command, args: p.args || [] }));
-      for (const p of stdioCustoms) registerCustomPlugin(p);
+      const stdioCustoms = customPluginsArray
+        .filter((p) => p && typeof p.command === "string" && p.command.trim())
+        .filter((p) => ALLOWED_MCP_COMMANDS.has(path.basename(p.command)))
+        .map((p) => ({
+          name: String(p.name || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64),
+          command: p.command,
+          args: Array.isArray(p.args) ? p.args.map(String) : [],
+        }))
+        .filter((p) => p.name);
+      for (const p of stdioCustoms) {
+        try { registerCustomPlugin(p); } catch { /* skip invalid */ }
+      }
       try {
         const dir = path.join(DATA_DIR, "mcp");
         await fs.mkdir(dir, { recursive: true });

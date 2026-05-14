@@ -10,6 +10,8 @@ export { default as CoworkToolCard } from "./CoworkToolCard";
 export { default as CopilotToolCard } from "./CopilotToolCard";
 export { default as ClineToolCard } from "./ClineToolCard";
 export { default as KiloToolCard } from "./KiloToolCard";
+export { default as DeepSeekTuiToolCard } from "./DeepSeekTuiToolCard";
+export { default as JcodeToolCard } from "./JcodeToolCard";
 export { default as MitmServerCard } from "./MitmServerCard";
 export { default as MitmToolCard } from "./MitmToolCard";
 export { default as MitmLinkCard } from "./MitmLinkCard";

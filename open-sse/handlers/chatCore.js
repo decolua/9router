@@ -60,6 +60,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
 
+  // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
+  // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
+  // Only force non-streaming when client didn't explicitly request it.
+  const detectedTool = detectClientTool(clientRawRequest?.headers || {}, body);
+  if (detectedTool === "deepseek-tui" && body.stream !== true) stream = false;
+
   // Check client Accept header preference for non-streaming requests
   // This fixes AI SDK compatibility where clients send Accept: application/json
   const acceptHeader = clientRawRequest?.headers?.accept || "";
@@ -121,7 +127,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
-  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => {});
+  appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
@@ -179,7 +185,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -188,7 +194,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: translatedBody || null,
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
       status: "error"
-    })).catch(() => {});
+    })).catch(() => { });
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
@@ -225,7 +231,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => {});
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -234,7 +240,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       providerRequest: finalBody || translatedBody || null,
       response: { error: message, status: statusCode, thinking: null },
       status: "error"
-    })).catch(() => {});
+    })).catch(() => { });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
@@ -243,7 +249,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess };
-  const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => {});
+  const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON

@@ -5,10 +5,10 @@
 
 // Map of CLI tool identifiers to provider IDs they are "native" to
 const NATIVE_PAIRS = {
-  "claude":      ["claude", "anthropic"],
-  "gemini-cli":  ["gemini-cli"],
+  "claude": ["claude", "anthropic"],
+  "gemini-cli": ["gemini-cli"],
   "antigravity": ["antigravity"],
-  "codex":       ["codex"],
+  "codex": ["codex"],
 };
 
 /**
@@ -39,6 +39,9 @@ export function detectClientTool(headers = {}, body = {}) {
 
   // Codex CLI
   if (ua.includes("codex-cli")) return "codex";
+
+  // DeepSeek TUI
+  if (ua.includes("deepseek-tui")) return "deepseek-tui";
 
   return null;
 }

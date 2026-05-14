@@ -427,6 +427,30 @@ button {
   opacity: 0.04;
 }
 
+/* React Flow controls: match app theme */
+.react-flow-controls-custom {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
+}
+
+.react-flow-controls-custom button {
+  background: var(--color-surface);
+  color: var(--color-text-main);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.react-flow-controls-custom button:last-child {
+  border-bottom: 0;
+}
+
+.react-flow-controls-custom button:hover {
+  background: var(--color-bg-alt);
+}
+
 /* Changelog markdown body */
 .changelog-body h1 {
   font-size: 1.4rem;

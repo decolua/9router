@@ -14,23 +14,13 @@ const COLORS = {
   cyan: "\x1b[36m"
 };
 
-/**
- * Build header content with endpoint and API keys
- * @param {number} port - Server port
- * @returns {Promise<string>} Header content string
- */
-async function buildHeaderContent(port) {
-  const [keysResult, tunnelResult] = await Promise.all([
-    api.getApiKeys(),
-    api.getTunnelStatus()
-  ]);
-  
-  const keys = keysResult.success ? (keysResult.data.keys || []) : [];
-  const tunnel = tunnelResult.success ? (tunnelResult.data || {}) : {};
-  const tunnelEnabled = tunnel.enabled === true;
-  
+// Cached header (SWR): show last value instantly, refresh in background.
+let cachedHeader = "";
+let fetchingHeader = false;
+
+function renderHeader(port, keys, tunnel) {
+  const tunnelEnabled = tunnel && tunnel.enabled === true;
   const lines = [];
-  
   if (tunnelEnabled && tunnel.publicUrl) {
     lines.push(`Endpoint: ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
     lines.push(`Tunnel:   ${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
@@ -38,15 +28,35 @@ async function buildHeaderContent(port) {
     lines.push(`Endpoint: http://localhost:${port}/v1`);
     lines.push(`Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`);
   }
-  
-  if (keys.length === 0) {
+  if (!keys || keys.length === 0) {
     lines.push(`Key:      ${COLORS.dim}No API keys yet${COLORS.reset}`);
   } else {
     lines.push(`Key:      ${COLORS.cyan}${keys[0].key}${COLORS.reset}`);
     keys.slice(1).forEach(k => lines.push(`          ${COLORS.cyan}${k.key}${COLORS.reset}`));
   }
-  
   return lines.join("\n");
+}
+
+async function refreshHeaderBg(port) {
+  if (fetchingHeader) return;
+  fetchingHeader = true;
+  try {
+    const [keysResult, tunnelResult] = await Promise.all([
+      api.getApiKeys(),
+      api.getTunnelStatus()
+    ]);
+    const keys = keysResult.success ? (keysResult.data.keys || []) : [];
+    const tunnel = tunnelResult.success ? (tunnelResult.data || {}) : {};
+    cachedHeader = renderHeader(port, keys, tunnel);
+  } finally {
+    fetchingHeader = false;
+  }
+}
+
+function getHeader(port) {
+  // Kick off background refresh; return cache (or placeholder on first call).
+  refreshHeaderBg(port);
+  return cachedHeader || `Endpoint: http://localhost:${port}/v1\nTunnel:   ${COLORS.dim}...${COLORS.reset}\nKey:      ${COLORS.dim}...${COLORS.reset}`;
 }
 
 /**
@@ -56,15 +66,17 @@ async function buildHeaderContent(port) {
 async function startTerminalUI(port) {
   // Configure API client
   api.configure({ port });
-  
+
   const basePath = ["9Router"];
-  
+
+  // Prime header cache before first render
+  await refreshHeaderBg(port);
+
   // Main menu
   await showMenuWithBack({
     title: "📡 9Router Terminal UI",
     breadcrumb: basePath,
-    headerContent: async () => await buildHeaderContent(port),
-    refresh: async () => ({}), // Refresh header on each loop
+    headerContent: () => getHeader(port),
     items: [
       {
         label: "Providers",
