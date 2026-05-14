@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, quotaType, quotaLimit, quotaResetHours, creditBalance } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,10 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (quotaType !== undefined) updateData.quotaType = quotaType;
+    if (quotaLimit !== undefined) updateData.quotaLimit = quotaLimit;
+    if (quotaResetHours !== undefined) updateData.quotaResetHours = quotaResetHours;
+    if (creditBalance !== undefined) updateData.creditBalance = creditBalance;
 
     const updated = await updateApiKey(id, updateData);
 

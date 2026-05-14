@@ -100,6 +100,15 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
+  // Quota modal state
+  const [quotaModalKey, setQuotaModalKey] = useState(null);
+  const [quotaType, setQuotaType] = useState("none");
+  const [quotaLimit, setQuotaLimit] = useState("");
+  const [quotaResetHours, setQuotaResetHours] = useState("1");
+  const [creditBalance, setCreditBalance] = useState("");
+  const [quotaSaving, setQuotaSaving] = useState(false);
+  const [quotaError, setQuotaError] = useState("");
+
   const { copied, copy } = useCopyToClipboard();
 
   // Auto-scroll install log
@@ -707,6 +716,58 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  const openQuotaModal = (key) => {
+    setQuotaModalKey(key);
+    setQuotaType(key.quotaType || "none");
+    setQuotaLimit(key.quotaLimit != null ? String(key.quotaLimit) : "");
+    setQuotaResetHours(key.quotaResetHours != null ? String(key.quotaResetHours) : "1");
+    setCreditBalance(key.creditBalance != null ? String(key.creditBalance) : "");
+    setQuotaError("");
+  };
+
+  const handleSaveQuota = async () => {
+    if (!quotaModalKey) return;
+    setQuotaError("");
+    if (quotaType === "hourly") {
+      const val = parseFloat(quotaLimit);
+      if (!quotaLimit || isNaN(val) || val <= 0) {
+        setQuotaError("Please enter a spend limit greater than 0.");
+        return;
+      }
+    }
+    if (quotaType === "credit") {
+      const val = parseFloat(creditBalance);
+      if (!creditBalance || isNaN(val) || val <= 0) {
+        setQuotaError("Please enter a credit balance greater than 0.");
+        return;
+      }
+    }
+    setQuotaSaving(true);
+    try {
+      const body = { quotaType };
+      if (quotaType === "hourly") {
+        body.quotaLimit = parseFloat(quotaLimit);
+        body.quotaResetHours = parseInt(quotaResetHours, 10) || 1;
+      } else if (quotaType === "credit") {
+        body.creditBalance = parseFloat(creditBalance);
+      }
+      const res = await fetch(`/api/keys/${quotaModalKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys(prev => prev.map(k => k.id === quotaModalKey.id ? { ...k, ...data.key } : k));
+        setQuotaModalKey(null);
+      }
+    } catch (error) {
+      console.log("Error saving quota:", error);
+    } finally {
+      setQuotaSaving(false);
+    }
+  };
+
   const [baseUrl, setBaseUrl] = useState("/v1");
 
   // Hydration fix: Only access window on client side
@@ -1101,6 +1162,13 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {key.quotaType && key.quotaType !== "none" && (
+                    <p className="text-xs text-primary mt-1">
+                      {key.quotaType === "hourly"
+                        ? `Quota: $${key.quotaLimit ?? 0} / ${key.quotaResetHours ?? 1}h`
+                        : `Credit: $${key.creditBalance ?? 0}`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Toggle
@@ -1117,6 +1185,13 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
+                  <button
+                    onClick={() => openQuotaModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-0 group-hover:opacity-100 transition-all"
+                    title="Configure quota"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-0 group-hover:opacity-100 transition-all"
@@ -1196,6 +1271,86 @@ export default function APIPageClient({ machineId }) {
           <Button onClick={() => setCreatedKey(null)} fullWidth>
             Done
           </Button>
+        </div>
+      </Modal>
+
+      {/* Quota Modal */}
+      <Modal
+        isOpen={!!quotaModalKey}
+        title="Configure Quota"
+        onClose={() => setQuotaModalKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-sm font-medium mb-2">Quota type</p>
+            <div className="flex flex-col gap-1.5">
+              {[
+                { value: "none", label: "None (Unlimited)" },
+                { value: "hourly", label: "Hourly Reset" },
+                { value: "credit", label: "Fixed Credit" },
+              ].map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="quotaType"
+                    value={opt.value}
+                    checked={quotaType === opt.value}
+                    onChange={() => setQuotaType(opt.value)}
+                    className="accent-primary"
+                  />
+                  <span className="text-sm">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {quotaType === "hourly" && (
+            <div className="flex flex-col gap-3">
+              <Input
+                label="Spend limit ($)"
+                type="number"
+                min="0"
+                step="0.01"
+                value={quotaLimit}
+                onChange={(e) => setQuotaLimit(e.target.value)}
+                placeholder="e.g. 5.00"
+              />
+              <Input
+                label="Reset period (hours)"
+                type="number"
+                min="1"
+                step="1"
+                value={quotaResetHours}
+                onChange={(e) => setQuotaResetHours(e.target.value)}
+                placeholder="e.g. 24"
+              />
+            </div>
+          )}
+
+          {quotaType === "credit" && (
+            <Input
+              label="Credit balance ($)"
+              type="number"
+              min="0"
+              step="0.01"
+              value={creditBalance}
+              onChange={(e) => setCreditBalance(e.target.value)}
+              placeholder="e.g. 10.00"
+            />
+          )}
+
+          {quotaError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{quotaError}</p>
+          )}
+
+          <div className="flex gap-2">
+            <Button onClick={handleSaveQuota} fullWidth disabled={quotaSaving}>
+              {quotaSaving ? "Saving..." : "Save"}
+            </Button>
+            <Button onClick={() => setQuotaModalKey(null)} variant="ghost" fullWidth>
+              Cancel
+            </Button>
+          </div>
         </div>
       </Modal>
 

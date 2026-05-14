@@ -79,6 +79,27 @@ export async function handleChat(request, clientRawRequest = null) {
     }
   }
 
+  // Check quota/credit limit
+  if (apiKey) {
+    const { checkQuota } = await import("@/lib/db/repos/quotaRepo.js");
+    const quota = await checkQuota(apiKey);
+    if (!quota.allowed) {
+      const msg = quota.quotaType === "credit"
+        ? "Credit exhausted"
+        : "Quota exceeded";
+      log.warn("QUOTA", `${msg} for key ${log.maskKey(apiKey)} (remaining: ${quota.remaining})`);
+      const headers = { "Content-Type": "application/json" };
+      if (quota.resetsAt) {
+        const retryAfterSec = Math.max(1, Math.ceil((new Date(quota.resetsAt).getTime() - Date.now()) / 1000));
+        headers["Retry-After"] = String(retryAfterSec);
+      }
+      return new Response(
+        JSON.stringify({ error: { message: msg, type: "quota_exceeded", remaining: quota.remaining, resets_at: quota.resetsAt } }),
+        { status: 429, headers }
+      );
+    }
+  }
+
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
