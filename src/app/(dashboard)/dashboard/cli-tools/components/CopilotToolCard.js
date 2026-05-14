@@ -277,11 +277,15 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
           if (!selectedModels.includes(model.value)) {
             setSelectedModels([...selectedModels, model.value]);
           }
-          setModalOpen(false);
+        }}
+        onDeselect={(model) => {
+          setSelectedModels(selectedModels.filter(m => m !== model.value));
         }}
         selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
+        addedModelValues={selectedModels}
+        closeOnSelect={false}
         title="Add Model for GitHub Copilot"
       />
 
