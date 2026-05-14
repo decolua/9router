@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
+import Tooltip from "./Tooltip";
 
 export default function Modal({
   isOpen,
@@ -68,23 +69,22 @@ export default function Modal({
             <div className="flex items-center">
               {showTrafficLights && (
                 <div className="flex items-center gap-2 mr-4 ml-2">
-                  <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-                  <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-                  <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
+                  <Tooltip text="Close" position="top" color="#FF5F56">
+                    <button
+                      onClick={onClose}
+                      className="w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
+                    >
+                      <span className="text-[9px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
+                    </button>
+                  </Tooltip>
+                  <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
+                  <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
                 </div>
               )}
               {title && (
                 <h2 className="text-lg font-semibold text-text-main">{title}</h2>
               )}
             </div>
-            {showCloseButton && (
-              <button
-                onClick={onClose}
-                className="p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
-              >
-                <span className="material-symbols-outlined text-[20px]">close</span>
-              </button>
-            )}
           </div>
         )}
 
