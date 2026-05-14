@@ -13,7 +13,6 @@ export default function Modal({
   footer,
   size = "md",
   closeOnOverlay = true,
-  showCloseButton = true,
   showTrafficLights = true,
   className,
 }) {
@@ -64,14 +63,17 @@ export default function Modal({
         )}
       >
         {/* Header */}
-        {(title || showCloseButton) && (
+        {(title || showTrafficLights) && (
           <div className="flex items-center justify-between p-2 border-b border-border-subtle">
             <div className="flex items-center">
+              {/* Traffic lights — desktop only */}
               {showTrafficLights && (
-                <div className="flex items-center gap-2 mr-4 ml-2">
+                <div className="hidden md:flex items-center gap-2 mr-4 ml-2">
                   <Tooltip text="Close" position="top" color="#FF5F56">
                     <button
                       onClick={onClose}
+                      aria-label="Close"
+                      title="Close"
                       className="w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
                     >
                       <span className="text-[9px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
@@ -85,6 +87,14 @@ export default function Modal({
                 <h2 className="text-lg font-semibold text-text-main">{title}</h2>
               )}
             </div>
+            {/* X button — mobile only */}
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
           </div>
         )}
 

@@ -382,7 +382,9 @@ export default function ModelSelectModal({
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
         <span>Click to add, click again to remove. Changes are saved automatically.</span>
-      </div>      {/* Search - compact */}
+      </div>
+
+      {/* Search - compact */}
       <div className="mb-3">
         <div className="relative">
           <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">

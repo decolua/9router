@@ -78,6 +78,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
         : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+      const validActiveModel = models.includes(activeModel) ? activeModel : (models[0] || "");
       await fetch("/api/cli-tools/opencode-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -85,7 +86,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           models,
-          activeModel: activeModel === "" ? "" : (activeModel || models[0]),
+          activeModel: validActiveModel,
           subagentModel,
         }),
       });
@@ -464,7 +465,11 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
           }
         }}
         onDeselect={(model) => {
-          setSelectedModels(selectedModels.filter(m => m !== model.value));
+          const remaining = selectedModels.filter(m => m !== model.value);
+          setSelectedModels(remaining);
+          if (activeModel === model.value) {
+            setActiveModel(remaining[0] || "");
+          }
         }}
         selectedModel={null}
         activeProviders={activeProviders}
