@@ -9,6 +9,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
 import { cn } from "@/shared/utils/cn";
@@ -156,6 +160,169 @@ function UsageChartInline({ data, loading }) {
   );
 }
 
+function ConnectionInfo({ apiKey }) {
+  const [copiedField, setCopiedField] = useState(null);
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const masked = apiKey.length > 12
+    ? `${apiKey.slice(0, 8)}${"*".repeat(5)}${apiKey.slice(-3)}`
+    : apiKey;
+
+  const copy = (value, field) => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 2000);
+    });
+  };
+
+  return (
+    <Card padding="sm">
+      <div className="flex flex-col gap-2 text-sm">
+        <div className="flex items-center gap-3">
+          <span className="text-text-muted w-16 shrink-0">Base URL</span>
+          <code className="font-mono text-text-main bg-bg-subtle px-2 py-0.5 rounded">{baseUrl}</code>
+          <button
+            onClick={() => copy(baseUrl, "url")}
+            className={cn("transition-colors", copiedField === "url" ? "text-green-500" : "text-text-muted hover:text-text-main")}
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {copiedField === "url" ? "check_circle" : "content_copy"}
+            </span>
+          </button>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-text-muted w-16 shrink-0">API Key</span>
+          <code className="font-mono text-text-main bg-bg-subtle px-2 py-0.5 rounded">{masked}</code>
+          <button
+            onClick={() => copy(apiKey, "key")}
+            className={cn("transition-colors", copiedField === "key" ? "text-green-500" : "text-text-muted hover:text-text-main")}
+          >
+            <span className="material-symbols-outlined text-[16px]">
+              {copiedField === "key" ? "check_circle" : "content_copy"}
+            </span>
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function QuotaCard({ quota, loading }) {
+  if (loading) {
+    return <Card padding="sm" className="h-20 animate-pulse bg-surface" />;
+  }
+  if (!quota || quota.quotaType === "none") {
+    return (
+      <Card padding="sm">
+        <div className="flex items-center gap-2 text-text-muted text-sm">
+          <span className="material-symbols-outlined text-[16px]">speed</span>
+          No quota limit
+        </div>
+      </Card>
+    );
+  }
+
+  const pct = Math.min(100, (quota.used / quota.limit) * 100);
+  const barColor =
+    pct > 95 ? "bg-red-500" : pct > 80 ? "bg-amber-400" : "bg-primary";
+  const isCredit = quota.quotaType === "credit";
+  const title = isCredit ? "Credit" : "Quota";
+
+  return (
+    <Card padding="sm" className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 text-text-muted text-sm">
+        <span className="material-symbols-outlined text-[16px]">speed</span>
+        <span className="font-medium text-text-main">{title}</span>
+      </div>
+      <div className="h-2.5 w-full rounded-full bg-border/40 overflow-hidden">
+        <div
+          className={cn("h-full rounded-full transition-all", barColor)}
+          style={{ width: `${Math.max(pct, 1)}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-text-muted">
+        <span>{fmtCost(quota.used)} / {fmtCost(quota.limit)} used</span>
+        <span>{fmtCost(quota.remaining)} remaining</span>
+      </div>
+      <div className="text-xs text-text-muted">
+        {isCredit
+          ? "Fixed credit — no reset"
+          : quota.resetsAt
+          ? `Resets at ${new Date(quota.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+          : `Resets every ${quota.resetHours}h`}
+      </div>
+    </Card>
+  );
+}
+
+const PIE_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#14b8a6"];
+
+function CostPieChart({ byModel }) {
+  if (!byModel || byModel.length === 0) return null;
+  const data = byModel.filter((m) => m.cost > 0).map((m) => ({ name: m.model, value: m.cost }));
+  if (data.length === 0) return null;
+
+  return (
+    <Card padding="sm">
+      <h2 className="mb-3 text-sm font-semibold text-text-main">Cost by Model</h2>
+      <div className="h-[220px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`} labelLine={false}>
+              {data.map((_, i) => (
+                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v) => `$${v.toFixed(4)}`} contentStyle={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border)", borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+}
+
+function RecentRequests({ data, loading }) {
+  if (loading) {
+    return (
+      <Card padding="sm">
+        <h2 className="mb-3 text-sm font-semibold text-text-main">Recent Requests</h2>
+        <div className="text-sm text-text-muted animate-pulse">Loading...</div>
+      </Card>
+    );
+  }
+  if (!data || data.length === 0) return null;
+
+  return (
+    <Card padding="sm">
+      <h2 className="mb-3 text-sm font-semibold text-text-main">Recent Requests</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border-subtle text-left text-text-muted">
+              <th className="pb-2 pr-4 font-medium">Time</th>
+              <th className="pb-2 pr-4 font-medium">Model</th>
+              <th className="pb-2 pr-4 font-medium text-right">Tokens</th>
+              <th className="pb-2 font-medium text-right">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((r, i) => (
+              <tr key={i} className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2/50 transition-colors">
+                <td className="py-1.5 pr-4 text-text-muted text-xs whitespace-nowrap">
+                  {new Date(r.timestamp).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </td>
+                <td className="py-1.5 pr-4 text-text-main font-mono text-xs">{r.model || "unknown"}</td>
+                <td className="py-1.5 pr-4 text-right text-text-main text-xs">{fmtTokens((r.promptTokens || 0) + (r.completionTokens || 0))}</td>
+                <td className="py-1.5 text-right text-text-main text-xs">{fmtCost(r.cost)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
 export default function UsagePage() {
   const [apiKey, setApiKey] = useState("");
   const [inputKey, setInputKey] = useState("");
@@ -164,8 +331,13 @@ export default function UsagePage() {
   const [stats, setStats] = useState(null);
   const [chartData, setChartData] = useState([]);
   const [models, setModels] = useState([]);
+  const [copiedModel, setCopiedModel] = useState(null);
+  const [quota, setQuota] = useState(null);
+  const [quotaLoading, setQuotaLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [chartLoading, setChartLoading] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Load saved key on mount
@@ -220,6 +392,40 @@ export default function UsagePage() {
     }
   }, []);
 
+  const fetchQuota = useCallback(async (key) => {
+    setQuotaLoading(true);
+    try {
+      const res = await fetch("/api/public/usage/quota", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setQuota(json);
+      }
+    } catch {
+      setQuota(null);
+    } finally {
+      setQuotaLoading(false);
+    }
+  }, []);
+
+  const fetchHistory = useCallback(async (key) => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/public/usage/history?limit=20", {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setHistory(json.data || []);
+      }
+    } catch {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   const fetchModels = useCallback(async (key) => {
     try {
       const res = await fetch("/api/public/models", {
@@ -238,7 +444,9 @@ export default function UsagePage() {
     if (!apiKey) return;
     fetchStats(apiKey, period);
     fetchChart(apiKey, period);
-  }, [apiKey, period, fetchStats, fetchChart]);
+    fetchQuota(apiKey);
+    fetchHistory(apiKey);
+  }, [apiKey, period, fetchStats, fetchChart, fetchQuota, fetchHistory]);
 
   useEffect(() => {
     if (!apiKey) return;
@@ -263,6 +471,8 @@ export default function UsagePage() {
     setStats(null);
     setChartData([]);
     setModels([]);
+    setQuota(null);
+    setHistory([]);
     setError("");
     localStorage.removeItem(LS_KEY);
   }
@@ -282,17 +492,30 @@ export default function UsagePage() {
               Monitor your API usage, token consumption, and costs.
             </p>
           </div>
-          {isAuthed && (
-            <button
-              onClick={handleLogout}
+          <div className="flex items-center gap-2">
+            <a
+              href="https://t.me/quangnx99"
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-border hover:text-text"
             >
-              <span className="material-symbols-outlined text-[16px]">
-                logout
-              </span>
-              Sign out
-            </button>
-          )}
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+              </svg>
+              Liên hệ Admin
+            </a>
+            {isAuthed && (
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-sm text-text-muted transition-colors hover:border-border hover:text-text"
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  logout
+                </span>
+                Sign out
+              </button>
+            )}
+          </div>
         </div>
 
         {/* API Key Form */}
@@ -357,6 +580,12 @@ export default function UsagePage() {
                 </button>
               ))}
             </div>
+
+            {/* Connection Info */}
+            <ConnectionInfo apiKey={apiKey} />
+
+            {/* Quota */}
+            <QuotaCard quota={quota} loading={quotaLoading} />
 
             {/* Error banner */}
             {error && (
@@ -449,6 +678,12 @@ export default function UsagePage() {
               </Card>
             )}
 
+            {/* Cost pie chart */}
+            {stats && <CostPieChart byModel={stats.byModel} />}
+
+            {/* Recent requests */}
+            <RecentRequests data={history} loading={historyLoading} />
+
             {/* Available models */}
             {models.length > 0 && (
               <Card padding="sm">
@@ -466,13 +701,19 @@ export default function UsagePage() {
                       </span>
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(m.name);
+                          navigator.clipboard.writeText(m.name).then(() => {
+                            setCopiedModel(m.name);
+                            setTimeout(() => setCopiedModel(null), 2000);
+                          });
                         }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-text-main"
+                        className={cn(
+                          "transition-colors",
+                          copiedModel === m.name ? "text-green-500" : "text-text-muted hover:text-text-main"
+                        )}
                         title="Copy model name"
                       >
                         <span className="material-symbols-outlined text-[16px]">
-                          content_copy
+                          {copiedModel === m.name ? "check_circle" : "content_copy"}
                         </span>
                       </button>
                     </div>
