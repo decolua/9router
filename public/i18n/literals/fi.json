@@ -12,7 +12,7 @@
   "Logout": "Kirjaudu ulos",
   "Login": "Kirjaudu sisään",
   "Providers": "Palveluntarjoajat",
-  "Usage": "Käyttö",
+  "Usage": "Käyttötilastot",
   "API Key": "API-avain",
   "Connected": "Yhdistetty",
   "Disconnected": "Yhteys katkaistu",
@@ -91,9 +91,7 @@
   "Dark": "Tumma",
   "Auto": "Automaattinen",
   "Endpoint": "Pääteeksi",
-  "Providers": "Palveluntarjoajat",
   "Combos": "Yhdistelmät",
-  "Usage": "Käyttötilastot",
   "Quota Tracker": "Kiintiyden seuranta",
   "MITM": "MITM",
   "CLI Tools": "Työkalut",
@@ -150,7 +148,6 @@
   "No Proxy": "Ei välityspalvelinta",
   "Comma-separated hostnames/domains to bypass the proxy.": "Pilkulla erotetut isäntänimet/etäisyydet välityspalvelimen ohittamiseksi.",
   "Test proxy URL": "Testaa välityspalvelimen URL",
-  "Apply": "Käytä",
   "Proxy settings applied": "Välityspalvelimen asetukset käytössä",
   "Proxy enabled": "Välityspalvelin otettu käyttöön",
   "Proxy disabled": "Välityspalvelin poistettu käytöstä",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Käytä Antigravity IDE:tä ja GitHub Copilot:ia → minkä tahansa palveluntarjoajan/mallin kanssa 9Routerista",
   "How it works:": "Kuinka se toimii:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE-pyyntö → DNS-uudelleenohjaus localhost:443:iin → MITM-välityspalvelin sieppaa → 9Router → vastaus Antigravity/Copilot:ille",
-  "API Key": "API-avain",
   "No API keys — create one in Keys page": "Ei API-avaimia — luo yksi Keys-sivulla",
   "sk_9router (default)": "sk_9router (oletus)",
   "Server started": "Palvelin käynnistetty",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo-salasana vaaditaan",
   "Enter your sudo password to start/stop MITM server": "Kirjoita sudo-salasanasi MITM-palvelimen käynnistämiseksi/pysäyttämiseksi",
   "Sudo Password": "Sudo-salasana",
-  "Confirm": "Vahvista"
+  "Click to add, click again to remove. Changes are saved automatically.": "Napsauta lisätäksesi, napsauta uudelleen poistaaksesi. Muutokset tallennetaan automaattisesti."
 }

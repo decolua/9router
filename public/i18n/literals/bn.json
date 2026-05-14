@@ -12,7 +12,7 @@
   "Logout": "লগ আউট",
   "Login": "লগ ইন",
   "Providers": "সরবরাহকারী",
-  "Usage": "ব্যবহার",
+  "Usage": "ব্যবহারের পরিসংখ্যান",
   "API Key": "API কী",
   "Connected": "সংযুক্ত",
   "Disconnected": "বিচ্ছিন্ন",
@@ -91,9 +91,7 @@
   "Dark": "গাঢ়",
   "Auto": "স্বয়ংক্রিয়",
   "Endpoint": "এন্ডপয়েন্ট",
-  "Providers": "সরবরাহকারী",
   "Combos": "কম্বো",
-  "Usage": "ব্যবহারের পরিসংখ্যান",
   "Quota Tracker": "কোটা ট্র্যাকার",
   "MITM": "MITM",
   "CLI Tools": "সরঞ্জাম",
@@ -150,7 +148,6 @@
   "No Proxy": "কোন প্রক্সি নেই",
   "Comma-separated hostnames/domains to bypass the proxy.": "প্রক্সি বাইপাস করার জন্য কমা-পৃথক হোস্টনাম/ডোমেইন।",
   "Test proxy URL": "প্রক্সি URL পরীক্ষা করুন",
-  "Apply": "প্রয়োগ করুন",
   "Proxy settings applied": "প্রক্সি সেটিংস প্রয়োগ করা হয়েছে",
   "Proxy enabled": "প্রক্সি সক্ষম",
   "Proxy disabled": "প্রক্সি অক্ষম",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE এবং GitHub Copilot ব্যবহার করুন → 9Router থেকে যেকোনো সরবরাহকারী/মডেলের সাথে",
   "How it works:": "এটি কীভাবে কাজ করে:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE অনুরোধ → DNS কে localhost:443 তে রিডিরেক্ট করুন → MITM প্রক্সি ইন্টারসেপ্ট করে → 9Router → Antigravity/Copilot এ প্রতিক্রিয়া",
-  "API Key": "API কী",
   "No API keys — create one in Keys page": "কোন API কী নেই — Keys পৃষ্ঠায় একটি তৈরি করুন",
   "sk_9router (default)": "sk_9router (ডিফল্ট)",
   "Server started": "সার্ভার শুরু হয়েছে",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo পাসওয়ার্ড প্রয়োজন",
   "Enter your sudo password to start/stop MITM server": "MITM সার্ভার শুরু/বন্ধ করতে আপনার sudo পাসওয়ার্ড প্রবেশ করুন",
   "Sudo Password": "Sudo পাসওয়ার্ড",
-  "Confirm": "নিশ্চিত করুন"
+  "Click to add, click again to remove. Changes are saved automatically.": "যোগ করতে ক্লিক করুন, সরাতে আবার ক্লিক করুন। পরিবর্তনগুলি স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়।"
 }

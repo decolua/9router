@@ -12,7 +12,7 @@
   "Logout": "ออกจากระบบ",
   "Login": "เข้าสู่ระบบ",
   "Providers": "ผู้ให้บริการ",
-  "Usage": "การใช้งาน",
+  "Usage": "สถิติการใช้งาน",
   "API Key": "คีย์ API",
   "Connected": "เชื่อมต่อแล้ว",
   "Disconnected": "ตัดการเชื่อมต่อ",
@@ -91,9 +91,7 @@
   "Dark": "มืด",
   "Auto": "อัตโนมัติ",
   "Endpoint": "จุดสิ้นสุด",
-  "Providers": "ผู้ให้บริการ",
   "Combos": "ชุดรวม",
-  "Usage": "สถิติการใช้งาน",
   "Quota Tracker": "ตัวติดตามโควต้า",
   "MITM": "MITM",
   "CLI Tools": "เครื่องมือ",
@@ -150,7 +148,6 @@
   "No Proxy": "ไม่มี Proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "ชื่อโฮสต์/โดเมนคั่นด้วยเครื่องหมายจุลภาค เพื่อข้าม proxy",
   "Test proxy URL": "ทดสอบ URL Proxy",
-  "Apply": "ใช้",
   "Proxy settings applied": "ใช้การตั้งค่า proxy แล้ว",
   "Proxy enabled": "เปิดใช้งาน proxy",
   "Proxy disabled": "ปิดใช้งาน proxy",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "ใช้ Antigravity IDE & GitHub Copilot → ที่มีผู้ให้บริการ/โมเดลใด ๆ จาก 9Router",
   "How it works:": "วิธีการทำงาน:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "คำขอ Antigravity/Copilot IDE → เปลี่ยนเส้นทาง DNS เป็น localhost:443 → MITM proxy สกัดปะท่อ → 9Router → ตอบสนอง Antigravity/Copilot",
-  "API Key": "คีย์ API",
   "No API keys — create one in Keys page": "ไม่มีคีย์ API — สร้างคีย์ในหน้า Keys",
   "sk_9router (default)": "sk_9router (ค่าเริ่มต้น)",
   "Server started": "เซิร์ฟเวอร์เริ่มต้นแล้ว",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "ต้องการรหัสผ่าน Sudo",
   "Enter your sudo password to start/stop MITM server": "ป้อนรหัสผ่าน sudo ของคุณเพื่อเริ่ม/หยุดเซิร์ฟเวอร์ MITM",
   "Sudo Password": "รหัสผ่าน Sudo",
-  "Confirm": "ยืนยัน"
+  "Click to add, click again to remove. Changes are saved automatically.": "คลิกเพื่อเพิ่ม คลิกอีกครั้งเพื่อลบ การเปลี่ยนแปลงจะถูกบันทึกโดยอัตโนมัติ"
 }

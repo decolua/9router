@@ -12,7 +12,7 @@
   "Logout": "Abmelden",
   "Login": "Anmelden",
   "Providers": "Anbieter",
-  "Usage": "Verwendung",
+  "Usage": "Statistiken",
   "API Key": "API-Schlüssel",
   "Connected": "Verbunden",
   "Disconnected": "Getrennt",
@@ -91,9 +91,7 @@
   "Dark": "Dunkel",
   "Auto": "Automatisch",
   "Endpoint": "Endpunkt",
-  "Providers": "Anbieter",
   "Combos": "Kombinationen",
-  "Usage": "Statistiken",
   "Quota Tracker": "Kontingenttracker",
   "MITM": "MITM",
   "CLI Tools": "CLI-Tools",
@@ -150,7 +148,6 @@
   "No Proxy": "Kein Proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Kommagetrennte Hostnamen/Domänen zum Umgehen des Proxys.",
   "Test proxy URL": "Proxy-URL testen",
-  "Apply": "Anwenden",
   "Proxy settings applied": "Proxy-Einstellungen angewendet",
   "Proxy enabled": "Proxy aktiviert",
   "Proxy disabled": "Proxy deaktiviert",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Verwenden Sie Antigravity IDE und GitHub Copilot → mit JEDEM Anbieter/Modell von 9Router",
   "How it works:": "So funktioniert es:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE-Anforderung → DNS-Umleitung auf localhost:443 → MITM-Proxy abfangen → 9Router → Antwort auf Antigravity/Copilot",
-  "API Key": "API-Schlüssel",
   "No API keys — create one in Keys page": "Keine API-Schlüssel — erstellen Sie einen auf der Seite Schlüssel",
   "sk_9router (default)": "sk_9router (Standard)",
   "Server started": "Server gestartet",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo-Passwort erforderlich",
   "Enter your sudo password to start/stop MITM server": "Geben Sie Ihr Sudo-Passwort ein, um den MITM-Server zu starten/stoppen",
   "Sudo Password": "Sudo-Passwort",
-  "Confirm": "Bestätigen"
+  "Click to add, click again to remove. Changes are saved automatically.": "Klicken zum Hinzufügen, erneut klicken zum Entfernen. Änderungen werden automatisch gespeichert."
 }
