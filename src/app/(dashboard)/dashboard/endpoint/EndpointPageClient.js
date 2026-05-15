@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelMultiSelectField } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const TUNNEL_BENEFITS = [
@@ -45,10 +45,12 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newDailyTokenLimit, setNewDailyTokenLimit] = useState("");
   const [newExpiresAt, setNewExpiresAt] = useState("");
-  const [newAllowedModels, setNewAllowedModels] = useState("");
+  const [newAllowedModels, setNewAllowedModels] = useState([]);
   const [editingKey, setEditingKey] = useState(null);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -123,6 +125,8 @@ export default function APIPageClient({ machineId }) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // Run once on mount; handlers intentionally read current refs/state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Browser-side periodic ping: probes tunnel/tailscale URLs directly so UI stays
@@ -167,7 +171,7 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
-  const syncTunnelStatus = async () => {
+  async function syncTunnelStatus() {
     try {
       const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
       if (!statusRes.ok) return;
@@ -186,9 +190,9 @@ export default function APIPageClient({ machineId }) {
       setTsEnabled(tsEn);
       updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
-  };
+  }
 
-  const loadSettings = async () => {
+  async function loadSettings() {
     setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
@@ -226,7 +230,7 @@ export default function APIPageClient({ machineId }) {
     } finally {
       setTunnelChecking(false);
     }
-  };
+  }
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
@@ -289,19 +293,29 @@ export default function APIPageClient({ machineId }) {
     patchSetting({ cavemanLevel: level });
   };
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, providersRes, aliasesRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+      ]);
       const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+      if (keysRes.ok) setKeys(keysData.keys || []);
+      if (providersRes.ok) {
+        const providersData = await providersRes.json();
+        setActiveProviders(providersData.connections || []);
+      }
+      if (aliasesRes.ok) {
+        const aliasesData = await aliasesRes.json();
+        setModelAliases(aliasesData.aliases || {});
       }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable, also check backend status to detect process die
@@ -642,23 +656,18 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const parseAllowedModelsInput = (value) => value
-    .split(/[\n,]/)
-    .map((model) => model.trim())
-    .filter(Boolean);
-
   const resetKeyPolicyForm = () => {
     setNewKeyName("");
     setNewDailyTokenLimit("");
     setNewExpiresAt("");
-    setNewAllowedModels("");
+    setNewAllowedModels([]);
   };
 
   const buildKeyPolicyPayload = () => ({
     name: newKeyName.trim(),
     dailyTokenLimit: newDailyTokenLimit === "" ? 0 : Number(newDailyTokenLimit),
     expiresAt: newExpiresAt || null,
-    allowedModels: parseAllowedModelsInput(newAllowedModels),
+    allowedModels: newAllowedModels,
   });
 
   const handleCreateKey = async () => {
@@ -688,7 +697,7 @@ export default function APIPageClient({ machineId }) {
     setNewKeyName(key.name || "");
     setNewDailyTokenLimit(key.dailyTokenLimit ? String(key.dailyTokenLimit) : "");
     setNewExpiresAt(key.expiresAt ? key.expiresAt.slice(0, 10) : "");
-    setNewAllowedModels(Array.isArray(key.allowedModels) ? key.allowedModels.join("\n") : "");
+    setNewAllowedModels(Array.isArray(key.allowedModels) ? key.allowedModels : []);
   };
 
   const handleUpdateKeyPolicy = async () => {
@@ -784,14 +793,7 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  const [baseUrl, setBaseUrl] = useState("/v1");
-
-  // Hydration fix: Only access window on client side
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setBaseUrl(`${window.location.origin}/v1`);
-    }
-  }, []);
+  const baseUrl = typeof window !== "undefined" ? `${window.location.origin}/v1` : "/v1";
 
   if (loading) {
     return (
@@ -1276,16 +1278,16 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewExpiresAt(e.target.value)}
             hint="Leave empty for no expiry"
           />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-main">Allowed Models</label>
-            <textarea
-              value={newAllowedModels}
-              onChange={(e) => setNewAllowedModels(e.target.value)}
-              placeholder="openai/gpt-4o\nanthropic/claude-3-5-sonnet"
-              className="w-full min-h-24 py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out"
-            />
-            <p className="text-xs text-text-muted">One model per line or comma. Empty = all models.</p>
-          </div>
+          <ModelMultiSelectField
+            label="Allowed Models"
+            value={newAllowedModels}
+            onChange={setNewAllowedModels}
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            title="Select Allowed Models"
+            hint="Empty = all models. Pick provider/model or an existing combo."
+            addLabel="Add Allowed Model"
+          />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1336,16 +1338,16 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewExpiresAt(e.target.value)}
             hint="Leave empty for no expiry"
           />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-text-main">Allowed Models</label>
-            <textarea
-              value={newAllowedModels}
-              onChange={(e) => setNewAllowedModels(e.target.value)}
-              placeholder="openai/gpt-4o\nanthropic/claude-3-5-sonnet"
-              className="w-full min-h-24 py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out"
-            />
-            <p className="text-xs text-text-muted">One model per line or comma. Empty = all models.</p>
-          </div>
+          <ModelMultiSelectField
+            label="Allowed Models"
+            value={newAllowedModels}
+            onChange={setNewAllowedModels}
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            title="Select Allowed Models"
+            hint="Empty = all models. Pick provider/model or an existing combo."
+            addLabel="Add Allowed Model"
+          />
           <div className="flex gap-2">
             <Button onClick={handleUpdateKeyPolicy} fullWidth disabled={!newKeyName.trim()}>
               Save

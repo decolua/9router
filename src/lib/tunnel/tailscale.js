@@ -14,6 +14,7 @@ const BIN_DIR = path.join(DATA_DIR, "bin");
 const IS_MAC = os.platform() === "darwin";
 const IS_LINUX = os.platform() === "linux";
 const IS_WINDOWS = os.platform() === "win32";
+const SKIP_SYSTEM_TAILSCALE_PROBE = process.env.NINE_ROUTER_SKIP_SYSTEM_TAILSCALE_PROBE === "1";
 const TAILSCALE_BIN = path.join(BIN_DIR, IS_WINDOWS ? "tailscale.exe" : "tailscale");
 
 // Custom socket for userspace-networking mode (no root required)
@@ -21,8 +22,13 @@ const TAILSCALE_DIR = path.join(DATA_DIR, "tailscale");
 export const TAILSCALE_SOCKET = path.join(TAILSCALE_DIR, "tailscaled.sock");
 const SOCKET_FLAG = IS_WINDOWS ? [] : ["--socket", TAILSCALE_SOCKET];
 
-// Well-known Windows install path
-const WINDOWS_TAILSCALE_BIN = "C:\\Program Files\\Tailscale\\tailscale.exe";
+// Well-known Windows install path. Build dynamically so Next file tracing does not
+// try to copy C:\\Program Files into standalone CLI bundles on Windows.
+function getWindowsTailscaleBin() {
+  if (!IS_WINDOWS || SKIP_SYSTEM_TAILSCALE_PROBE) return null;
+  const programFiles = process.env.ProgramFiles || `${"C:"}${path.sep}Program Files`;
+  return path.join(programFiles, "Tailscale", "tailscale.exe");
+}
 
 // Common Unix install paths to probe synchronously (system tailscale)
 const UNIX_TAILSCALE_CANDIDATES = [
@@ -41,7 +47,9 @@ const funnelUrlCache = { value: null, port: null, fetchedAt: 0, refreshing: fals
 
 function fallbackBin() {
   if (fs.existsSync(TAILSCALE_BIN)) return TAILSCALE_BIN;
-  if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) return WINDOWS_TAILSCALE_BIN;
+  if (SKIP_SYSTEM_TAILSCALE_PROBE) return null;
+  const windowsTailscaleBin = getWindowsTailscaleBin();
+  if (windowsTailscaleBin && fs.existsSync(windowsTailscaleBin)) return windowsTailscaleBin;
   if (!IS_WINDOWS) return UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p)) || null;
   return null;
 }
@@ -49,6 +57,12 @@ function fallbackBin() {
 function bgRefreshBin() {
   if (binCache.refreshing) return;
   binCache.refreshing = true;
+  if (SKIP_SYSTEM_TAILSCALE_PROBE) {
+    binCache.value = fallbackBin();
+    binCache.fetchedAt = Date.now();
+    binCache.refreshing = false;
+    return;
+  }
   execAsync("which tailscale 2>/dev/null || where tailscale 2>nul", { windowsHide: true, timeout: PROBE_TIMEOUT_MS })
     .then(({ stdout }) => {
       const sys = stdout.trim();
@@ -67,11 +81,15 @@ function getTailscaleBin() {
   // First call: synchronously probe common install paths (no exec, no event-loop block)
   if (binCache.value === undefined) {
     if (fs.existsSync(TAILSCALE_BIN)) binCache.value = TAILSCALE_BIN;
-    else if (IS_WINDOWS && fs.existsSync(WINDOWS_TAILSCALE_BIN)) binCache.value = WINDOWS_TAILSCALE_BIN;
-    else if (!IS_WINDOWS) {
-      const found = UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p));
-      binCache.value = found || null;
-    } else binCache.value = null;
+    else if (SKIP_SYSTEM_TAILSCALE_PROBE) binCache.value = null;
+    else {
+      const windowsTailscaleBin = getWindowsTailscaleBin();
+      if (windowsTailscaleBin && fs.existsSync(windowsTailscaleBin)) binCache.value = windowsTailscaleBin;
+      else if (!IS_WINDOWS) {
+        const found = UNIX_TAILSCALE_CANDIDATES.find((p) => fs.existsSync(p));
+        binCache.value = found || null;
+      } else binCache.value = null;
+    }
   }
   return binCache.value;
 }
@@ -399,7 +417,8 @@ async function installTailscaleWindows(log) {
   const maxWait = 10000;
   const start = Date.now();
   while (Date.now() - start < maxWait) {
-    if (fs.existsSync(WINDOWS_TAILSCALE_BIN)) {
+    const windowsTailscaleBin = getWindowsTailscaleBin();
+    if (windowsTailscaleBin && fs.existsSync(windowsTailscaleBin)) {
       log("Installation complete.");
       return;
     }
