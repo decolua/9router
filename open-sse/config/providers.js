@@ -291,8 +291,8 @@ export const PROVIDERS = {
     format: "openai"
   },
   cohere: {
-    baseUrl: "https://api.cohere.ai/v1/chat/completions",
-    format: "openai"
+    baseUrl: "https://api.cohere.com/v2/chat",
+    format: "cohere"
   },
   nebius: {
     baseUrl: "https://api.studio.nebius.ai/v1/chat/completions",

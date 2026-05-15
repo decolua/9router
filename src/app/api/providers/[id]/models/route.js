@@ -190,7 +190,7 @@ const PROVIDER_MODELS_CONFIG = {
   together: createOpenAIModelsConfig("https://api.together.xyz/v1/models"),
   fireworks: createOpenAIModelsConfig("https://api.fireworks.ai/inference/v1/models"),
   cerebras: createOpenAIModelsConfig("https://api.cerebras.ai/v1/models"),
-  cohere: createOpenAIModelsConfig("https://api.cohere.ai/v1/models"),
+  cohere: createOpenAIModelsConfig("https://api.cohere.com/v1/models"),
   nebius: createOpenAIModelsConfig("https://api.studio.nebius.ai/v1/models"),
   siliconflow: createOpenAIModelsConfig("https://api.siliconflow.cn/v1/models"),
   hyperbolic: createOpenAIModelsConfig("https://api.hyperbolic.xyz/v1/models"),

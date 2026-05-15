@@ -52,6 +52,7 @@ function ensureInitialized() {
   require("./response/cursor-to-openai.js");
   require("./response/ollama-to-openai.js");
   require("./response/commandcode-to-openai.js");
+  require("./response/cohere-to-openai.js");
 }
 
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
