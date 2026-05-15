@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
@@ -124,7 +125,7 @@ export async function GET(request, { params }) {
       if (!baseUrl) {
         return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
       }
-      
+
       baseUrl = baseUrl.replace(/\/$/, "");
       if (baseUrl.endsWith("/messages")) {
         baseUrl = baseUrl.slice(0, -9);
@@ -152,6 +153,51 @@ export async function GET(request, { params }) {
 
       const data = await response.json();
       const models = data.data || data.models || [];
+
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models
+      });
+    }
+
+    if (connection.provider === "kiro") {
+      const credentials = {
+        accessToken: connection.accessToken,
+        refreshToken: connection.refreshToken,
+        providerSpecificData: connection.providerSpecificData || {}
+      };
+      const result = await resolveKiroModels(credentials, {
+        log: console,
+        onCredentialsRefreshed: async (refreshed) => {
+          // Best-effort persistence; the dashboard "test" / refresh paths are
+          // the canonical place to mutate connection records, so this only
+          // mutates in-memory here. The next dashboard refresh will pick up
+          // the rotated token from connection.refresh logic.
+          if (refreshed?.accessToken) connection.accessToken = refreshed.accessToken;
+          if (refreshed?.refreshToken) connection.refreshToken = refreshed.refreshToken;
+        }
+      });
+
+      if (!result) {
+        return NextResponse.json(
+          { error: "Failed to fetch Kiro models. Token may be expired or account suspended." },
+          { status: 502 }
+        );
+      }
+
+      // Shape the response like the other branches: each entry has at least
+      // { id, name }. Variants ('-thinking', '-agentic') are included so the
+      // dashboard can show them as selectable models.
+      const models = result.models.map((m) => ({
+        id: m.id,
+        name: m.name,
+        upstreamModelId: m.upstreamModelId,
+        contextLength: m.contextLength,
+        rateMultiplier: m.rateMultiplier,
+        capabilities: m.capabilities,
+        description: m.description
+      }));
 
       return NextResponse.json({
         provider: connection.provider,

@@ -1,5 +1,6 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getProviderConnections, getCombos } from "@/lib/localDb";
+import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
 /**
  * Handle CORS preflight
@@ -46,6 +47,30 @@ export async function GET() {
       activeAliases.add(alias);
     }
 
+    // Resolve live Kiro catalogs (per active Kiro account) and union all the
+    // expanded variants. Synthesised entries (-thinking, -agentic,
+    // -thinking-agentic) overlap across accounts; dedupe by id.
+    const liveKiroIds = new Map();
+    for (const conn of connections) {
+      if (conn.provider !== "kiro") continue;
+      try {
+        const result = await resolveKiroModels({
+          accessToken: conn.accessToken,
+          refreshToken: conn.refreshToken,
+          providerSpecificData: conn.providerSpecificData || {}
+        }, { log: console });
+        if (!result) continue;
+        for (const m of result.models) {
+          if (!liveKiroIds.has(m.id)) {
+            liveKiroIds.set(m.id, { id: m.id, name: m.name });
+          }
+        }
+      } catch (err) {
+        // Live fetch best-effort. Static catalog still applies.
+        console.log(`Kiro live model fetch failed for connection ${conn.id}: ${err?.message || err}`);
+      }
+    }
+
     // Collect models from active providers (or all if none active)
     const models = [];
     const timestamp = Math.floor(Date.now() / 1000);
@@ -67,6 +92,24 @@ export async function GET() {
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       // If we have active providers, only include those; otherwise include all
       if (connections.length > 0 && !activeAliases.has(alias)) {
+        continue;
+      }
+
+      // For Kiro, prefer the live catalog when available so synthesised
+      // variants (-thinking / -agentic) line up with what upstream actually
+      // exposes for this account. Fall back to the static list otherwise.
+      if (alias === "kr" && liveKiroIds.size > 0) {
+        for (const m of liveKiroIds.values()) {
+          models.push({
+            id: `${alias}/${m.id}`,
+            object: "model",
+            created: timestamp,
+            owned_by: alias,
+            permission: [],
+            root: m.id,
+            parent: null,
+          });
+        }
         continue;
       }
 
