@@ -241,11 +241,17 @@ function killAllAppProcesses(appPort) {
           const lines = output.split('\n');
 
           lines.forEach(line => {
-            const isAppProcess = line.includes("9router") || line.includes("next-server");
+            // Exclude: grep itself (cmdline = "grep <pattern>"),
+            // strace wrappers (cmdline contains strace ... 9router),
+            // any strace arguments (-- separator)
+            const isExcluded =
+              line.includes('grep ') || line.includes('grep\t') ||
+              line.includes('strace') || line.includes(' -- ');
+            const isAppProcess = !isExcluded && (line.includes("9router") || line.includes("next-server"));
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
-              if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
+              if (pid && !isNaN(pid) && pid !== process.pid?.toString()) {
                 pids.push(pid);
               }
             }
