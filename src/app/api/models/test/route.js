@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getApiKeys } from "@/lib/localDb";
-import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 // POST /api/models/test - Ping a single model via internal completions or embeddings
 export async function POST(request) {
@@ -8,7 +7,11 @@ export async function POST(request) {
     const { model, kind } = await request.json();
     if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
 
-    const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
+    // Always call back into the same running instance handling this request.
+    // In dev, process.env.PORT may not match the actual --port used by next dev,
+    // which can cause tests to hit a different local 9router instance and return 401.
+    const requestUrl = new URL(request.url);
+    const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`;
 
     // Get an active internal API key for auth (if requireApiKey is enabled)
     let apiKey = null;
@@ -24,7 +27,7 @@ export async function POST(request) {
 
     // Route to appropriate endpoint based on kind
     if (kind === "embedding") {
-      const res = await fetch(`${baseUrl}/api/v1/embeddings`, {
+      const res = await fetch(`${baseUrl}/v1/embeddings`, {
         method: "POST",
         headers,
         body: JSON.stringify({ model, input: "test" }),
@@ -47,7 +50,7 @@ export async function POST(request) {
     }
 
     // Default: chat completions
-    const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({

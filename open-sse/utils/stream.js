@@ -58,6 +58,39 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+  let emittedClientChunk = false;
+
+  function emitClaudeFallback(controller) {
+    if (sourceFormat !== FORMATS.CLAUDE || emittedClientChunk) return;
+    const msgId = state?.messageId || `msg_${Date.now()}`;
+    const modelName = state?.model || model || "unknown";
+    const fallbackItems = [
+      {
+        type: "message_start",
+        message: {
+          id: msgId,
+          type: "message",
+          role: "assistant",
+          model: modelName,
+          content: [],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 0, output_tokens: 0 }
+        }
+      },
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: " " } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 0, output_tokens: 0 } },
+      { type: "message_stop" }
+    ];
+    for (const item of fallbackItems) {
+      const output = formatSSE(item, FORMATS.CLAUDE);
+      reqLogger?.appendConvertedChunk?.(output);
+      controller.enqueue(sharedEncoder.encode(output));
+      emittedClientChunk = true;
+    }
+  }
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -165,12 +198,36 @@ export function createSSEStream(options = {}) {
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
-        // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
-        // For other formats: done=true is the [DONE] sentinel, skip
+        // For Ollama: done=true is the final chunk with finish_reason/usage, must translate.
+        // For OpenAI-like clients: forward [DONE] sentinel.
+        // For Claude clients: do NOT emit [DONE] (Claude SSE ends with message_stop).
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
-          const output = "data: [DONE]\n\n";
+          if (sourceFormat !== FORMATS.CLAUDE) {
+            const output = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+            emittedClientChunk = true;
+          } else {
+            emitClaudeFallback(controller);
+          }
+          continue;
+        }
+
+        // Some upstreams (e.g. opencode for specific models) may emit Claude-style chunks
+        // even when the request path is OpenAI-compatible. If the client also expects Claude,
+        // pass these chunks through directly instead of trying OpenAI->Claude translation.
+        if (
+          sourceFormat === FORMATS.CLAUDE &&
+          parsed &&
+          parsed.type &&
+          !parsed.choices &&
+          !parsed.candidates
+        ) {
+          if (!hasValuableContent(parsed, FORMATS.CLAUDE)) continue;
+          const output = formatSSE(parsed, FORMATS.CLAUDE);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
+          emittedClientChunk = true;
           continue;
         }
 
@@ -248,6 +305,7 @@ export function createSSEStream(options = {}) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            emittedClientChunk = true;
           }
         }
       }
@@ -313,6 +371,7 @@ export function createSSEStream(options = {}) {
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
+                emittedClientChunk = true;
               }
             }
           }
@@ -332,12 +391,19 @@ export function createSSEStream(options = {}) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            emittedClientChunk = true;
           }
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        if (sourceFormat === FORMATS.CLAUDE && !emittedClientChunk) {
+          emitClaudeFallback(controller);
+        }
+
+        if (sourceFormat !== FORMATS.CLAUDE) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);

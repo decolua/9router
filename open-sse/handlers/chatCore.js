@@ -57,7 +57,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
-  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode";
+  // OpenCode's qwen3.6-plus-free currently fails with stream=false upstream (HTTP 500).
+  // Force streaming and let the existing SSE→JSON bridge handle non-streaming clients.
+  const opencodeStreamOnlyModel = provider === "opencode" && model === "qwen3.6-plus-free";
+  const providerRequiresStreaming = provider === "openai" || provider === "codex" || provider === "commandcode" || opencodeStreamOnlyModel;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
 
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
@@ -71,7 +74,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const acceptHeader = clientRawRequest?.headers?.accept || "";
   const clientPrefersJson = acceptHeader.includes("application/json");
   const clientPrefersSSE = acceptHeader.includes("text/event-stream");
-  if (clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
+  if (!providerRequiresStreaming && clientPrefersJson && !clientPrefersSSE && body.stream !== true) {
     stream = false;
   }
 
@@ -113,6 +116,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
+
+  // Keep payload stream flag consistent with runtime decision.
+  // Some upstreams (e.g. opencode qwen3.6-plus-free) fail when body.stream=false
+  // even if transport headers are prepared for SSE.
+  if (stream && translatedBody && Object.prototype.hasOwnProperty.call(translatedBody, "stream")) {
+    translatedBody.stream = true;
+  }
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
