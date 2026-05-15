@@ -259,6 +259,12 @@ export class KiroService {
   async listAvailableModels(accessToken, profileArn) {
     const endpoint = "https://codewhisperer.us-east-1.amazonaws.com";
     const target = "AmazonCodeWhispererService.ListAvailableModels";
+    const body = {
+      origin: "AI_EDITOR",
+    };
+    if (profileArn) {
+      body.profileArn = profileArn;
+    }
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -268,10 +274,7 @@ export class KiroService {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
       },
-      body: JSON.stringify({
-        origin: "AI_EDITOR",
-        profileArn,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -280,14 +283,26 @@ export class KiroService {
     }
 
     const data = await response.json();
-    return (data.models || []).map(m => ({
-      id: m.modelId,
-      name: m.modelName || m.modelId,
-      description: m.description,
-      rateMultiplier: m.rateMultiplier,
-      rateUnit: m.rateUnit,
-      maxInputTokens: m.tokenLimits?.maxInputTokens || 0,
-    }));
+    const models = data.models
+      || data.availableModels
+      || data.modelSummaries
+      || data.modelMetadataList
+      || data.modelConfigurations
+      || data.items
+      || [];
+
+    return models.map(m => {
+      const id = m.modelId || m.id || m.model || m.name;
+      if (!id) return null;
+      return {
+        id,
+        name: m.modelName || m.displayName || m.name || id,
+        description: m.description,
+        rateMultiplier: m.rateMultiplier,
+        rateUnit: m.rateUnit,
+        maxInputTokens: m.tokenLimits?.maxInputTokens || m.maxInputTokens || m.contextLength || 0,
+      };
+    }).filter(Boolean);
   }
 
   /**

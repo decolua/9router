@@ -297,7 +297,7 @@ export async function GET(request, { params }) {
         const accessToken = connection.accessToken;
         const refreshToken = connection.refreshToken;
 
-        if (accessToken && profileArn) {
+        if (accessToken) {
           try {
             const models = await kiroService.listAvailableModels(accessToken, profileArn);
             return NextResponse.json({
@@ -317,7 +317,8 @@ export async function GET(request, { params }) {
                   expiresIn: refreshed.expiresIn,
                 });
 
-                const models = await kiroService.listAvailableModels(refreshed.accessToken, profileArn);
+                const refreshedProfileArn = refreshed.profileArn || profileArn;
+                const models = await kiroService.listAvailableModels(refreshed.accessToken, refreshedProfileArn);
                 return NextResponse.json({
                   provider: connection.provider,
                   connectionId: connection.id,

@@ -16,6 +16,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import SyncProviderModelsModal from "./SyncProviderModelsModal";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -39,6 +40,7 @@ export default function ProviderDetailPage() {
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelId, setTestingModelId] = useState(null);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [showSyncModels, setShowSyncModels] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
@@ -342,6 +344,39 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error deleting alias:", error);
     }
+  };
+
+  const resolveAvailableAlias = (preferredAlias, usedAliases) => {
+    const cleanAlias = preferredAlias || "model";
+    if (!usedAliases.has(cleanAlias)) return cleanAlias;
+    const prefixed = `${providerDisplayAlias}-${cleanAlias}`;
+    if (!usedAliases.has(prefixed)) return prefixed;
+    let index = 2;
+    while (usedAliases.has(`${prefixed}-${index}`)) index += 1;
+    return `${prefixed}-${index}`;
+  };
+
+  const handleAddSyncedModels = async (items) => {
+    const usedAliases = new Set(Object.keys(modelAliases));
+    const usedModels = new Set(Object.values(modelAliases));
+
+    for (const item of items) {
+      if (!item?.id) continue;
+      const fullModel = `${providerStorageAlias}/${item.id}`;
+      if (usedModels.has(fullModel)) continue;
+      const alias = resolveAvailableAlias(item.alias || item.id, usedAliases);
+      const res = await fetch("/api/models/alias", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: fullModel, alias }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Failed to add ${item.id}`);
+      usedAliases.add(alias);
+      usedModels.add(fullModel);
+    }
+
+    await fetchAliases();
   };
 
   const handleDelete = async (id) => {
@@ -705,7 +740,7 @@ export default function ProviderDetailPage() {
         // Only show if not already in hardcoded list
         // For passthroughModels, include all aliases (model IDs may contain slashes like "anthropic/claude-3")
         if (providerInfo.passthroughModels) return !models.some((m) => m.id === modelId);
-        return !models.some((m) => m.id === modelId) && alias === modelId;
+        return !models.some((m) => m.id === modelId);
       })
       .map(([alias, fullModel]) => ({
         id: fullModel.slice(`${providerStorageAlias}/`.length),
@@ -766,6 +801,16 @@ export default function ProviderDetailPage() {
         >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
+        </button>
+
+        <button
+          onClick={() => setShowSyncModels(true)}
+          disabled={!connections.some((conn) => conn.isActive !== false)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 sm:w-auto"
+          title={connections.some((conn) => conn.isActive !== false) ? "Sync models from upstream" : "Add an active connection before syncing"}
+        >
+          <span className="material-symbols-outlined text-sm">sync</span>
+          Sync Models
         </button>
 
         {/* Suggested models from provider API — show only models not yet added */}
@@ -1132,6 +1177,11 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
+                {connections.some((conn) => conn.isActive !== false) && (
+                  <Button size="sm" variant="secondary" icon="sync" onClick={() => setShowSyncModels(true)}>
+                    Sync Models
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
@@ -1251,6 +1301,23 @@ export default function ProviderDetailPage() {
         message={confirmState?.message}
         variant="danger"
       />
+      {!isCompatible && (
+        <SyncProviderModelsModal
+          isOpen={showSyncModels}
+          connections={connections}
+          existingModelIds={[
+            ...models.map((model) => model.id),
+            ...kiloFreeModels.map((model) => model.id),
+            ...Object.values(modelAliases)
+              .filter((fullModel) => fullModel.startsWith(`${providerStorageAlias}/`))
+              .map((fullModel) => fullModel.slice(`${providerStorageAlias}/`.length)),
+          ]}
+          providerDisplayAlias={providerDisplayAlias}
+          passthroughModels={!!providerInfo.passthroughModels}
+          onAddModels={handleAddSyncedModels}
+          onClose={() => setShowSyncModels(false)}
+        />
+      )}
     </div>
   );
 }
