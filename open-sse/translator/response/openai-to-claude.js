@@ -11,14 +11,33 @@ function sanitizeToolArgs(toolName, argsJson) {
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
-    if (name === "Read") {
-      if (typeof args.limit === "number" && args.limit > 2000) args.limit = 2000;
-      if (typeof args.offset === "number" && args.offset < 0) args.offset = 0;
-    }
+    if (name === "Read") sanitizeReadArgs(args);
     return JSON.stringify(args);
   } catch {
     return argsJson;
   }
+}
+
+function sanitizeReadArgs(args) {
+  if (typeof args.limit === "string" && /^\d+$/.test(args.limit)) args.limit = Number(args.limit);
+  if (typeof args.offset === "string" && /^-?\d+$/.test(args.offset)) args.offset = Number(args.offset);
+
+  if (typeof args.limit === "number") {
+    if (args.limit > 2000) args.limit = 2000;
+    if (args.limit < 1) delete args.limit;
+  }
+  if (typeof args.offset === "number" && args.offset < 0) args.offset = 0;
+
+  if ("pages" in args && !isValidPdfPagesArg(args.file_path, args.pages)) {
+    delete args.pages;
+  }
+}
+
+function isValidPdfPagesArg(filePath, pages) {
+  return typeof filePath === "string" &&
+    filePath.toLowerCase().endsWith(".pdf") &&
+    typeof pages === "string" &&
+    /^\d+(?:-\d+)?$/.test(pages);
 }
 
 // Helper: stop thinking block if started
