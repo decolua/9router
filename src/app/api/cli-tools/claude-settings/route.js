@@ -41,7 +41,7 @@ const readSettings = async () => {
   try {
     const settingsPath = getClaudeSettingsPath();
     const content = await fs.readFile(settingsPath, "utf-8");
-    return JSON.parse(content);
+    return JSON.parse(content.replace(/^\uFEFF/, ""));
   } catch (error) {
     if (error.code === "ENOENT") {
       return null;
@@ -103,7 +103,7 @@ export async function POST(request) {
     let currentSettings = {};
     try {
       const content = await fs.readFile(settingsPath, "utf-8");
-      currentSettings = JSON.parse(content);
+      currentSettings = JSON.parse(content.replace(/^\uFEFF/, ""));
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -162,7 +162,7 @@ export async function DELETE() {
     let currentSettings = {};
     try {
       const content = await fs.readFile(settingsPath, "utf-8");
-      currentSettings = JSON.parse(content);
+      currentSettings = JSON.parse(content.replace(/^\uFEFF/, ""));
     } catch (error) {
       if (error.code === "ENOENT") {
         return NextResponse.json({
@@ -200,4 +200,3 @@ export async function DELETE() {
     );
   }
 }
-

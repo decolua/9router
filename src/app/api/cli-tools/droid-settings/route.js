@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { is9RouterConfig } from "./utils";
 
 const execAsync = promisify(exec);
 
@@ -44,10 +45,9 @@ const readSettings = async () => {
   }
 };
 
-// Check if settings has 9Router customModels
 const has9RouterConfig = (settings) => {
   if (!settings || !settings.customModels) return false;
-  return settings.customModels.some(m => m.id?.startsWith("custom:9Router"));
+  return settings.customModels.some(m => is9RouterConfig(m));
 };
 
 // GET - Check droid CLI and read current settings
@@ -109,12 +109,12 @@ export async function POST(request) {
       settings.customModels = [];
     }
 
-    // Remove all existing 9Router configs
-    settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:9Router"));
-
     // Normalize baseUrl to ensure /v1 suffix
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     const keyToUse = apiKey || "your_api_key";
+
+    // Remove all existing 9Router configs
+    settings.customModels = settings.customModels.filter(m => !is9RouterConfig(m, normalizedBaseUrl));
 
     // Determine active model: prefer explicit activeModel, else first of modelsArray
     // If activeModel is explicitly empty string, no model will be set as default
@@ -142,7 +142,7 @@ export async function POST(request) {
         displayName: m,
         maxOutputTokens: 131072,
         noImageSupport: false,
-        provider: "openai",
+        provider: "generic-chat-completion-api",
       });
     }
 
@@ -191,7 +191,7 @@ export async function DELETE() {
 
     // Remove 9Router customModels
     if (settings.customModels) {
-      settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:9Router"));
+      settings.customModels = settings.customModels.filter(m => !is9RouterConfig(m));
       
       // Remove customModels array if empty
       if (settings.customModels.length === 0) {
