@@ -25,7 +25,7 @@ function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [period, setPeriod] = useState("7d");
+  const [period, setPeriod] = useState("today");
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)

@@ -202,7 +202,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
-  const [periodLocal, setPeriodLocal] = useState("7d");
+  const [periodLocal, setPeriodLocal] = useState("today");
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
