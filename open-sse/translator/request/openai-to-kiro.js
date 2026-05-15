@@ -13,16 +13,70 @@ import {
 } from "../../config/kiroConstants.js";
 
 /**
+ * Parse an OpenAI/Claude vision content part into a Kiro `images` entry.
+ *
+ * Accepts both Claude-style image blocks (already translated to OpenAI shape
+ * upstream by `claude-to-openai`, but kept as a defensive fallback) and
+ * OpenAI `image_url` blocks. Only `data:image/<fmt>;base64,...` data URLs are
+ * supported \u2014 remote URLs are deliberately dropped (no synchronous network
+ * fetch in the request hot path, mirroring CLIProxyAPIPlus behaviour).
+ *
+ * Returns `null` when the part is not an image, or when the URL is malformed
+ * or non-data.
+ */
+function extractKiroImage(part) {
+  if (!part || typeof part !== "object") return null;
+
+  // Claude-style native image block (rare here \u2014 claude-to-openai converts these
+  // to image_url before we see them, but be defensive).
+  if (part.type === "image" && part.source) {
+    const mediaType = part.source.media_type;
+    const data = part.source.data;
+    if (typeof mediaType === "string" && typeof data === "string" && mediaType && data) {
+      const slashIdx = mediaType.lastIndexOf("/");
+      const format = slashIdx >= 0 ? mediaType.slice(slashIdx + 1) : "";
+      if (format) {
+        return { format, source: { bytes: data } };
+      }
+    }
+    return null;
+  }
+
+  // OpenAI image_url block. Either { type: "image_url", image_url: { url } } or
+  // { type: "image_url", image_url: "data:..." } depending on client.
+  if (part.type !== "image_url") return null;
+  let url;
+  if (typeof part.image_url === "string") {
+    url = part.image_url;
+  } else if (part.image_url && typeof part.image_url === "object") {
+    url = part.image_url.url;
+  }
+  if (typeof url !== "string" || !url.startsWith("data:")) return null;
+
+  const semiIdx = url.indexOf(";base64,");
+  if (semiIdx < 0) return null;
+  const mediaType = url.slice(5, semiIdx);            // strip "data:"
+  const bytes = url.slice(semiIdx + ";base64,".length);
+  if (!mediaType || !bytes) return null;
+
+  const slashIdx = mediaType.lastIndexOf("/");
+  const format = slashIdx >= 0 ? mediaType.slice(slashIdx + 1) : "";
+  if (!format) return null;
+  return { format, source: { bytes } };
+}
+
+/**
  * Convert OpenAI messages to Kiro format
  * Rules: system/tool/user -> user role, merge consecutive same roles
  */
 function convertMessages(messages, tools, model) {
   let history = [];
   let currentMessage = null;
-  
+
   let pendingUserContent = [];
   let pendingAssistantContent = [];
   let pendingToolResults = [];
+  let pendingUserImages = [];
   let currentRole = null;
 
   const flushPending = () => {
@@ -34,7 +88,11 @@ function convertMessages(messages, tools, model) {
           modelId: ""
         }
       };
-      
+
+      if (pendingUserImages.length > 0) {
+        userMsg.userInputMessage.images = pendingUserImages;
+      }
+
       if (pendingToolResults.length > 0) {
         userMsg.userInputMessage.userInputMessageContext = {
           toolResults: pendingToolResults
@@ -70,6 +128,7 @@ function convertMessages(messages, tools, model) {
       currentMessage = userMsg;
       pendingUserContent = [];
       pendingToolResults = [];
+      pendingUserImages = [];
     } else if (currentRole === "assistant") {
       const content = pendingAssistantContent.join("\n\n").trim() || "...";
       const assistantMsg = {
@@ -107,7 +166,14 @@ function convertMessages(messages, tools, model) {
           .filter(c => c.type === "text" || c.text)
           .map(c => c.text || "");
         content = textParts.join("\n");
-        
+
+        // Extract image parts (OpenAI image_url + Claude-native image blocks).
+        // Only data URLs are supported; remote URLs are dropped.
+        for (const c of msg.content) {
+          const img = extractKiroImage(c);
+          if (img) pendingUserImages.push(img);
+        }
+
         // Check for tool_result blocks
         const toolResultBlocks = msg.content.filter(c => c.type === "tool_result");
         if (toolResultBlocks.length > 0) {
@@ -280,6 +346,7 @@ export function buildKiroPayload(model, body, stream, credentials) {
   }
   finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
 
+  const currentImages = currentMessage?.userInputMessage?.images;
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
@@ -289,6 +356,9 @@ export function buildKiroPayload(model, body, stream, credentials) {
           content: finalContent,
           modelId: upstreamModel,
           origin: "AI_EDITOR",
+          ...(Array.isArray(currentImages) && currentImages.length > 0 && {
+            images: currentImages
+          }),
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
             userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
           })
