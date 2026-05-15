@@ -71,7 +71,7 @@ export const CLI_TOOLS = {
   claude: {
     id: "claude",
     name: "Claude Code",
-    icon: "terminal",
+    image: "/providers/claude.png",
     color: "#D97757",
     description: "Anthropic Claude Code CLI",
     configType: "env",
@@ -100,7 +100,7 @@ export const CLI_TOOLS = {
   },
   codex: {
     id: "codex",
-    name: "OpenAI Codex CLI",
+    name: "OpenAI Codex CLI / App",
     image: "/providers/codex.png",
     color: "#10A37F",
     description: "OpenAI Codex CLI",
@@ -165,14 +165,7 @@ export const CLI_TOOLS = {
     image: "/providers/cline.png",
     color: "#00D1B2",
     description: "Cline AI Coding Assistant",
-    configType: "guide",
-    guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Cline Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
+    configType: "custom",
   },
   kilo: {
     id: "kilo",
@@ -180,14 +173,7 @@ export const CLI_TOOLS = {
     image: "/providers/kilocode.png",
     color: "#FF6B6B",
     description: "Kilo Code AI Assistant",
-    configType: "guide",
-    guideSteps: [
-      { step: 1, title: "Open Settings", desc: "Go to Kilo Code Settings panel" },
-      { step: 2, title: "Select Provider", desc: "Choose API Provider → OpenAI Compatible" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}/v1", copyable: true },
-      { step: 4, title: "API Key", type: "apiKeySelector" },
-      { step: 5, title: "Select Model", type: "modelSelector" },
-    ],
+    configType: "custom",
   },
   roo: {
     id: "roo",
@@ -227,6 +213,135 @@ export const CLI_TOOLS = {
   "apiKey": "{{apiKey}}"
 }`,
     },
+  },
+  amp: {
+    id: "amp",
+    name: "Amp CLI",
+    image: "/providers/amp.png",
+    color: "#F97316",
+    description: "Sourcegraph Amp coding assistant CLI",
+    docsUrl: "/docs?section=cli-tools&tool=amp",
+    configType: "guide",
+    defaultCommand: "amp",
+    modelAliases: ["g25p", "g25f", "cs45", "g54"],
+    notes: [
+      { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
+      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `export OPENAI_API_KEY="{{apiKey}}"
+export OPENAI_BASE_URL="{{baseUrl}}"
+amp --model "{{model}}"
+# Example shorthand aliases you can map locally:
+# g25p -> gemini/gemini-2.5-pro
+# cs45 -> cc/claude-sonnet-4-5-20250929`,
+    },
+  },
+  qwen: {
+    id: "qwen",
+    name: "Qwen Code",
+    image: "/providers/qwen.png",
+    color: "#10B981",
+    description: "Alibaba Qwen Code CLI — supports OpenAI, Anthropic & Gemini providers via 9Router",
+    docsUrl: "https://qwenlm.github.io/qwen-code-docs/en/users/configuration/model-providers/",
+    configType: "guide",
+    defaultCommand: "qwen",
+    notes: [
+      { type: "info", text: "Qwen Code supports multiple provider types (openai, anthropic, gemini) via modelProviders in settings.json. 9Router works as an OpenAI-compatible endpoint." },
+      { type: "info", text: "Any model available in 9Router can be used — not just Qwen models. Select from Qwen, Claude, Gemini, GPT, and more." },
+      { type: "warning", text: "Config path: Linux/macOS ~/.qwen/settings.json • Windows %USERPROFILE%\\.qwen\\settings.json" },
+      { type: "error", text: "Qwen OAuth free tier was discontinued on 2026-04-15. Use 9Router with alicode/openrouter/anthropic/gemini providers instead." },
+    ],
+    modelAliases: ["coder-model", "qwen3-coder-plus", "qwen3-coder-flash", "vision-model", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gemini-3-flash", "gemini-3.1-pro-high"],
+    defaultModels: [
+      { id: "coder-model", name: "Coder Model (Qwen 3.6 Plus)", alias: "coder-model", envKey: "OPENAI_MODEL", defaultValue: "coder-model", isTopLevel: true },
+      { id: "qwen3-coder-plus", name: "Qwen 3 Coder Plus", alias: "qwen3-coder-plus", envKey: "OPENAI_MODEL", defaultValue: "qwen3-coder-plus" },
+      { id: "qwen3-coder-flash", name: "Qwen 3 Coder Flash", alias: "qwen3-coder-flash", envKey: "OPENAI_MODEL", defaultValue: "qwen3-coder-flash" },
+      { id: "vision-model", name: "Vision Model (Multimodal)", alias: "vision-model", envKey: "OPENAI_MODEL", defaultValue: "vision-model" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6", envKey: "OPENAI_MODEL", defaultValue: "claude-sonnet-4-6" },
+      { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 Thinking", alias: "claude-opus-4-6-thinking", envKey: "OPENAI_MODEL", defaultValue: "claude-opus-4-6-thinking" },
+      { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high", envKey: "OPENAI_MODEL", defaultValue: "gemini-3.1-pro-high" },
+      { id: "gemini-3-flash", name: "Gemini 3 Flash", alias: "gemini-3-flash", envKey: "OPENAI_MODEL", defaultValue: "gemini-3-flash" },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Qwen Code", desc: "npm install -g @qwen-code/qwen-code" },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Save Config", desc: "Copy the JSON below to your ~/.qwen/settings.json file." },
+    ],
+    codeBlock: {
+      language: "json",
+      code: `{
+  "security": {
+    "auth": {
+      "selectedType": "openai",
+      "apiKey": "{{apiKey}}",
+      "baseUrl": "{{baseUrl}}"
+    }
+  },
+  "model": {
+    "name": "{{model}}"
+  }
+}`,
+    },
+  },
+  "deepseek-tui": {
+    id: "deepseek-tui",
+    name: "DeepSeek TUI",
+    image: "/providers/deepseek-tui.png",
+    color: "#4D6BFE",
+    description: "DeepSeek Terminal Coding Agent (Rust TUI)",
+    docsUrl: "https://github.com/DeepSeek-TUI/DeepSeek-TUI",
+    configType: "custom",
+    defaultCommand: "deepseek",
+    modelAliases: ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
+    defaultModels: [
+      { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", alias: "deepseek-v4-pro" },
+      { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", alias: "deepseek-v4-flash" },
+      { id: "deepseek-chat", name: "DeepSeek V3 Chat", alias: "deepseek-chat" },
+    ],
+    notes: [
+      { type: "info", text: "DeepSeek TUI uses ~/.deepseek/config.toml for configuration. 9Router will update the provider to 'openai' mode with your base_url, api_key, and model." },
+      { type: "warning", text: "Config path: Linux/macOS ~/.deepseek/config.toml • Windows %USERPROFILE%\\.deepseek\\config.toml" },
+    ],
+  },
+  jcode: {
+    id: "jcode",
+    name: "jcode",
+    image: "/providers/jcode.png",
+    color: "#FF6B35",
+    description: "High-performance Rust-based coding agent harness",
+    configType: "custom",
+    docsUrl: "https://github.com/1jehuang/jcode",
+    notes: [
+      {
+        type: "info",
+        text: "jcode is a Rust-based coding agent with semantic memory, multi-agent swarms, and extreme performance (27.8 MB RAM, 14ms boot)."
+      },
+      {
+        type: "info",
+        text: "Configure 9router as an OpenAI-compatible provider to route all jcode requests through 9router's optimization layer."
+      },
+      {
+        type: "warning",
+        text: "Requires jcode installed. Install via: curl -fsSL https://raw.githubusercontent.com/1jehuang/jcode/master/scripts/install.sh | bash"
+      },
+    ],
+    defaultModels: [
+      { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
+      { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
+    ],
   },
   // HIDDEN: gemini-cli
   // "gemini-cli": {

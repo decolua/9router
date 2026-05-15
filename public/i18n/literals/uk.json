@@ -12,7 +12,7 @@
   "Logout": "Вийти",
   "Login": "Увійти",
   "Providers": "Постачальники",
-  "Usage": "Використання",
+  "Usage": "Статистика використання",
   "API Key": "Ключ API",
   "Connected": "Підключено",
   "Disconnected": "Відключено",
@@ -91,9 +91,7 @@
   "Dark": "Темна",
   "Auto": "Авто",
   "Endpoint": "Кінцева точка",
-  "Providers": "Постачальники",
   "Combos": "Комбо",
-  "Usage": "Статистика використання",
   "Quota Tracker": "Відстеження квоти",
   "MITM": "MITM",
   "CLI Tools": "Інструменти",
@@ -150,7 +148,6 @@
   "No Proxy": "Без проксі",
   "Comma-separated hostnames/domains to bypass the proxy.": "Розділені комами імена хостів/домени для обходу проксі.",
   "Test proxy URL": "Протестувати URL проксі",
-  "Apply": "Застосувати",
   "Proxy settings applied": "Параметри проксі застосовані",
   "Proxy enabled": "Проксі увімкнено",
   "Proxy disabled": "Проксі вимкнено",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Використовуйте Antigravity IDE & GitHub Copilot → з БУДЬ-ЯКИМ постачальником/моделлю від 9Router",
   "How it works:": "Як це працює:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Запит Antigravity/Copilot IDE → Перенаправлення DNS на localhost:443 → MITM проксі перехопити → 9Router → відповідь на Antigravity/Copilot",
-  "API Key": "Ключ API",
   "No API keys — create one in Keys page": "Немає ключів API — створіть один на сторінці ключів",
   "sk_9router (default)": "sk_9router (за замовчуванням)",
   "Server started": "Сервер запущено",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Потрібен пароль Sudo",
   "Enter your sudo password to start/stop MITM server": "Введіть пароль sudo для запуску/зупинення MITM сервера",
   "Sudo Password": "Пароль Sudo",
-  "Confirm": "Підтвердити"
+  "Click to add, click again to remove. Changes are saved automatically.": "Натисніть, щоб додати, натисніть ще раз, щоб видалити. Зміни зберігаються автоматично."
 }

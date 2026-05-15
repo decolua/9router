@@ -512,13 +512,11 @@
   "The proxy server has been stopped.": "代理服务器已停止。",
   "Reload Page": "重新加载页面",
   "Service is running in terminal. You can close this web page. Shutdown will stop the service.": "服务正在终端中运行。您可以关闭此网页。关闭将停止服务。",
-
   "One Endpoint for": "统一端点，接入",
   "All AI Providers": "所有 AI 提供商",
   "Route AI requests through subscription, cheap, and free tiers with auto-fallback. One endpoint for Claude, GPT, Gemini, and more.": "通过订阅、低价和免费层级路由 AI 请求并自动回退。一个端点接入 Claude、GPT、Gemini 等。",
   "Get Started": "开始使用",
   "View on GitHub": "在 GitHub 上查看",
-
   "How 9Router Works": "9Router 工作原理",
   "Data flows seamlessly through our intelligent routing system": "数据通过我们的智能路由系统无缝流转",
   "1. CLI & SDKs": "1. CLI 和 SDK",
@@ -527,7 +525,6 @@
   "Our engine analyzes the prompt and routes through your subscription, cheap, and free provider tiers with automatic fallback.": "我们的引擎分析提示词并通过您的订阅、低价和免费提供商层级路由，自动回退。",
   "3. AI Providers": "3. AI 提供商",
   "The request is fulfilled by OpenAI, Anthropic, Gemini, or others instantly.": "请求由 OpenAI、Anthropic、Gemini 或其他提供商即时响应。",
-
   "Powerful Features": "强大功能",
   "Everything you need to manage your AI infrastructure efficiently.": "高效管理 AI 基础设施所需的一切。",
   "Unified Endpoint": "统一端点",
@@ -546,7 +543,6 @@
   "Native CLI tool support for Cursor, Claude, Copilot, and more.": "原生支持 Cursor、Claude、Copilot 等 CLI 工具。",
   "Dashboard": "仪表盘",
   "Beautiful web dashboard for managing providers and monitoring usage.": "精美的 Web 仪表盘，用于管理提供商和监控使用情况。",
-
   "Get Started in 30 Seconds": "30 秒快速上手",
   "Install 9Router": "安装 9Router",
   "Open Dashboard": "打开仪表盘",
@@ -554,13 +550,10 @@
   "npm install -g 9router": "npm install -g 9router",
   "open http://localhost:9099": "open http://localhost:9099",
   "Ready! Requests route automatically through your configured providers.": "就绪！请求将自动通过您配置的提供商路由。",
-
   "How it Works": "工作原理",
   "Docs": "文档",
   "GitHub": "GitHub",
-
   "Legal": "法律",
-
   "Manage your AI provider connections": "管理您的 AI 提供商连接",
   "Model combos with fallback": "模型组合及回退",
   "Monitor your API usage, token consumption, and request logs": "监控您的 API 使用量、Token 消耗和请求日志",
@@ -575,15 +568,12 @@
   "MITM Proxy": "MITM 代理",
   "Translator": "翻译器",
   "Media Providers": "媒体提供商",
-
   "Theme": "主题",
   "Remote": "远程",
   "Logout": "退出登录",
   "Change Log": "更新日志",
-
   "Proxy Pools": "代理池",
   "MITM": "MITM",
-
   "Loading...": "加载中...",
   "Enter your password to access the dashboard": "输入密码以访问仪表盘",
   "Password": "密码",
@@ -592,7 +582,6 @@
   "Default password is 123456": "默认密码为 123456",
   "Invalid password": "密码错误",
   "An error occurred. Please try again.": "发生错误，请重试。",
-
   "light": "浅色",
   "dark": "深色",
   "system": "跟随系统",
@@ -602,11 +591,9 @@
   "Record request details for inspection in the logs view": "记录请求详情以在日志视图中查看",
   "Update Password": "修改密码",
   "Set Password": "设置密码",
-
   "Overview": "概览",
   "Details": "详情",
   "Search...": "搜索...",
-
   "Saving...": "保存中...",
   "Save": "保存",
   "Save Changes": "保存更改",
@@ -615,27 +602,22 @@
   "Import": "导入",
   "Deploying... (may take ~1 min)": "部署中...（可能需要约 1 分钟）",
   "Deploy": "部署",
-
   "Enable": "启用",
   "Disable": "禁用",
   "Token Saver": "Token 节省器",
   "Experimental": "实验性",
   "Compress tool output to reduce token usage.": "压缩工具输出以减少 Token 使用量。",
   "sk_9router (default)": "sk_9router（默认）",
-
   "Install Tailscale": "安装 Tailscale",
   "Installing Tailscale...": "正在安装 Tailscale...",
   "Tailscale installed": "Tailscale 已安装",
   "Tailscale Funnel": "Tailscale Funnel",
   "Allow dashboard access via tunnel": "允许通过隧道访问仪表盘",
-
   "Disconnected from server": "与服务器断开连接",
   "Attempting to reconnect...": "正在尝试重新连接...",
   "Click to retry": "点击重试",
-
   "Failed to load changelog:": "加载更新日志失败：",
   "Copied!": "已复制！",
-
   "Manage reusable per-connection proxies and bind them to provider connections.": "管理可复用的连接代理并绑定到提供商连接。",
   "Vercel Relay": "Vercel Relay",
   "Batch Import": "批量导入",
@@ -665,7 +647,6 @@
   "Proxy pool deleted": "代理池已删除",
   "Proxy test passed": "代理测试通过",
   "Proxy test failed": "代理测试失败",
-
   "Replay request flow — matches log files": "重放请求流程——匹配日志文件",
   "Client Request": "客户端请求",
   "Source Body": "源请求体",
@@ -678,7 +659,6 @@
   "Send": "发送",
   "→ OpenAI": "→ OpenAI",
   "→ Target": "→ 目标",
-
   "Terminal": "终端",
   "Full shell access": "完整 Shell 访问",
   "Desktop": "桌面",
@@ -690,7 +670,6 @@
   "Works on any device": "适用于任何设备",
   "Access your terminal, desktop & files from anywhere": "从任何地方访问您的终端、桌面和文件",
   "Get 9Remote": "获取 9Remote",
-
   "Manual configuration is still available if 9router is deployed on a remote server.": "如果 9router 部署在远程服务器上，仍可使用手动配置。",
   "How to Install": "如何安装",
   "Hide": "隐藏",
@@ -714,9 +693,7 @@
   "Trust Cert": "信任证书",
   "Trusted": "已信任",
   "not detected locally": "未在本地检测到",
-
   "Select to pre-fill, then edit model ID in the input": "选择以预填充，然后在输入框中编辑模型 ID",
-
   "Free & Free Tier Providers": "免费及免费额度提供商",
   "Testing...": "测试中...",
   "Test All": "全部测试",
@@ -740,13 +717,11 @@
   "Model ID (optional)": "模型 ID（可选）",
   "If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead.": "如果提供商不支持 /models 端点，请输入模型 ID 通过 chat/completions 进行验证。",
   "(via inference test)": "（通过推理测试）",
-
   "Delete this combo?": "删除此组合？",
   "Name is required": "名称为必填项",
   "Failed to create combo": "创建组合失败",
   "Failed to update combo": "更新组合失败",
   "Only letters, numbers, -, _ and . allowed": "仅允许使用字母、数字、-、_ 和 .",
-
   "Input Cost": "输入成本",
   "Output Cost": "输出成本",
   "Total Cost": "总成本",
@@ -755,18 +730,15 @@
   "Just now": "刚刚",
   "m ago": "分钟前",
   "h ago": "小时前",
-
   "None": "无",
   "disabled": "已禁用",
   "OAuth Account": "OAuth 账号",
   "no_proxy:": "无代理：",
   "Pool:": "代理池：",
   "Legacy:": "旧版：",
-
   "Error": "错误",
   "more": "更多",
   "Proxy": "代理",
-
   "No authentication required": "无需身份验证",
   "This provider is ready to use.": "此提供商已准备就绪。",
   "Available Models": "可用模型",
@@ -788,5 +760,7 @@
   "connections": "个连接",
   "Suggested free models (≥200k context):": "推荐的免费模型（≥200k 上下文）：",
   "Get API Key →": "获取 API 密钥 →",
-  "OAuth": "OAuth"
+  "OAuth": "OAuth",
+  "Click to add, click again to remove. Changes are saved automatically.": "点击添加，再次点击删除。更改将自动保存。",
+  "Close": "关闭"
 }

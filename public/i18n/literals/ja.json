@@ -12,7 +12,7 @@
   "Logout": "ログアウト",
   "Login": "ログイン",
   "Providers": "プロバイダー",
-  "Usage": "使用状況",
+  "Usage": "統計",
   "API Key": "APIキー",
   "Connected": "接続済み",
   "Disconnected": "未接続",
@@ -91,9 +91,7 @@
   "Dark": "ダーク",
   "Auto": "自動",
   "Endpoint": "エンドポイント",
-  "Providers": "プロバイダー",
   "Combos": "コンボ",
-  "Usage": "統計",
   "Quota Tracker": "クォータトラッカー",
   "MITM": "MITM",
   "CLI Tools": "CLIツール",
@@ -150,7 +148,6 @@
   "No Proxy": "プロキシなし",
   "Comma-separated hostnames/domains to bypass the proxy.": "プロキシをバイパスするためのコンマ区切りのホスト名/ドメイン。",
   "Test proxy URL": "プロキシURLをテスト",
-  "Apply": "適用",
   "Proxy settings applied": "プロキシ設定が適用されました",
   "Proxy enabled": "プロキシが有効になりました",
   "Proxy disabled": "プロキシが無効になりました",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE & GitHub Copilot → 9Router の任意のプロバイダー/モデルを使用",
   "How it works:": "しくみ：",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE リクエスト → localhost:443 への DNS リダイレクト → MITM プロキシが傍受 → 9Router → Antigravity/Copilot への応答",
-  "API Key": "APIキー",
   "No API keys — create one in Keys page": "APIキーがありません — キーページで1つ作成してください",
   "sk_9router (default)": "sk_9router（デフォルト）",
   "Server started": "サーバーが開始されました",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudoパスワードが必要です",
   "Enter your sudo password to start/stop MITM server": "MITMサーバーを開始/停止するには、sudoパスワードを入力してください",
   "Sudo Password": "Sudoパスワード",
-  "Confirm": "確認"
+  "Click to add, click again to remove. Changes are saved automatically.": "クリックで追加、もう一度クリックで削除。変更は自動的に保存されます。"
 }

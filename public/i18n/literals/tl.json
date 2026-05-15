@@ -12,7 +12,7 @@
   "Logout": "Maglog out",
   "Login": "Magsimula ng sesyon",
   "Providers": "Mga Provider",
-  "Usage": "Paggamit",
+  "Usage": "Mga Istatistika ng Paggamit",
   "API Key": "Susi ng API",
   "Connected": "Konektado",
   "Disconnected": "Hindi Konektado",
@@ -91,9 +91,7 @@
   "Dark": "Madilim",
   "Auto": "Awtomatiko",
   "Endpoint": "Endpoint",
-  "Providers": "Mga Provider",
   "Combos": "Mga Combo",
-  "Usage": "Mga Istatistika ng Paggamit",
   "Quota Tracker": "Quota Tracker",
   "MITM": "MITM",
   "CLI Tools": "Mga Tool",
@@ -150,7 +148,6 @@
   "No Proxy": "Walang Proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Mga hostname/domain na pinagseparang komma upang lampasan ang proxy.",
   "Test proxy URL": "Subukan ang Proxy URL",
-  "Apply": "Ilapat",
   "Proxy settings applied": "Ang mga setting ng proxy ay inilapat",
   "Proxy enabled": "Ang proxy ay pinagana",
   "Proxy disabled": "Ang proxy ay hindi pinagana",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Gamitin ang Antigravity IDE & GitHub Copilot → sa ANUMANG provider/model mula sa 9Router",
   "How it works:": "Paano ito gumagana:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE request → DNS redirect sa localhost:443 → MITM proxy intercepts → 9Router → response sa Antigravity/Copilot",
-  "API Key": "Susi ng API",
   "No API keys — create one in Keys page": "Walang API keys — lumikha ng isa sa Keys page",
   "sk_9router (default)": "sk_9router (default)",
   "Server started": "Ang server ay nagsimula",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Kailangan ng Sudo Password",
   "Enter your sudo password to start/stop MITM server": "Ipasok ang iyong sudo password upang simulan/ihinto ang MITM server",
   "Sudo Password": "Sudo Password",
-  "Confirm": "Kumpirmahin"
+  "Click to add, click again to remove. Changes are saved automatically.": "I-click para idagdag, i-click muli para alisin. Ang mga pagbabago ay awtomatikong nase-save."
 }

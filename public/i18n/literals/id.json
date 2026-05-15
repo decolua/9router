@@ -12,7 +12,7 @@
   "Logout": "Keluar",
   "Login": "Masuk",
   "Providers": "Penyedia",
-  "Usage": "Penggunaan",
+  "Usage": "Statistik Penggunaan",
   "API Key": "Kunci API",
   "Connected": "Terhubung",
   "Disconnected": "Terputus",
@@ -91,9 +91,7 @@
   "Dark": "Gelap",
   "Auto": "Otomatis",
   "Endpoint": "Titik Akhir",
-  "Providers": "Penyedia",
   "Combos": "Kombinasi",
-  "Usage": "Statistik Penggunaan",
   "Quota Tracker": "Pelacak Kuota",
   "MITM": "MITM",
   "CLI Tools": "Alat",
@@ -150,7 +148,6 @@
   "No Proxy": "Tidak Ada Proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nama host/domain yang dipisahkan koma untuk melewati proxy.",
   "Test proxy URL": "Uji URL Proxy",
-  "Apply": "Terapkan",
   "Proxy settings applied": "Pengaturan proxy diterapkan",
   "Proxy enabled": "Proxy diaktifkan",
   "Proxy disabled": "Proxy dinonaktifkan",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Gunakan Antigravity IDE & GitHub Copilot → dengan PENYEDIA/model APA PUN dari 9Router",
   "How it works:": "Cara kerjanya:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Permintaan Antigravity/Copilot IDE → Pengalihan DNS ke localhost:443 → Proxy MITM mengintersep → 9Router → respons ke Antigravity/Copilot",
-  "API Key": "Kunci API",
   "No API keys — create one in Keys page": "Tidak ada kunci API — buat satu di halaman Keys",
   "sk_9router (default)": "sk_9router (bawaan)",
   "Server started": "Server dimulai",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Kata Sandi Sudo Diperlukan",
   "Enter your sudo password to start/stop MITM server": "Masukkan kata sandi sudo Anda untuk memulai/menghentikan server MITM",
   "Sudo Password": "Kata Sandi Sudo",
-  "Confirm": "Konfirmasi"
+  "Click to add, click again to remove. Changes are saved automatically.": "Klik untuk menambah, klik lagi untuk menghapus. Perubahan disimpan secara otomatis."
 }

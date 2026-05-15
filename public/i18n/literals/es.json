@@ -12,7 +12,7 @@
   "Logout": "Cerrar sesión",
   "Login": "Iniciar sesión",
   "Providers": "Proveedores",
-  "Usage": "Uso",
+  "Usage": "Estadísticas",
   "API Key": "Clave API",
   "Connected": "Conectado",
   "Disconnected": "Desconectado",
@@ -91,9 +91,7 @@
   "Dark": "Oscuro",
   "Auto": "Automático",
   "Endpoint": "Punto final",
-  "Providers": "Proveedores",
   "Combos": "Combinaciones",
-  "Usage": "Estadísticas",
   "Quota Tracker": "Rastreador de cuota",
   "MITM": "MITM",
   "CLI Tools": "Herramientas CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "Sin proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nombres de host/dominios separados por comas para omitir el proxy.",
   "Test proxy URL": "Prueba URL del proxy",
-  "Apply": "Aplicar",
   "Proxy settings applied": "Configuración de proxy aplicada",
   "Proxy enabled": "Proxy habilitado",
   "Proxy disabled": "Proxy deshabilitado",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Use Antigravity IDE y GitHub Copilot → con CUALQUIER proveedor/modelo de 9Router",
   "How it works:": "Cómo funciona:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Solicitud de Antigravity/Copilot IDE → Redireccionamiento DNS a localhost:443 → El proxy MITM intercepta → 9Router → respuesta a Antigravity/Copilot",
-  "API Key": "Clave API",
   "No API keys — create one in Keys page": "Sin claves API — cree una en la página Claves",
   "sk_9router (default)": "sk_9router (predeterminado)",
   "Server started": "Servidor iniciado",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Contraseña de Sudo requerida",
   "Enter your sudo password to start/stop MITM server": "Ingrese su contraseña de sudo para iniciar/detener el servidor MITM",
   "Sudo Password": "Contraseña de sudo",
-  "Confirm": "Confirmar"
+  "Click to add, click again to remove. Changes are saved automatically.": "Haz clic para agregar, haz clic de nuevo para eliminar. Los cambios se guardan automáticamente."
 }

@@ -12,7 +12,7 @@
   "Logout": "Έξοδος",
   "Login": "Σύνδεση",
   "Providers": "Παρόχοι",
-  "Usage": "Χρήση",
+  "Usage": "Στατιστικά χρήσης",
   "API Key": "Κλειδί API",
   "Connected": "Συνδεδεμένο",
   "Disconnected": "Αποσυνδεδεμένο",
@@ -91,9 +91,7 @@
   "Dark": "Σκοτεινό",
   "Auto": "Αυτόματο",
   "Endpoint": "Τελικό σημείο",
-  "Providers": "Παρόχοι",
   "Combos": "Συνδυασμοί",
-  "Usage": "Στατιστικά χρήσης",
   "Quota Tracker": "Παρακολούθηση ποσόστωσης",
   "MITM": "MITM",
   "CLI Tools": "Εργαλεία",
@@ -150,7 +148,6 @@
   "No Proxy": "Χωρίς διακομιστή μεσολάβησης",
   "Comma-separated hostnames/domains to bypass the proxy.": "Ονόματα κεντρικών υπολογιστών/τομείς χωρισμένοι με κόμμα για να παραστούν τον διακομιστή μεσολάβησης.",
   "Test proxy URL": "Δοκιμή URL διακομιστή μεσολάβησης",
-  "Apply": "Εφαρμογή",
   "Proxy settings applied": "Ρυθμίσεις διακομιστή μεσολάβησης εφαρμόστηκαν",
   "Proxy enabled": "Διακομιστής μεσολάβησης ενεργοποιημένος",
   "Proxy disabled": "Διακομιστής μεσολάβησης απενεργοποιημένος",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Χρησιμοποιήστε Antigravity IDE & GitHub Copilot → με ΟΠΟΙΟΝΔΗΠΟΤΕ πάροχο/μοντέλο από 9Router",
   "How it works:": "Πώς λειτουργεί:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Αίτημα Antigravity/Copilot IDE → Ανακατεύθυνση DNS στο localhost:443 → Ο διακομιστής μεσολάβησης MITM παρεμβαίνει → 9Router → απάντηση στο Antigravity/Copilot",
-  "API Key": "Κλειδί API",
   "No API keys — create one in Keys page": "Δεν υπάρχουν κλειδιά API — δημιουργήστε ένα στη σελίδα Keys",
   "sk_9router (default)": "sk_9router (προεπιλεγμένο)",
   "Server started": "Ο διακομιστής ξεκίνησε",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Απαιτείται κωδικός πρόσβασης Sudo",
   "Enter your sudo password to start/stop MITM server": "Εισαγάγετε τον κωδικό πρόσβασης sudo για να ξεκινήσετε/διακόψετε τον διακομιστή MITM",
   "Sudo Password": "Κωδικός πρόσβασης Sudo",
-  "Confirm": "Επιβεβαίωση"
+  "Click to add, click again to remove. Changes are saved automatically.": "Κάντε κλικ για προσθήκη, κάντε ξανά κλικ για αφαίρεση. Οι αλλαγές αποθηκεύονται αυτόματα."
 }

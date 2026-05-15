@@ -12,7 +12,7 @@
   "Logout": "Logg ut",
   "Login": "Logg inn",
   "Providers": "Leverandører",
-  "Usage": "Bruk",
+  "Usage": "Bruksstatistikk",
   "API Key": "API-nøkkel",
   "Connected": "Tilkoblet",
   "Disconnected": "Frakoblet",
@@ -91,9 +91,7 @@
   "Dark": "Mørk",
   "Auto": "Automatisk",
   "Endpoint": "Endepunkt",
-  "Providers": "Leverandører",
   "Combos": "Kombinasjoner",
-  "Usage": "Bruksstatistikk",
   "Quota Tracker": "Kvotasporer",
   "MITM": "MITM",
   "CLI Tools": "Verktøy",
@@ -150,7 +148,6 @@
   "No Proxy": "Ingen proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Kommaseparerte vertsnavner/domener for å omgå proxyen.",
   "Test proxy URL": "Test proxy-URL",
-  "Apply": "Bruk",
   "Proxy settings applied": "Proxyinnstillinger brukt",
   "Proxy enabled": "Proxy aktivert",
   "Proxy disabled": "Proxy deaktivert",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Bruk Antigravity IDE & GitHub Copilot → med ENHVER leverandør/modell fra 9Router",
   "How it works:": "Slik fungerer det:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE-forespørsel → DNS-omdirigering til localhost:443 → MITM-proxy avlytt → 9Router → svar til Antigravity/Copilot",
-  "API Key": "API-nøkkel",
   "No API keys — create one in Keys page": "Ingen API-nøkler — lag en på Keys-siden",
   "sk_9router (default)": "sk_9router (standard)",
   "Server started": "Server startet",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo-passord påkrevd",
   "Enter your sudo password to start/stop MITM server": "Skriv inn sudo-passordet ditt for å starte/stoppe MITM-server",
   "Sudo Password": "Sudo-passord",
-  "Confirm": "Bekreft"
+  "Click to add, click again to remove. Changes are saved automatically.": "Klikk for å legge til, klikk igjen for å fjerne. Endringer lagres automatisk."
 }

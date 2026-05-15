@@ -31,6 +31,9 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
+// Stream stall timeout: abort if no chunk received within this duration
+export const STREAM_STALL_TIMEOUT_MS = 3 * 60 * 1000;
+
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;

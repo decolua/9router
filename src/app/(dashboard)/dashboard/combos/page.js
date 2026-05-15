@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle } from "@/shared/components";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
@@ -15,6 +19,7 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
+  const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -84,15 +89,21 @@ export default function CombosPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Delete this combo?")) return;
-    try {
-      const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setCombos(combos.filter(c => c.id !== id));
+    setConfirmState({
+      title: "Delete Combo",
+      message: "Delete this combo?",
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            setCombos(combos.filter(c => c.id !== id));
+          }
+        } catch (error) {
+          console.log("Error deleting combo:", error);
+        }
       }
-    } catch (error) {
-      console.log("Error deleting combo:", error);
-    }
+    });
   };
 
   const handleToggleRoundRobin = async (comboName, enabled) => {
@@ -189,6 +200,16 @@ export default function CombosPage() {
         onSave={(data) => handleUpdate(editingCombo.id, data)}
         activeProviders={activeProviders}
       />
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={confirmState?.onConfirm}
+        title={confirmState?.title || "Confirm"}
+        message={confirmState?.message}
+        variant="danger"
+      />
     </div>
   );
 }
@@ -266,15 +287,20 @@ function ComboCard({ combo, copied, onCopy, onEdit, onDelete, roundRobinEnabled,
   );
 }
 
-// Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    // no transition — prevents the CSS settle animation fighting React's re-render on drop
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 999 : undefined,
+  };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
-
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== model) onEdit(trimmed);
-    else setDraft(model); // revert if empty or unchanged
+    else setDraft(model);
     setEditing(false);
   };
 
@@ -284,7 +310,26 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
   };
 
   return (
-    <div className="group flex min-w-0 items-center gap-1.5 rounded-md bg-black/[0.02] px-2 py-1 transition-colors hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+    >
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        type="button"
+        className="cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
+        title="Drag to reorder"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="9" cy="4" r="2"/><circle cx="15" cy="4" r="2"/>
+          <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
+          <circle cx="9" cy="20" r="2"/><circle cx="15" cy="20" r="2"/>
+        </svg>
+      </button>
+
       {/* Index badge */}
       <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
@@ -348,6 +393,25 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  // Use stable index-based IDs so duplicates and similar names are handled correctly
+  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = modelItems.findIndex((m) => m.uid === active.id);
+      const newIndex = modelItems.findIndex((m) => m.uid === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setModels((prev) => arrayMove(prev, oldIndex, newIndex));
+      }
+    }
+  };
 
   const fetchModalData = async () => {
     try {
@@ -453,25 +517,30 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
-            <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                {models.map((model, index) => (
-                  <ModelItem
-                    key={index}
-                    index={index}
-                    model={model}
-                    isFirst={index === 0}
-                    isLast={index === models.length - 1}
-                    onEdit={(newVal) => {
-                      const updated = [...models];
-                      updated[index] = newVal;
-                      setModels(updated);
-                    }}
-                    onMoveUp={() => handleMoveUp(index)}
-                    onMoveDown={() => handleMoveDown(index)}
-                    onRemove={() => handleRemoveModel(index)}
-                  />
-                ))}
-              </div>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
+              <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
+                <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
+                  {modelItems.map(({ uid, model }, index) => (
+                    <ModelItem
+                      key={uid}
+                      id={uid}
+                      index={index}
+                      model={model}
+                      isFirst={index === 0}
+                      isLast={index === modelItems.length - 1}
+                      onEdit={(newVal) => {
+                        const updated = [...models];
+                        updated[index] = newVal;
+                        setModels(updated);
+                      }}
+                      onMoveUp={() => handleMoveUp(index)}
+                      onMoveDown={() => handleMoveDown(index)}
+                      onRemove={() => handleRemoveModel(index)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
             )}
 
             {/* Add Model button */}

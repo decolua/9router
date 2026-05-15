@@ -155,8 +155,13 @@ async function createBypassRequest(parsedUrl, realIP, options) {
     socket.connect(HTTPS_PORT, realIP, () => {
       const reqOptions = {
         socket,
+        // SNI + cert hostname are validated against the hostname the caller
+        // asked for, not the IP we connected to. This keeps the DNS-bypass
+        // (avoiding /etc/hosts MITM) while still rejecting on-path attackers
+        // that present a different cert. The MITM_BYPASS_HOSTS targets are
+        // all public-CA-issued (Google / GitHub / AWS / Cursor) so default
+        // verification works without any extra trust store.
         servername: parsedUrl.hostname,
-        rejectUnauthorized: false,
         path: parsedUrl.pathname + parsedUrl.search,
         method: options.method || "POST",
         headers: {

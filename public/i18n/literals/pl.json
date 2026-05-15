@@ -12,7 +12,7 @@
   "Logout": "Wyloguj się",
   "Login": "Zaloguj się",
   "Providers": "Dostawcy",
-  "Usage": "Użycie",
+  "Usage": "Statystyka",
   "API Key": "Klucz API",
   "Connected": "Połączony",
   "Disconnected": "Rozłączony",
@@ -91,9 +91,7 @@
   "Dark": "Ciemny",
   "Auto": "Automatycznie",
   "Endpoint": "Punkt końcowy",
-  "Providers": "Dostawcy",
   "Combos": "Kombinacje",
-  "Usage": "Statystyka",
   "Quota Tracker": "Śledzenie limitów",
   "MITM": "MITM",
   "CLI Tools": "Narzędzia CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "Bez serwera proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nazwy hostów/domeny oddzielone przecinkami do pominięcia serwera proxy.",
   "Test proxy URL": "Przetestuj URL serwera proxy",
-  "Apply": "Zastosuj",
   "Proxy settings applied": "Ustawienia serwera proxy zastosowane",
   "Proxy enabled": "Serwer proxy włączony",
   "Proxy disabled": "Serwer proxy wyłączony",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Użyj Antigravity IDE i GitHub Copilot → z DOWOLNYM dostawcą/modelem z 9Router",
   "How it works:": "Jak to działa:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Żądanie Antigravity/Copilot IDE → Przekierowanie DNS na localhost:443 → Serwer proxy MITM przechwytuje → 9Router → odpowiedź do Antigravity/Copilot",
-  "API Key": "Klucz API",
   "No API keys — create one in Keys page": "Brak kluczy API — utwórz jeden na stronie Klucze",
   "sk_9router (default)": "sk_9router (domyślnie)",
   "Server started": "Serwer uruchomiony",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Wymagane hasło Sudo",
   "Enter your sudo password to start/stop MITM server": "Wprowadź hasło sudo, aby uruchomić/zatrzymać serwer MITM",
   "Sudo Password": "Hasło sudo",
-  "Confirm": "Potwierdź"
+  "Click to add, click again to remove. Changes are saved automatically.": "Kliknij, aby dodać, kliknij ponownie, aby usunąć. Zmiany są zapisywane automatycznie."
 }
