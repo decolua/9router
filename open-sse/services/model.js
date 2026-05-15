@@ -132,6 +132,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "nous-research": "nous-research",
   nous: "nous-research",
   glhf: "glhf",
+  bb: "blackbox",
+  blackbox: "blackbox",
 };
 
 /**
