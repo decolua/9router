@@ -133,8 +133,8 @@ export default function APIPageClient({ machineId }) {
   // "reachable" even when backend DNS (1.1.1.1) hiccups on *.ts.net or *.trycloudflare.com.
   useEffect(() => {
     const probeBoth = async () => {
-      if (tunnelEnabled && (tunnelPublicUrl || tunnelUrl)) {
-        const ok = await clientPingUrl(tunnelPublicUrl || tunnelUrl);
+      if (tunnelEnabled && tunnelUrl) {
+        const ok = await clientPingUrl(tunnelUrl);
         tunnelClientReachableRef.current = ok;
         if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
       } else {
@@ -151,7 +151,7 @@ export default function APIPageClient({ machineId }) {
     probeBoth();
     const id = setInterval(probeBoth, CLIENT_PING_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [tunnelEnabled, tunnelPublicUrl, tunnelUrl, tsEnabled, tsUrl]);
+  }, [tunnelEnabled, tunnelUrl, tsEnabled, tsUrl]);
 
   // Effective reachable = serverReachable OR clientReachable (1 of 2 is enough).
   // Miss-debounce: only flip to false after N consecutive misses on BOTH sides.
@@ -178,9 +178,8 @@ export default function APIPageClient({ machineId }) {
       const data = await statusRes.json();
       const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
       const tUrl = data.tunnel?.tunnelUrl || "";
-      const tPublicUrl = data.tunnel?.publicUrl || "";
       setTunnelUrl(tUrl);
-      setTunnelPublicUrl(tPublicUrl);
+      setTunnelPublicUrl(data.tunnel?.publicUrl || "");
       setTunnelEnabled(tEnabled);
       updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
@@ -213,9 +212,8 @@ export default function APIPageClient({ machineId }) {
         const data = await statusRes.json();
         const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
         const tUrl = data.tunnel?.tunnelUrl || "";
-        const tPublicUrl = data.tunnel?.publicUrl || "";
         setTunnelUrl(tUrl);
-        setTunnelPublicUrl(tPublicUrl);
+        setTunnelPublicUrl(data.tunnel?.publicUrl || "");
         setTunnelEnabled(tEnabled);
         updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
@@ -392,13 +390,13 @@ export default function APIPageClient({ machineId }) {
         return;
       }
 
-      const url = data.publicUrl || data.tunnelUrl;
+      const url = data.tunnelUrl;
       if (!url) {
         setTunnelStatus({ type: "error", message: "No tunnel URL returned" });
         return;
       }
 
-      setTunnelUrl(data.tunnelUrl || "");
+      setTunnelUrl(url);
       setTunnelPublicUrl(data.publicUrl || "");
       await pingTunnelHealth(url);
     } catch (error) {
@@ -419,7 +417,6 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) {
         setTunnelEnabled(false);
         setTunnelUrl("");
-        setTunnelPublicUrl("");
         setShowDisableTunnelModal(false);
         setTunnelStatus({ type: "success", message: "Tunnel disabled" });
       } else {

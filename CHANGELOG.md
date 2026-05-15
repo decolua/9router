@@ -1,3 +1,8 @@
+# v0.4.46 (2026-05-15)
+
+## Breaking Changes
+- Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
+
 # v0.4.44 (2026-05-15)
 
 ## Features
