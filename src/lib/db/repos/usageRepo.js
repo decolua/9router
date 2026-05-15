@@ -286,6 +286,50 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+function getLocalDayBounds(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  return { start, end };
+}
+
+function getNextLocalMidnightIso(date = new Date()) {
+  return getLocalDayBounds(date).end.toISOString();
+}
+
+export async function getApiKeyDailyTokenUsage(apiKey, date = new Date()) {
+  if (!apiKey) return { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  const db = await getAdapter();
+  const { start, end } = getLocalDayBounds(date);
+  const row = db.get(
+    `SELECT COALESCE(SUM(promptTokens), 0) AS promptTokens, COALESCE(SUM(completionTokens), 0) AS completionTokens FROM usageHistory WHERE apiKey = ? AND timestamp >= ? AND timestamp < ?`,
+    [apiKey, start.toISOString(), end.toISOString()]
+  );
+  const promptTokens = Number(row?.promptTokens || 0);
+  const completionTokens = Number(row?.completionTokens || 0);
+  return { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens };
+}
+
+export async function getApiKeyDailyUsageSummary(apiKeyOrRecord, date = new Date()) {
+  const apiKey = typeof apiKeyOrRecord === "string" ? apiKeyOrRecord : apiKeyOrRecord?.key;
+  const dailyTokenLimit = Number(typeof apiKeyOrRecord === "object" ? apiKeyOrRecord?.dailyTokenLimit || 0 : 0);
+  const usage = await getApiKeyDailyTokenUsage(apiKey, date);
+  const isUnlimited = !Number.isFinite(dailyTokenLimit) || dailyTokenLimit <= 0;
+  const remainingTokens = isUnlimited ? null : Math.max(0, dailyTokenLimit - usage.totalTokens);
+  const usagePercent = isUnlimited ? 0 : Math.min(100, Math.round((usage.totalTokens / dailyTokenLimit) * 100));
+
+  return {
+    promptTokens: usage.promptTokens,
+    completionTokens: usage.completionTokens,
+    usedTokens: usage.totalTokens,
+    dailyTokenLimit: isUnlimited ? 0 : dailyTokenLimit,
+    remainingTokens,
+    usagePercent,
+    isUnlimited,
+    resetAt: getNextLocalMidnightIso(date),
+  };
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];
@@ -544,9 +588,8 @@ export async function getUsageStats(period = "all") {
     );
 
     for (const r of filtered) {
-      const tokens = parseJson(r.tokens, {}) || {};
-      const promptTokens = tokens.prompt_tokens || 0;
-      const completionTokens = tokens.completion_tokens || 0;
+      const promptTokens = r.promptTokens || 0;
+      const completionTokens = r.completionTokens || 0;
       const entryCost = r.cost || 0;
       const providerDisplayName = providerNodeNameMap[r.provider] || r.provider;
 

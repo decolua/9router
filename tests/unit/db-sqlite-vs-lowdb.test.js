@@ -18,6 +18,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  sqliteDb?.getAdapterSync?.()?.close?.();
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -63,6 +64,27 @@ describe("DB SQLite layer — public API parity", () => {
     const deleted = await sqliteDb.deleteApiKey(k.id);
     expect(deleted).toBe(true);
     expect(await sqliteDb.getApiKeyById(k.id)).toBeNull();
+  });
+
+  it("apiKeys: policy fields persist and expired keys are invalid", async () => {
+    const future = new Date(Date.now() + 86400000).toISOString();
+    const k = await sqliteDb.createApiKey("policy-key", "machine-abc", {
+      dailyTokenLimit: 1234,
+      expiresAt: future,
+      allowedModels: ["openai/gpt-4o", "anthropic/claude-3-5-sonnet", "openai/gpt-4o"],
+    });
+
+    expect(k.dailyTokenLimit).toBe(1234);
+    expect(k.expiresAt).toBe(future);
+    expect(k.allowedModels).toEqual(["openai/gpt-4o", "anthropic/claude-3-5-sonnet"]);
+
+    const byKey = await sqliteDb.getApiKeyByKey(k.key);
+    expect(byKey.allowedModels).toEqual(["openai/gpt-4o", "anthropic/claude-3-5-sonnet"]);
+
+    const expired = await sqliteDb.createApiKey("expired-key", "machine-abc", {
+      expiresAt: new Date(Date.now() - 1000).toISOString(),
+    });
+    expect(await sqliteDb.validateApiKey(expired.key)).toBe(false);
   });
 
   it("providerConnections: CRUD + reorder by priority", async () => {
@@ -201,6 +223,68 @@ describe("DB SQLite layer — public API parity", () => {
     expect(stats.byProvider.openai.promptTokens).toBeGreaterThanOrEqual(300);
   });
 
+  it("usage: getApiKeyDailyTokenUsage sums prompt and completion tokens for one key", async () => {
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: "sk-test-a",
+      tokens: { prompt_tokens: 80, completion_tokens: 20 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: "sk-test-a",
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: "sk-test-b",
+      tokens: { prompt_tokens: 999, completion_tokens: 1 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+
+    const usage = await sqliteDb.getApiKeyDailyTokenUsage("sk-test-a");
+    expect(usage.promptTokens).toBe(90);
+    expect(usage.completionTokens).toBe(25);
+    expect(usage.totalTokens).toBe(115);
+  });
+
+  it("usage: getApiKeyDailyUsageSummary reports remaining tokens and percent", async () => {
+    const key = await sqliteDb.createApiKey("usage-summary", "machine-abc", { dailyTokenLimit: 200 });
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: key.key,
+      tokens: { prompt_tokens: 70, completion_tokens: 30 },
+      endpoint: "/v1/chat/completions", status: "ok",
+    });
+
+    const summary = await sqliteDb.getApiKeyDailyUsageSummary(key);
+    expect(summary.usedTokens).toBe(100);
+    expect(summary.dailyTokenLimit).toBe(200);
+    expect(summary.remainingTokens).toBe(100);
+    expect(summary.usagePercent).toBe(50);
+    expect(summary.isUnlimited).toBe(false);
+    expect(summary.resetAt).toBeDefined();
+
+    const unlimited = await sqliteDb.getApiKeyDailyUsageSummary({ ...key, dailyTokenLimit: 0 });
+    expect(unlimited.isUnlimited).toBe(true);
+    expect(unlimited.remainingTokens).toBeNull();
+    expect(unlimited.usagePercent).toBe(0);
+  });
+
+  it("usage: today stats use the same normalized token counts as API key summary", async () => {
+    const key = await sqliteDb.createApiKey("input-output-summary", "machine-abc", { dailyTokenLimit: 200 });
+    await sqliteDb.saveRequestUsage({
+      provider: "anthropic", model: "claude-test", apiKey: key.key,
+      tokens: { input_tokens: 40, output_tokens: 60 },
+      endpoint: "/v1/messages", status: "ok",
+    });
+
+    const summary = await sqliteDb.getApiKeyDailyUsageSummary(key);
+    const stats = await sqliteDb.getUsageStats("today");
+    const byApiKeyEntry = Object.values(stats.byApiKey).find((entry) => entry.apiKey === key.key);
+
+    expect(summary.usedTokens).toBe(100);
+    expect(stats.totalPromptTokens + stats.totalCompletionTokens).toBeGreaterThanOrEqual(100);
+    expect(byApiKeyEntry.promptTokens + byApiKeyEntry.completionTokens).toBe(100);
+  });
+
   it("usage: pending tracking in-memory", () => {
     sqliteDb.trackPendingRequest("gpt-4", "openai", "c1", true);
     expect(global._pendingRequests.byModel["gpt-4 (openai)"]).toBe(1);
@@ -238,13 +322,22 @@ describe("DB SQLite layer — public API parity", () => {
 
     // Add marker, export, import a different payload, verify reset
     await sqliteDb.setModelAlias("marker", "before");
+    const policyKey = await sqliteDb.createApiKey("export-policy", "machine-abc", {
+      dailyTokenLimit: 777,
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      allowedModels: ["openai/gpt-4o"],
+    });
     const snap = await sqliteDb.exportDb();
 
     await sqliteDb.setModelAlias("marker", "after");
+    await sqliteDb.updateApiKey(policyKey.id, { dailyTokenLimit: 1, allowedModels: [] });
     expect((await sqliteDb.getModelAliases()).marker).toBe("after");
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    const restored = await sqliteDb.getApiKeyById(policyKey.id);
+    expect(restored.dailyTokenLimit).toBe(777);
+    expect(restored.allowedModels).toEqual(["openai/gpt-4o"]);
   });
 
   it("pricing: user pricing merged with constants", async () => {

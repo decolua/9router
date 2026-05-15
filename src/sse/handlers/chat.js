@@ -19,6 +19,13 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import {
+  loadApiKeyPolicy,
+  checkApiKeyExpiry,
+  checkApiKeyDailyTokenLimit,
+  checkApiKeyModelAccess,
+  checkApiKeyComboModelAccess,
+} from "../services/apiKeyPolicy.js";
 
 /**
  * Handle chat completion request
@@ -67,6 +74,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  let apiKeyRecord = null;
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -76,6 +84,22 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+    apiKeyRecord = await loadApiKeyPolicy(apiKey);
+    const expiryCheck = checkApiKeyExpiry(apiKeyRecord);
+    if (!expiryCheck.allowed) {
+      log.warn("AUTH", expiryCheck.message);
+      return errorResponse(expiryCheck.status, expiryCheck.message);
+    }
+    const quotaCheck = await checkApiKeyDailyTokenLimit(apiKeyRecord);
+    if (!quotaCheck.allowed) {
+      log.warn("AUTH", quotaCheck.message);
+      const response = errorResponse(quotaCheck.status, quotaCheck.message);
+      response.headers.set("X-Api-Key-Token-Limit", String(quotaCheck.limit));
+      response.headers.set("X-Api-Key-Token-Used", String(quotaCheck.usage.totalTokens));
+      response.headers.set("X-Api-Key-Token-Remaining", String(quotaCheck.remaining));
+      response.headers.set("X-Api-Key-Token-Reset", quotaCheck.resetAt);
+      return response;
     }
   }
 
@@ -92,6 +116,12 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    const modelCheck = checkApiKeyComboModelAccess(apiKeyRecord, modelStr, comboModels);
+    if (!modelCheck.allowed) {
+      log.warn("AUTH", modelCheck.message);
+      return errorResponse(modelCheck.status, modelCheck.message);
+    }
+
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -102,7 +132,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -111,13 +141,13 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, apiKeyRecord);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, apiKeyRecord = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -135,7 +165,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -147,6 +177,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const modelCheck = checkApiKeyModelAccess(apiKeyRecord, {
+    requestedModel: modelStr,
+    resolvedModels: [`${provider}/${model}`],
+  });
+  if (!modelCheck.allowed) {
+    log.warn("AUTH", modelCheck.message);
+    return errorResponse(modelCheck.status, modelCheck.message);
+  }
 
   // Log model routing (alias → actual model)
   if (modelStr !== `${provider}/${model}`) {

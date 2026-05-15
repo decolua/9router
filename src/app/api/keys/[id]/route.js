@@ -1,6 +1,38 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 
+function parseAllowedModels(value) {
+  if (Array.isArray(value)) return Array.from(new Set(value.map((m) => typeof m === "string" ? m.trim() : "").filter(Boolean)));
+  if (typeof value === "string") {
+    return Array.from(new Set(value.split(/[\n,]/).map((m) => m.trim()).filter(Boolean)));
+  }
+  return [];
+}
+
+function addPolicyPatch(body, updateData) {
+  if (Object.prototype.hasOwnProperty.call(body, "name")) updateData.name = body.name;
+  if (Object.prototype.hasOwnProperty.call(body, "dailyTokenLimit")) {
+    const dailyTokenLimit = body.dailyTokenLimit === "" || body.dailyTokenLimit == null ? 0 : Number(body.dailyTokenLimit);
+    if (!Number.isInteger(dailyTokenLimit) || dailyTokenLimit < 0) {
+      return "dailyTokenLimit must be a non-negative integer";
+    }
+    updateData.dailyTokenLimit = dailyTokenLimit;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "expiresAt")) {
+    if (!body.expiresAt) {
+      updateData.expiresAt = null;
+    } else {
+      const date = new Date(body.expiresAt);
+      if (Number.isNaN(date.getTime())) return "expiresAt must be a valid date";
+      updateData.expiresAt = date.toISOString();
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, "allowedModels")) {
+    updateData.allowedModels = parseAllowedModels(body.allowedModels);
+  }
+  return null;
+}
+
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
   try {
@@ -30,6 +62,10 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    const policyError = addPolicyPatch(body, updateData);
+    if (policyError) {
+      return NextResponse.json({ error: policyError }, { status: 400 });
+    }
 
     const updated = await updateApiKey(id, updateData);
 

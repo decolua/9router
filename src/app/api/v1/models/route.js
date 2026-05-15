@@ -5,8 +5,10 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings, validateApiKey } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { loadApiKeyPolicy, filterModelsByApiKeyPolicy } from "@/sse/services/apiKeyPolicy.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -386,9 +388,25 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
-export async function GET() {
+export async function GET(request) {
   try {
-    const data = await buildModelsList([LLM_KIND]);
+    const settings = await getSettings();
+    const apiKey = extractApiKey(request);
+    let apiKeyRecord = null;
+
+    if (settings.requireApiKey) {
+      if (!apiKey || !(await validateApiKey(apiKey))) {
+        return Response.json(
+          { error: { message: apiKey ? "Invalid API key" : "Missing API key", type: "authentication_error" } },
+          { status: 401, headers: { "Access-Control-Allow-Origin": "*" } }
+        );
+      }
+      apiKeyRecord = await loadApiKeyPolicy(apiKey);
+    } else if (apiKey && await validateApiKey(apiKey)) {
+      apiKeyRecord = await loadApiKeyPolicy(apiKey);
+    }
+
+    const data = filterModelsByApiKeyPolicy(await buildModelsList([LLM_KIND]), apiKeyRecord);
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
