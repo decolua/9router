@@ -190,6 +190,15 @@ export default function ModelSelectModal({
           }
         }
 
+        if (!kindFilter && combined.length === 0) {
+          combined = [{
+            id: "deepseek-v4-flash-free",
+            name: "DeepSeek V4 Flash Free",
+            value: `${alias}/deepseek-v4-flash-free`,
+            isPlaceholder: true,
+          }];
+        }
+
         if (combined.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
