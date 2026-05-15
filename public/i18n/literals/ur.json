@@ -12,7 +12,7 @@
   "Logout": "لاگ آؤٹ",
   "Login": "لاگ ان",
   "Providers": "فراہم کنندگان",
-  "Usage": "استعمال",
+  "Usage": "استعمال کے اعدادوشمار",
   "API Key": "API کلید",
   "Connected": "منسلک",
   "Disconnected": "منقطع",
@@ -91,9 +91,7 @@
   "Dark": "تاریک",
   "Auto": "خودکار",
   "Endpoint": "اختتام نقطہ",
-  "Providers": "فراہم کنندگان",
   "Combos": "امتزاجات",
-  "Usage": "استعمال کے اعدادوشمار",
   "Quota Tracker": "کوٹہ ٹریکر",
   "MITM": "MITM",
   "CLI Tools": "آلات",
@@ -150,7 +148,6 @@
   "No Proxy": "کوئی پروکسی نہیں",
   "Comma-separated hostnames/domains to bypass the proxy.": "پروکسی کو نظر انداز کرنے کے لیے کوما سے الگ شدہ ہوسٹ ناموں/ڈومین۔",
   "Test proxy URL": "پروکسی URL کو ٹیسٹ کریں",
-  "Apply": "لاگو کریں",
   "Proxy settings applied": "پروکسی ترتیبات لاگو کی گئیں",
   "Proxy enabled": "پروکسی فعال",
   "Proxy disabled": "پروکسی غیر فعال",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE اور GitHub Copilot استعمال کریں → 9Router سے کسی بھی فراہم کنندہ/ماڈل کے ساتھ",
   "How it works:": "یہ کیسے کام کرتا ہے:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE درخواست → DNS کو localhost:443 کی طرف ری ڈائریکٹ کریں → MITM پروکسی روکے → 9Router → Antigravity/Copilot کو جواب",
-  "API Key": "API کلید",
   "No API keys — create one in Keys page": "کوئی API کلید نہیں — Keys صفحہ میں ایک بنائیں",
   "sk_9router (default)": "sk_9router (ڈیفالٹ)",
   "Server started": "سرور شروع ہوگیا",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo پاس ورڈ درکار ہے",
   "Enter your sudo password to start/stop MITM server": "MITM سرور شروع/بند کرنے کے لیے اپنا sudo پاس ورڈ داخل کریں",
   "Sudo Password": "Sudo پاس ورڈ",
-  "Confirm": "تصدیق کریں"
+  "Click to add, click again to remove. Changes are saved automatically.": "شامل کرنے کے لیے کلک کریں، ہٹانے کے لیے دوبارہ کلک کریں۔ تبدیلیاں خودکار طور پر محفوظ ہو جاتی ہیں۔"
 }

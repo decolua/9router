@@ -12,7 +12,7 @@
   "Logout": "लॉग आउट",
   "Login": "लॉगिन",
   "Providers": "प्रदाता",
-  "Usage": "उपयोग",
+  "Usage": "उपयोग के आंकड़े",
   "API Key": "API कुंजी",
   "Connected": "जुड़ा हुआ",
   "Disconnected": "डिस्कनेक्ट किया गया",
@@ -91,9 +91,7 @@
   "Dark": "अंधेरा",
   "Auto": "स्वचालित",
   "Endpoint": "एंडपॉइंट",
-  "Providers": "प्रदाता",
   "Combos": "कॉम्बो",
-  "Usage": "उपयोग के आंकड़े",
   "Quota Tracker": "कोटा ट्रैकर",
   "MITM": "MITM",
   "CLI Tools": "उपकरण",
@@ -150,7 +148,6 @@
   "No Proxy": "कोई प्रॉक्सी नहीं",
   "Comma-separated hostnames/domains to bypass the proxy.": "प्रॉक्सी को बायपास करने के लिए अल्पविराम से अलग की गई होस्टनाम/डोमेन।",
   "Test proxy URL": "प्रॉक्सी URL का परीक्षण करें",
-  "Apply": "लागू करें",
   "Proxy settings applied": "प्रॉक्सी सेटिंग्स लागू की गई",
   "Proxy enabled": "प्रॉक्सी सक्षम",
   "Proxy disabled": "प्रॉक्सी अक्षम",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE और GitHub Copilot का उपयोग करें → 9Router से किसी भी प्रदाता/मॉडल के साथ",
   "How it works:": "यह कैसे काम करता है:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE अनुरोध → DNS को localhost:443 में पुनर्निर्देशित करें → MITM प्रॉक्सी इंटरसेप्ट करता है → 9Router → Antigravity/Copilot को प्रतिक्रिया",
-  "API Key": "API कुंजी",
   "No API keys — create one in Keys page": "कोई API कुंजी नहीं — Keys पृष्ठ में एक बनाएं",
   "sk_9router (default)": "sk_9router (डिफ़ॉल्ट)",
   "Server started": "सर्वर शुरू किया गया",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo पासवर्ड आवश्यक है",
   "Enter your sudo password to start/stop MITM server": "MITM सर्वर शुरू/रोकने के लिए अपना sudo पासवर्ड दर्ज करें",
   "Sudo Password": "Sudo पासवर्ड",
-  "Confirm": "पुष्टि करें"
+  "Click to add, click again to remove. Changes are saved automatically.": "जोड़ने के लिए क्लिक करें, हटाने के लिए फिर से क्लिक करें। परिवर्तन स्वचालित रूप से सहेजे जाते हैं।"
 }

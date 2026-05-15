@@ -12,7 +12,7 @@
   "Logout": "Esci",
   "Login": "Accedi",
   "Providers": "Provider",
-  "Usage": "Utilizzo",
+  "Usage": "Statistiche di utilizzo",
   "API Key": "Chiave API",
   "Connected": "Connesso",
   "Disconnected": "Disconnesso",
@@ -91,9 +91,7 @@
   "Dark": "Scuro",
   "Auto": "Automatico",
   "Endpoint": "Endpoint",
-  "Providers": "Provider",
   "Combos": "Combinazioni",
-  "Usage": "Statistiche di utilizzo",
   "Quota Tracker": "Tracker quota",
   "MITM": "MITM",
   "CLI Tools": "Strumenti",
@@ -150,7 +148,6 @@
   "No Proxy": "Nessun proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nomi host/domini separati da virgole per ignorare il proxy.",
   "Test proxy URL": "Test URL proxy",
-  "Apply": "Applica",
   "Proxy settings applied": "Impostazioni proxy applicate",
   "Proxy enabled": "Proxy abilitato",
   "Proxy disabled": "Proxy disabilitato",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Usa Antigravity IDE & GitHub Copilot → con QUALSIASI provider/modello da 9Router",
   "How it works:": "Come funziona:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Richiesta Antigravity/Copilot IDE → Reindirizzamento DNS a localhost:443 → Il proxy MITM intercetta → 9Router → Risposta a Antigravity/Copilot",
-  "API Key": "Chiave API",
   "No API keys — create one in Keys page": "Nessuna chiave API — crearne una nella pagina Chiavi",
   "sk_9router (default)": "sk_9router (predefinito)",
   "Server started": "Server avviato",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Password Sudo richiesta",
   "Enter your sudo password to start/stop MITM server": "Inserisci la tua password sudo per avviare/arrestare il server MITM",
   "Sudo Password": "Password Sudo",
-  "Confirm": "Conferma"
+  "Click to add, click again to remove. Changes are saved automatically.": "Clicca per aggiungere, clicca di nuovo per rimuovere. Le modifiche vengono salvate automaticamente."
 }

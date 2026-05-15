@@ -12,7 +12,7 @@
   "Logout": "Kijelentkezés",
   "Login": "Bejelentkezés",
   "Providers": "Szolgáltatók",
-  "Usage": "Használat",
+  "Usage": "Használati statisztika",
   "API Key": "API-kulcs",
   "Connected": "Csatlakoztatva",
   "Disconnected": "Leválasztva",
@@ -91,9 +91,7 @@
   "Dark": "Sötét",
   "Auto": "Automatikus",
   "Endpoint": "Végpont",
-  "Providers": "Szolgáltatók",
   "Combos": "Kombinációk",
-  "Usage": "Használati statisztika",
   "Quota Tracker": "Kvóta nyomkövetés",
   "MITM": "MITM",
   "CLI Tools": "Eszközök",
@@ -150,7 +148,6 @@
   "No Proxy": "Nincs proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Vesszővel elválasztott gazdanév/tartomány a proxy megkerüléséhez.",
   "Test proxy URL": "Proxy URL-cím tesztelése",
-  "Apply": "Alkalmazás",
   "Proxy settings applied": "Proxy beállítások alkalmazva",
   "Proxy enabled": "Proxy engedélyezve",
   "Proxy disabled": "Proxy letiltva",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE és GitHub Copilot használata → az 9Router bármelyik szolgáltatójával/modelljével",
   "How it works:": "Hogyan működik:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE kérés → DNS átirányítás a localhost:443-ra → MITM proxy elfogja → 9Router → válasz Antigravity/Copilot-nak",
-  "API Key": "API-kulcs",
   "No API keys — create one in Keys page": "Nincsenek API-kulcsok — hozzon létre egyet a Keys oldalon",
   "sk_9router (default)": "sk_9router (alapértelmezett)",
   "Server started": "Szerver elindult",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo jelszó szükséges",
   "Enter your sudo password to start/stop MITM server": "Adja meg sudo jelszavát a MITM szerver indításához/leállításához",
   "Sudo Password": "Sudo jelszó",
-  "Confirm": "Megerősítés"
+  "Click to add, click again to remove. Changes are saved automatically.": "Kattintson a hozzáadáshoz, kattintson újra az eltávolításhoz. A változtatások automatikusan mentésre kerülnek."
 }

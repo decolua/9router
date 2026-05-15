@@ -30,7 +30,36 @@ const PROTECTED_API_PATHS = [
   "/api/keys",
   "/api/providers/client",
   "/api/provider-nodes/validate",
+  "/api/cli-tools",
+  "/api/mcp",
 ];
+
+// Routes that spawn child processes — restrict to localhost regardless of auth.
+const LOCAL_ONLY_PATHS = [
+  "/api/cli-tools/cowork-settings",
+  "/api/mcp/",
+];
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+function isLoopbackHostname(h) {
+  if (!h) return false;
+  const name = h.split(":")[0].replace(/^\[|\]$/g, "").toLowerCase();
+  return LOOPBACK_HOSTS.has(name);
+}
+
+// Same-host gate: Host header must be loopback AND (if present) Origin must match.
+// Defends against tunnel/LAN access, remote browser CSRF, and cross-site form posts.
+function isLocalRequest(request) {
+  if (!isLoopbackHostname(request.headers.get("host"))) return false;
+  const origin = request.headers.get("origin");
+  if (origin) {
+    try {
+      if (!isLoopbackHostname(new URL(origin).hostname)) return false;
+    } catch { return false; }
+  }
+  return true;
+}
 
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
@@ -55,6 +84,13 @@ async function isAuthenticated(request) {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  // Local-only gate for spawn-capable routes (CVE GHSA-fhh6-4qxv-rpqj).
+  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+    if (!isLocalRequest(request)) {
+      return NextResponse.json({ error: "Local only: MCP requires localhost access" }, { status: 403 });
+    }
+  }
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {

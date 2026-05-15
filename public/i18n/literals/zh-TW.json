@@ -12,7 +12,7 @@
   "Logout": "登出",
   "Login": "登錄",
   "Providers": "提供者",
-  "Usage": "使用情況",
+  "Usage": "統計",
   "API Key": "API 金鑰",
   "Connected": "已連接",
   "Disconnected": "未連接",
@@ -91,9 +91,7 @@
   "Dark": "深色",
   "Auto": "自動",
   "Endpoint": "端點",
-  "Providers": "提供者",
   "Combos": "組合",
-  "Usage": "統計",
   "Quota Tracker": "配額跟蹤",
   "MITM": "MITM",
   "CLI Tools": "CLI 工具",
@@ -150,7 +148,6 @@
   "No Proxy": "無代理",
   "Comma-separated hostnames/domains to bypass the proxy.": "逗號分隔的主機名/域以繞過代理。",
   "Test proxy URL": "測試代理 URL",
-  "Apply": "應用",
   "Proxy settings applied": "已應用代理設置",
   "Proxy enabled": "已啟用代理",
   "Proxy disabled": "已禁用代理",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "使用 Antigravity IDE 和 GitHub Copilot → 與 9Router 中的任何提供者/模型一起",
   "How it works:": "工作原理：",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE 請求 → DNS 重定向到 localhost:443 → MITM 代理攔截 → 9Router → 响應到 Antigravity/Copilot",
-  "API Key": "API 金鑰",
   "No API keys — create one in Keys page": "沒有 API 金鑰 — 在金鑰頁面中創建一個",
   "sk_9router (default)": "sk_9router（默認）",
   "Server started": "服務器已啟動",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "需要 Sudo 密碼",
   "Enter your sudo password to start/stop MITM server": "輸入您的 Sudo 密碼以啟動/停止 MITM 服務器",
   "Sudo Password": "Sudo 密碼",
-  "Confirm": "確認"
+  "Click to add, click again to remove. Changes are saved automatically.": "點擊新增，再次點擊移除。變更將自動儲存。"
 }

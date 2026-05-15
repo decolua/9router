@@ -12,7 +12,7 @@
   "Logout": "Sair",
   "Login": "Conectar",
   "Providers": "Provedores",
-  "Usage": "Uso",
+  "Usage": "Estatísticas",
   "API Key": "Chave API",
   "Connected": "Conectado",
   "Disconnected": "Desconectado",
@@ -91,9 +91,7 @@
   "Dark": "Escuro",
   "Auto": "Automático",
   "Endpoint": "Ponto de extremidade",
-  "Providers": "Provedores",
   "Combos": "Combinações",
-  "Usage": "Estatísticas",
   "Quota Tracker": "Rastreador de cota",
   "MITM": "MITM",
   "CLI Tools": "Ferramentas CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "Sem proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nomes de host/domínios separados por vírgula para contornar o proxy.",
   "Test proxy URL": "Testar URL do proxy",
-  "Apply": "Aplicar",
   "Proxy settings applied": "Configurações de proxy aplicadas",
   "Proxy enabled": "Proxy ativado",
   "Proxy disabled": "Proxy desativado",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Use Antigravity IDE e GitHub Copilot → com QUALQUER provedor/modelo do 9Router",
   "How it works:": "Como funciona:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Solicitação do Antigravity/Copilot IDE → Redirecionamento DNS para localhost:443 → Proxy MITM intercepta → 9Router → resposta para Antigravity/Copilot",
-  "API Key": "Chave API",
   "No API keys — create one in Keys page": "Sem chaves de API — crie uma na página Chaves",
   "sk_9router (default)": "sk_9router (padrão)",
   "Server started": "Servidor iniciado",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Senha Sudo necessária",
   "Enter your sudo password to start/stop MITM server": "Digite sua senha sudo para iniciar/parar o servidor MITM",
   "Sudo Password": "Senha sudo",
-  "Confirm": "Confirmar"
+  "Click to add, click again to remove. Changes are saved automatically.": "Clique para adicionar, clique novamente para remover. As alterações são salvas automaticamente."
 }

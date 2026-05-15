@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
@@ -24,6 +24,11 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [selectedModels, setSelectedModels] = useState([]);
   const [activeModel, setActiveModel] = useState("");
+  const selectedModelsRef = useRef([]);
+
+  useEffect(() => {
+    selectedModelsRef.current = selectedModels;
+  }, [selectedModels]);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -65,6 +70,28 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       if (res.ok) setModelAliases(data.aliases || {});
     } catch (error) {
       console.log("Error fetching model aliases:", error);
+    }
+  };
+
+  const saveModels = async (models) => {
+    try {
+      const keyToUse = (selectedApiKey && selectedApiKey.trim())
+        ? selectedApiKey
+        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+      const validActiveModel = models.includes(activeModel) ? activeModel : (models[0] || "");
+      await fetch("/api/cli-tools/opencode-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseUrl: getEffectiveBaseUrl(),
+          apiKey: keyToUse,
+          models,
+          activeModel: validActiveModel,
+          subagentModel,
+        }),
+      });
+    } catch (error) {
+      console.log("Error saving models:", error);
     }
   };
 
@@ -427,17 +454,28 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
 
       <ModelSelectModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          saveModels(selectedModelsRef.current);
+        }}
         onSelect={(model) => {
           if (!selectedModels.includes(model.value)) {
             setSelectedModels([...selectedModels, model.value]);
             if (!activeModel) setActiveModel(model.value);
           }
-          setModalOpen(false);
+        }}
+        onDeselect={(model) => {
+          const remaining = selectedModels.filter(m => m !== model.value);
+          setSelectedModels(remaining);
+          if (activeModel === model.value) {
+            setActiveModel(remaining[0] || "");
+          }
         }}
         selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
+        addedModelValues={selectedModels}
+        closeOnSelect={false}
         title="Add Model for OpenCode"
       />
 

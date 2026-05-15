@@ -12,7 +12,7 @@
   "Logout": "התנתקות",
   "Login": "כניסה",
   "Providers": "ספקים",
-  "Usage": "שימוש",
+  "Usage": "סטטיסטיקה",
   "API Key": "מפתח API",
   "Connected": "מחובר",
   "Disconnected": "מנותק",
@@ -91,9 +91,7 @@
   "Dark": "אפל",
   "Auto": "אוטומטי",
   "Endpoint": "נקודת קצה",
-  "Providers": "ספקים",
   "Combos": "שילובים",
-  "Usage": "סטטיסטיקה",
   "Quota Tracker": "עוקב הקצאה",
   "MITM": "MITM",
   "CLI Tools": "כלים CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "ללא פרוקסי",
   "Comma-separated hostnames/domains to bypass the proxy.": "שמות משדר/תחומים מופרדים בפסיקים לעקיפת הפרוקסי.",
   "Test proxy URL": "בדוק URL פרוקסי",
-  "Apply": "החל",
   "Proxy settings applied": "הגדרות פרוקסי הופעלו",
   "Proxy enabled": "פרוקסי הופעל",
   "Proxy disabled": "פרוקסי מבוטל",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "השתמש ב-Antigravity IDE ו-GitHub Copilot → עם כל ספק/מודל מ-9Router",
   "How it works:": "איך זה עובד:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "בקשת Antigravity/Copilot IDE → הפניה DNS ל-localhost:443 → פרוקסי MITM חוטף → 9Router → תגובה ל-Antigravity/Copilot",
-  "API Key": "מפתח API",
   "No API keys — create one in Keys page": "אין מפתחות API — צור אחד בעמוד Keys",
   "sk_9router (default)": "sk_9router (ברירת מחדל)",
   "Server started": "השרת התחיל",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "סיסמת Sudo נדרשת",
   "Enter your sudo password to start/stop MITM server": "הזן את סיסמת sudo שלך כדי להתחיל/עצור שרת MITM",
   "Sudo Password": "סיסמת Sudo",
-  "Confirm": "אישור"
+  "Click to add, click again to remove. Changes are saved automatically.": "לחץ להוספה, לחץ שוב להסרה. השינויים נשמרים אוטומטית."
 }

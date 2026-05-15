@@ -12,7 +12,7 @@
   "Logout": "Çıkış Yap",
   "Login": "Giriş Yap",
   "Providers": "Sağlayıcılar",
-  "Usage": "Kullanım",
+  "Usage": "Kullanım İstatistikleri",
   "API Key": "API Anahtarı",
   "Connected": "Bağlı",
   "Disconnected": "Bağlantısı Kesildi",
@@ -91,9 +91,7 @@
   "Dark": "Koyu",
   "Auto": "Otomatik",
   "Endpoint": "Uç Nokta",
-  "Providers": "Sağlayıcılar",
   "Combos": "Kombinasyonlar",
-  "Usage": "Kullanım İstatistikleri",
   "Quota Tracker": "Kota İzleyici",
   "MITM": "MITM",
   "CLI Tools": "Araçlar",
@@ -150,7 +148,6 @@
   "No Proxy": "Proxy Yok",
   "Comma-separated hostnames/domains to bypass the proxy.": "Proxy'yi atlamak için virgülle ayrılmış ana bilgisayar adları/etki alanları.",
   "Test proxy URL": "Test Proxy URL'si",
-  "Apply": "Uygula",
   "Proxy settings applied": "Proxy ayarları uygulandı",
   "Proxy enabled": "Proxy etkinleştirildi",
   "Proxy disabled": "Proxy devre dışı bırakıldı",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Antigravity IDE & GitHub Copilot kullanın → 9Router'dan HERHANGİ bir sağlayıcı/model ile",
   "How it works:": "Nasıl çalışır:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE isteği → DNS'i localhost:443'e yönlendir → MITM proxy yakalar → 9Router → Antigravity/Copilot'a yanıt",
-  "API Key": "API Anahtarı",
   "No API keys — create one in Keys page": "API anahtarı yok — Keys sayfasında bir tane oluşturun",
   "sk_9router (default)": "sk_9router (varsayılan)",
   "Server started": "Sunucu başlatıldı",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Sudo Parolası Gerekli",
   "Enter your sudo password to start/stop MITM server": "MITM sunucusunu başlatmak/durdurmak için sudo parolanızı girin",
   "Sudo Password": "Sudo Parolası",
-  "Confirm": "Onayla"
+  "Click to add, click again to remove. Changes are saved automatically.": "Eklemek için tıklayın, kaldırmak için tekrar tıklayın. Değişiklikler otomatik olarak kaydedilir."
 }

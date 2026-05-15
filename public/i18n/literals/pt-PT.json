@@ -12,7 +12,7 @@
   "Logout": "Terminar sessão",
   "Login": "Iniciar sessão",
   "Providers": "Fornecedores",
-  "Usage": "Utilização",
+  "Usage": "Estatísticas",
   "API Key": "Chave API",
   "Connected": "Ligado",
   "Disconnected": "Desligado",
@@ -91,9 +91,7 @@
   "Dark": "Escuro",
   "Auto": "Automático",
   "Endpoint": "Ponto final",
-  "Providers": "Fornecedores",
   "Combos": "Combinações",
-  "Usage": "Estatísticas",
   "Quota Tracker": "Rastreador de quota",
   "MITM": "MITM",
   "CLI Tools": "Ferramentas CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "Sem proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Nomes de host/domínios separados por vírgulas para contornar o proxy.",
   "Test proxy URL": "Testar URL do proxy",
-  "Apply": "Aplicar",
   "Proxy settings applied": "Definições de proxy aplicadas",
   "Proxy enabled": "Proxy ativado",
   "Proxy disabled": "Proxy desativado",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Utilize o Antigravity IDE e GitHub Copilot → com QUALQUER fornecedor/modelo do 9Router",
   "How it works:": "Como funciona:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Pedido do Antigravity/Copilot IDE → Redirecionamento DNS para localhost:443 → Proxy MITM interceta → 9Router → resposta para Antigravity/Copilot",
-  "API Key": "Chave API",
   "No API keys — create one in Keys page": "Sem chaves de API — crie uma na página Chaves",
   "sk_9router (default)": "sk_9router (predefinição)",
   "Server started": "Servidor iniciado",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Palavra-passe Sudo necessária",
   "Enter your sudo password to start/stop MITM server": "Introduza a sua palavra-passe sudo para iniciar/parar o servidor MITM",
   "Sudo Password": "Palavra-passe sudo",
-  "Confirm": "Confirmar"
+  "Click to add, click again to remove. Changes are saved automatically.": "Clique para adicionar, clique novamente para remover. As alterações são guardadas automaticamente."
 }

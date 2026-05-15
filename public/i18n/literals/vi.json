@@ -12,7 +12,7 @@
   "Logout": "Đăng xuất",
   "Login": "Đăng nhập",
   "Providers": "Nhà cung cấp",
-  "Usage": "Sử dụng",
+  "Usage": "Thống kê",
   "API Key": "Khóa API",
   "Connected": " Đã kết nối",
   "Disconnected": "Chưa kết nối",
@@ -91,9 +91,7 @@
   "Dark": "Tối",
   "Auto": "Tự động",
   "Endpoint": "Điểm cuối",
-  "Providers": "Nhà cung cấp",
   "Combos": "Kết hợp",
-  "Usage": "Thống kê",
   "Quota Tracker": "Theo dõi hạn mức",
   "MITM": "MITM",
   "CLI Tools": "Công cụ",
@@ -150,7 +148,6 @@
   "No Proxy": "Không có Proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Tên máy chủ/tên miền được phân tách bằng dấu phẩy để bỏ qua proxy.",
   "Test proxy URL": "Kiểm tra URL proxy",
-  "Apply": "Áp dụng",
   "Proxy settings applied": "Đã áp dụng cài đặt proxy",
   "Proxy enabled": "Đã bật proxy",
   "Proxy disabled": "Đã tắt proxy",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Sử dụng Antigravity IDE & GitHub Copilot → với BẤT KỲ nhà cung cấp/mô hình nào từ 9Router",
   "How it works:": "Cách hoạt động:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Yêu cầu Antigravity/Copilot IDE → Chuyển hướng DNS đến localhost:443 → MITM proxy chặn → 9Router → phản hồi đến Antigravity/Copilot",
-  "API Key": "Khóa API",
   "No API keys — create one in Keys page": "Không có khóa API — tạo một khóa trong trang Keys",
   "sk_9router (default)": "sk_9router (mặc định)",
   "Server started": "Đã khởi động máy chủ",
@@ -192,5 +188,5 @@
   "Sudo Password Required": "Yêu cầu mật khẩu Sudo",
   "Enter your sudo password to start/stop MITM server": "Nhập mật khẩu sudo của bạn để khởi động/dừng máy chủ MITM",
   "Sudo Password": "Mật khẩu Sudo",
-  "Confirm": "Xác nhận"
+  "Click to add, click again to remove. Changes are saved automatically.": "Nhấp để thêm, nhấp lại để xóa. Thay đổi được lưu tự động."
 }
