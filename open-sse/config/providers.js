@@ -330,6 +330,14 @@ export const PROVIDERS = {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama"
   },
+  // Augment Code (Auggie CLI) — wraps the local `auggie` subprocess.
+  // baseUrl is unused; AuggieExecutor spawns the CLI directly.
+  // Requires: npm i -g @augmentcode/auggie + `auggie login` (one-time).
+  auggie: {
+    baseUrl: "auggie://local",
+    format: "openai",
+    noAuth: true
+  },
   // Vertex AI - Gemini models via Service Account JSON
   // baseUrl is not used; VertexExecutor.buildUrl() constructs it dynamically
   vertex: {
