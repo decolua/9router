@@ -149,8 +149,11 @@ const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
   ? standaloneRootToUse
   : path.join(standaloneRootToUse, "app");
 if (!fs.existsSync(standaloneApp)) {
-  console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("❌ Next.js standalone build not found.");
+  console.error(`Checked standalone roots: "${standaloneRootResolved}" and "${standaloneRoot}"`);
+  console.error(
+    `Expected either "${path.join(standaloneRootToUse, "server.js")}" or "${path.join(standaloneRootToUse, "app")}"`
+  );
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);
