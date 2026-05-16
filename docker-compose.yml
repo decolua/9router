@@ -1,0 +1,23 @@
+services:
+  9router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 9router:local
+    container_name: 9router
+    restart: unless-stopped
+    ports:
+      - "20128:20128"
+    env_file:
+      - .env
+    environment:
+      # Override DATA_DIR for in-container path (host bind below).
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:20128/api/settings >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3

@@ -1,4 +1,21 @@
-docker stop 9router
-docker rm 9router
-docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 --env-file .env -v 9router-data:/app/data 9router
+#!/usr/bin/env bash
+# Convenience wrapper around docker compose. Use `docker compose up -d` directly
+# if you prefer.
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+if [ ! -f .env ]; then
+  echo "ERROR: .env not found. Copy .env.example to .env and edit secrets first." >&2
+  exit 1
+fi
+
+mkdir -p ./data
+
+docker compose down --remove-orphans
+docker compose build
+docker compose up -d
+docker compose ps
+echo
+echo "9router is starting on http://localhost:20128"
+echo "Tail logs with:  docker compose logs -f"
