@@ -1,0 +1,35 @@
+name: Deploy to Fly.io
+
+# Triggers:
+#  - push to fly-deploy or main: redeploy automatically
+#  - manual run from the Actions tab: same thing, on demand
+on:
+  push:
+    branches:
+      - fly-deploy
+      - main
+    paths-ignore:
+      - "gitbook/**"
+      - "cli/**"
+      - "docs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+concurrency:
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Fly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --wait-timeout 600
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

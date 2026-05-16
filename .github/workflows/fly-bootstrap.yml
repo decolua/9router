@@ -1,0 +1,88 @@
+name: Bootstrap Fly app (run once)
+
+# One-time setup: creates the Fly app, the persistent volume, and pushes secrets.
+# Run this manually from the Actions tab BEFORE the first 'Deploy to Fly.io' run.
+# Re-running is safe -- every step is idempotent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: "Fly region (iad, fra, nrt, sin, syd, ...)"
+        required: true
+        default: "iad"
+
+concurrency:
+  group: fly-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Bootstrap Fly app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Read app name from fly.toml
+        id: cfg
+        run: |
+          APP_NAME=$(grep -E '^app\s*=' fly.toml | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "app=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "Using app name: $APP_NAME"
+
+      - name: Create app if missing
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if flyctl apps list --json | grep -q "\"Name\": *\"${{ steps.cfg.outputs.app }}\""; then
+            echo "App already exists."
+          else
+            flyctl apps create "${{ steps.cfg.outputs.app }}" --org personal
+          fi
+
+      - name: Create volume if missing
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if flyctl volumes list -a "${{ steps.cfg.outputs.app }}" --json | grep -q '"Name": *"router_data"'; then
+            echo "Volume already exists."
+          else
+            flyctl volumes create router_data \
+              --app "${{ steps.cfg.outputs.app }}" \
+              --region "${{ inputs.region }}" \
+              --size 1 \
+              --yes
+          fi
+
+      - name: Push secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          JWT_SECRET: ${{ secrets.APP_JWT_SECRET }}
+          INITIAL_PASSWORD: ${{ secrets.APP_INITIAL_PASSWORD }}
+          API_KEY_SECRET: ${{ secrets.APP_API_KEY_SECRET }}
+          MACHINE_ID_SALT: ${{ secrets.APP_MACHINE_ID_SALT }}
+        run: |
+          for v in JWT_SECRET INITIAL_PASSWORD API_KEY_SECRET MACHINE_ID_SALT; do
+            if [ -z "${!v}" ]; then
+              echo "::error::GitHub secret APP_$v is missing. Add it under Settings -> Secrets and variables -> Actions."
+              exit 1
+            fi
+          done
+          flyctl secrets set --app "${{ steps.cfg.outputs.app }}" --stage \
+            JWT_SECRET="$JWT_SECRET" \
+            INITIAL_PASSWORD="$INITIAL_PASSWORD" \
+            API_KEY_SECRET="$API_KEY_SECRET" \
+            MACHINE_ID_SALT="$MACHINE_ID_SALT"
+          echo "Secrets staged. They will be applied on the next deploy."
+
+      - name: Summary
+        run: |
+          echo "### Bootstrap complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "App: \`${{ steps.cfg.outputs.app }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Region: \`${{ inputs.region }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Next: run **Deploy to Fly.io** workflow (manual or by pushing to \`fly-deploy\`)." >> $GITHUB_STEP_SUMMARY
