@@ -12,6 +12,7 @@ export const FREE_PROVIDERS = {
   // qoder: { id: "qoder", alias: "qd", name: "Qoder AI", icon: "water_drop", color: "#EC4899" },
   iflow: { id: "iflow", alias: "if", name: "iFlow AI", icon: "water_drop", color: "#6366F1", hidden: true, website: "https://iflow.cn", notice: { signupUrl: "https://iflow.cn" } },
   opencode: { id: "opencode", alias: "oc", name: "OpenCode Free", icon: "terminal", color: "#E87040", textIcon: "OC", noAuth: true, passthroughModels: true, modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" } },
+  "gitlawb-opengateway": { id: "gitlawb-opengateway", alias: "ogw", name: "Gitlawb Opengateway (Xiaomi MiMo)", icon: "router", color: "#FF6900", textIcon: "GW", noAuth: true, modelsFetcher: { url: "https://opengateway.gitlawb.com/v1/xiaomi-mimo/models", type: "openai-list" }, website: "https://opengateway.gitlawb.com", notice: { text: "Free Gitlawb Opengateway proxy — no API key required. Serves Xiaomi MiMo models (mimo-v2.5-pro, mimo-v2-flash, etc.) via the /v1/xiaomi-mimo route." } },
 };
 
 // Free Tier Providers (has free access but may require account/API key)
