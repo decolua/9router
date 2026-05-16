@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "crypto";
 import { execSync, exec, spawn } from "child_process";
 import { promisify } from "util";
 import { execWithPassword } from "@/mitm/dns/dnsConfig";
@@ -302,6 +303,10 @@ async function installTailscaleMac(sudoPassword, log) {
 }
 
 async function installTailscaleLinux(sudoPassword, log) {
+  // Reject password containing newline → prevents stdin command injection
+  if (typeof sudoPassword !== "string" || sudoPassword.includes("\n")) {
+    throw new Error("Invalid sudo password");
+  }
   log("Downloading install script...");
   return new Promise((resolve, reject) => {
     const curlChild = spawn("curl", ["-fsSL", "https://tailscale.com/install.sh"], {
@@ -315,7 +320,15 @@ async function installTailscaleLinux(sudoPassword, log) {
     curlChild.on("exit", (code) => {
       if (code !== 0) return reject(new Error(`Failed to download install script: ${curlErr}`));
       log("Running install script...");
-      const child = spawn("sudo", ["-S", "sh"], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+      // Persist script to temp file → exec by path (NOT via stdin) → sh never reads attacker-controlled stdin
+      const tmpScript = path.join(os.tmpdir(), `tailscale-install-${crypto.randomBytes(8).toString("hex")}.sh`);
+      try {
+        fs.writeFileSync(tmpScript, scriptContent, { mode: 0o700 });
+      } catch (e) {
+        return reject(new Error(`Failed to write install script: ${e.message}`));
+      }
+      const cleanup = () => { try { fs.unlinkSync(tmpScript); } catch {} };
+      const child = spawn("sudo", ["-S", "sh", tmpScript], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
       let stderr = "";
       child.stdout.on("data", (d) => {
         const line = d.toString().trim();
@@ -323,6 +336,7 @@ async function installTailscaleLinux(sudoPassword, log) {
       });
       child.stderr.on("data", (d) => { stderr += d.toString(); });
       child.on("close", (c) => {
+        cleanup();
         if (c === 0) resolve();
         else {
           const msg = (stderr.includes("incorrect password") || stderr.includes("Sorry"))
@@ -331,9 +345,8 @@ async function installTailscaleLinux(sudoPassword, log) {
           reject(new Error(msg));
         }
       });
-      child.on("error", reject);
+      child.on("error", (e) => { cleanup(); reject(e); });
       child.stdin.write(`${sudoPassword}\n`);
-      child.stdin.write(scriptContent);
       child.stdin.end();
     });
     curlChild.on("error", reject);

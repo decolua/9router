@@ -36,8 +36,14 @@ export async function POST(request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let closed = false;
       const send = (event, data) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
       };
 
       try {
@@ -52,7 +58,7 @@ export async function POST(request) {
           : error.message;
         send("error", { error: msg });
       } finally {
-        controller.close();
+        if (!closed) { try { controller.close(); } catch {} }
       }
     },
   });

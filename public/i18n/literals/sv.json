@@ -188,5 +188,7 @@
   "Sudo Password Required": "Sudo-lösenord krävs",
   "Enter your sudo password to start/stop MITM server": "Ange ditt sudo-lösenord för att starta/stoppa MITM-servern",
   "Sudo Password": "Sudo-lösenord",
-  "Click to add, click again to remove. Changes are saved automatically.": "Klicka för att lägga till, klicka igen för att ta bort. Ändringar sparas automatiskt."
+  "Click to add, click again to remove. Changes are saved automatically.": "Klicka för att lägga till, klicka igen för att ta bort. Ändringar sparas automatiskt.",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Riskmeddelande: Denna leverantör använder en prenumerations-/OAuth-session som inte är officiellt licensierad för proxy-/routeranvändning. Kontot kan begränsas eller bannlysas. Användning sker på egen risk.",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM avlyssnar HTTPS-trafik från IDE-verktyg (Antigravity, GitHub Copilot, Kiro) via lokal CA för att omdirigera förfrågningar till dina leverantörer. Kan bryta mot ToS → risk för kontoavstängning. Användning sker på egen risk."
 }

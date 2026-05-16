@@ -9,7 +9,7 @@
 const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const { getRuntimeDir, getRuntimeNodeModules } = require("./sqliteRuntime");
+const { getRuntimeDir, getRuntimeNodeModules, runNpmInstall, summarizeNpmError } = require("./sqliteRuntime");
 
 const SYSTRAY_PKG = "systray2";
 const SYSTRAY_VERSION = "2.1.4";
@@ -73,16 +73,15 @@ function ensureRuntimeDir() {
 
 function npmInstall(pkgs, { silent = false } = {}) {
   const cwd = ensureRuntimeDir();
-  const args = ["install", ...pkgs, "--no-audit", "--no-fund", "--no-save", "--prefer-online"];
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  if (!silent) console.log(`[9router][runtime] ${npmCmd} ${args.join(" ")}  (cwd: ${cwd})`);
-  const res = spawnSync(npmCmd, args, {
-    cwd,
-    stdio: silent ? "ignore" : "inherit",
-    timeout: 120000,
-    shell: process.platform === "win32"
-  });
-  return res.status === 0;
+  if (!silent) console.log("⏳ Installing system tray (first run)...");
+  const res = runNpmInstall({ cwd, pkgs, extraArgs: ["--no-save"], timeout: 120000 });
+  if (!res.ok && !silent) {
+    const reason = summarizeNpmError(res.stderr);
+    console.warn("⚠️  System tray install failed — tray disabled");
+    console.warn(`   Reason: ${reason}`);
+    console.warn(`   Retry:  cd "${cwd}" && npm install ${pkgs.join(" ")}`);
+  }
+  return res.ok;
 }
 
 // Public: ensure systray2 is installed on macOS/Linux only.
@@ -97,14 +96,11 @@ function ensureTrayRuntime({ silent = false } = {}) {
   }
   if (hasSystray()) {
     chmodSystrayBin({ silent });
-    if (!silent) console.log("[9router][runtime] systray2 OK");
+    if (!silent) console.log("✅ System tray ready");
     return { systray: true };
   }
   const ok = npmInstall([`${SYSTRAY_PKG}@${SYSTRAY_VERSION}`], { silent });
   if (ok) chmodSystrayBin({ silent });
-  if (!ok && !silent) {
-    console.warn("[9router][runtime] systray2 install failed (tray will be disabled)");
-  }
   return { systray: ok && hasSystray() };
 }
 

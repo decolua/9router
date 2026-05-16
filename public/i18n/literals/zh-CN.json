@@ -762,5 +762,7 @@
   "Get API Key →": "获取 API 密钥 →",
   "OAuth": "OAuth",
   "Click to add, click again to remove. Changes are saved automatically.": "点击添加，再次点击删除。更改将自动保存。",
-  "Close": "关闭"
+  "Close": "关闭",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 风险提示：此提供商使用的订阅/OAuth 会话未获官方授权用于代理/路由器使用。账户可能被限制或封禁。使用风险自负。",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 通过本地 CA 拦截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，将请求重定向到您的提供商。可能违反 ToS → 账户封禁风险。使用风险自负。"
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal } from "@/shared/components";
+import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
@@ -43,7 +43,9 @@ export default function CoworkToolCard({
   const [plugins, setPlugins] = useState([]);
   const [localPlugins, setLocalPlugins] = useState([]);
   const [customPlugins, setCustomPlugins] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
+  const [modelSelectOpen, setModelSelectOpen] = useState(false);
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ type: "url", name: "", url: "", command: "", args: "" });
@@ -60,6 +62,16 @@ export default function CoworkToolCard({
 
   useEffect(() => {
     if (isExpanded && !status) checkStatus();
+  }, [isExpanded]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    fetch("/api/models/alias")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setModelAliases(data.aliases || {});
+      })
+      .catch(() => {});
   }, [isExpanded]);
 
   useEffect(() => {
@@ -168,6 +180,17 @@ export default function CoworkToolCard({
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     }
+  };
+
+  const handleAddModel = (model) => {
+    const value = model?.value || model?.name || model;
+    if (!value || selectedModels.includes(value)) return;
+    setSelectedModels((prev) => [...prev, value]);
+  };
+
+  const handleRemoveModel = (model) => {
+    const value = model?.value || model?.name || model;
+    setSelectedModels((prev) => prev.filter((item) => item !== value));
   };
 
   const handleReset = async () => {
@@ -313,7 +336,7 @@ export default function CoworkToolCard({
                         selectedModels.map((m) => (
                           <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
                             {m}
-                            <button onClick={() => setSelectedModels((prev) => prev.filter((x) => x !== m))} className="ml-0.5 hover:text-red-500">
+                            <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
                               <span className="material-symbols-outlined text-[12px]">close</span>
                             </button>
                           </span>
@@ -499,6 +522,18 @@ export default function CoworkToolCard({
         activeProviders={activeProviders}
         forcePrefix="claude-"
         title="Create Cowork Combo"
+      />
+
+      <ModelSelectModal
+        isOpen={modelSelectOpen}
+        onClose={() => setModelSelectOpen(false)}
+        onSelect={handleAddModel}
+        onDeselect={handleRemoveModel}
+        activeProviders={activeProviders}
+        modelAliases={modelAliases}
+        title="Select Cowork Model"
+        addedModelValues={selectedModels}
+        closeOnSelect={false}
       />
 
       <McpMarketplaceModal

@@ -5,6 +5,12 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { v4 as uuidv4 } from "uuid";
+import {
+  resolveKiroModel,
+  isThinkingEnabled,
+  buildThinkingSystemPrefix,
+  KIRO_AGENTIC_SYSTEM_PROMPT
+} from "../../config/kiroConstants.js";
 
 /**
  * Convert OpenAI messages to Kiro format
@@ -282,6 +288,20 @@ function convertMessages(messages, tools, model) {
 
 /**
  * Build Kiro payload from OpenAI format
+ *
+ * Two 9router-specific behaviours implemented here:
+ *
+ * 1. `-agentic` model suffix. Synthetic variant — same upstream model, but we
+ *    inject a chunked-write system prompt to keep large file writes under
+ *    Kiro's 2-3 minute server timeout. The suffix is stripped before being
+ *    sent upstream.
+ *
+ * 2. Thinking / reasoning. Kiro does not accept `thinking.type` or
+ *    `reasoning_effort` natively. The only way to enable reasoning is to
+ *    inject `<thinking_mode>enabled</thinking_mode>` into the user content
+ *    sent upstream. Detection covers Anthropic-Beta header, Claude API
+ *    `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tags, and model
+ *    name hints.
  */
 export function buildKiroPayload(model, body, stream, credentials) {
   const messages = body.messages || [];
@@ -290,14 +310,29 @@ export function buildKiroPayload(model, body, stream, credentials) {
   const temperature = body.temperature;
   const topP = body.top_p;
 
-  const { history, currentMessage } = convertMessages(messages, tools, model);
+  const { upstream: upstreamModel, agentic, thinking: modelImpliesThinking } = resolveKiroModel(model);
+  const thinkingEnabled = modelImpliesThinking || isThinkingEnabled(body, null, model);
+
+  const { history, currentMessage } = convertMessages(messages, tools, upstreamModel);
 
   const profileArn = credentials?.providerSpecificData?.profileArn || "";
 
   let finalContent = currentMessage?.userInputMessage?.content || "";
   const timestamp = new Date().toISOString();
-  finalContent = `[Context: Current time is ${timestamp}]\n\n${finalContent}`;
-  
+
+  // Build the system-prompt prefix that goes ABOVE the user message body.
+  // Order: thinking_mode tag first (so Kiro sees it before any user text),
+  // then context/timestamp marker, then optional agentic chunked-write prompt.
+  const prefixParts = [];
+  if (thinkingEnabled) {
+    prefixParts.push(buildThinkingSystemPrefix());
+  }
+  prefixParts.push(`[Context: Current time is ${timestamp}]`);
+  if (agentic) {
+    prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  }
+  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
@@ -305,8 +340,11 @@ export function buildKiroPayload(model, body, stream, credentials) {
       currentMessage: {
         userInputMessage: {
           content: finalContent,
-          modelId: model,
+          modelId: upstreamModel,
           origin: "AI_EDITOR",
+          ...(currentMessage?.userInputMessage?.images?.length > 0 && {
+            images: currentMessage.userInputMessage.images
+          }),
           ...(currentMessage?.userInputMessage?.userInputMessageContext && {
             userInputMessageContext: currentMessage.userInputMessage.userInputMessageContext
           })
@@ -326,6 +364,12 @@ export function buildKiroPayload(model, body, stream, credentials) {
     if (temperature !== undefined) payload.inferenceConfig.temperature = temperature;
     if (topP !== undefined) payload.inferenceConfig.topP = topP;
   }
+
+  // Tag payload so the executor can route the upstream model id correctly.
+  Object.defineProperty(payload, "_kiroUpstreamModel", {
+    value: upstreamModel,
+    enumerable: false
+  });
 
   return payload;
 }

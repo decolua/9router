@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { KiroService } from "@/lib/oauth/services/kiro";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
+import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -76,6 +76,45 @@ const resolveQwenModelsUrl = (connection) => {
     return `${value.replace(/\/$/, "")}/models`;
   }
   return `https://${value.replace(/\/$/, "")}/v1/models`;
+};
+
+// Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
+// Receives a `fetchFn(token)` and returns parsed models or throws.
+const buildOAuthResolver = ({ refreshFn, fetchFn, parseFn, errorLabel }) => async (connection) => {
+  const { accessToken, refreshToken } = connection;
+  if (!accessToken) {
+    return { error: "No valid token found", status: 401 };
+  }
+  let warning;
+  try {
+    let response = await fetchFn(accessToken, connection);
+    if (!response.ok && (response.status === 401 || response.status === 403) && refreshToken) {
+      const refreshed = await refreshFn(connection);
+      if (refreshed?.accessToken) {
+        await updateProviderCredentials(connection.id, {
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken || refreshToken,
+          expiresIn: refreshed.expiresIn,
+        });
+        connection.accessToken = refreshed.accessToken;
+        if (refreshed.refreshToken) connection.refreshToken = refreshed.refreshToken;
+        response = await fetchFn(refreshed.accessToken, connection);
+      }
+    }
+    if (response.ok) {
+      const data = await response.json();
+      const models = parseFn(data);
+      if (models.length > 0) return { models };
+    } else {
+      const errorText = await response.text();
+      warning = `${errorLabel}: ${response.status} ${errorText}`;
+      console.log(`${errorLabel} (falling back to static):`, errorText);
+    }
+  } catch (error) {
+    warning = `${errorLabel}: ${error.message}`;
+    console.log(`${errorLabel} (falling back to static):`, error.message);
+  }
+  return { models: [], warning };
 };
 
 // Provider models endpoints configuration
@@ -199,7 +238,90 @@ const PROVIDER_MODELS_CONFIG = {
   nanobanana: createOpenAIModelsConfig("https://api.nanobananaapi.ai/v1/models"),
   chutes: createOpenAIModelsConfig("https://llm.chutes.ai/v1/models"),
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
-  assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models")
+  assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
+
+  // Custom resolvers (non-OpenAI-shaped APIs / token-refresh flows)
+  kiro: {
+    customResolver: async (connection) => {
+      const credentials = {
+        accessToken: connection.accessToken,
+        refreshToken: connection.refreshToken,
+        providerSpecificData: connection.providerSpecificData || {}
+      };
+      let warning;
+      try {
+        const result = await resolveKiroModels(credentials, {
+          log: console,
+          onCredentialsRefreshed: async (refreshed) => {
+            if (refreshed?.accessToken) {
+              await updateProviderCredentials(connection.id, {
+                accessToken: refreshed.accessToken,
+                refreshToken: refreshed.refreshToken || connection.refreshToken,
+                expiresIn: refreshed.expiresIn,
+              });
+              connection.accessToken = refreshed.accessToken;
+              if (refreshed.refreshToken) connection.refreshToken = refreshed.refreshToken;
+            }
+          }
+        });
+        if (result?.models?.length) {
+          return {
+            models: result.models.map((m) => ({
+              id: m.id,
+              name: m.name,
+              upstreamModelId: m.upstreamModelId,
+              contextLength: m.contextLength,
+              rateMultiplier: m.rateMultiplier,
+              capabilities: m.capabilities,
+              description: m.description
+            }))
+          };
+        }
+        warning = "Kiro returned no models; falling back to static catalog.";
+      } catch (error) {
+        warning = `Failed to fetch Kiro models: ${error.message}`;
+        console.log("Failed to fetch Kiro models dynamically, falling back to static:", error.message);
+      }
+      return { models: [], warning };
+    }
+  },
+  "gemini-cli": {
+    customResolver: buildOAuthResolver({
+      refreshFn: (conn) => refreshGoogleToken(conn.refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret),
+      fetchFn: (token, conn) => {
+        const projectId = conn.projectId || conn.providerSpecificData?.projectId;
+        const body = projectId ? { project: projectId } : {};
+        return fetch(GEMINI_CLI_MODELS_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "User-Agent": "google-api-nodejs-client/9.15.1",
+            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1"
+          },
+          body: JSON.stringify(body)
+        });
+      },
+      parseFn: parseGeminiCliModels,
+      errorLabel: "Failed to fetch Gemini CLI models"
+    })
+  },
+  "ollama-local": {
+    customResolver: async (connection) => {
+      const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log("Error fetching models from ollama-local:", errorText);
+        return { error: `Failed to fetch models: ${response.status}`, status: response.status };
+      }
+      const data = await response.json();
+      return { models: parseOpenAIStyleModels(data) };
+    }
+  }
 };
 
 /**
@@ -288,159 +410,26 @@ export async function GET(request, { params }) {
       });
     }
 
-    // Kiro: Try dynamic model fetching first
-    if (connection.provider === "kiro") {
-      let warning;
-      try {
-        const kiroService = new KiroService();
-        const profileArn = connection.providerSpecificData?.profileArn;
-        const accessToken = connection.accessToken;
-        const refreshToken = connection.refreshToken;
-
-        if (accessToken && profileArn) {
-          try {
-            const models = await kiroService.listAvailableModels(accessToken, profileArn);
-            return NextResponse.json({
-              provider: connection.provider,
-              connectionId: connection.id,
-              models
-            });
-          } catch (error) {
-            if (error.message.includes("AccessDeniedException") && refreshToken) {
-              console.log("Kiro token invalid/expired. Attempting refresh...");
-              const refreshed = await refreshKiroToken(refreshToken, connection.providerSpecificData);
-
-              if (refreshed?.accessToken) {
-                await updateProviderCredentials(connection.id, {
-                  accessToken: refreshed.accessToken,
-                  refreshToken: refreshed.refreshToken || refreshToken,
-                  expiresIn: refreshed.expiresIn,
-                });
-
-                const models = await kiroService.listAvailableModels(refreshed.accessToken, profileArn);
-                return NextResponse.json({
-                  provider: connection.provider,
-                  connectionId: connection.id,
-                  models
-                });
-              }
-            }
-            throw error; // Let outer catch handle it
-          }
-        }
-      } catch (error) {
-        warning = `Failed to fetch Kiro models: ${error.message}`;
-        console.log("Failed to fetch Kiro models dynamically, falling back to static:", error.message);
-      }
-
-      // Return empty dynamic list so UI falls back to static provider models.
-      return NextResponse.json({
-        provider: connection.provider,
-        connectionId: connection.id,
-        models: [],
-        warning,
-      });
-    }
-
-    if (connection.provider === "gemini-cli") {
-      const { accessToken, refreshToken } = connection;
-      if (!accessToken) {
-        return NextResponse.json({ error: "No valid token found" }, { status: 401 });
-      }
-
-      const projectId = connection.projectId || connection.providerSpecificData?.projectId;
-      const body = projectId ? { project: projectId } : {};
-
-      const fetchModels = async (token) => {
-        const response = await fetch(GEMINI_CLI_MODELS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-            "User-Agent": "google-api-nodejs-client/9.15.1",
-            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1"
-          },
-          body: JSON.stringify(body)
-        });
-        return response;
-      };
-
-      let warning;
-
-      try {
-        let response = await fetchModels(accessToken);
-
-        // Attempt refresh on 401/403 when refresh token exists
-        if (!response.ok && (response.status === 401 || response.status === 403) && refreshToken) {
-          const refreshed = await refreshGoogleToken(refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret);
-          if (refreshed?.accessToken) {
-            await updateProviderCredentials(connection.id, {
-              accessToken: refreshed.accessToken,
-              refreshToken: refreshed.refreshToken,
-              expiresIn: refreshed.expiresIn,
-            });
-            response = await fetchModels(refreshed.accessToken);
-          }
-        }
-
-        if (response.ok) {
-          const data = await response.json();
-          const models = parseGeminiCliModels(data);
-          if (models.length > 0) {
-            return NextResponse.json({
-              provider: connection.provider,
-              connectionId: connection.id,
-              models
-            });
-          }
-        } else {
-          const errorText = await response.text();
-          warning = `Failed to fetch Gemini CLI models: ${response.status} ${errorText}`;
-          console.log("Failed to fetch Gemini CLI models dynamically, falling back to static:", errorText);
-        }
-      } catch (error) {
-        warning = `Failed to fetch Gemini CLI models: ${error.message}`;
-        console.log("Failed to fetch Gemini CLI models dynamically, falling back to static:", error.message);
-      }
-
-      // Return empty dynamic list so UI falls back to static provider models.
-      return NextResponse.json({
-        provider: connection.provider,
-        connectionId: connection.id,
-        models: [],
-        warning,
-      });
-    }
-
-    if (connection.provider === "ollama-local") {
-      const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
-      const response = await fetch(url, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Error fetching models from ollama-local:`, errorText);
-        return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
-          { status: response.status }
-        );
-      }
-      const data = await response.json();
-      const models = parseOpenAIStyleModels(data);
-      return NextResponse.json({
-        provider: connection.provider,
-        connectionId: connection.id,
-        models,
-      });
-    }
-
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }
       );
+    }
+
+    // Config-driven custom resolver path (OAuth refresh, non-OpenAI shape, etc.)
+    if (typeof config.customResolver === "function") {
+      const result = await config.customResolver(connection);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: result.status || 500 });
+      }
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: result.models,
+        ...(result.warning ? { warning: result.warning } : {})
+      });
     }
 
     // Get auth token

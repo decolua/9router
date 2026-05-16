@@ -188,5 +188,7 @@
   "Sudo Password Required": "Sudo পাসওয়ার্ড প্রয়োজন",
   "Enter your sudo password to start/stop MITM server": "MITM সার্ভার শুরু/বন্ধ করতে আপনার sudo পাসওয়ার্ড প্রবেশ করুন",
   "Sudo Password": "Sudo পাসওয়ার্ড",
-  "Click to add, click again to remove. Changes are saved automatically.": "যোগ করতে ক্লিক করুন, সরাতে আবার ক্লিক করুন। পরিবর্তনগুলি স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়।"
+  "Click to add, click again to remove. Changes are saved automatically.": "যোগ করতে ক্লিক করুন, সরাতে আবার ক্লিক করুন। পরিবর্তনগুলি স্বয়ংক্রিয়ভাবে সংরক্ষিত হয়।",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ ঝুঁকি বিজ্ঞপ্তি: এই প্রদানকারী একটি সাবস্ক্রিপশন/OAuth সেশন ব্যবহার করে যা প্রক্সি/রাউটার ব্যবহারের জন্য আনুষ্ঠানিকভাবে লাইসেন্সপ্রাপ্ত নয়। অ্যাকাউন্ট সীমাবদ্ধ বা নিষিদ্ধ হতে পারে। নিজের ঝুঁকিতে ব্যবহার করুন।",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM স্থানীয় CA এর মাধ্যমে IDE টুলগুলির (Antigravity, GitHub Copilot, Kiro) HTTPS ট্রাফিক ইন্টারসেপ্ট করে আপনার প্রদানকারীদের কাছে অনুরোধ পুনঃনির্দেশ করতে। ToS লঙ্ঘন করতে পারে → অ্যাকাউন্ট নিষিদ্ধ ঝুঁকি। নিজের ঝুঁকিতে ব্যবহার করুন।"
 }

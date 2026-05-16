@@ -67,6 +67,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "perplexity-web": "perplexity-web",
   mimo: "xiaomi-mimo",
   "xiaomi-mimo": "xiaomi-mimo",
+  xmtp: "xiaomi-tokenplan",
+  "xiaomi-tokenplan": "xiaomi-tokenplan",
   cf: "cloudflare-ai",
   "cloudflare-ai": "cloudflare-ai",
   // Image/video providers
@@ -130,6 +132,8 @@ const ALIAS_TO_PROVIDER_ID = {
   "nous-research": "nous-research",
   nous: "nous-research",
   glhf: "glhf",
+  bb: "blackbox",
+  blackbox: "blackbox",
 };
 
 /**

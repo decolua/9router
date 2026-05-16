@@ -188,5 +188,7 @@
   "Sudo Password Required": "Sudoパスワードが必要です",
   "Enter your sudo password to start/stop MITM server": "MITMサーバーを開始/停止するには、sudoパスワードを入力してください",
   "Sudo Password": "Sudoパスワード",
-  "Click to add, click again to remove. Changes are saved automatically.": "クリックで追加、もう一度クリックで削除。変更は自動的に保存されます。"
+  "Click to add, click again to remove. Changes are saved automatically.": "クリックで追加、もう一度クリックで削除。変更は自動的に保存されます。",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ リスク通知: このプロバイダーは、プロキシ/ルーター使用について公式にライセンスされていないサブスクリプション/OAuthセッションを使用しています。アカウントが制限または禁止される可能性があります。自己責任でご使用ください。",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITMはローカルCAを介してIDEツール (Antigravity, GitHub Copilot, Kiro) のHTTPSトラフィックを傍受し、リクエストをプロバイダーにリダイレクトします。ToS違反の可能性 → アカウントBANリスク。自己責任でご使用ください。"
 }

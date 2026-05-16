@@ -353,6 +353,7 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "xiaomi-mimo":
+        case "xiaomi-tokenplan":
         case "nvidia": {
           const endpoints = {
             deepseek: "https://api.deepseek.com/models",
@@ -373,7 +374,8 @@ export async function POST(request) {
             nanobanana: "https://api.nanobananaapi.ai/v1/models",
             chutes: "https://llm.chutes.ai/v1/models",
             nvidia: "https://integrate.api.nvidia.com/v1/models",
-            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models"
+            "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
+            "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1/models"
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
