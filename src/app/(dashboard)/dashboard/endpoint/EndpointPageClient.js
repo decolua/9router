@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelMultiSelectField } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 const TUNNEL_BENEFITS = [
@@ -43,8 +43,14 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newDailyTokenLimit, setNewDailyTokenLimit] = useState("");
+  const [newExpiresAt, setNewExpiresAt] = useState("");
+  const [newAllowedModels, setNewAllowedModels] = useState([]);
+  const [editingKey, setEditingKey] = useState(null);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAliases, setModelAliases] = useState({});
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -119,6 +125,8 @@ export default function APIPageClient({ machineId }) {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // Run once on mount; handlers intentionally read current refs/state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Browser-side periodic ping: probes tunnel/tailscale URLs directly so UI stays
@@ -163,7 +171,7 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
-  const syncTunnelStatus = async () => {
+  async function syncTunnelStatus() {
     try {
       const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
       if (!statusRes.ok) return;
@@ -181,9 +189,9 @@ export default function APIPageClient({ machineId }) {
       setTsEnabled(tsEn);
       updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
-  };
+  }
 
-  const loadSettings = async () => {
+  async function loadSettings() {
     setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
@@ -220,7 +228,7 @@ export default function APIPageClient({ machineId }) {
     } finally {
       setTunnelChecking(false);
     }
-  };
+  }
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
@@ -283,19 +291,29 @@ export default function APIPageClient({ machineId }) {
     patchSetting({ cavemanLevel: level });
   };
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, providersRes, aliasesRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/providers"),
+        fetch("/api/models/alias"),
+      ]);
       const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+      if (keysRes.ok) setKeys(keysData.keys || []);
+      if (providersRes.ok) {
+        const providersData = await providersRes.json();
+        setActiveProviders(providersData.connections || []);
+      }
+      if (aliasesRes.ok) {
+        const aliasesData = await aliasesRes.json();
+        setModelAliases(aliasesData.aliases || {});
       }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable, also check backend status to detect process die
@@ -635,6 +653,20 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const resetKeyPolicyForm = () => {
+    setNewKeyName("");
+    setNewDailyTokenLimit("");
+    setNewExpiresAt("");
+    setNewAllowedModels([]);
+  };
+
+  const buildKeyPolicyPayload = () => ({
+    name: newKeyName.trim(),
+    dailyTokenLimit: newDailyTokenLimit === "" ? 0 : Number(newDailyTokenLimit),
+    expiresAt: newExpiresAt || null,
+    allowedModels: newAllowedModels,
+  });
+
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
@@ -642,18 +674,45 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify(buildKeyPolicyPayload()),
       });
       const data = await res.json();
 
       if (res.ok) {
         setCreatedKey(data.key);
         await fetchData();
-        setNewKeyName("");
+        resetKeyPolicyForm();
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const openEditKeyModal = (key) => {
+    setEditingKey(key);
+    setNewKeyName(key.name || "");
+    setNewDailyTokenLimit(key.dailyTokenLimit ? String(key.dailyTokenLimit) : "");
+    setNewExpiresAt(key.expiresAt ? key.expiresAt.slice(0, 10) : "");
+    setNewAllowedModels(Array.isArray(key.allowedModels) ? key.allowedModels : []);
+  };
+
+  const handleUpdateKeyPolicy = async () => {
+    if (!editingKey || !newKeyName.trim()) return;
+    try {
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildKeyPolicyPayload()),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKeys(prev => prev.map(k => k.id === editingKey.id ? data.key : k));
+        setEditingKey(null);
+        resetKeyPolicyForm();
+      }
+    } catch (error) {
+      console.log("Error updating key policy:", error);
     }
   };
 
@@ -700,6 +759,28 @@ export default function APIPageClient({ machineId }) {
     return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
   };
 
+  const formatTokenLimit = (value) => {
+    const limit = Number(value || 0);
+    return limit > 0 ? `${limit.toLocaleString()} tokens/day` : "No token limit";
+  };
+
+  const formatUsageToday = (key) => {
+    const usage = key.usageToday;
+    if (!usage) return "Usage today unavailable";
+    const used = Number(usage.usedTokens || 0).toLocaleString();
+    if (usage.isUnlimited) return `${used} used today · Unlimited`;
+    const limit = Number(usage.dailyTokenLimit || 0).toLocaleString();
+    const remaining = Number(usage.remainingTokens || 0).toLocaleString();
+    return `${used} / ${limit} used · ${remaining} remaining`;
+  };
+
+  const usageBarClass = (usage) => {
+    if (!usage || usage.isUnlimited) return "bg-primary";
+    if (usage.usagePercent >= 100) return "bg-red-500";
+    if (usage.usagePercent >= 80) return "bg-amber-500";
+    return "bg-primary";
+  };
+
   const toggleKeyVisibility = (keyId) => {
     setVisibleKeys(prev => {
       const next = new Set(prev);
@@ -709,14 +790,7 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
-  const [baseUrl, setBaseUrl] = useState("/v1");
-
-  // Hydration fix: Only access window on client side
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setBaseUrl(`${window.location.origin}/v1`);
-    }
-  }, []);
+  const baseUrl = typeof window !== "undefined" ? `${window.location.origin}/v1` : "/v1";
 
   if (loading) {
     return (
@@ -1100,6 +1174,31 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2 text-[11px] text-text-muted">
+                    <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border-subtle">
+                      {formatTokenLimit(key.dailyTokenLimit)}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border-subtle">
+                      {key.expiresAt ? `Expires ${new Date(key.expiresAt).toLocaleDateString()}` : "No expiry"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border-subtle">
+                      {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 ? `${key.allowedModels.length} models allowed` : "All models"}
+                    </span>
+                  </div>
+                  <div className="mt-2 max-w-md">
+                    <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted mb-1">
+                      <span>{formatUsageToday(key)}</span>
+                      {key.usageToday && !key.usageToday.isUnlimited && (
+                        <span>{key.usageToday.usagePercent}%</span>
+                      )}
+                    </div>
+                    <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden border border-border-subtle">
+                      <div
+                        className={`h-full rounded-full transition-all ${usageBarClass(key.usageToday)}`}
+                        style={{ width: `${key.usageToday?.isUnlimited ? 0 : key.usageToday?.usagePercent || 0}%` }}
+                      />
+                    </div>
+                  </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1125,6 +1224,13 @@ export default function APIPageClient({ machineId }) {
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
                   <button
+                    onClick={() => openEditKeyModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Edit key limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
+                  <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
@@ -1143,7 +1249,7 @@ export default function APIPageClient({ machineId }) {
         title="Create API Key"
         onClose={() => {
           setShowAddModal(false);
-          setNewKeyName("");
+          resetKeyPolicyForm();
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1153,6 +1259,32 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Input
+            label="Daily Token Limit"
+            type="number"
+            min="0"
+            value={newDailyTokenLimit}
+            onChange={(e) => setNewDailyTokenLimit(e.target.value)}
+            placeholder="0 = unlimited"
+            hint="Resets daily using server local date"
+          />
+          <Input
+            label="Expires At"
+            type="date"
+            value={newExpiresAt}
+            onChange={(e) => setNewExpiresAt(e.target.value)}
+            hint="Leave empty for no expiry"
+          />
+          <ModelMultiSelectField
+            label="Allowed Models"
+            value={newAllowedModels}
+            onChange={setNewAllowedModels}
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            title="Select Allowed Models"
+            hint="Empty = all models. Pick provider/model or an existing combo."
+            addLabel="Add Allowed Model"
+          />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1160,7 +1292,67 @@ export default function APIPageClient({ machineId }) {
             <Button
               onClick={() => {
                 setShowAddModal(false);
-                setNewKeyName("");
+                resetKeyPolicyForm();
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Policy Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title="Edit API Key Limits"
+        onClose={() => {
+          setEditingKey(null);
+          resetKeyPolicyForm();
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+            placeholder="Production Key"
+          />
+          <Input
+            label="Daily Token Limit"
+            type="number"
+            min="0"
+            value={newDailyTokenLimit}
+            onChange={(e) => setNewDailyTokenLimit(e.target.value)}
+            placeholder="0 = unlimited"
+            hint="Resets daily using server local date"
+          />
+          <Input
+            label="Expires At"
+            type="date"
+            value={newExpiresAt}
+            onChange={(e) => setNewExpiresAt(e.target.value)}
+            hint="Leave empty for no expiry"
+          />
+          <ModelMultiSelectField
+            label="Allowed Models"
+            value={newAllowedModels}
+            onChange={setNewAllowedModels}
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            title="Select Allowed Models"
+            hint="Empty = all models. Pick provider/model or an existing combo."
+            addLabel="Add Allowed Model"
+          />
+          <div className="flex gap-2">
+            <Button onClick={handleUpdateKeyPolicy} fullWidth disabled={!newKeyName.trim()}>
+              Save
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingKey(null);
+                resetKeyPolicyForm();
               }}
               variant="ghost"
               fullWidth

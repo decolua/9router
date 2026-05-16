@@ -18,7 +18,11 @@ const nextConfig = {
   },
   outputFileTracingRoot: tracingRoot,
   outputFileTracingExcludes: {
-    "*": ["./gitbook/**/*"]
+    "*": [
+      "./gitbook/**/*",
+      "C:/Program Files/Tailscale/**/*",
+      "C:\\Program Files\\Tailscale\\**/*"
+    ]
   },
   images: {
     unoptimized: true
