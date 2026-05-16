@@ -6,6 +6,13 @@ export const VALID_OPENAI_MESSAGE_TYPES = ["text", "image_url", "image", "tool_c
 
 // Filter messages to OpenAI standard format
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
+function normalizeOpenAIContentBlocks(blocks) {
+  if (blocks.every(block => block.type === "text")) {
+    return blocks.map(block => block.text || "").join("\n");
+  }
+  return blocks;
+}
+
 export function filterToOpenAIFormat(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
   
@@ -50,7 +57,7 @@ export function filterToOpenAIFormat(body) {
         filteredContent.push({ type: "text", text: "" });
       }
       
-      return { ...msg, content: filteredContent };
+      return { ...msg, content: normalizeOpenAIContentBlocks(filteredContent) };
     }
     
     return msg;
@@ -127,4 +134,3 @@ export function filterToOpenAIFormat(body) {
 
   return body;
 }
-

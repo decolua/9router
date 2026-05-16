@@ -17,6 +17,15 @@ export function parseSSELine(line, format = null) {
     return null;
   }
 
+  const trimmed = line.trim();
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      return null;
+    }
+  }
+
   // Standard SSE format: "data: {...}"
   if (line.charCodeAt(0) !== 100) return null; // 'd' = 100
 

@@ -143,3 +143,32 @@ describe("CodexExecutor image handling", () => {
     expect(imgBlock.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
   });
 });
+
+describe("CodexExecutor session handling", () => {
+  it("keeps session_id stable when a Codex session is continued", () => {
+    const executor = new CodexExecutor();
+    const credentials = { accessToken: "test", connectionId: "conn-codex-1" };
+
+    executor.transformRequest("gpt-5.5-medium", {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "first" }] }],
+    }, true, credentials);
+    const firstSessionId = executor.buildHeaders(credentials, true).session_id;
+
+    executor.transformRequest("gpt-5.5-medium", {
+      input: [
+        { type: "message", role: "user", content: [{ type: "input_text", text: "first" }] },
+        { type: "message", role: "assistant", content: [{ type: "output_text", text: "answer" }] },
+        {
+          type: "reasoning",
+          id: "rs_1",
+          encrypted_content: "encrypted-reasoning",
+          summary: [],
+        },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "continue" }] },
+      ],
+    }, true, credentials);
+    const continuedSessionId = executor.buildHeaders(credentials, true).session_id;
+
+    expect(continuedSessionId).toBe(firstSessionId);
+  });
+});

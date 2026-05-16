@@ -26,6 +26,23 @@ function withCodexReviewModels(models) {
   });
 }
 
+const CODEX_EFFORT_LEVELS = ['xhigh', 'high', 'medium', 'low'];
+
+function withCodexEffortVariants(modelIds) {
+  const targetSet = new Set(modelIds);
+  return (models) => models.flatMap((model) => {
+    if (!targetSet.has(model.id) || (model.type || "llm") !== "llm") return [model];
+    return [
+      model,
+      ...CODEX_EFFORT_LEVELS.map(level => ({
+        ...model,
+        id: `${model.id}-${level}`,
+        name: `${model.name} (${level === 'xhigh' ? 'xHigh' : level.charAt(0).toUpperCase() + level.slice(1)})`,
+      })),
+    ];
+  });
+}
+
 export const PROVIDER_MODELS = {
   // OAuth Providers (using alias)
   cc: [  // Claude Code
@@ -36,7 +53,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-sonnet-4-5-20250929", name: "Claude 4.5 Sonnet" },
     { id: "claude-haiku-4-5-20251001", name: "Claude 4.5 Haiku" },
   ],
-  cx: withCodexReviewModels([  // OpenAI Codex
+  cx: withCodexReviewModels(withCodexEffortVariants(["gpt-5.5", "gpt-5.4"])([  // OpenAI Codex
     { id: "gpt-5.5", name: "GPT 5.5" },
     { id: "gpt-5.4", name: "GPT 5.4" },
     // GPT 5.3 Codex - all thinking levels
@@ -62,7 +79,7 @@ export const PROVIDER_MODELS = {
     { id: "gpt-5.4-image", name: "GPT 5.4 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
     { id: "gpt-5.3-image", name: "GPT 5.3 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
     { id: "gpt-5.2-image", name: "GPT 5.2 Image", type: "image", capabilities: ["text2img", "edit"], params: ["size", "quality", "background", "image_detail", "output_format"] },
-  ]),
+  ])),
   gc: [  // Gemini CLI
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
     { id: "gemini-3-pro-preview", name: "Gemini 3 Pro Preview" },

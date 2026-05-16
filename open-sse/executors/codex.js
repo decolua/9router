@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
 import { PROVIDERS } from "../config/providers.js";
@@ -6,10 +6,6 @@ import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelpe
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
-
-// In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
-const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
-const assistantSessionMap = new Map();
 
 // Cache machine ID at module level (resolved once)
 let cachedMachineId = null;
@@ -19,55 +15,16 @@ function hashContent(text) {
   return createHash("sha256").update(text).digest("hex").slice(0, 16);
 }
 
-function generateSessionId() {
-  return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+const processSessionSeed = randomUUID();
+
+function resolveCodexSessionId(credentials, machineId) {
+  const stableSeed =
+    credentials?.connectionId ||
+    credentials?.email ||
+    machineId ||
+    processSessionSeed;
+  return `sess_${hashContent(String(stableSeed))}`;
 }
-
-// Extract text content from an input item
-function extractItemText(item) {
-  if (!item) return "";
-  if (typeof item.content === "string") return item.content;
-  if (Array.isArray(item.content)) {
-    return item.content.map(c => c.text || c.output || "").filter(Boolean).join("");
-  }
-  return "";
-}
-
-// Resolve session_id from first assistant message + machineId to avoid cross-user collision
-function resolveConversationSessionId(input, machineId) {
-  const machineSessionId = machineId ? `sess_${hashContent(machineId)}` : generateSessionId();
-  if (!Array.isArray(input) || input.length === 0) return machineSessionId;
-
-  // Find first assistant message that has actual text content
-  let text = "";
-  for (const item of input) {
-    if (item.role === "assistant") {
-      text = extractItemText(item);
-      if (text) break;
-    }
-  }
-  if (!text) return machineSessionId;
-
-  const hash = hashContent((machineId || "") + text);
-  const entry = assistantSessionMap.get(hash);
-  if (entry) {
-    entry.lastUsed = Date.now();
-    return entry.sessionId;
-  }
-
-
-  const sessionId = generateSessionId();
-  assistantSessionMap.set(hash, { sessionId, lastUsed: Date.now() });
-  return sessionId;
-}
-
-// Cleanup expired entries periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of assistantSessionMap) {
-    if (now - entry.lastUsed > SESSION_TTL_MS) assistantSessionMap.delete(key);
-  }
-}, 10 * 60 * 1000);
 
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
@@ -154,8 +111,9 @@ export class CodexExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._isCompact = !!body._compact;
     delete body._compact;
-    // Resolve conversation-stable session_id from input history + machineId
-    this._currentSessionId = resolveConversationSessionId(body.input, cachedMachineId);
+    // Keep session_id stable across resumed Codex sessions. Reasoning encrypted
+    // content can be tied to this header, so it must not change when history grows.
+    this._currentSessionId = resolveCodexSessionId(credentials, cachedMachineId);
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
