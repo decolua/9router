@@ -7,6 +7,7 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
+const buildCpus = Number(process.env.NEXT_BUILD_CPUS || "");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -24,6 +25,7 @@ const nextConfig = {
     unoptimized: true
   },
   env: {},
+  ...(buildCpus > 0 ? { experimental: { cpus: buildCpus } } : {}),
   webpack: (config, { isServer }) => {
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
