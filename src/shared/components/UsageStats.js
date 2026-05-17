@@ -256,10 +256,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         // Always merge only real-time fields, never overwrite full stats from REST
         setStats((prev) => ({
           ...(prev || {}),
-          activeRequests: data.activeRequests,
-          recentRequests: data.recentRequests,
-          errorProvider: data.errorProvider,
-          pending: data.pending,
+          ...data,
         }));
         setLoading(false);
       } catch (err) {
