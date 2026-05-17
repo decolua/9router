@@ -79,7 +79,7 @@ async function flushToDatabase() {
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
-      db.transaction(() => {
+      await db.transaction(async () => {
         for (const item of items) {
           if (!item.id) item.id = generateDetailId(item.model);
           if (!item.timestamp) item.timestamp = new Date().toISOString();
@@ -100,16 +100,16 @@ async function flushToDatabase() {
             response: truncateField(item.response, config.maxJsonSize),
           };
 
-          db.run(
+          await db.run(
             `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
             [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
           );
         }
 
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+        const cnt = await db.get(`SELECT COUNT(*) as c FROM requestDetails`);
         if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+          await db.run(
+            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?) AS t)`,
             [cnt.c - config.maxRecords]
           );
         }
@@ -154,15 +154,15 @@ export async function getRequestDetails(filter = {}) {
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
-  const totalItems = cntRow ? cntRow.c : 0;
+  const cntRow = await db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
+  const totalItems = cntRow ? parseInt(String(cntRow.c), 10) : 0;
 
   const page = filter.page || 1;
   const pageSize = filter.pageSize || 50;
   const totalPages = Math.ceil(totalItems / pageSize);
   const offset = (page - 1) * pageSize;
 
-  const rows = db.all(
+  const rows = await db.all(
     `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]
   );
@@ -176,7 +176,7 @@ export async function getRequestDetails(filter = {}) {
 
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
+  const row = await db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
   return row ? parseJson(row.data, null) : null;
 }
 

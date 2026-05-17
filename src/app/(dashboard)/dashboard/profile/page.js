@@ -8,7 +8,7 @@ import { APP_CONFIG } from "@/shared/constants/config";
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
-  const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
+  const [settings, setSettings] = useState({ fallbackStrategy: "fill-first", dbDriver: "sqlite" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
@@ -518,8 +518,8 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
-        {/* Local Mode Info */}
-        <Card>
+        {/* Local Mode Info — only shown when using local SQLite */}
+        {settings.dbDriver === "sqlite" && <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
@@ -591,7 +591,7 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
-        </Card>
+        </Card>}
 
         {/* Security */}
         <Card>
@@ -1027,7 +1027,7 @@ export default function ProfilePage() {
         {/* App Info */}
         <div className="text-center text-xs sm:text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">Local Mode - All data stored on your machine</p>
+          {settings.dbDriver === "sqlite" && <p className="mt-1">Local Mode - All data stored on your machine</p>}
         </div>
       </div>
     </div>

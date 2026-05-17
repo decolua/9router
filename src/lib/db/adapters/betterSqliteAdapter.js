@@ -38,13 +38,32 @@ export function createBetterSqliteAdapter(filePath) {
   process.once("SIGINT", () => { onShutdown(); process.exit(0); });
   process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
+  // Serialize async transactions: better-sqlite3 has one connection, no concurrent BEGIN allowed.
+  let txQueue = Promise.resolve();
+
   return {
     driver: "better-sqlite3",
+    dialect: "sqlite",
     run(sql, params = []) { return prepare(sql).run(params); },
     get(sql, params = []) { return prepare(sql).get(params); },
     all(sql, params = []) { return prepare(sql).all(params); },
     exec(sql) { return db.exec(sql); },
-    transaction(fn) { return db.transaction(fn)(); },
+    transaction(fn) {
+      const runTx = async () => {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          const result = await fn();
+          db.exec("COMMIT");
+          return result;
+        } catch (e) {
+          try { db.exec("ROLLBACK"); } catch {}
+          throw e;
+        }
+      };
+      const next = txQueue.then(runTx, runTx);
+      txQueue = next.then(() => {}, () => {});
+      return next;
+    },
     checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {
       clearInterval(checkpointTimer);

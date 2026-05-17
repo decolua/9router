@@ -27,9 +27,9 @@ function poolToRow(p) {
   };
 }
 
-function upsert(db, p) {
+async function upsert(db, p) {
   const r = poolToRow(p);
-  db.run(
+  await db.run(
     `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -46,14 +46,14 @@ export async function getProxyPools(filter = {}) {
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   if (filter.testStatus) { where.push("testStatus = ?"); params.push(filter.testStatus); }
   const sql = `SELECT * FROM proxyPools${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  const list = db.all(sql, params).map(rowToPool);
+  const list = (await db.all(sql, params)).map(rowToPool);
   list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
   return list;
 }
 
 export async function getProxyPoolById(id) {
   const db = await getAdapter();
-  return rowToPool(db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]));
+  return rowToPool(await db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]));
 }
 
 export async function createProxyPool(data) {
@@ -73,18 +73,18 @@ export async function createProxyPool(data) {
     createdAt: now,
     updatedAt: now,
   };
-  upsert(db, pool);
+  await upsert(db, pool);
   return pool;
 }
 
 export async function updateProxyPool(id, data) {
   const db = await getAdapter();
   let result = null;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
+  await db.transaction(async () => {
+    const row = await db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToPool(row), ...data, updatedAt: new Date().toISOString() };
-    upsert(db, merged);
+    await upsert(db, merged);
     result = merged;
   });
   return result;
@@ -93,11 +93,11 @@ export async function updateProxyPool(id, data) {
 export async function deleteProxyPool(id) {
   const db = await getAdapter();
   let removed = null;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
+  await db.transaction(async () => {
+    const row = await db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
     removed = rowToPool(row);
-    db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
+    await db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
   });
   return removed;
 }

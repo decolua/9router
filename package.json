@@ -44,7 +44,9 @@
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "mysql2": "^3.14.0",
+    "pg": "^8.15.6"
   },
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
@@ -53,5 +55,8 @@
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",
     "tailwindcss": "^4"
-  }
+  },
+  "trustedDependencies": [
+    "unrs-resolver"
+  ]
 }

@@ -85,16 +85,15 @@ export async function createSqlJsAdapter(filePath) {
     scheduleSave();
   }
 
-  function transaction(fn) {
-    const sp = `sp_${Math.random().toString(36).slice(2)}`;
-    db.exec(`SAVEPOINT ${sp}`);
+  async function transaction(fn) {
+    db.exec("BEGIN IMMEDIATE");
     try {
-      const result = fn();
-      db.exec(`RELEASE ${sp}`);
+      const result = await fn();
+      db.exec("COMMIT");
       scheduleSave();
       return result;
     } catch (e) {
-      try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
+      try { db.exec("ROLLBACK"); } catch {}
       throw e;
     }
   }
@@ -111,5 +110,5 @@ export async function createSqlJsAdapter(filePath) {
   process.on("SIGINT", flush);
   process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  return { driver: "sql.js", dialect: "sqlite", run, get, all, exec, transaction, close, raw: db };
 }

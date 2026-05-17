@@ -19,12 +19,17 @@ export async function GET() {
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
-    return NextResponse.json({ 
-      ...safeSettings, 
+    const dbUrl = process.env.DATABASE_URL?.toLowerCase() ?? "";
+    const dbDriver = dbUrl.startsWith("postgres") ? "postgresql"
+      : (dbUrl.startsWith("mysql") || dbUrl.startsWith("mariadb")) ? "mysql"
+      : "sqlite";
+
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
       enableTranslator,
-      hasPassword: !!password
+      hasPassword: !!password,
+      dbDriver,
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);

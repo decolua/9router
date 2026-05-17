@@ -48,8 +48,12 @@ export async function createNodeSqliteAdapter(filePath) {
   process.once("SIGINT", () => { onShutdown(); process.exit(0); });
   process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
+  // Serialize async transactions: one connection, no concurrent BEGIN allowed.
+  let txQueue = Promise.resolve();
+
   return {
     driver: "node:sqlite",
+    dialect: "sqlite",
     run(sql, params = []) {
       const r = prepare(sql).run(...params);
       return { changes: Number(r.changes ?? 0), lastInsertRowid: Number(r.lastInsertRowid ?? 0) };
@@ -62,17 +66,20 @@ export async function createNodeSqliteAdapter(filePath) {
     },
     exec(sql) { return db.exec(sql); },
     transaction(fn) {
-      // node:sqlite has no transaction wrapper. Use SAVEPOINT for nested support.
-      const sp = `sp_${Math.random().toString(36).slice(2)}`;
-      db.exec(`SAVEPOINT ${sp}`);
-      try {
-        const r = fn();
-        db.exec(`RELEASE ${sp}`);
-        return r;
-      } catch (e) {
-        try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}
-        throw e;
-      }
+      const runTx = async () => {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          const result = await fn();
+          db.exec("COMMIT");
+          return result;
+        } catch (e) {
+          try { db.exec("ROLLBACK"); } catch {}
+          throw e;
+        }
+      };
+      const next = txQueue.then(runTx, runTx);
+      txQueue = next.then(() => {}, () => {});
+      return next;
     },
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
     close() {

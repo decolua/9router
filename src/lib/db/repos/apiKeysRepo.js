@@ -15,13 +15,13 @@ function rowToKey(row) {
 
 export async function getApiKeys() {
   const db = await getAdapter();
-  const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
+  const rows = await db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
   return rows.map(rowToKey);
 }
 
 export async function getApiKeyById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+  const row = await db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
   return rowToKey(row);
 }
 
@@ -38,7 +38,7 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: new Date().toISOString(),
   };
-  db.run(
+  await db.run(
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
   );
@@ -48,11 +48,11 @@ export async function createApiKey(name, machineId) {
 export async function updateApiKey(id, data) {
   const db = await getAdapter();
   let result = null;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+  await db.transaction(async () => {
+    const row = await db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
-    db.run(
+    await db.run(
       `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
       [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
     );
@@ -63,13 +63,13 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  const res = await db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
   return (res?.changes ?? 0) > 0;
 }
 
 export async function validateApiKey(key) {
   const db = await getAdapter();
-  const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
+  const row = await db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
 }

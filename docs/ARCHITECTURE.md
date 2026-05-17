@@ -135,17 +135,25 @@ Main flow modules:
 
 ## 3) Persistence Layer
 
-Primary state DB:
+Storage backend is selected at startup via `DATABASE_URL`:
 
-- `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
-- entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
+- **SQLite (default)** — no `DATABASE_URL` set; file at `${DATA_DIR}/9router.db` (or `~/.9router/9router.db`)
+- **PostgreSQL** — `DATABASE_URL=postgres://...` or `postgresql://...`; uses `pg` pool
+- **MySQL / MariaDB** — `DATABASE_URL=mysql://...` or `mariadb://...`; uses `mysql2` pool
 
-Usage DB:
+Driver + adapters:
 
-- `src/lib/usageDb.js`
-- files: `~/.9router/usage.json`, `~/.9router/log.txt`
-- note: currently independent from `DATA_DIR`
+- `src/lib/db/driver.js` — selects adapter from `DATABASE_URL`, falls back to SQLite chain
+- `src/lib/db/adapters/betterSqliteAdapter.js`, `bunSqliteAdapter.js`, `nodeSqliteAdapter.js`, `sqljsAdapter.js` — SQLite variants
+- `src/lib/db/adapters/pgAdapter.js` — PostgreSQL (translates `?` placeholders → `$N`, intercepts `PRAGMA table_info`)
+- `src/lib/db/adapters/mysqlAdapter.js` — MySQL/MariaDB (translates `ON CONFLICT` → `ON DUPLICATE KEY UPDATE`)
+
+Schema + migrations:
+
+- `src/lib/db/schema.js` — dialect-aware `CREATE TABLE` builder (`SERIAL` for PG, `AUTO_INCREMENT` + `VARCHAR` for MySQL)
+- `src/lib/db/migrate.js` — fully async versioned migrations; backup and legacy JSON import guarded to SQLite-only
+
+Entities: providerConnections, providerNodes, proxyPools, combos, apiKeys, settings, pricing, modelAliases, usageHistory, usageDaily, requestDetails (kv store for alias/pricing/disabled-models)
 
 ## 4) Auth + Security Surfaces
 
@@ -375,11 +383,10 @@ erDiagram
     }
 ```
 
-Physical storage files:
+Physical storage:
 
-- main state: `${DATA_DIR}/db.json` (or `~/.9router/db.json`)
-- usage stats: `~/.9router/usage.json`
-- request log lines: `~/.9router/log.txt`
+- SQLite file: `${DATA_DIR}/9router.db` (or `~/.9router/9router.db`) — default when `DATABASE_URL` is unset
+- Remote DB: `DATABASE_URL` — PostgreSQL or MySQL/MariaDB connection string
 - optional translator/request debug sessions: `<repo>/logs/...`
 
 ## Deployment Topology
@@ -533,7 +540,7 @@ Runtime visibility sources:
 Environment variables actively used by code:
 
 - App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
-- Storage: `DATA_DIR`
+- Storage: `DATA_DIR`, `DATABASE_URL` (optional — PostgreSQL/MySQL overrides local SQLite)
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`

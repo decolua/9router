@@ -1038,6 +1038,10 @@ export NEXT_PUBLIC_CLOUD_URL="https://9router.com"
 export API_KEY_SECRET="endpoint-proxy-api-key-secret"
 export MACHINE_ID_SALT="endpoint-proxy-salt"
 
+# Optional: use PostgreSQL or MySQL instead of SQLite
+# export DATABASE_URL="postgres://user:password@host:5432/dbname"
+# export DATABASE_URL="mysql://user:password@host:3306/dbname"
+
 # Start
 npm run start
 
@@ -1098,7 +1102,8 @@ docker pull decolua/9router:latest   # update to latest
 |----------|---------|-------------|
 | `JWT_SECRET` | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances) |
 | `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.9router` | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`) |
+| `DATA_DIR` | `~/.9router` | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`). Ignored for DB when `DATABASE_URL` is set. |
+| `DATABASE_URL` | *(unset — uses SQLite)* | Remote database connection string. Supported schemes: `postgres://`, `postgresql://`, `mysql://`, `mariadb://`. Requires `pg` (PostgreSQL) or `mysql2` (MySQL/MariaDB) installed. |
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
@@ -1121,10 +1126,19 @@ Notes:
 
 ### Runtime Files and Storage
 
-- Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
+**Default (SQLite):**
+- Main app state: `${DATA_DIR}/db/data.sqlite` (providers, combos, aliases, keys, settings, usage history)
 - Auto backups: `${DATA_DIR}/db/backups/`
-- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
 - Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
+
+**Remote database (`DATABASE_URL`):**
+- Set `DATABASE_URL` to a PostgreSQL or MySQL/MariaDB connection string to skip local SQLite entirely.
+- On first start with a fresh remote DB and an existing local `data.sqlite`, 9Router automatically copies local data into the remote database (one-time migration).
+- `DATA_DIR` is still used for non-DB files (logs, etc.) but the SQLite file is no longer written.
+- Install the matching driver before starting: `npm install pg` (PostgreSQL) or `npm install mysql2` (MySQL/MariaDB).
+
+**Logs:**
+- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
 
 </details>
 
@@ -1234,7 +1248,7 @@ Notes:
 - **Runtime**: Node.js 20+
 - **Framework**: Next.js 16
 - **UI**: React 19 + Tailwind CSS 4
-- **Database**: SQLite (better-sqlite3 / node:sqlite / sql.js fallback)
+- **Database**: SQLite (default) · PostgreSQL · MySQL / MariaDB
 - **Streaming**: Server-Sent Events (SSE)
 - **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
 

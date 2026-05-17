@@ -64,6 +64,27 @@ docker run -d \
   decolua/9router:latest
 ```
 
+## Remote database (PostgreSQL / MySQL)
+
+By default the container uses SQLite at `/app/data/db/data.sqlite`. To use a remote database instead, pass `DATABASE_URL`:
+
+```bash
+docker run -d \
+  -p 20128:20128 \
+  -e DATA_DIR=/app/data \
+  -e DATABASE_URL="postgres://user:password@host:5432/dbname" \
+  --name 9router \
+  decolua/9router:latest
+```
+
+Supported schemes: `postgres://`, `postgresql://`, `mysql://`, `mariadb://`.
+
+When `DATABASE_URL` is set:
+- No volume mount is required for the DB (though `DATA_DIR` is still used for logs).
+- On first run with a fresh remote DB, 9Router auto-migrates any existing local `data.sqlite` into the remote database.
+
+> **Note:** The published image includes `pg` and `mysql2`. No extra install step needed inside the container.
+
 ## Update to latest
 
 ```bash

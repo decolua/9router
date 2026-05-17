@@ -11,6 +11,8 @@ PRAGMA foreign_keys = ON;
 PRAGMA busy_timeout = 5000;
 `;
 
+export const DIALECTS = { SQLITE: "sqlite", POSTGRES: "postgresql", MYSQL: "mysql" };
+
 // Declarative current schema. Used by syncSchemaFromTables() to
 // auto-add missing tables/columns/indexes after versioned migrations.
 // For destructive changes (drop/rename/type-change), write a migration file.
@@ -152,6 +154,38 @@ export const TABLES = {
 
 export function buildCreateTableSql(name, def) {
   const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
+  if (def.primaryKey) cols.push(def.primaryKey);
+  return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
+}
+
+function adaptColDefForDialect(colName, colDef, dialect) {
+  if (dialect === DIALECTS.POSTGRES) {
+    return colDef
+      .replace(/INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT/gi, "SERIAL PRIMARY KEY")
+      .replace(/\bAUTOINCREMENT\b/gi, "");
+  }
+  if (dialect === DIALECTS.MYSQL) {
+    let def = colDef
+      .replace(/INTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT/gi, "INT PRIMARY KEY AUTO_INCREMENT")
+      .replace(/INTEGER\s+PRIMARY\s+KEY/gi, "INT PRIMARY KEY")
+      .replace(/\bAUTOINCREMENT\b/gi, "AUTO_INCREMENT")
+      .replace(/\bREAL\b/gi, "DOUBLE")
+      .replace(/\bINTEGER\b/gi, "INT");
+    // TEXT used as PK or UNIQUE → VARCHAR; composite-PK text fields → VARCHAR(191); data fields → MEDIUMTEXT
+    if (/\bTEXT\b/.test(def)) {
+      if (/PRIMARY KEY/i.test(def)) def = def.replace(/\bTEXT\b/, "VARCHAR(255)");
+      else if (/UNIQUE/i.test(def)) def = def.replace(/\bTEXT\b/, "VARCHAR(255)");
+      else if (colName === "scope" || colName === "key") def = def.replace(/\bTEXT\b/, "VARCHAR(191)");
+      else def = def.replace(/\bTEXT\b/, "MEDIUMTEXT");
+    }
+    return def;
+  }
+  return colDef;
+}
+
+export function buildCreateTableSqlForDialect(name, def, dialect) {
+  if (!dialect || dialect === DIALECTS.SQLITE) return buildCreateTableSql(name, def);
+  const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${adaptColDefForDialect(k, v, dialect)}`);
   if (def.primaryKey) cols.push(def.primaryKey);
   return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
 }
