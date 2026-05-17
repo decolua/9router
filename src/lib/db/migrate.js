@@ -11,6 +11,17 @@ import { stringifyJson } from "./helpers/jsonCol.js";
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
 
+// Thrown by importLegacyMain when row-count assertion fails.
+// The legacy db.json is left intact and the marker is not written so the
+// next boot can retry (or the user can restore from backup).
+export class MigrationAborted extends Error {
+  constructor(message, droppedRows) {
+    super(message);
+    this.name = "MigrationAborted";
+    this.droppedRows = droppedRows;
+  }
+}
+
 // Track per-adapter so reusing same adapter skips re-run, but new adapter (after reset) re-runs.
 const _migratedAdapters = new WeakSet();
 
@@ -91,11 +102,30 @@ function importLegacyMain(adapter, data) {
   if (data.settings) {
     adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
   }
-  for (const c of data.providerConnections || []) {
+  const droppedConnections = [];
+  const inputConnections = data.providerConnections || [];
+  for (const c of inputConnections) {
     const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
-    adapter.run(
-      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    try {
+      adapter.run(
+        `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      );
+    } catch (err) {
+      droppedConnections.push({ id: id ?? null, provider: provider ?? null, name: name ?? null, reason: err.message });
+    }
+  }
+  // Row-count assertion: if any providerConnections rows failed to insert,
+  // abort the migration so the legacy db.json stays the source of truth.
+  const insertedCount = adapter.get(`SELECT COUNT(*) as c FROM providerConnections`)?.c ?? 0;
+  if (insertedCount !== inputConnections.length) {
+    console.warn(
+      `[DB][migrate] providerConnections row-count mismatch: expected ${inputConnections.length}, got ${insertedCount}. Dropped rows:`,
+      droppedConnections
+    );
+    throw new MigrationAborted(
+      `providerConnections row-count mismatch: expected ${inputConnections.length}, got ${insertedCount}`,
+      droppedConnections
     );
   }
   for (const n of data.providerNodes || []) {
@@ -210,14 +240,25 @@ export async function runMigrationOnce(adapter) {
     const backupDir = makeBackupDir("migrate-from-json");
     for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);
 
-    adapter.transaction(() => {
-      importLegacyMain(adapter, legacyMain);
-      importLegacyUsage(adapter, legacyUsage);
-      importLegacyDisabled(adapter, legacyDisabled);
-      importLegacyDetails(adapter, legacyDetails);
-      setMetaSync(adapter, "appVersion", getAppVersion());
-      setMetaSync(adapter, "migratedAt", new Date().toISOString());
-    });
+    try {
+      adapter.transaction(() => {
+        importLegacyMain(adapter, legacyMain);
+        importLegacyUsage(adapter, legacyUsage);
+        importLegacyDisabled(adapter, legacyDisabled);
+        importLegacyDetails(adapter, legacyDetails);
+        setMetaSync(adapter, "appVersion", getAppVersion());
+        setMetaSync(adapter, "migratedAt", new Date().toISOString());
+      });
+    } catch (err) {
+      if (err instanceof MigrationAborted) {
+        // Transaction was rolled back by the throw; leave legacy db.json
+        // intact and skip the marker so the app keeps reading from JSON
+        // (or the user can retry after fixing the offending rows).
+        console.error(`[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`);
+        return;
+      }
+      throw err;
+    }
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();

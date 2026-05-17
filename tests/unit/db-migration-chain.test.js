@@ -83,6 +83,47 @@ describe("Schema migrations", () => {
     expect(aliases).toHaveLength(1);
   });
 
+  it("legacy db.json with invalid providerConnection → aborts migration and leaves db.json intact", async () => {
+    // 5 valid + 1 invalid (missing id, will violate PRIMARY KEY) providerConnections
+    const validConn = (id, provider) => ({
+      id,
+      provider,
+      authType: "oauth",
+      name: `${provider}-${id}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const legacy = {
+      providerConnections: [
+        validConn("c1", "nvidia"),
+        validConn("c2", "gemini"),
+        validConn("c3", "kiro"),
+        validConn("c4", "fireworks"),
+        validConn("c5", "fireworks"),
+        // invalid: null id violates PRIMARY KEY on providerConnections.id
+        { id: null, provider: "broken", authType: "oauth", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ],
+    };
+    const legacyJsonPath = path.join(tempDir, "db.json");
+    const legacyJsonContent = JSON.stringify(legacy);
+    fs.writeFileSync(legacyJsonPath, legacyJsonContent);
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+
+    // After abort the providerConnections table should be empty (transaction rolled back)
+    const rows = db.all(`SELECT * FROM providerConnections`);
+    expect(rows).toHaveLength(0);
+
+    // Legacy db.json must be untouched
+    expect(fs.existsSync(legacyJsonPath)).toBe(true);
+    expect(fs.readFileSync(legacyJsonPath, "utf-8")).toBe(legacyJsonContent);
+
+    // Marker should NOT have been written so the next boot can retry
+    const marker = path.join(tempDir, "db", ".migrated-from-json");
+    expect(fs.existsSync(marker)).toBe(false);
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
