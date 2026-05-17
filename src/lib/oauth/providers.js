@@ -23,6 +23,7 @@ import {
   CLINE_CONFIG,
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
+  getOAuthClientMetadata,
 } from "./constants/oauth";
 
 const BASE64_BLOCK_SIZE = 4;
@@ -306,7 +307,7 @@ const PROVIDERS = {
       return await response.json();
     },
     postExchange: async (tokens) => {
-      // Matches CLIProxyAPI Go source: string enum, no mode field
+      // Numeric enums matching Antigravity binary ClientMetadata
       const loadHeaders = {
         "Authorization": `Bearer ${tokens.access_token}`,
         "Content-Type": "application/json",
@@ -315,7 +316,7 @@ const PROVIDERS = {
         "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
         "x-request-source": "local",
       };
-      const metadata = { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" };
+      const metadata = getOAuthClientMetadata();
 
       // Fetch user info
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
