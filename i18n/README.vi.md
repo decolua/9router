@@ -196,6 +196,17 @@ URL mặc định:
         <b>Kilo Code</b>
       </td>
     </tr>
+    <tr>
+      <td align="center" width="120">
+        <img src="../public/providers/crush.png" width="60" alt="Crush"/><br/>
+        <b>Crush</b>
+      </td>
+      <td align="center" width="120"></td>
+      <td align="center" width="120"></td>
+      <td align="center" width="120"></td>
+      <td align="center" width="120"></td>
+      <td align="center" width="120"></td>
+    </tr>
   </table>
 </div>
 
