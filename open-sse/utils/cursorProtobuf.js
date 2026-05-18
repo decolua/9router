@@ -18,11 +18,83 @@ const WIRE_TYPE = { VARINT: 0, FIXED64: 1, LEN: 2, FIXED32: 5 };
 
 const ROLE = { USER: 1, ASSISTANT: 2 };
 
-const UNIFIED_MODE = { CHAT: 1, AGENT: 2 };
+const UNIFIED_MODE = { CHAT: 1, AGENT: 2, EDIT: 3, CUSTOM: 4 };
+
+const CURSOR_MODE_MAP = {
+  ask:    { enum: UNIFIED_MODE.CHAT,   name: "Ask",    agentic: false },
+  agent:  { enum: UNIFIED_MODE.AGENT,  name: "Agent",  agentic: true  },
+  plan:   { enum: UNIFIED_MODE.AGENT,  name: "Plan",   agentic: true  },
+  debug:  { enum: UNIFIED_MODE.AGENT,  name: "Debug",  agentic: true  },
+  edit:   { enum: UNIFIED_MODE.EDIT,   name: "Edit",   agentic: true  },
+  custom: { enum: UNIFIED_MODE.CUSTOM, name: "Custom", agentic: true  },
+};
 
 const THINKING_LEVEL = { UNSPECIFIED: 0, MEDIUM: 1, HIGH: 2 };
-const CLIENT_SIDE_TOOL_V2 = { MCP: 19 };
-const CLIENT_SIDE_TOOL_V2_MCP = 19;
+
+// ClientSideToolV2 enum (from Cursor proto — server_full.proto line 29)
+const CLIENT_SIDE_TOOL_V2 = {
+  UNSPECIFIED: 0,
+  READ_SEMSEARCH_FILES: 1,
+  READ_FILE_FOR_IMPORTS: 2,
+  RIPGREP_SEARCH: 3,
+  RUN_TERMINAL_COMMAND: 4,
+  READ_FILE: 5,
+  LIST_DIR: 6,
+  EDIT_FILE: 7,
+  FILE_SEARCH: 8,
+  SEMANTIC_SEARCH_FULL: 9,
+  CREATE_FILE: 10,
+  DELETE_FILE: 11,
+  REAPPLY: 12,
+  GET_RELATED_FILES: 13,
+  PARALLEL_APPLY: 14,
+  RUN_TERMINAL_COMMAND_V2: 15,
+  FETCH_RULES: 16,
+  PLANNER: 17,
+  WEB_SEARCH: 18,
+  MCP: 19,
+  WEB_VIEWER: 20,
+  DIFF_HISTORY: 21,
+  IMPLEMENTER: 22,
+  SEARCH_SYMBOLS: 23,
+  BACKGROUND_COMPOSER_FOLLOWUP: 24,
+};
+const CLIENT_SIDE_TOOL_V2_MCP = CLIENT_SIDE_TOOL_V2.MCP;
+
+// Fixed set of native client-side capabilities we claim to the Cursor server.
+// This tells Cursor "the connected client can execute file reads, terminal commands,
+// searches, web fetches, and arbitrary MCP tools." The enum values come from Cursor's
+// proto (ClientSideToolV2), so this list is intrinsically static — it reflects what
+// Cursor's schema knows about, NOT the particular tools the user has registered.
+//
+// IMPORTANT for the user asking "is this dynamic?":
+//   The PER-TOOL dynamism happens at a different layer. Any tool the user adds to
+//   Claude Code (built-ins, /skills, new MCP servers, custom functions) is sent to
+//   9Router in body.tools and encoded as an MCP tool (enum 19) with its original
+//   name preserved — no 9Router code change required. The list below is just a
+//   capability advertisement, not a tool registry.
+//
+// EDIT_FILE (7) intentionally excluded — Cursor's edit_file schema uses `code_edit`
+// with ellipsis sentinels designed for a server-side fast-apply model we can't invoke.
+// Excluding it steers the model toward Bash+apply_patch (which 9Router intercepts and
+// rewrites into Edit) or MCP Edit (exact schema passthrough).
+const NATIVE_SUPPORTED_TOOLS = [
+  CLIENT_SIDE_TOOL_V2.RIPGREP_SEARCH,            // 3  → Grep
+  CLIENT_SIDE_TOOL_V2.RUN_TERMINAL_COMMAND,      // 4  → Bash (v1)
+  CLIENT_SIDE_TOOL_V2.READ_FILE,                 // 5  → Read
+  CLIENT_SIDE_TOOL_V2.LIST_DIR,                  // 6  → LS
+  CLIENT_SIDE_TOOL_V2.FILE_SEARCH,               // 8  → Glob
+  CLIENT_SIDE_TOOL_V2.CREATE_FILE,               // 10 → Write
+  CLIENT_SIDE_TOOL_V2.RUN_TERMINAL_COMMAND_V2,   // 15 → Bash (v2)
+  CLIENT_SIDE_TOOL_V2.WEB_SEARCH,                // 18 → WebSearch
+  CLIENT_SIDE_TOOL_V2.MCP,                       // 19 → MCP tools (including Edit)
+  CLIENT_SIDE_TOOL_V2.WEB_VIEWER,                // 20 → WebFetch
+];
+
+// Pack repeated enum values into a single LEN-wrapped payload (protobuf packed repeated)
+function encodePackedVarints(values) {
+  return concatArrays(...values.map(v => encodeVarint(v)));
+}
 
 const FIELD = {
   // StreamUnifiedChatRequestWithTools (top level)
@@ -43,16 +115,22 @@ const FIELD = {
   IS_AGENTIC: 27,
   SUPPORTED_TOOLS: 29,
   MESSAGE_IDS: 30,
+  ENABLE_YOLO_MODE: 31,
   MCP_TOOLS: 34,
   LARGE_CONTEXT: 35,
   UNKNOWN_38: 38,
   UNIFIED_MODE: 46,
-  UNKNOWN_47: 47,
+  TOOLS_REQUIRING_ACCEPTED_RETURN: 47,
   SHOULD_DISABLE_TOOLS: 48,
   THINKING_LEVEL: 49,
+  USES_RULES: 51,
+  MODE_USES_AUTO_APPLY: 53,
+  UNIFIED_MODE_NAME: 54,
+
+  // Deprecated aliases kept for internal call sites; do not use for new code.
+  UNKNOWN_47: 47,
   UNKNOWN_51: 51,
   UNKNOWN_53: 53,
-  UNIFIED_MODE_NAME: 54,
 
   // ConversationMessage
   MSG_CONTENT: 1,
@@ -164,6 +242,7 @@ const FIELD = {
   // MCPParams.Tool (nested)
   MCP_NESTED_NAME: 1,
   MCP_NESTED_PARAMS: 3,
+  MCP_NESTED_SERVER: 4,
 
   // StreamUnifiedChatResponse
   RESPONSE_TEXT: 1,
@@ -265,7 +344,7 @@ function parseToolName(formattedName) {
   }
 
   const tail = formattedName.slice("mcp_".length);
-  const splitIdx = tail.indexOf("_");
+  const splitIdx = tail.lastIndexOf("_");
   if (splitIdx < 0) {
     return { serverName: "custom", selectedTool: tail || "tool" };
   }
@@ -347,14 +426,23 @@ function encodeClientSideToolV2Call(toolCallId, toolName, selectedTool, serverNa
  */
 export function encodeToolResult(toolResult) {
   const originalName = toolResult.tool_name || toolResult.name || "";
-  const toolName = formatToolName(originalName);
   const rawArgs = toolResult.raw_args || "{}";
   const resultContent = toolResult.result_content || toolResult.result || "";
   const { toolCallId, modelCallId } = parseToolId(toolResult.tool_call_id || "");
   const toolIndex = toolResult.tool_index || toolResult.index || 1;
-
-  // Parse tool name to extract server and selected tool
-  const { serverName, selectedTool } = parseToolName(toolName);
+  let toolName = formatToolName(originalName);
+  let serverName;
+  let selectedTool;
+  if (typeof originalName === "string" && originalName.startsWith("mcp__")) {
+    const parsed = parseMcpToolName(originalName);
+    serverName = parsed.server || "custom";
+    selectedTool = parsed.bareName || "tool";
+    toolName = `mcp_${serverName}_${selectedTool}`;
+  } else {
+    const parsed = parseToolName(toolName);
+    serverName = parsed.serverName;
+    selectedTool = parsed.selectedTool;
+  }
 
   return concatArrays(
     encodeField(FIELD.TOOL_RESULT_CALL_ID, WIRE_TYPE.LEN, toolCallId),
@@ -384,7 +472,9 @@ export function encodeMessage(content, role, messageId, chatModeEnum = null, isL
     ) : []),
     encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
     encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
-    ...(isLast && hasTools ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : [])
+    ...(isLast && hasTools
+      ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodePackedVarints(NATIVE_SUPPORTED_TOOLS))]
+      : [])
   );
 }
 
@@ -432,24 +522,46 @@ export function encodeMessageId(messageId, role, summaryId = null) {
   );
 }
 
+// Parse Claude Code MCP naming: "mcp__github__create_issue" → { server: "github", bareName: "create_issue" }
+// Non-MCP tool names (e.g. "Read", "Edit") stay as server "custom".
+function parseMcpToolName(name) {
+  if (typeof name === "string" && name.startsWith("mcp__")) {
+    const rest = name.slice("mcp__".length);
+    const splitIdx = rest.indexOf("__");
+    if (splitIdx > 0) {
+      const server = rest.slice(0, splitIdx);
+      const bareName = rest.slice(splitIdx + 2);
+      if (server && bareName) return { server, bareName };
+    }
+  }
+  return { server: "custom", bareName: name };
+}
+
 export function encodeMcpTool(tool) {
-  const toolName = tool.function?.name || tool.name || "";
+  const rawName = tool.function?.name || tool.name || "";
   const toolDesc = tool.function?.description || tool.description || "";
   const inputSchema = tool.function?.parameters || tool.input_schema || {};
+  const { server, bareName } = parseMcpToolName(rawName);
 
   return concatArrays(
-    ...(toolName ? [encodeField(FIELD.MCP_TOOL_NAME, WIRE_TYPE.LEN, toolName)] : []),
+    ...(bareName ? [encodeField(FIELD.MCP_TOOL_NAME, WIRE_TYPE.LEN, bareName)] : []),
     ...(toolDesc ? [encodeField(FIELD.MCP_TOOL_DESC, WIRE_TYPE.LEN, toolDesc)] : []),
     ...(Object.keys(inputSchema).length > 0 ? [encodeField(FIELD.MCP_TOOL_PARAMS, WIRE_TYPE.LEN, JSON.stringify(inputSchema))] : []),
-    encodeField(FIELD.MCP_TOOL_SERVER, WIRE_TYPE.LEN, "custom")
+    encodeField(FIELD.MCP_TOOL_SERVER, WIRE_TYPE.LEN, server)
   );
 }
 
 // ==================== REQUEST BUILDING ====================
 
-export function encodeRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
+export function encodeRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false, cursorMode = null, toolChoice = null) {
   const hasTools = tools?.length > 0;
-  const isAgentic = hasTools || forceAgentMode;
+  const normalizedMode = typeof cursorMode === "string" ? cursorMode.toLowerCase() : null;
+  // Priority: explicit valid cursor_mode > "agent" default (tools/UA path also lands here)
+  const modeKey = normalizedMode && CURSOR_MODE_MAP[normalizedMode]
+    ? normalizedMode
+    : "agent";
+  const modeCfg = CURSOR_MODE_MAP[modeKey];
+  const isAgentic = modeCfg.agentic;
   const formattedMessages = [];
   const messageIds = [];
   const normalizedMessages = [];
@@ -523,7 +635,7 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
       role,
       messageId: msgId,
       isLast,
-      hasTools,
+      hasTools: isAgentic,
       toolResults: msg.tool_results || []
     });
 
@@ -534,6 +646,43 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   let thinkingLevel = THINKING_LEVEL.UNSPECIFIED;
   if (reasoningEffort === "medium") thinkingLevel = THINKING_LEVEL.MEDIUM;
   else if (reasoningEffort === "high") thinkingLevel = THINKING_LEVEL.HIGH;
+
+  const totalToolCount = Array.isArray(tools) ? tools.length : 0;
+  const allToolNames = (tools || [])
+    .map(t => t?.function?.name || t?.name || "")
+    .filter(Boolean);
+  const prefixedMcpToolNames = allToolNames.filter(name => name.startsWith("mcp__"));
+  const builtinOrCustomToolNames = allToolNames.filter(name => !name.startsWith("mcp__"));
+  const mcpServerCount = new Set(
+    allToolNames.map((name) => parseMcpToolName(name).server)
+  ).size;
+  const explicitToolChoiceLog =
+    typeof toolChoice === "string"
+      ? toolChoice
+      : (toolChoice?.function?.name || toolChoice?.name || "none");
+
+  // Override Cursor's default training that emits ```N:N:filename code-edit blocks
+  // for IDE fast-apply. In headless API mode the client (Claude Code, etc.) cannot
+  // parse those blocks — it expects native tool_use calls. This instruction is
+  // injected only when the request is agentic AND has tools available.
+  const agentInstruction =
+    isAgentic && totalToolCount > 0
+      ? "You are operating as an autonomous agent in headless API mode. You MUST execute every action via direct tool calls. To modify files, call the Edit tool (file_path, old_string, new_string) or Write tool (file_path, content). Do NOT emit `N:N:filename` code-edit markdown blocks — they will not be applied. Do NOT tell the user to switch modes. Always respond by calling the appropriate tool from the tools list."
+      : "";
+
+  console.log(
+    `[CURSOR PROTO ENCODE] model=${modelName} mode=${modeCfg.name} isAgentic=${isAgentic ? 1 : 0} messages=${formattedMessages.length} total_tools=${totalToolCount} prefixed_mcp_tools=${prefixedMcpToolNames.length} builtin_or_custom_tools=${builtinOrCustomToolNames.length} logical_servers=${mcpServerCount} tool_choice=${explicitToolChoiceLog} agent_instruction=${agentInstruction ? "on" : "off"}`
+  );
+  if (prefixedMcpToolNames.length > 0) {
+    console.log(
+      `[CURSOR PROTO ENCODE] mcp sample: ${prefixedMcpToolNames.slice(0, 10).join(", ")}${prefixedMcpToolNames.length > 10 ? " ..." : ""}`
+    );
+  }
+  if (builtinOrCustomToolNames.length > 0) {
+    console.log(
+      `[CURSOR PROTO ENCODE] builtin/custom sample: ${builtinOrCustomToolNames.slice(0, 10).join(", ")}${builtinOrCustomToolNames.length > 10 ? " ..." : ""}`
+    );
+  }
 
   // Build request
   return concatArrays(
@@ -546,7 +695,7 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     
     // Static fields
     encodeField(FIELD.UNKNOWN_2, WIRE_TYPE.VARINT, 1),
-    encodeField(FIELD.INSTRUCTION, WIRE_TYPE.LEN, encodeInstruction("")),
+    encodeField(FIELD.INSTRUCTION, WIRE_TYPE.LEN, encodeInstruction(agentInstruction)),
     encodeField(FIELD.UNKNOWN_4, WIRE_TYPE.VARINT, 1),
     encodeField(FIELD.MODEL, WIRE_TYPE.LEN, encodeModel(modelName)),
     encodeField(FIELD.WEB_TOOL, WIRE_TYPE.LEN, ""),
@@ -558,10 +707,16 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
 
     // Tool-related fields
     encodeField(FIELD.IS_AGENTIC, WIRE_TYPE.VARINT, isAgentic ? 1 : 0),
-    ...(isAgentic ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : []),
-    
+    ...(isAgentic
+      ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodePackedVarints(NATIVE_SUPPORTED_TOOLS))]
+      : []),
+    // Auto-accept tool calls (no UI approval loop). Required for headless API mode —
+    // without this, Cursor's model treats MCP tools as "declaration-only" ("not
+    // available to me") because there's no way to prompt the user for confirmation.
+    ...(isAgentic ? [encodeField(FIELD.ENABLE_YOLO_MODE, WIRE_TYPE.VARINT, 1)] : []),
+
     // Message IDs
-    ...messageIds.map(mid => 
+    ...messageIds.map(mid =>
       encodeField(FIELD.MESSAGE_IDS, WIRE_TYPE.LEN, encodeMessageId(mid.messageId, mid.role))
     ),
 
@@ -573,18 +728,18 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     // Mode fields
     encodeField(FIELD.LARGE_CONTEXT, WIRE_TYPE.VARINT, 0),
     encodeField(FIELD.UNKNOWN_38, WIRE_TYPE.VARINT, 0),
-    encodeField(FIELD.UNIFIED_MODE, WIRE_TYPE.VARINT, isAgentic ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
+    encodeField(FIELD.UNIFIED_MODE, WIRE_TYPE.VARINT, modeCfg.enum),
     encodeField(FIELD.UNKNOWN_47, WIRE_TYPE.LEN, ""),
     encodeField(FIELD.SHOULD_DISABLE_TOOLS, WIRE_TYPE.VARINT, isAgentic ? 0 : 1),
     encodeField(FIELD.THINKING_LEVEL, WIRE_TYPE.VARINT, thinkingLevel),
     encodeField(FIELD.UNKNOWN_51, WIRE_TYPE.VARINT, 0),
     encodeField(FIELD.UNKNOWN_53, WIRE_TYPE.VARINT, 1),
-    encodeField(FIELD.UNIFIED_MODE_NAME, WIRE_TYPE.LEN, isAgentic ? "Agent" : "Ask")
+    encodeField(FIELD.UNIFIED_MODE_NAME, WIRE_TYPE.LEN, modeCfg.name)
   );
 }
 
-export function buildChatRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
-  return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort, forceAgentMode));
+export function buildChatRequest(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false, cursorMode = null, toolChoice = null) {
+  return encodeField(FIELD.REQUEST, WIRE_TYPE.LEN, encodeRequest(messages, modelName, tools, reasoningEffort, forceAgentMode, cursorMode, toolChoice));
 }
 
 /**
@@ -646,12 +801,12 @@ export function wrapConnectRPCFrame(payload, compress = false) {
   return frame;
 }
 
-export function generateCursorBody(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false) {
-  log("BODY", `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}, forceAgentMode=${forceAgentMode}`);
-  
-  const protobuf = buildChatRequest(messages, modelName, tools, reasoningEffort, forceAgentMode);
+export function generateCursorBody(messages, modelName, tools = [], reasoningEffort = null, forceAgentMode = false, cursorMode = null, toolChoice = null) {
+  log("BODY", `Generating: ${messages.length} msgs, model=${modelName}, tools=${tools.length}, reasoning=${reasoningEffort || "none"}, forceAgentMode=${forceAgentMode}, cursorMode=${cursorMode || "auto"}`);
+
+  const protobuf = buildChatRequest(messages, modelName, tools, reasoningEffort, forceAgentMode, cursorMode, toolChoice);
   const framed = wrapConnectRPCFrame(protobuf, false); // Cursor doesn't support compressed requests
-  
+
   log("BODY", `Protobuf=${protobuf.length}B, Framed=${framed.length}B`);
   return framed;
 }
@@ -752,12 +907,214 @@ export function parseConnectRPCFrame(buffer) {
   return { flags, length, payload, consumed: 5 + length };
 }
 
+// Map ClientSideToolV2 enum values → Claude Code / OpenAI-compatible tool names.
+// Used when Cursor returns a native tool call (non-MCP) — so the client sees
+// its own registered tool name and can execute it via the standard tool loop.
+const NATIVE_TOOL_NAME_BY_ENUM = {
+  3: "Grep",
+  4: "Bash",
+  5: "Read",
+  6: "LS",
+  // EDIT_FILE (7) → Write as last-resort best-effort. Cursor's edit_file schema uses
+  // `code_edit` with ellipsis sentinels designed for a server-side fast-apply model
+  // we can't invoke. If the model still emits EDIT_FILE (despite us removing it from
+  // supported_tools), we overwrite the whole file with code_edit content. This fails
+  // visibly when code_edit contains "// ... existing code ..." placeholders, which at
+  // least gives the user signal instead of silent no-op.
+  7: "Write",
+  8: "Glob",
+  10: "Write",
+  15: "Bash",
+  18: "WebSearch",
+  20: "WebFetch",
+};
+
+// Translate Cursor native tool arguments → Claude Code tool arguments.
+// Cursor schema is documented by its system prompt; Claude Code schema is the
+// canonical tool signature Anthropic ships. Unknown fields are dropped, missing
+// fields are left unset (tool will error clearly instead of silently doing nothing).
+function pickPath(args) {
+  return args.relative_workspace_path
+      || args.target_file
+      || args.path
+      || args.file_path
+      || "";
+}
+const NATIVE_ARG_TRANSLATORS = {
+  // READ_FILE
+  5: (args) => {
+    const out = { file_path: pickPath(args) };
+    if (args.should_read_entire_file !== true) {
+      const start = Number(args.start_line_one_indexed);
+      const end = Number(args.end_line_one_indexed_inclusive);
+      if (Number.isFinite(start) && start > 0) out.offset = start - 1;
+      if (Number.isFinite(start) && Number.isFinite(end) && end >= start) {
+        out.limit = end - start + 1;
+      }
+    }
+    return out;
+  },
+  // CREATE_FILE
+  10: (args) => ({
+    file_path: pickPath(args),
+    content: args.content ?? args.contents ?? args.code_edit ?? "",
+  }),
+  // EDIT_FILE → Write best-effort (see NATIVE_TOOL_NAME_BY_ENUM note)
+  7: (args) => ({
+    file_path: pickPath(args),
+    content: args.code_edit ?? args.content ?? args.new_content ?? "",
+  }),
+  // RUN_TERMINAL_COMMAND (v1 and v2 share the same shape)
+  4: (args) => ({
+    command: args.command || "",
+    ...(args.explanation ? { description: String(args.explanation) } : {}),
+    ...(args.is_background === true ? { run_in_background: true } : {}),
+  }),
+  15: (args) => NATIVE_ARG_TRANSLATORS[4](args),
+  // LIST_DIR
+  6: (args) => ({ path: pickPath(args) }),
+  // RIPGREP_SEARCH — accept both Cursor's `query` and any fallback search term names
+  3: (args) => ({
+    pattern: args.query ?? args.pattern ?? args.search_term ?? args.q ?? "",
+    ...(args.include_pattern ? { glob: args.include_pattern } : {}),
+    ...(args.case_sensitive === true ? { "-i": false } : {}),
+  }),
+  // FILE_SEARCH
+  8: (args) => ({
+    pattern: args.query ?? args.pattern ?? args.search_term ?? args.q ?? "",
+  }),
+  // WEB_SEARCH — Cursor's native schema varies; accept any plausible field name
+  // so that Claude Code's Zod validator (minLength 2 on `query`) doesn't reject.
+  18: (args) => ({
+    query: args.query ?? args.search_term ?? args.search ?? args.q ?? args.term ?? "",
+  }),
+  // WEB_VIEWER
+  20: (args) => ({
+    url: args.url ?? args.uri ?? args.link ?? args.query ?? "",
+    prompt: args.prompt ?? args.question ?? args.explanation ?? "Fetch and summarize this page",
+  }),
+};
+
+// Parse Cursor's apply_patch heredoc format (single-file, single-hunk) and rewrite
+// the tool call into a direct Edit/Write that Claude Code CAN execute.
+// Cursor's model is trained to emit:
+//   apply_patch <<'PATCH'
+//   *** Begin Patch
+//   *** Update File: path/to/file
+//   @@
+//   -old line
+//   +new line
+//    context line
+//   *** End Patch
+//   PATCH
+// This command doesn't exist on the user's shell (exit code 127), so without
+// interception the agent loop stalls. We parse the patch and synthesise an Edit
+// or Write call. Falls back to the original Bash call if the patch can't be parsed.
+function tryParseApplyPatch(command) {
+  if (typeof command !== "string" || !command.includes("apply_patch")) return null;
+  const m = command.match(/apply_patch\s+<<\s*['"]?PATCH['"]?\s*\n([\s\S]*?)\n\s*PATCH\s*$/);
+  if (!m) return null;
+  const body = m[1];
+
+  // Strip Begin/End Patch sentinels
+  const stripped = body
+    .replace(/^\*\*\* Begin Patch\s*\n/, "")
+    .replace(/\n\*\*\* End Patch\s*$/, "");
+
+  // Split on "*** Update File:" / "*** Add File:" / "*** Delete File:" headers.
+  // Only handle the first operation (Claude Code processes one tool call at a time).
+  const headerMatch = stripped.match(/^\*\*\* (Update|Add|Delete) File:\s*(.+?)\s*(?:\n([\s\S]*))?$/);
+  if (!headerMatch) return null;
+  const [, op, filePath, rest = ""] = headerMatch;
+
+  if (op === "Add") {
+    const content = rest
+      .split("\n")
+      .filter((l) => !l.startsWith("***"))
+      .map((l) => (l.startsWith("+") ? l.slice(1) : l))
+      .join("\n");
+    return { tool: "Write", args: { file_path: filePath, content } };
+  }
+  if (op === "Delete") {
+    return {
+      tool: "Bash",
+      args: { command: `rm -f ${JSON.stringify(filePath)}`, description: `Delete ${filePath}` },
+    };
+  }
+  // Update: parse hunk lines (- / + / space). Skip "@@" context headers.
+  const oldLines = [];
+  const newLines = [];
+  for (const line of rest.split("\n")) {
+    if (line.startsWith("***")) break;
+    if (line.startsWith("@@")) continue;
+    if (line.startsWith("-")) oldLines.push(line.slice(1));
+    else if (line.startsWith("+")) newLines.push(line.slice(1));
+    else if (line.startsWith(" ")) {
+      oldLines.push(line.slice(1));
+      newLines.push(line.slice(1));
+    }
+    // unrecognised prefix: ignore (shouldn't happen in well-formed patch)
+  }
+  if (oldLines.length === 0 && newLines.length === 0) return null;
+  return {
+    tool: "Edit",
+    args: {
+      file_path: filePath,
+      old_string: oldLines.join("\n"),
+      new_string: newLines.join("\n"),
+    },
+  };
+}
+
+function translateNativeArgs(toolEnum, rawArgsStr) {
+  const translator = NATIVE_ARG_TRANSLATORS[toolEnum];
+  if (!translator || !rawArgsStr) return rawArgsStr;
+  let parsed;
+  try {
+    parsed = JSON.parse(rawArgsStr);
+  } catch {
+    return rawArgsStr;
+  }
+  try {
+    return JSON.stringify(translator(parsed));
+  } catch {
+    return rawArgsStr;
+  }
+}
+
+NATIVE_ARG_TRANSLATORS[15] = NATIVE_ARG_TRANSLATORS[4];
+
+// Inverse of formatToolName() used by encoder:
+//   "Read"                      ← "mcp_custom_Read"
+//   "mcp__github__create_issue" ← "mcp_github_create_issue"
+// Clients (Claude Code/OpenAI) register tools by original name; the mcp_* prefix
+// added during encoding must be undone so tool_use name matches the registered name.
+function unformatToolName(name) {
+  if (typeof name !== "string" || !name.startsWith("mcp_")) return name;
+  const tail = name.slice("mcp_".length);
+  if (tail.startsWith("custom_")) return tail.slice("custom_".length) || name;
+  const splitIdx = tail.indexOf("_");
+  if (splitIdx < 0) return name;
+  const server = tail.slice(0, splitIdx);
+  const tool = tail.slice(splitIdx + 1);
+  if (!server || !tool) return name;
+  return `mcp__${server}__${tool}`;
+}
+
 function extractToolCall(toolCallData) {
   const toolCall = decodeMessage(toolCallData);
   let toolCallId = "";
   let toolName = "";
   let rawArgs = "";
   let isLast = false;
+  let nativeToolEnum = 0;
+  let mcpServer = "";
+
+  // Extract native tool enum (field 1 of ClientSideToolV2Call) — non-zero for native tools,
+  // 19 for MCP. Used to pick a friendly client-side name when Cursor returns a native tool.
+  if (toolCall.has(FIELD.CV2C_TOOL)) {
+    nativeToolEnum = toolCall.get(FIELD.CV2C_TOOL)[0].value || 0;
+  }
 
   // Extract tool call ID
   if (toolCall.has(FIELD.TOOL_ID)) {
@@ -786,9 +1143,13 @@ function extractToolCall(toolCallData) {
         if (tool.has(FIELD.MCP_NESTED_NAME)) {
           toolName = new TextDecoder().decode(tool.get(FIELD.MCP_NESTED_NAME)[0].value);
         }
-        
+
         if (tool.has(FIELD.MCP_NESTED_PARAMS)) {
           rawArgs = new TextDecoder().decode(tool.get(FIELD.MCP_NESTED_PARAMS)[0].value);
+        }
+
+        if (tool.has(FIELD.MCP_NESTED_SERVER)) {
+          mcpServer = new TextDecoder().decode(tool.get(FIELD.MCP_NESTED_SERVER)[0].value);
         }
       }
     } catch (err) {
@@ -802,12 +1163,49 @@ function extractToolCall(toolCallData) {
   }
 
   if (toolCallId && toolName) {
+    // If Cursor returned a native tool enum (not MCP=19), prefer the friendly
+    // client-side name ("Read"/"Edit"/…) so Claude Code can execute it directly.
+    const nativeName = NATIVE_TOOL_NAME_BY_ENUM[nativeToolEnum];
+    // For MCP tools: reconstruct Claude Code naming "mcp__<server>__<tool>" when server != "custom",
+    // strip "mcp_custom_" prefix when server == "custom" (or when it's a plain name).
+    let mcpName;
+    if (!nativeName && mcpServer && mcpServer !== "custom") {
+      mcpName = `mcp__${mcpServer}__${toolName}`;
+    } else {
+      mcpName = unformatToolName(toolName);
+    }
+    let finalName = nativeName || mcpName;
+    // Translate native tool arguments to Claude Code schema (e.g. relative_workspace_path → file_path)
+    let finalArgs = nativeName
+      ? translateNativeArgs(nativeToolEnum, rawArgs || "{}")
+      : (rawArgs || "{}");
+
+    // Intercept Cursor's apply_patch heredoc (emitted via Bash) → rewrite to direct Edit/Write.
+    // Without this, the agent loop stalls because `apply_patch` is not a real shell command.
+    if (finalName === "Bash" && finalArgs && finalArgs.includes("apply_patch")) {
+      try {
+        const parsed = JSON.parse(finalArgs);
+        const patch = tryParseApplyPatch(parsed.command || "");
+        if (patch) {
+          finalName = patch.tool;
+          finalArgs = JSON.stringify(patch.args);
+          log("TOOLCALL", `apply_patch intercepted → rewrote Bash to ${patch.tool}`);
+        }
+      } catch {
+        // leave finalName/finalArgs untouched
+      }
+    }
+
+    log(
+      "TOOLCALL",
+      `enum=${nativeToolEnum} rawName="${toolName}" mcpServer="${mcpServer}" → finalName="${finalName}" args=${finalArgs.slice(0, 200)}`
+    );
     return {
       id: toolCallId,
       type: "function",
       function: {
-        name: toolName,
-        arguments: rawArgs || "{}"
+        name: finalName,
+        arguments: finalArgs
       },
       isLast
     };
@@ -859,6 +1257,7 @@ export function extractTextFromResponse(payload) {
     if (fields.has(FIELD.TOOL_CALL)) {
       const toolCall = extractToolCall(fields.get(FIELD.TOOL_CALL)[0].value);
       if (toolCall) {
+        if (DEBUG) log("DECODE", `toolCall detected: name=${toolCall.function.name} id=${toolCall.id}`);
         log("EXTRACT", `Tool call: ${toolCall.function.name}`);
         return { text: null, error: null, toolCall, thinking: null };
       }
@@ -867,6 +1266,12 @@ export function extractTextFromResponse(payload) {
     // Field 2: StreamUnifiedChatResponse
     if (fields.has(FIELD.RESPONSE)) {
       const { text, thinking } = extractTextAndThinking(fields.get(FIELD.RESPONSE)[0].value);
+      if ((text || thinking) && DEBUG) {
+        log(
+          "DECODE",
+          `text_chunk=${text ? text.length : 0} thinking_chunk=${thinking ? thinking.length : 0}`
+        );
+      }
 
       if (text || thinking) {
         return { text, error: null, toolCall: null, thinking };

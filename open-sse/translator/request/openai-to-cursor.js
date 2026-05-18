@@ -2,6 +2,10 @@
  * OpenAI to Cursor Request Translator
  * Converts OpenAI messages to Cursor ask/agent format.
  *
+ * Tool selection is delegated entirely to the model (native dynamic tool calling).
+ * No keyword-based inference, reordering, or prompt injection — tools list and any
+ * explicit tool_choice from the client flow through unchanged.
+ *
  * Important: Cursor can loop when tool outputs are sent via protobuf tool_results
  * with partial schema mismatches. For stability, tool outputs are represented as
  * structured text blocks in user messages.
@@ -49,7 +53,7 @@ function normalizeToolCallId(id) {
 
 function convertMessages(messages) {
   const result = [];
-  
+
   // Build a map of tool_call_id -> tool name from assistant tool calls
   const toolCallMetaMap = new Map();
   const rememberToolMeta = (toolCallId, toolName) => {
@@ -171,11 +175,13 @@ export function buildCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
 
   // Strip fields irrelevant to Cursor (OpenAI/Anthropic-specific)
-  const { user, metadata, tool_choice, stream_options, system, ...rest } = body;
+  const { user, metadata, stream_options, system, ...rest } = body;
 
   return {
     ...rest,
     messages,
+    ...(Array.isArray(body.tools) ? { tools: body.tools } : {}),
+    ...(body.tool_choice ? { tool_choice: body.tool_choice } : {}),
     max_tokens: 32000
   };
 }

@@ -10,7 +10,37 @@ import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  parseCodeEditBlocks,
+  stripCodeEditBlocks,
+  resolveEditFromHistory,
+  extractDeepSeekResponse
+} from "../utils/cursorCodeEditTranslator.js";
+import { randomUUID } from "node:crypto";
 import zlib from "zlib";
+import fs from "node:fs";
+import path from "node:path";
+
+// Opt-in: dump raw cursor request body + response buffer + decoded SSE to a directory.
+// Usage: CURSOR_DUMP_DIR=/tmp/cursor-dump bun run dev
+// Disabled: hardcoded to null to prevent any temp dump writes.
+const CURSOR_DUMP_DIR = null;
+function dumpToDisk(name, data) {
+  if (!CURSOR_DUMP_DIR) return;
+  try {
+    if (!fs.existsSync(CURSOR_DUMP_DIR)) fs.mkdirSync(CURSOR_DUMP_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const filePath = path.join(CURSOR_DUMP_DIR, `${ts}_${name}`);
+    if (Buffer.isBuffer(data) || data instanceof Uint8Array) {
+      fs.writeFileSync(filePath, Buffer.from(data));
+    } else {
+      fs.writeFileSync(filePath, typeof data === "string" ? data : JSON.stringify(data, null, 2));
+    }
+    console.log(`[CURSOR DUMP] wrote ${filePath} (${data?.length ?? 0} bytes)`);
+  } catch (err) {
+    console.log(`[CURSOR DUMP] failed: ${err.message}`);
+  }
+}
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -40,6 +70,7 @@ const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
 const debugLog = (...args) => {
   if (CURSOR_STREAM_DEBUG) console.log(...args);
 };
+const requestDebugLog = (...args) => console.log(...args);
 
 function decompressPayload(payload, flags) {
   // Check if payload is JSON error (starts with {"error")
@@ -135,7 +166,35 @@ export class CursorExecutor extends BaseExecutor {
     // Detect Claude Code UA to force Agent mode (issue #643)
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
     const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
-    return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
+    const cursorMode = typeof body.cursor_mode === "string" ? body.cursor_mode.toLowerCase() : null;
+    const toolChoice = body.tool_choice || null;
+    const totalTools = Array.isArray(tools) ? tools.length : 0;
+    const toolNames = (tools || [])
+      .map(t => t?.function?.name || t?.name || "")
+      .filter(Boolean);
+    const prefixedMcpToolNames = toolNames.filter(name => name.startsWith("mcp__"));
+    const builtinOrCustomToolNames = toolNames.filter(name => !name.startsWith("mcp__"));
+    const toolChoiceName =
+      typeof toolChoice === "string"
+        ? toolChoice
+        : (toolChoice?.function?.name || toolChoice?.name || "none");
+    requestDebugLog(
+      `[CURSOR REQUEST] model=${model} cursor_mode=${cursorMode || "auto"} forceAgentMode=${forceAgentMode} stream=${stream !== false} total_tools=${totalTools} prefixed_mcp_tools=${prefixedMcpToolNames.length} builtin_or_custom_tools=${builtinOrCustomToolNames.length} tool_choice=${toolChoiceName}`
+    );
+    if (prefixedMcpToolNames.length > 0) {
+      requestDebugLog(
+        `[CURSOR REQUEST] mcp sample: ${prefixedMcpToolNames.slice(0, 10).join(", ")}${prefixedMcpToolNames.length > 10 ? " ..." : ""}`
+      );
+    }
+    if (builtinOrCustomToolNames.length > 0) {
+      requestDebugLog(
+        `[CURSOR REQUEST] builtin/custom sample: ${builtinOrCustomToolNames.slice(0, 10).join(", ")}${builtinOrCustomToolNames.length > 10 ? " ..." : ""}`
+      );
+    }
+    if (toolNames.length === 0) {
+      requestDebugLog("[CURSOR REQUEST] no tools in request body");
+    }
+    return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode, cursorMode, toolChoice);
   }
 
   async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
@@ -218,10 +277,15 @@ export class CursorExecutor extends BaseExecutor {
     const transformedBody = this.transformRequest(model, body, stream, credentials);
 
     try {
+      dumpToDisk("request_body.json", { model, body, stream });
+      dumpToDisk("request_protobuf.bin", transformedBody);
       const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
       const response = (http2 && !shouldForceFetch)
         ? await this.makeHttp2Request(url, headers, transformedBody, signal)
         : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
+
+      dumpToDisk("response_status.txt", `status=${response.status}\nheaders=${JSON.stringify(response.headers, null, 2)}`);
+      dumpToDisk("response_raw.bin", response.body);
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error";
@@ -241,6 +305,16 @@ export class CursorExecutor extends BaseExecutor {
       const transformedResponse = stream !== false
         ? this.transformProtobufToSSE(response.body, model, body)
         : this.transformProtobufToJSON(response.body, model, body);
+
+      if (CURSOR_DUMP_DIR) {
+        try {
+          const cloned = transformedResponse.clone();
+          cloned.text().then(txt => dumpToDisk(stream !== false ? "response_sse.txt" : "response_json.txt", txt))
+            .catch(err => console.log(`[CURSOR DUMP] read body failed: ${err.message}`));
+        } catch (err) {
+          console.log(`[CURSOR DUMP] clone failed: ${err.message}`);
+        }
+      }
 
       return { response: transformedResponse, url, headers, transformedBody: body };
     } catch (error) {
@@ -264,6 +338,7 @@ export class CursorExecutor extends BaseExecutor {
 
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -373,10 +448,11 @@ export class CursorExecutor extends BaseExecutor {
       }
 
       if (result.text) totalContent += result.text;
+      if (result.thinking) totalThinking += result.thinking;
     }
 
     debugLog(
-      `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
+      `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}, thinking_len=${totalThinking.length}`
     );
 
     // Finalize all remaining tool calls in map (in case stream ended without isLast=true)
@@ -397,11 +473,64 @@ export class CursorExecutor extends BaseExecutor {
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
+    // DeepSeek-embedded tool calls (see SSE path for context).
+    // See SSE-path comment above for rationale.
+    const _jsonHasDsTokens = totalThinking.includes("<｜tool▁call▁begin｜>");
+    const _jsonHasThinkBoundary = totalThinking.includes("</think>");
+    if (
+      _jsonHasDsTokens ||
+      (toolCalls.length === 0 && totalContent.length === 0 && _jsonHasThinkBoundary)
+    ) {
+      const { cotText, assistantText, toolCalls: dsCalls } =
+        extractDeepSeekResponse(totalThinking);
+      if (dsCalls.length > 0 || assistantText.length > 0) {
+        const replacedCount = toolCalls.length;
+        // Discard native tool_calls (likely empty-args from Cursor's failed parse)
+        toolCalls.length = 0;
+        for (const c of dsCalls) {
+          toolCalls.push({
+            id: `toolu_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+            type: "function",
+            function: { name: c.tool, arguments: JSON.stringify(c.args) }
+          });
+        }
+        if (assistantText) totalContent = assistantText;
+        totalThinking = cotText;
+        console.log(
+          `[CURSOR DEEPSEEK REWRITE] (json) detected ${dsCalls.length} tool call(s) → ${toolCalls.map((tc) => tc.function.name).join(",") || "(none)"} (cot_len=${cotText.length}, assistant_len=${assistantText.length}, replaced_native_count=${replacedCount})`
+        );
+      }
+    }
+
+    // Same code-edit → tool_use rewrite as the SSE path (see comments there).
+    if (toolCalls.length === 0 && totalContent) {
+      const edits = parseCodeEditBlocks(totalContent);
+      if (edits.length > 0) {
+        const sourceMessages = Array.isArray(body?.messages) ? body.messages : [];
+        for (const e of edits) {
+          const resolved = resolveEditFromHistory(sourceMessages, e);
+          toolCalls.push({
+            id: `toolu_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+            type: "function",
+            function: { name: resolved.tool, arguments: JSON.stringify(resolved.args) }
+          });
+        }
+        const preamble = stripCodeEditBlocks(totalContent, edits);
+        console.log(
+          `[CURSOR CODE-EDIT REWRITE] (json) detected ${edits.length} block(s) → ${toolCalls.map((tc) => tc.function.name).join(",")} (preamble_len=${preamble.length})`
+        );
+        totalContent = preamble;
+      }
+    }
 
     const message = {
       role: "assistant",
       content: totalContent || null
     };
+
+    if (totalThinking) {
+      message.reasoning_content = totalThinking;
+    }
 
     if (toolCalls.length > 0) {
       message.tool_calls = toolCalls;
@@ -435,6 +564,7 @@ export class CursorExecutor extends BaseExecutor {
     const chunks = [];
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -614,6 +744,28 @@ export class CursorExecutor extends BaseExecutor {
         }
       }
 
+      if (result.thinking) {
+        totalThinking += result.thinking;
+        const isFirst = chunks.length === 0;
+        chunks.push(
+          `data: ${JSON.stringify({
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [
+              {
+                index: 0,
+                delta: isFirst
+                  ? { role: "assistant", content: "", reasoning_content: result.thinking }
+                  : { reasoning_content: result.thinking },
+                finish_reason: null
+              }
+            ]
+          })}\n\n`
+        );
+      }
+
       if (result.text) {
         totalContent += result.text;
         chunks.push(
@@ -638,8 +790,199 @@ export class CursorExecutor extends BaseExecutor {
     }
 
     debugLog(
-      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`
+      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}, thinking_len=${totalThinking.length}, text_len=${totalContent.length}`
     );
+
+    // === Rewrite DeepSeek-style tool calls embedded in thinking field → tool_use ===
+    // Cursor's `default` model resolves to a DeepSeek reasoner that emits the entire
+    // response (chain-of-thought + assistant text + tool calls) inside the THINKING
+    // protobuf field, using <｜tool▁call▁begin｜>...<｜tool▁call▁end｜> tokens. We
+    // split it apart and re-emit as proper SSE chunks so Claude Code sees a normal
+    // tool_use call.
+    // Trigger rewrite if EITHER:
+    //   - DeepSeek tool tokens exist (regardless of toolCalls/totalContent state) — Cursor
+    //     backend often emits an accompanying native ClientSideToolV2Call frame with
+    //     `raw_args={}` (empty) because it can't extract args from DeepSeek tokens. We
+    //     must override that empty native call with the DeepSeek-parsed args.
+    //   - OR no toolCalls/content yet AND a </think> boundary exists (pure text response
+    //     trapped inside thinking field).
+    const _hasDsTokens = totalThinking.includes("<｜tool▁call▁begin｜>");
+    const _hasThinkBoundary = totalThinking.includes("</think>");
+    if (
+      _hasDsTokens ||
+      (toolCalls.length === 0 && totalContent.length === 0 && _hasThinkBoundary)
+    ) {
+      const { cotText, assistantText, toolCalls: dsCalls } =
+        extractDeepSeekResponse(totalThinking);
+      const hasUseful = dsCalls.length > 0 || assistantText.length > 0;
+      if (hasUseful) {
+        const synthesised = dsCalls.map((c) => ({
+          id: `toolu_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+          type: "function",
+          function: { name: c.tool, arguments: JSON.stringify(c.args) }
+        }));
+        console.log(
+          `[CURSOR DEEPSEEK REWRITE] detected ${dsCalls.length} tool call(s) → ${synthesised.map((tc) => tc.function.name).join(",") || "(none)"} (cot_len=${cotText.length}, assistant_len=${assistantText.length}, replaced_native_count=${toolCalls.length})`
+        );
+        // Discard any native (likely empty-args) tool_calls — DeepSeek tokens are the source of truth here
+        toolCalls.length = 0;
+
+        const rebuilt = [];
+        // Initial role marker
+        rebuilt.push(
+          `data: ${JSON.stringify({
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }]
+          })}\n\n`
+        );
+        // Chain-of-thought as reasoning_content (preserves "thinking..." UX without
+        // duplicating the assistant-visible text)
+        if (cotText) {
+          rebuilt.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{ index: 0, delta: { reasoning_content: cotText }, finish_reason: null }]
+            })}\n\n`
+          );
+        }
+        if (assistantText) {
+          rebuilt.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{ index: 0, delta: { content: assistantText }, finish_reason: null }]
+            })}\n\n`
+          );
+          totalContent = assistantText;
+        }
+        for (let i = 0; i < synthesised.length; i++) {
+          const tc = synthesised[i];
+          rebuilt.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{
+                index: 0,
+                delta: {
+                  tool_calls: [{
+                    index: i,
+                    id: tc.id,
+                    type: "function",
+                    function: { name: tc.function.name, arguments: tc.function.arguments }
+                  }]
+                },
+                finish_reason: null
+              }]
+            })}\n\n`
+          );
+          toolCalls.push({ ...tc, index: i });
+        }
+
+        chunks.length = 0;
+        chunks.push(...rebuilt);
+        // Clear thinking — we already represented it via reasoning_content above
+        totalThinking = "";
+      }
+    }
+
+    // === Rewrite Cursor's `\`\`\`N:M:filename` code-edit blocks → Edit/Write tool_use ===
+    // Cursor's hosted models emit file modifications as markdown blocks for the IDE's
+    // fast-apply flow. Headless clients (Claude Code, etc.) can't apply those, so we
+    // synthesise proper tool_use chunks. Only kicks in when the model didn't already
+    // call tools natively (otherwise it picked the right path on its own).
+    if (toolCalls.length === 0 && totalContent) {
+      const edits = parseCodeEditBlocks(totalContent);
+      if (edits.length > 0) {
+        const sourceMessages = Array.isArray(body?.messages) ? body.messages : [];
+        const synthesised = edits.map((e) => {
+          const resolved = resolveEditFromHistory(sourceMessages, e);
+          const id = `toolu_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+          return {
+            id,
+            type: "function",
+            function: {
+              name: resolved.tool,
+              arguments: JSON.stringify(resolved.args)
+            }
+          };
+        });
+        const preamble = stripCodeEditBlocks(totalContent, edits);
+
+        console.log(
+          `[CURSOR CODE-EDIT REWRITE] detected ${edits.length} block(s) → ${synthesised.map((tc) => tc.function.name).join(",")} (preamble_len=${preamble.length}, original_text_len=${totalContent.length})`
+        );
+
+        // Rebuild chunks: discard previously-emitted text deltas, keep optional
+        // thinking, then emit (preamble text if any) + tool_use chunks.
+        const rebuilt = [];
+        // Carry over thinking-only chunks (those with reasoning_content)
+        for (const c of chunks) {
+          if (typeof c !== "string" || !c.startsWith("data: ")) continue;
+          if (c.includes("\"reasoning_content\"") && !c.includes("\"content\":\"") && !c.includes("\"tool_calls\"")) {
+            rebuilt.push(c);
+          }
+        }
+        // Initial role marker (always required as first delta)
+        rebuilt.unshift(
+          `data: ${JSON.stringify({
+            id: responseId,
+            object: "chat.completion.chunk",
+            created,
+            model,
+            choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }]
+          })}\n\n`
+        );
+        if (preamble) {
+          rebuilt.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{ index: 0, delta: { content: preamble }, finish_reason: null }]
+            })}\n\n`
+          );
+        }
+        for (let i = 0; i < synthesised.length; i++) {
+          const tc = synthesised[i];
+          rebuilt.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [{
+                index: 0,
+                delta: {
+                  tool_calls: [{
+                    index: i,
+                    id: tc.id,
+                    type: "function",
+                    function: { name: tc.function.name, arguments: tc.function.arguments }
+                  }]
+                },
+                finish_reason: null
+              }]
+            })}\n\n`
+          );
+          toolCalls.push({ ...tc, index: i });
+        }
+
+        chunks.length = 0;
+        chunks.push(...rebuilt);
+        totalContent = preamble;
+      }
+    }
 
     // Finalize all remaining tool calls in map (stream may have ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {

@@ -70,6 +70,11 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.tool_choice = convertToolChoice(body.tool_choice);
   }
 
+  // Passthrough Cursor-specific mode selector so it survives Claude→OpenAI→Cursor
+  if (typeof body.cursor_mode === "string") {
+    result.cursor_mode = body.cursor_mode;
+  }
+
   return result;
 }
 

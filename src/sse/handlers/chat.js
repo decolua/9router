@@ -1,4 +1,5 @@
 import "open-sse/index.js";
+import { writeFile } from "node:fs/promises";
 
 import {
   getProviderCredentials,
@@ -33,7 +34,13 @@ export async function handleChat(request, clientRawRequest = null) {
     log.warn("CHAT", "Invalid JSON body");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
   }
-
+  if (body && process.env.CURSOR_DUMP_DIR) {
+    try {
+      await writeFile("/tmp/9router-chat-request-body.json", JSON.stringify(body, null, 2), "utf8");
+    } catch (error) {
+      log.warn("CHAT", "Failed to write request body file", { error: error?.message || String(error) });
+    }
+  }
   // Build clientRawRequest for logging (if not provided)
   if (!clientRawRequest) {
     const url = new URL(request.url);
