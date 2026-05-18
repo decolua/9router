@@ -1,67 +1,120 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import { useState, useEffect } from "react"
+import PropTypes from "prop-types"
+import { Modal, Button, Input } from "@/shared/components"
 
 /**
  * Cursor Auth Modal
- * Auto-detect and import token from Cursor IDE's local SQLite database
+ *
+ * Two import modes:
+ *   - "ide":    auto-detect tokens from Cursor IDE's local SQLite. No refresh
+ *               path — relies on Cursor IDE keeping the row fresh.
+ *   - "apikey": exchange a long-lived Cursor user API key (`key_...`) for a
+ *               JWT. 9router can then auto-refresh on 401/403 by re-calling
+ *               /auth/exchange_user_api_key. Recommended for headless /
+ *               multi-account service deployments.
  */
 export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
-  const [accessToken, setAccessToken] = useState("");
-  const [machineId, setMachineId] = useState("");
-  const [error, setError] = useState(null);
-  const [importing, setImporting] = useState(false);
-  const [autoDetecting, setAutoDetecting] = useState(false);
-  const [autoDetected, setAutoDetected] = useState(false);
-  const [windowsManual, setWindowsManual] = useState(false);
+  const [mode, setMode] = useState("ide") // "ide" | "apikey"
+
+  // IDE mode state
+  const [accessToken, setAccessToken] = useState("")
+  const [machineId, setMachineId] = useState("")
+  const [autoDetecting, setAutoDetecting] = useState(false)
+  const [autoDetected, setAutoDetected] = useState(false)
+  const [windowsManual, setWindowsManual] = useState(false)
+
+  // API key mode state
+  const [apiKey, setApiKey] = useState("")
+  const [apiKeyLabel, setApiKeyLabel] = useState("")
+
+  // Shared state
+  const [error, setError] = useState(null)
+  const [importing, setImporting] = useState(false)
 
   const runAutoDetect = async () => {
-    setAutoDetecting(true);
-    setError(null);
-    setAutoDetected(false);
-    setWindowsManual(false);
+    setAutoDetecting(true)
+    setError(null)
+    setAutoDetected(false)
+    setWindowsManual(false)
 
     try {
-      const res = await fetch("/api/oauth/cursor/auto-import");
-      const data = await res.json();
+      const res = await fetch("/api/oauth/cursor/auto-import")
+      const data = await res.json()
 
       if (data.found) {
-        setAccessToken(data.accessToken);
-        setMachineId(data.machineId);
-        setAutoDetected(true);
+        setAccessToken(data.accessToken)
+        setMachineId(data.machineId)
+        setAutoDetected(true)
       } else if (data.windowsManual) {
-        setWindowsManual(true);
+        setWindowsManual(true)
       } else {
-        setError(data.error || "Could not auto-detect tokens");
+        setError(data.error || "Could not auto-detect tokens")
       }
     } catch (err) {
-      setError("Failed to auto-detect tokens");
+      setError("Failed to auto-detect tokens")
     } finally {
-      setAutoDetecting(false);
+      setAutoDetecting(false)
     }
-  };
+  }
 
-  // Auto-detect tokens when modal opens
+  // Auto-detect tokens when modal opens (only in IDE mode)
   useEffect(() => {
-    if (!isOpen) return;
-    runAutoDetect();
-  }, [isOpen]);
+    if (!isOpen) return
+    if (mode !== "ide") return
+    runAutoDetect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, mode])
+
+  const handleImportApiKey = async () => {
+    if (!apiKey.trim()) {
+      setError("Please enter a Cursor API key")
+      return
+    }
+    if (!apiKey.trim().startsWith("crsr_")) {
+      setError("Cursor API key must start with 'crsr_'")
+      return
+    }
+
+    setImporting(true)
+    setError(null)
+
+    try {
+      const res = await fetch("/api/oauth/cursor/import-apikey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: apiKey.trim(),
+          label: apiKeyLabel.trim() || undefined,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Import failed")
+
+      onSuccess?.()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const handleImportToken = async () => {
     if (!accessToken.trim()) {
-      setError("Please enter an access token");
-      return;
+      setError("Please enter an access token")
+      return
     }
 
     if (!machineId.trim()) {
-      setError("Please enter a machine ID");
-      return;
+      setError("Please enter a machine ID")
+      return
     }
 
-    setImporting(true);
-    setError(null);
+    setImporting(true)
+    setError(null)
 
     try {
       const res = await fetch("/api/oauth/cursor/import", {
@@ -71,28 +124,107 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
           accessToken: accessToken.trim(),
           machineId: machineId.trim(),
         }),
-      });
+      })
 
-      const data = await res.json();
+      const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || "Import failed");
+        throw new Error(data.error || "Import failed")
       }
 
-      onSuccess?.();
-      onClose();
+      onSuccess?.()
+      onClose()
     } catch (err) {
-      setError(err.message);
+      setError(err.message)
     } finally {
-      setImporting(false);
+      setImporting(false)
     }
-  };
+  }
+
+  const tabBtn = (key, label) => (
+    <button
+      type="button"
+      onClick={() => { setMode(key); setError(null) }}
+      className={`flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors ${mode === key
+        ? "border-primary text-primary"
+        : "border-transparent text-text-muted hover:text-text"
+        }`}
+    >
+      {label}
+    </button>
+  )
 
   return (
-    <Modal isOpen={isOpen} title="Connect Cursor IDE" onClose={onClose}>
+    <Modal isOpen={isOpen} title="Connect Cursor" onClose={onClose}>
       <div className="flex flex-col gap-4">
-        {/* Auto-detecting state */}
-        {autoDetecting && (
+        {/* Mode tabs */}
+        <div className="flex border-b border-border -mt-2">
+          {tabBtn("ide", "From Cursor IDE")}
+          {tabBtn("apikey", "From API Key")}
+        </div>
+
+        {/* API key mode */}
+        {mode === "apikey" && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                Paste a long-lived Cursor user API key (<code className="font-mono">crsr_...</code>).
+                9router will exchange it for a JWT and auto-refresh on expiry —
+                no Cursor IDE required.
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                Get one at <span className="font-mono">cursor.com → Settings → Integrations → API Keys</span>.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Cursor API Key <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="crsr_..."
+                rows={3}
+                className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Label (optional)
+              </label>
+              <Input
+                value={apiKeyLabel}
+                onChange={(e) => setApiKeyLabel(e.target.value)}
+                placeholder="e.g. account-1@example.com"
+                className="text-sm"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleImportApiKey}
+                fullWidth
+                disabled={importing || !apiKey.trim()}
+              >
+                {importing ? "Importing..." : "Exchange & Import"}
+              </Button>
+              <Button onClick={onClose} variant="ghost" fullWidth>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* IDE mode — original auto-detect flow */}
+        {mode === "ide" && autoDetecting && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="material-symbols-outlined text-3xl text-primary animate-spin">
@@ -107,7 +239,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
         )}
 
         {/* Form (shown after auto-detect completes) */}
-        {!autoDetecting && (
+        {mode === "ide" && !autoDetecting && (
           <>
             {/* Success message if auto-detected */}
             {autoDetected && (
@@ -202,11 +334,11 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
         )}
       </div>
     </Modal>
-  );
+  )
 }
 
 CursorAuthModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
-};
+}

@@ -23,6 +23,7 @@ import {
   refreshKiroToken as _refreshKiroToken,
   getRefreshLeadMs as _getRefreshLeadMs
 } from "open-sse/services/tokenRefresh.js";
+import { getExecutor } from "open-sse/executors/index.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -205,7 +206,20 @@ export async function checkAndRefreshToken(provider, credentials) {
         refreshLeadMs: refreshLead,
       });
 
-      const newCreds = await getAccessToken(provider, creds);
+      let newCreds = await getAccessToken(provider, creds);
+
+      // Fallback: executor-based refresh for providers like cursor that
+      // use non-standard refresh mechanisms (e.g., API key exchange)
+      if (!newCreds?.accessToken) {
+        const executor = getExecutor(provider);
+        if (executor?.refreshCredentials) {
+          const execCreds = await executor.refreshCredentials(creds, log);
+          if (execCreds?.accessToken) {
+            newCreds = execCreds;
+          }
+        }
+      }
+
       if (newCreds?.accessToken) {
         const mergedCreds = {
           ...newCreds,
