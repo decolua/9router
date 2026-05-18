@@ -23,7 +23,7 @@ IDs end in `/search` (e.g. `tavily/search`). Combos (`owned_by:"combo"`) chain p
 
 | Field | Required | Notes |
 |---|---|---|
-| `model` (or `provider`) | yes | from `/v1/models/web` (e.g. `tavily/search` or just `tavily`) |
+| `model` (or `provider`) | yes | from `/v1/models/web` (e.g. `tavily` or `brave`) |
 | `query` | yes | search query |
 | `max_results` | no | default 5 |
 | `search_type` | no | `web` (default) / `news` |
@@ -35,7 +35,7 @@ IDs end in `/search` (e.g. `tavily/search`). Combos (`owned_by:"combo"`) chain p
 curl -X POST $NINEROUTER_URL/v1/search \
   -H "Authorization: Bearer $NINEROUTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"tavily/search","query":"9Router open source","max_results":5}'
+  -d '{"model":"tavily","query":"9Router open source","max_results":5}'
 ```
 
 JS:
@@ -88,4 +88,4 @@ All accept `query` + `max_results`. Optional fields vary:
 | `youcom` | country, language, time_range, domain_filter, full_page | — |
 | `searxng` | language, time_range | Self-hosted, **noAuth** |
 
-Provider IS the model — `"provider":"tavily"` ≡ `"model":"tavily/search"`.
+Provider IS the model — `"provider":"tavily" ≡ "model":"tavily"`.
