@@ -28,6 +28,8 @@ function makeSingleModelHandler(clientRawRequest, request, apiKey, comboName) {
   return async (b, m) => {
     const res = await handleSingleModelChat(b, m, clientRawRequest, request, apiKey);
     if (res && res.ok && comboName) {
+      const settings = await getSettings();
+      if (!settings.comboAutoPromoteEnabled) return res;
       try {
         const currentCombo = await getComboByName(comboName);
         if (currentCombo && currentCombo.models && currentCombo.models.length > 0) {
