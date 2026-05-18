@@ -106,6 +106,50 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
+    else if (itemType === "custom_tool_call") {
+      // Codex custom tool call (e.g. apply_patch): input is a raw string, not JSON arguments
+      if (!currentAssistantMsg) {
+        currentAssistantMsg = {
+          role: "assistant",
+          content: null,
+          tool_calls: []
+        };
+      }
+      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      currentAssistantMsg.tool_calls.push({
+        id: item.call_id,
+        type: "function",
+        function: {
+          name: item.name,
+          arguments: JSON.stringify({ input: item.input })
+        }
+      });
+    }
+    else if (itemType === "custom_tool_call_output") {
+      // Result of a custom tool call — translate same as function_call_output
+      if (currentAssistantMsg) {
+        result.messages.push(currentAssistantMsg);
+        currentAssistantMsg = null;
+      }
+      if (pendingToolResults.length > 0) {
+        for (const tr of pendingToolResults) {
+          result.messages.push(tr);
+        }
+        pendingToolResults = [];
+      }
+      // Unwrap JSON-wrapped output {"output":"...","metadata":{...}} → plain string
+      const rawOut = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      let toolContent = rawOut;
+      try {
+        const parsed = JSON.parse(rawOut);
+        if (typeof parsed.output === "string") toolContent = parsed.output;
+      } catch (_) {}
+      result.messages.push({
+        role: "tool",
+        tool_call_id: item.call_id,
+        content: toolContent
+      });
+    }
     else if (itemType === "reasoning") {
       // Skip reasoning items - they are for display only
       continue;
