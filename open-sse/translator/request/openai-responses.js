@@ -155,7 +155,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
                 },
                 required: ["input"],
                 additionalProperties: false
-              }
+              },
+              strict: tool.strict
             }
           };
         }
