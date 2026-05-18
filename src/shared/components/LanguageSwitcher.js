@@ -64,7 +64,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
   const isOpen = isControlled ? controlledOpen : internalOpen;
   const setIsOpen = (value) => {
     if (isControlled) {
-      if (!value && onClose) onClose();
+      if (!value && onClose) onClose(locale);
     } else {
       setInternalOpen(value);
     }

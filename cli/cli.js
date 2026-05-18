@@ -197,8 +197,8 @@ function killCloudflaredByAppPort(appPort) {
 function killAllAppProcesses(appPort) {
   return new Promise((resolve) => {
     try {
-      // Kill MITM first (admin/sudo process, needs special handling)
-      killMitmByPidFile();
+      // Kill MIT first (privileged process, needs special handling)
+      killProxyByPidFile();
       // Kill cloudflared/tailscale by PID file (precise, only this app's tunnel)
       killTunnelByPidFile();
 
@@ -305,13 +305,13 @@ function waitForExit(pid, timeoutMs) {
   return false;
 }
 
-// Kill MITM server by PID file (MITM runs as admin/sudo, needs special handling)
-// Sends SIGTERM first so MITM can clean up /etc/hosts entries before dying.
-function killMitmByPidFile() {
+// Kill MIT server by PID file (runs privileged, needs special handling)
+// Sends SIGTERM first so MIT can clean up host entries before dying.
+function killProxyByPidFile() {
   try {
-    const mitmPidFile = path.join(getAppDataDir(), "mitm", ".mitm.pid");
-    if (!fs.existsSync(mitmPidFile)) return;
-    const pid = parseInt(fs.readFileSync(mitmPidFile, "utf8").trim(), 10);
+    const pidFile = path.join(getAppDataDir(), "mitm", ".mitm.pid");
+    if (!fs.existsSync(pidFile)) return;
+    const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
     if (!pid) return;
 
     if (process.platform === "win32") {
@@ -333,7 +333,7 @@ function killMitmByPidFile() {
         catch { try { process.kill(pid, "SIGKILL"); } catch { } }
       }
     }
-    try { fs.unlinkSync(mitmPidFile); } catch { }
+    try { fs.unlinkSync(pidFile); } catch { }
   } catch { }
 }
 
@@ -584,8 +584,8 @@ function startServer(latestVersion) {
         const { killTray } = require("./src/cli/tray/tray");
         killTray();
       } catch (e) { }
-      // Kill MITM server (admin/sudo process) via PID file
-      killMitmByPidFile();
+      // Kill MIT server (privileged process) via PID file
+      killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
       // Kill server process directly
@@ -772,7 +772,7 @@ function startServer(latestVersion) {
     if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
 
     if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MITM and restarting...`);
+      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
       try {
         const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
         if (fs.existsSync(dbPath)) {

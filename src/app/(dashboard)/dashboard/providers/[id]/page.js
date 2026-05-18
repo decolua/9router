@@ -49,7 +49,39 @@ export default function ProviderDetailPage() {
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
+  const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const { copied, copy } = useCopyToClipboard();
+
+  const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
+
+  const triggerAddConnection = () => {
+    if (providerId === "antigravity" && typeof window !== "undefined") {
+      const confirmed = window.localStorage.getItem(AG_RISK_STORAGE_KEY) === "true";
+      if (!confirmed) {
+        setShowAgRiskModal(true);
+        return;
+      }
+    }
+    if (isOAuth) {
+      setShowOAuthModal(true);
+      return;
+    }
+    setAddConnectionError("");
+    setShowAddApiKeyModal(true);
+  };
+
+  const handleAgRiskConfirm = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(AG_RISK_STORAGE_KEY, "true");
+    }
+    setShowAgRiskModal(false);
+    if (isOAuth) {
+      setShowOAuthModal(true);
+      return;
+    }
+    setAddConnectionError("");
+    setShowAddApiKeyModal(true);
+  };
 
   const providerInfo = providerNode
     ? {
@@ -1066,14 +1098,7 @@ export default function ProviderDetailPage() {
                 <Button
                   size="sm"
                   icon="add"
-                  onClick={() => {
-                    if (isOAuth) {
-                      setShowOAuthModal(true);
-                      return;
-                    }
-                    setAddConnectionError("");
-                    setShowAddApiKeyModal(true);
-                  }}
+                  onClick={triggerAddConnection}
                 >
                   {isCompatible ? "Add API Key" : (providerId === "iflow" ? "OAuth" : "Add Connection")}
                 </Button>
@@ -1099,14 +1124,7 @@ export default function ProviderDetailPage() {
                   <Button
                     size="sm"
                     icon="add"
-                    onClick={() => {
-                      if (isOAuth) {
-                        setShowOAuthModal(true);
-                        return;
-                      }
-                      setAddConnectionError("");
-                      setShowAddApiKeyModal(true);
-                    }}
+                    onClick={triggerAddConnection}
                     className="w-full sm:w-auto"
                   >
                     Add
@@ -1241,6 +1259,18 @@ export default function ProviderDetailPage() {
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
+
+      {/* AG Risk Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showAgRiskModal}
+        onClose={() => setShowAgRiskModal(false)}
+        onConfirm={handleAgRiskConfirm}
+        title="Risk Notice"
+        message={providerInfo?.deprecationNotice}
+        confirmText="I Understand, Continue"
+        cancelText="Cancel"
+        variant="danger"
+      />
 
       {/* Confirm Modal */}
       <ConfirmModal

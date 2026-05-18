@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -17,6 +18,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
+  const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
   const [formData, setFormData] = useState({
     name: "",
@@ -33,6 +36,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -54,6 +58,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (providerRegions && region) {
+      return { region };
     }
     return undefined;
   };
@@ -233,6 +240,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               </>
             )}
           </p>
+        )}
+        {providerRegions && (
+          <Select
+            label="Region"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
         )}
         {isCompatible && (
           <Input

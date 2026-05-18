@@ -305,6 +305,8 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
 
   return new Promise((resolve, reject) => {
     let resolved = false;
+    // Keep a small tail of raw cloudflared logs to surface real failure causes
+    let logTail = "";
 
     function getQuickTunnelUrlFromLog(message) {
       // cloudflared logs may contain "api.trycloudflare.com" as well,
@@ -326,13 +328,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       if (resolved) return;
       resolved = true;
       cleanup();
-      reject(new Error("Quick tunnel timed out"));
+      reject(new Error(`Quick tunnel timed out. Last log: ${logTail.slice(-800) || "(empty)"}`));
     }, 90000);
 
     let lastUrl = null;
 
     const handleLog = (data) => {
       const msg = data.toString();
+      logTail = (logTail + msg).slice(-4000);
       const tunnelUrl = getQuickTunnelUrlFromLog(msg);
       if (!tunnelUrl) return;
 
@@ -370,17 +373,18 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       cloudflaredProcess = null;
       clearPid();
       console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
+      if (logTail) console.log(`[Tunnel] cloudflared log tail:\n${logTail.slice(-1500)}`);
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         cleanup();
-        // Provide more helpful error messages for common exit codes
+        const tail = logTail.slice(-600).trim() || "(empty)";
         if (code === 1) {
-          reject(new Error(`cloudflared exited with code ${code}. This often means: (1) the tunnel token is invalid or expired, (2) network connectivity issues, or (3) cloudflared cannot reach the local server.`));
+          reject(new Error(`cloudflared quick tunnel exited (code 1). Common causes: (1) outbound port 7844 (TCP/UDP) blocked, (2) TryCloudflare service issue, (3) cannot reach 127.0.0.1:${localPort}, (4) protocol (http2/quic) blocked by network. Last log: ${tail}`));
         } else if (code === 2) {
-          reject(new Error(`cloudflared exited with code ${code}. Check that arguments are correct.`));
+          reject(new Error(`cloudflared exited (code 2). Bad arguments. Last log: ${tail}`));
         } else {
-          reject(new Error(`cloudflared exited with code ${code}`));
+          reject(new Error(`cloudflared exited (code ${code}). Last log: ${tail}`));
         }
         return;
       }

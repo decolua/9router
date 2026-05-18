@@ -305,11 +305,7 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          metadata: {
-            ideType: "IDE_UNSPECIFIED",
-            platform: "PLATFORM_UNSPECIFIED",
-            pluginType: "GEMINI",
-          },
+          metadata: CLIENT_METADATA,
         }),
         signal: controller.signal,
       },

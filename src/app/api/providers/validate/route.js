@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCode } from "open-sse/translator/request/openai-to-commandcode.js";
 import { PROVIDER_ENDPOINTS } from "@/shared/constants/config";
 import { normalizeProviderId } from "@/lib/providerNormalization";
@@ -382,7 +382,7 @@ export async function POST(request) {
             chutes: "https://llm.chutes.ai/v1/models",
             nvidia: "https://integrate.api.nvidia.com/v1/models",
             "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
-            "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1/models"
+            "xiaomi-tokenplan": `${resolveXiaomiTokenplanBaseUrl({ providerSpecificData })}/models`
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;

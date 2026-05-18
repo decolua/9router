@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { loadState, saveState, generateShortId } from "./state.js";
+import { loadState, saveState, generateShortId, clearPid } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
@@ -127,12 +127,15 @@ export async function enableTunnel(localPort = 20128) {
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
-    // Verify direct tunnel URL first (avoid CDN false positive on publicUrl)
-    await waitForHealth(tunnelUrl, token);
-    console.log("[Tunnel] direct URL healthy");
-    // Then verify public URL (DNS propagated through worker)
+    // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
     await waitForHealth(publicUrl, token);
     console.log("[Tunnel] public URL healthy");
+    // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked on some networks
+    if (!(await probeUrlAlive(tunnelUrl))) {
+      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+    } else {
+      console.log("[Tunnel] direct URL healthy");
+    }
 
     // Prime reachable cache so UI shows correct state immediately
     tunnelReachable.value = true;
@@ -151,15 +154,21 @@ export async function enableTunnel(localPort = 20128) {
 
 export async function disableTunnel() {
   console.log("[Tunnel] disable");
+  // Abort any in-flight enable so it cannot resurrect state after we clear it
   tunnelSvc.cancelToken.cancelled = true;
   setUnexpectedExitHandler(null);
-  killCloudflared(tunnelSvc.activeLocalPort);
+
+  try { killCloudflared(tunnelSvc.activeLocalPort); } catch (e) { console.warn(`[Tunnel] kill warn: ${e.message}`); }
+  clearPid();
 
   const state = loadState();
   if (state) saveState({ shortId: state.shortId, machineId: state.machineId, tunnelUrl: null });
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
   tunnelReachable.value = false; tunnelReachable.url = null; tunnelReachable.fetchedAt = Date.now();
+  // Force-clear flags so a subsequent enable is not blocked by a stuck spawnInProgress
+  tunnelSvc.spawnInProgress = false;
+  tunnelSvc.activeLocalPort = null;
   return { success: true };
 }
 
