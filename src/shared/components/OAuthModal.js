@@ -30,9 +30,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
+      const hostname = window.location.hostname;
+      const port = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      setIsLocalhost(hostname === "localhost" || hostname === "127.0.0.1");
+      // Use actual hostname for redirect URI, not hardcoded localhost
       setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
   }, []);
@@ -172,11 +173,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      const hostname = window.location.hostname;
       let redirectUri;
       if (provider === "codex") {
+        // Codex requires localhost:1455 for the proxy server
         redirectUri = "http://localhost:1455/auth/callback";
       } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
+        // Use actual hostname instead of hardcoded localhost to support remote deployments
+        const protocol = window.location.protocol;
+        redirectUri = `${protocol}//${hostname}:${appPort}/callback`;
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode

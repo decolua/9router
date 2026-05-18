@@ -28,12 +28,17 @@ export async function GET(request, { params }) {
     const { searchParams } = new URL(request.url);
 
     if (action === "authorize") {
-      const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
+      const redirectUri = searchParams.get("redirect_uri");
+      // Fallback to localhost only if no redirect_uri provided (CLI usage)
+      // For web-based OAuth, the redirect_uri should be passed from the frontend
+      const finalRedirectUri = redirectUri || process.env.BASE_URL 
+        ? `${process.env.BASE_URL || "http://localhost:20128"}/callback`
+        : "http://localhost:8080/callback";
       // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
       const reservedParams = new Set(["redirect_uri"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
-      const authData = generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+      const authData = generateAuthData(provider, finalRedirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
     }
 

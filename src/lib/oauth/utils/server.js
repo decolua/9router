@@ -238,7 +238,9 @@ export function startCodexProxy(appPort) {
       }
 
       // Mode B: legacy channel fallback — 302 redirect to app /callback
-      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      // Use BASE_URL env var if available for remote deployments, otherwise fallback to localhost
+      const baseUrl = process.env.BASE_URL || process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${appPort}`;
+      const redirectUrl = `${baseUrl}/callback${url.search}`;
       res.writeHead(302, { Location: redirectUrl });
       res.end();
       stopCodexProxy();

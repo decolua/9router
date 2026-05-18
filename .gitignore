@@ -1,74 +1,1141 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Dependencies
+node_modules/
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# Logs and temp files
+*.log
+*.tmp
 
-# testing
-/coverage
+# Environment variables
+.env
+.env.local
+*.env.*
 
-# next.js
-/.next/
-/.next-cli-build/
-/out/
-cli/.build-home/
-product
-# production
-/build
+# Editors
+.vscode/
 .idea/
 
-# misc
-.DS_Store
-*.pem
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# debug
+# Build outputs
+dist/
+build/
+*.min.js
+*.min.css
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE specific
+*.swp
+*.swo
+
+# Compression
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+
+# Testing
+.mypy_cache/
+.pytest_cache/
+.nyc_output/
+coverage/
+
+# Runtime
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-!.env.example
+# Compiled and binary
+*.class
+*.o
+*.obj
+*.out
+*.exe
+*.dll
+*.so
+*.a
 
-# vercel
-.vercel
+# Distribution / packaging
+.Python
+env/
+venv/
+.venv/
+.conda/
+pip-log.txt
+pip-delete-this-directory.txt
 
-# typescript
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyInstaller
+*.spec
+
+# Coverage
+.coverage.*
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask
+instance/
+.webassets-cache
+
+# Scrapy
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jekyll
+_site/
+
+# Docker
+.dockerenv
+
+# Gradle
+.gradle/
+build/
+
+# Maven
+target/
+
+# Rust
+target/
+Cargo.lock
+
+# Go
+*.out
+bin/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+
+# C#
+bin/
+obj/
+*.sln
+*.userprefs
+
+# Ruby
+*.gem
+.bundle/
+.ruby-version
+
+# PHP
+vendor/
+
+# Android
+*.apk
+*.ap_
+app/build/
+
+# iOS
+*.ipa
+*.dSYM
+
+# Unity
+Library/
+Temp/
+Obj/
+Build/
+Logs/
+
+# Unreal Engine
+*/Binaries/*
+*/Intermediate/*
+Saved/
+
+# Qt
+*.pro.user
+*.pro.user.*
+*.qbs.user
+*.qbs.user.*
+*.moc
+*.moc.cpp
+*.qm
+
+# Visual Studio Code
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/*
+
+# Vim
+*.un~
+Session.vim
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Notepad++
+*.bak
+
+# Kate
+*.kate-swp
+
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Code::Blocks
+*.depend
+*.layout
+
+# Dev-C++
+*.dev
+
+# Flash Builder
+.settings
+bin-debug/
+bin-release/
+
+# WebStorm
+.idea/
+
+# Eclipse
+.metadata
+bin/
+tmp/
+*.tmp
+*.bak
+*.swp
+*~
+.project
+.classpath
+.settings/
+.loadpath
+.recommenders
+
+# IntelliJ IDEA
+.idea/
+
+# NetBeans
+nbproject/private/
+build/
+dist/
+nbdist/
+.nbattrs
+.nb-gradle/
+
+# CodeLite
+.codelite/
+*.codelite
+*.workspace
+*.project
+
+# KDevelop4
+.kdev4/
+
+# CLion
+cmake-build-*/
+
+# AppCode
+*.xcodeproj
+*.xcworkspace
+*.moved-aside
+DerivedData/
+
+# RubyMine
+.idea/
+
+# PhpStorm
+.idea/
+
+# PyCharm
+.idea/
+
+# WebStorm
+.idea/
+
+# DataGrip
+.idea/
+
+# Rider
+.idea/
+*.sln.DotSettings
+*.DotSettings.user
+
+# Android Studio
+*.iml
+*.hprof
+.local.properties
+.gradle/
+.idea/
+captures/
+.externalNativeBuild
+.cxx/
+
+# Visual Studio
+*.user
+*.aps
+*.ncb
+*.suo
+*.sln.docstates
+*.vcxproj.filters
+ipch/
+*.opensdf
+*.sdf
+*.cachefile
+*.VC.db
+*.VC.VC.opendb
+[Bb]in/
+[Oo]bj/
+[Tt]est[Rr]esult*/
+*.VC.db
+*.VC.VC.opendb
+[Ll]og/
+
+# Visual Studio Code
+.vscode/*
+
+# Visual Studio for Mac
+.macos/
+.userprefs
+
+# Mono
+*.pidb
+*.userprefs
+
+# Xamarin
+*.sln.db
+
+# NCrunch
+*.*crunch*
+.crunch/
+.cr/
+
+# Coveralls
+coveralls.yml
+
+# Codecov
+codecov.yml
+
+# SonarQube
+.sonar/
+
+# SonarLint
+.sonarlint/
+
+# ESLint
+.eslintcache
+
+# TSLint
+.tslintcache
+
+# Prettier
+.prettierrc.js
+prettier.config.js
+
+# Babel
+.babelrc
+.babelrc.js
+.babelrc.json
+
+# TypeScript
 *.tsbuildinfo
-next-env.d.ts
+*.js.map
+*.ts.map
 
-.bin/*
-data/
-logs/*
-source/*
-.cursor/*
-docs/*
-!docs/ARCHITECTURE.md
-test/*
-open-sse/test/*
-RM.vn.md
-RM.md
-cursor/*
-PUBLIC.md
-Thanks.md
-PUBLIC.en.md
-PR/*
-package-lock.json
+# Flow
+.flowconfig
 
+# Jest
+.jestrc
+coverage/
+*.log
 
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
-README1.md
-deploy*.sh
-ecosystem.config.*
+# Mocha
+.mocharc.*
 
-scripts/agSniffer/*
-gitbooks/*
-gitbook/README.md
+# Cypress
+cypress/screenshots/
+cypress/videos/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Vitest
+coverage/
+test-results/
+
+# Storybook
+storybook-static/
+
+# Next.js
+.next/
+out/
+
+# Gatsby
+.cache/
+public/
+
+# Vite
+dist/
+
+# Angular
+dist/
+.tmp/
+
+# Vue
+dist/
+.vuepress/dist
+
+# Svelte
+.svelte-kit/
+
+# Astro
+.dist/
+
+# Remix
+public/build/
+
+# Nuxt
+.output/
+.dist/
+.build/
+.nuxt/
+.node_modules.aegir
+.static/
+
+# Expo
+.expo/
+web-build/
+
+# React Native
+node_modules/
+ios/Pods/
+android/build/
+android/app/build/
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugin-dependencies
+build/
+ios/.symlinks/
+packages/flutter_tools/.last_build_id
+
+# Ionic
+node_modules/
+platforms/
+plugins/
+ionic_*/
+
+# Cordova
+node_modules/
+platforms/
+plugins/
+cordova_*/
+
+# Capacitor
+node_modules/
+capacitor-cordova-android-plugins/
+
+# Electron
+node_modules/
+dist_electron/
+release/
+build/
+
+# NW.js
+node_modules/
+cache/
+package/node_modules/
+
+# Deno
+deno.lock
+_deps/
+
+# Bun
+node_modules/
+bun.lockb
+
+# Yarn
+.yarn/
+.pnp.*
+.yarnrc.yml
+
+# PNPM
+node_modules/
+pnpm-lock.yaml
+.pnpm-store/
+
+# Lerna
+lerna-debug.log
+
+# Nx
+.nx/
+
+# Turborepo
+.node_modules.aegir
+turbo.json
+
+# Gulp
+gulpfile.js
+gulpfile.babel.js
+
+# Grunt
+Gruntfile.js
+Gruntfile.babel.js
+
+# Webpack
+webpack.config.js
+webpack.config.babel.js
+
+# Rollup
+rollup.config.js
+
+# Parcel
+.cache/
+
+# Browserify
+browserify.config.js
+
+# Snowpack
+snowpack.config.js
+web_modules/
+
+# VitePress
+.vitepress/cache/
+.vitepress/dist/
+
+# Docusaurus
+.docusaurus/
+build/
+
+# GitBook
+.gitbook/
+_book/
+
+# Hexo
+public/
+.deploy*/
+
+# Hugo
+resources/_gen/
+
+# Jekyll
+_site/
+.jekyll-metadata
+.jekyll-cache
+
+# Middleman
+.sass-cache/
+.styleguide/
+tmp/
+
+# Nanoc
+output/
+tmp/
+
+# Octopress
+public/
+.sass-cache/
+
+# Pelican
+output/
+develop_server.sh
+
+# Publish with RSYNC
+public/
+
+# Wintersmith
+build/
+
+# DocPad
+src/.docpad-cache/
+out/
+
+# Roots
+public/
+tmp/
+
+# Brunch
+public/
+.brunch/
+
+# Harp
+public/
+.harp/
+
+# Sapper
+__sapper__/
+cypress/
+
+# SvelteKit
+.svelte-kit/
+build/
+
+# RedwoodJS
+.redwood/
+api/dist/
+web/dist/
+
+# Blitz
+.blitz/
+db/
+dist/
+
+# Keystone
+keystone-*
+
+# Strapi
+.strapi/
+src/admin/webpack.config.js
+
+# Directus
+.directus/
+
+# Payload CMS
+payload-types.ts
+payload.config.js
+
+# Prisma
+prisma/migrations/
+
+# TypeORM
+ormconfig.json
+
+# Sequelize
+sequelize-meta.json
+
+# Hasura
+hasura/
+
+# Firebase
+.firebase/
+firestore.rules
+firestore.indexes.json
+
+# Supabase
+supabase/
+
+# AWS Amplify
+amplify/
+
+# Vercel
+.vercel/
+
+# Netlify
+.netlify/
+
+# Cloudflare Pages
+.cloudflare/
+
+# Railway
+.railway/
+
+# Heroku
+.heroku/
+
+# Docker Compose
+.docker-compose.override.yml
+.docker-compose.prod.yml
+
+# Kubernetes
+*.kubeconfig
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+
+# Ansible
+*.retry
+
+# Puppet
+*.pbm
+
+# Chef
+.kitchen/
+
+# SaltStack
+salt-ssh.log
+
+# Consul
+*.backup
+
+# Vault
+*.key
+
+# Nomad
+*.nomad
+
+# Packer
+*.pkg
+
+# Vagrant
+.vagrant/
+.vagrant-*.in-*
+*.vagrant-*.out-*
+
+# VMware
+*.vmdk
+*.vmx
+*.nvram
+*.vmsd
+*.vmsn
+*.vmss
+*.vswp
+*.vmem
+*.vcpu
+*.log
+*.lck
+*.cfg
+*.ps1
+*.psm1
+*.psd1
+*.pssc
+*.cdxml
+*.mof
+*.inf
+*.reg
+*.msi
+*.msp
+*.mst
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.n......
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.n......
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.nsh
+*.nsi
+*.nsis
+*.nsu
+*.n......
