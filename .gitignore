@@ -26,6 +26,7 @@ product
 # misc
 .DS_Store
 *.pem
+.sisyphus/
 
 # debug
 npm-debug.log*

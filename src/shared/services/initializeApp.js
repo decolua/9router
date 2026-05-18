@@ -18,6 +18,7 @@ import {
 } from "@/lib/tunnel/tunnelConfig";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
+import { startWebshareScheduler } from "@/lib/webshare/webshareScheduler.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -39,6 +40,7 @@ const g = global.__appSingleton ??= {
   signalHandlersRegistered: false,
   watchdogInterval: null,
   networkMonitorInterval: null,
+  webshareSyncInterval: null,
   lastNetworkFingerprint: null,
   lastWatchdogTick: Date.now(),
   lastOnline: null,
@@ -85,6 +87,7 @@ export async function initializeApp() {
 
     startWatchdog();
     startNetworkMonitor();
+    startWebshareScheduler();
     autoStartMitm();
   } catch (error) {
     console.error("[InitApp] Error:", error);

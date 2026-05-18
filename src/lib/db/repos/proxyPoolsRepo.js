@@ -101,3 +101,56 @@ export async function deleteProxyPool(id) {
   });
   return removed;
 }
+
+export async function getProxyPoolsBySource(source) {
+  const allPools = await getProxyPools();
+  return allPools.filter(pool => pool.source === source);
+}
+
+export async function upsertProxyPoolBySource({ source, sourceId, fields }) {
+  const db = await getAdapter();
+  let result = null;
+  db.transaction(() => {
+    const allPools = db.all(`SELECT * FROM proxyPools`).map(rowToPool);
+    const existing = allPools.find(p => p.source === source && (p.sourceId === sourceId || p.webshareId === sourceId));
+    const now = new Date().toISOString();
+    
+    if (existing) {
+      const merged = {
+        ...existing,
+        ...fields,
+        source,
+        sourceId,
+        webshareId: sourceId,
+        id: existing.id,
+        createdAt: existing.createdAt,
+        updatedAt: now,
+      };
+      upsert(db, merged);
+      result = merged;
+    } else {
+      const pool = {
+        // Spread all fields first so Webshare metadata (webshareUsername, webshareCountryCode, etc.) is preserved
+        ...fields,
+        id: uuidv4(),
+        source,
+        sourceId,
+        webshareId: sourceId,
+        name: fields.name || `${source}-${sourceId}`,
+        proxyUrl: fields.proxyUrl || "",
+        noProxy: fields.noProxy || "",
+        type: fields.type || "http",
+        isActive: fields.isActive !== undefined ? fields.isActive : true,
+        strictProxy: fields.strictProxy === true,
+        testStatus: fields.testStatus || "unknown",
+        lastTestedAt: fields.lastTestedAt || null,
+        lastError: fields.lastError || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      upsert(db, pool);
+      result = pool;
+    }
+  });
+  return result;
+}
