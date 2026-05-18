@@ -153,6 +153,33 @@ describe("dashboard guard local-only access", () => {
 
     expect(response).toBe(mocks.nextResponse);
   });
+
+  it("allows remote same-origin tunnel enable for authenticated dashboard browser", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const req = request("/api/tunnel/enable", {
+      host: "192.0.2.37:20128",
+      origin: "http://192.0.2.37:20128",
+    });
+    req.cookies.get.mockReturnValue({ value: "jwt-token" });
+
+    const response = await proxy(req);
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("keeps other local-only routes blocked for remote authenticated browser sessions", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const req = request("/api/mcp/filesystem/sse", {
+      host: "192.0.2.37:20128",
+      origin: "http://192.0.2.37:20128",
+    });
+    req.cookies.get.mockReturnValue({ value: "jwt-token" });
+
+    const response = await proxy(req);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Local only: CLI token required");
+  });
 });
 
 describe("dashboard guard helpers", () => {
