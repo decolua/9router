@@ -85,22 +85,48 @@ function decompressPayload(payload, flags) {
   return payload
 }
 
+// Detect Cursor "not logged in" / auth failures so chatCore's 401/403 branch
+// can run the standard refresh-and-retry flow. Cursor reports these as HTTP
+// 400 with code=ERROR_NOT_LOGGED_IN, which would otherwise bypass refresh.
+function isCursorAuthError(text) {
+  if (!text || typeof text !== "string") return false
+  return /ERROR_NOT_LOGGED_IN|ERROR_UNAUTHORIZED|Authentication error/i.test(text)
+}
+
 function createErrorResponse(jsonError) {
   const errorMsg = jsonError?.error?.details?.[0]?.debug?.details?.title
     || jsonError?.error?.details?.[0]?.debug?.details?.detail
     || jsonError?.error?.message
     || "API Error"
 
-  const isRateLimit = jsonError?.error?.code === "resource_exhausted"
+  const code = jsonError?.error?.code
+    || jsonError?.error?.details?.[0]?.debug?.error
+    || ""
+
+  const isRateLimit = code === "resource_exhausted"
+  const isAuth = isCursorAuthError(code) || isCursorAuthError(errorMsg)
+
+  let status
+  let type
+  if (isAuth) {
+    status = HTTP_STATUS.UNAUTHORIZED
+    type = "authentication_error"
+  } else if (isRateLimit) {
+    status = HTTP_STATUS.RATE_LIMITED
+    type = "rate_limit_error"
+  } else {
+    status = HTTP_STATUS.BAD_REQUEST
+    type = "api_error"
+  }
 
   return new Response(JSON.stringify({
     error: {
       message: errorMsg,
-      type: isRateLimit ? "rate_limit_error" : "api_error",
-      code: jsonError?.error?.details?.[0]?.debug?.error || "unknown"
+      type,
+      code: jsonError?.error?.details?.[0]?.debug?.details?.error || jsonError?.error?.details?.[0]?.debug?.error || code || "unknown"
     }
   }), {
-    status: isRateLimit ? HTTP_STATUS.RATE_LIMITED : HTTP_STATUS.BAD_REQUEST,
+    status,
     headers: { "Content-Type": "application/json" }
   })
 }
@@ -225,14 +251,19 @@ export class CursorExecutor extends BaseExecutor {
 
       if (response.status !== 200) {
         const errorText = response.body?.toString() || "Unknown error"
+        // Remap Cursor's "not logged in" (delivered as HTTP 400) to 401 so the
+        // shared chatCore 401/403 branch can drive refreshCredentials + retry.
+        const remappedStatus = (response.status === 400 && isCursorAuthError(errorText))
+          ? HTTP_STATUS.UNAUTHORIZED
+          : response.status
         const errorResponse = new Response(JSON.stringify({
           error: {
             message: `[${response.status}]: ${errorText}`,
-            type: "invalid_request_error",
+            type: remappedStatus === HTTP_STATUS.UNAUTHORIZED ? "authentication_error" : "invalid_request_error",
             code: ""
           }
         }), {
-          status: response.status,
+          status: remappedStatus,
           headers: { "Content-Type": "application/json" }
         })
         return { response: errorResponse, url, headers, transformedBody: body }
