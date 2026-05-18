@@ -86,6 +86,26 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
 
+    // Antigravity model aliases encode a thinking tier as a suffix (e.g.
+    // gemini-3.1-pro-low / gemini-3.1-pro-high). A Gemini reasoning model with
+    // no explicit thinkingConfig spends its entire output budget on hidden
+    // reasoning tokens and emits (near-)empty content (decolua/9router#803).
+    // Derive a bounded thinkingBudget from the suffix (only when the client did
+    // not set one) and guarantee enough output headroom for the visible answer
+    // + tool calls. Budgets mirror openai-to-gemini.js ({low:1024, medium:8192,
+    // high:32768}); AG caps output at MAX_ANTIGRAVITY_OUTPUT_TOKENS.
+    const tierMatch = /-(low|medium|high)$/.exec(model || "");
+    const isGeminiModel = /gemini/i.test(model || "");
+    if (isGeminiModel && tierMatch && generationConfig.thinkingConfig?.thinkingBudget == null) {
+      const TIER_BUDGET = { low: 1024, medium: 8192, high: 32768 };
+      const budget = Math.min(TIER_BUDGET[tierMatch[1]], MAX_ANTIGRAVITY_OUTPUT_TOKENS - 2048);
+      generationConfig.thinkingConfig = { ...(generationConfig.thinkingConfig || {}), thinkingBudget: budget };
+      const minOut = Math.min(MAX_ANTIGRAVITY_OUTPUT_TOKENS, budget + 4096);
+      if (!(generationConfig.maxOutputTokens >= minOut)) {
+        generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+      }
+    }
+
     const transformedRequest = {
       ...requestWithoutTools,
       generationConfig,
