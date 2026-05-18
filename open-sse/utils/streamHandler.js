@@ -146,16 +146,29 @@ export function createDisconnectAwareStream(transformStream, streamController) {
  */
 export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
   let stallTimer = null;
+  const clearStall = () => {
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+  };
   const armStall = () => {
-    if (stallTimer) clearTimeout(stallTimer);
+    clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, STREAM_STALL_TIMEOUT_MS);
   };
-  const clearStall = () => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+
+  // Wrap controller so every termination path clears the stall timer.
+  // Without this, abort/cancel/downstream-error paths leave the timer armed
+  // and a stale abort could fire after the request has already ended.
+  const wrappedController = {
+    signal: streamController.signal,
+    startTime: streamController.startTime,
+    isConnected: () => streamController.isConnected(),
+    handleComplete: () => { clearStall(); streamController.handleComplete(); },
+    handleError: (e) => { clearStall(); streamController.handleError(e); },
+    handleDisconnect: (r) => { clearStall(); streamController.handleDisconnect(r); },
+    abort: () => { clearStall(); streamController.abort(); }
   };
 
   armStall();
@@ -174,7 +187,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    streamController
+    wrappedController
   );
 }
 
