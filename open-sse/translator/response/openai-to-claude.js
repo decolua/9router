@@ -88,7 +88,13 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 }
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 },
+        }
       }
     });
   }
@@ -194,13 +200,25 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
-    
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+
+    // Use tracked usage (will be estimated in stream.js if not valid).
+    // Strip any non-spec fields (e.g. `estimated`) and ensure cache fields
+    // are present — Claude Code's SDK rejects events with unknown keys.
+    const tracked = state.usage || { input_tokens: 0, output_tokens: 0 };
+    const cleanUsage = {
+      input_tokens: tracked.input_tokens ?? 0,
+      output_tokens: tracked.output_tokens ?? 0,
+      cache_creation_input_tokens: tracked.cache_creation_input_tokens ?? 0,
+      cache_read_input_tokens: tracked.cache_read_input_tokens ?? 0,
+      cache_creation: tracked.cache_creation ?? { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 },
+    };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
+      delta: {
+        stop_reason: convertFinishReason(choice.finish_reason),
+        stop_sequence: null,
+      },
+      usage: cleanUsage
     });
     results.push({ type: "message_stop" });
   }

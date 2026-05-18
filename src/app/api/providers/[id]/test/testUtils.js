@@ -70,6 +70,47 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   cline: { refreshable: true },
+  devin: {
+    // Probe via Codeium seat-management GetUserStatus — works for every
+    // shape we mint (sessionToken JWT, sk-ws-01-, cog_).
+    customProbe: async (connection, effectiveProxy) => {
+      const raw = connection.accessToken || connection.apiKey;
+      if (!raw) return { valid: false, error: "No Devin token" };
+      const apiKey = (raw.startsWith("sk-ws-01-") || raw.startsWith("cog_"))
+        ? raw
+        : (raw.startsWith("devin-session-token$") ? raw : `devin-session-token$${raw}`);
+      try {
+        const r = await fetchWithConnectionProxy(
+          "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Connect-Protocol-Version": "1",
+              Accept: "application/json",
+              "User-Agent": "windsurf/1.9600.41",
+            },
+            body: JSON.stringify({
+              metadata: {
+                apiKey,
+                ideName: "windsurf",
+                ideVersion: "1.9600.41",
+                extensionName: "windsurf",
+                extensionVersion: "1.9600.41",
+                locale: "en",
+              },
+            }),
+          },
+          effectiveProxy,
+        );
+        if (r.status === 401 || r.status === 403) return { valid: false, error: "Invalid or expired Devin token" };
+        if (!r.ok) return { valid: false, error: `GetUserStatus ${r.status}` };
+        return { valid: true, error: null };
+      } catch (err) {
+        return { valid: false, error: err.message };
+      }
+    },
+  },
   gitlab: {
     // Test by hitting the GitLab user API — requires api or read_user scope
     url: "https://gitlab.com/api/v4/user",
@@ -230,6 +271,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   // Cursor uses protobuf API - can only verify token exists, not test endpoint
   if (config.tokenExists) {
     return { valid: true, error: null, refreshed: false, newTokens: null };
+  }
+
+  // Custom probe (e.g. Devin → seat-management GetUserStatus)
+  if (typeof config.customProbe === "function") {
+    const r = await config.customProbe(connection, effectiveProxy);
+    return { valid: r.valid, error: r.error, refreshed: false, newTokens: null };
   }
 
   let accessToken = connection.accessToken;
@@ -596,6 +643,45 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const data = await res.json().catch(() => null);
         const valid = !!(data && data.user);
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
+      }
+      case "devin": {
+        const raw = connection.accessToken || connection.apiKey;
+        if (!raw) return { valid: false, error: "No Devin token" };
+
+        // sk-ws-01- / cog_ keys → bare; session tokens → keep prefix.
+        // Both shapes are accepted by Codeium's seat-management GetUserStatus
+        // when sent as metadata.apiKey. /v3/self only works for Devin.ai
+        // OAuth tokens, NOT for Windsurf session JWTs — using GetUserStatus
+        // here covers every shape we mint.
+        const apiKey = (raw.startsWith("sk-ws-01-") || raw.startsWith("cog_"))
+          ? raw
+          : (raw.startsWith("devin-session-token$") ? raw : `devin-session-token$${raw}`);
+        const r = await fetchWithConnectionProxy(
+          "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Connect-Protocol-Version": "1",
+              Accept: "application/json",
+              "User-Agent": "windsurf/1.9600.41",
+            },
+            body: JSON.stringify({
+              metadata: {
+                apiKey,
+                ideName: "windsurf",
+                ideVersion: "1.9600.41",
+                extensionName: "windsurf",
+                extensionVersion: "1.9600.41",
+                locale: "en",
+              },
+            }),
+          },
+          effectiveProxy,
+        );
+        if (r.status === 401 || r.status === 403) return { valid: false, error: "Invalid or expired Devin token" };
+        if (!r.ok) return { valid: false, error: `GetUserStatus ${r.status}` };
+        return { valid: true, error: null };
       }
       default:
         return { valid: false, error: "Provider test not supported" };

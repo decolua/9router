@@ -17,6 +17,7 @@ import {
   ANTIGRAVITY_CONFIG,
   GITHUB_CONFIG,
   KIRO_CONFIG,
+  DEVIN_CONFIG,
   CURSOR_CONFIG,
   KIMI_CODING_CONFIG,
   KILOCODE_CONFIG,
@@ -854,6 +855,22 @@ const PROVIDERS = {
       expiresIn: tokens.expiresIn || 86400,
       providerSpecificData: {
         machineId: tokens.machineId,
+        authMethod: "imported",
+      },
+    }),
+  },
+
+  devin: {
+    config: DEVIN_CONFIG,
+    flowType: "import_token",
+    // Devin uses import token flow - user pastes their API key from app.devin.ai/settings/service-users
+    // No OAuth flow needed, handled by /api/oauth/devin/import route
+    mapTokens: (tokens) => ({
+      accessToken: tokens.apiKey,
+      refreshToken: null,
+      expiresIn: null,
+      providerSpecificData: {
+        orgId: tokens.orgId,
         authMethod: "imported",
       },
     }),

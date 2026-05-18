@@ -45,6 +45,7 @@ export default function ProviderLimitCard({
       codex: "#10A37F",
       kiro: "#FF9900",
       claude: "#D97757",
+      devin: "#6366F1",
     };
     return colors[provider?.toLowerCase()] || "#6B7280";
   };

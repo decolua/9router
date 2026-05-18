@@ -73,6 +73,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
       return await getCodexUsage(accessToken, proxyOptions);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
+    case "devin":
+      return await getDevinUsage(accessToken, providerSpecificData, proxyOptions);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
@@ -850,6 +852,159 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
     message: fallbackMessage,
     quotas: {},
   };
+}
+
+/**
+ * Devin AI (Windsurf/Codeium) Usage — fetches plan + daily/weekly quota
+ * via the Connect-RPC GetUserStatus endpoint. Returns the same Daily/Weekly
+ * percentage breakdown shown on dwgx/WindsurfAPI's dashboard.
+ */
+const DEVIN_USER_STATUS_HOSTS = [
+  "https://server.codeium.com",
+  "https://server.self-serve.windsurf.com",
+];
+const DEVIN_USER_STATUS_PATH = "/exa.seat_management_pb.SeatManagementService/GetUserStatus";
+
+function devinUnixToIso(value) {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : parseInt(value, 10);
+  if (!Number.isFinite(n)) return null;
+  return new Date(n < 1e12 ? n * 1000 : n).toISOString();
+}
+
+async function getDevinUsage(accessToken, providerSpecificData, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "Devin token not available." };
+  }
+
+  // dwgx v2.0.90 finding: GetUserStatus accepts the prefixed sessionToken
+  // (devin-session-token$xxx) directly as metadata.apiKey. The bare JWT
+  // returns 401 invalid_api_key.
+  const apiKey = accessToken.startsWith("devin-session-token$")
+    ? accessToken
+    : `devin-session-token$${accessToken}`;
+  const body = JSON.stringify({
+    metadata: {
+      apiKey,
+      ideName: "windsurf",
+      ideVersion: "1.9600.41",
+      extensionName: "windsurf",
+      extensionVersion: "1.9600.41",
+      locale: "en",
+    },
+  });
+
+  const errors = [];
+  for (const host of DEVIN_USER_STATUS_HOSTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      let response;
+      try {
+        response = await proxyAwareFetch(`${host}${DEVIN_USER_STATUS_PATH}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Connect-Protocol-Version": "1",
+            "Accept": "application/json",
+            "User-Agent": "windsurf/1.9600.41",
+          },
+          body,
+          signal: controller.signal,
+        }, proxyOptions);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          message: "Devin quota API unavailable for this token shape. Chat may still work.",
+          quotas: {},
+        };
+      }
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        errors.push(`${host}=HTTP ${response.status} ${errBody.slice(0, 120)}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const ps = data?.userStatus?.planStatus || {};
+      const plan = ps.planInfo || {};
+      const legacyDiv = (n) => (typeof n === "number" ? n / 100 : null);
+
+      const dailyRemaining = typeof ps.dailyQuotaRemainingPercent === "number"
+        ? ps.dailyQuotaRemainingPercent
+        : null;
+      const weeklyRemaining = typeof ps.weeklyQuotaRemainingPercent === "number"
+        ? ps.weeklyQuotaRemainingPercent
+        : null;
+
+      const quotas = {};
+      if (dailyRemaining != null) {
+        quotas["daily"] = {
+          used: Math.max(0, Math.min(100, 100 - dailyRemaining)),
+          total: 100,
+          remaining: Math.max(0, Math.min(100, dailyRemaining)),
+          remainingPercentage: dailyRemaining,
+          resetAt: devinUnixToIso(ps.dailyQuotaResetAtUnix),
+          unlimited: false,
+        };
+      }
+      if (weeklyRemaining != null) {
+        quotas["weekly"] = {
+          used: Math.max(0, Math.min(100, 100 - weeklyRemaining)),
+          total: 100,
+          remaining: Math.max(0, Math.min(100, weeklyRemaining)),
+          remainingPercentage: weeklyRemaining,
+          resetAt: devinUnixToIso(ps.weeklyQuotaResetAtUnix),
+          unlimited: false,
+        };
+      }
+
+      const promptLimit = legacyDiv(plan.monthlyPromptCredits);
+      const promptUsed = legacyDiv(ps.usedPromptCredits);
+      const promptRemaining = legacyDiv(ps.availablePromptCredits);
+      if (promptLimit != null && promptLimit > 0) {
+        quotas["prompt credits"] = {
+          used: promptUsed ?? 0,
+          total: promptLimit,
+          remaining: promptRemaining ?? Math.max(0, promptLimit - (promptUsed || 0)),
+          unlimited: false,
+        };
+      }
+
+      const flexLimit = legacyDiv(plan.monthlyFlexCreditPurchaseAmount);
+      const flexUsed = legacyDiv(ps.usedFlexCredits);
+      const flexRemaining = legacyDiv(ps.availableFlexCredits);
+      if (flexLimit != null && flexLimit > 0) {
+        quotas["flex credits"] = {
+          used: flexUsed ?? 0,
+          total: flexLimit,
+          remaining: flexRemaining ?? Math.max(0, flexLimit - (flexUsed || 0)),
+          unlimited: false,
+        };
+      }
+
+      if (Object.keys(quotas).length === 0) {
+        return {
+          plan: plan.planName || "Devin",
+          message: "Devin connected. No quota data returned by the upstream.",
+          quotas: {},
+        };
+      }
+
+      return {
+        plan: plan.planName || "Devin",
+        quotas,
+      };
+    } catch (error) {
+      errors.push(`${host}=${error.message}`);
+    }
+  }
+
+  return { message: `Devin connected. Unable to fetch usage: ${errors.join(" | ")}`, quotas: {} };
 }
 
 /**

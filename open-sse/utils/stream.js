@@ -166,8 +166,13 @@ export function createSSEStream(options = {}) {
         if (!parsed) continue;
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
-        // For other formats: done=true is the [DONE] sentinel, skip
+        // For other formats: done=true is the [DONE] sentinel
+        // Claude SSE spec doesn't use [DONE] — stream just ends after message_stop
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
+          if (sourceFormat === FORMATS.CLAUDE) {
+            // skip — Anthropic SDK rejects [DONE]
+            continue;
+          }
           const output = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
@@ -335,9 +340,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const doneOutput = "data: [DONE]\n\n";
-        reqLogger?.appendConvertedChunk?.(doneOutput);
-        controller.enqueue(sharedEncoder.encode(doneOutput));
+        // Anthropic SSE spec ends after message_stop — no [DONE] sentinel
+        if (sourceFormat !== FORMATS.CLAUDE) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+        }
 
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);

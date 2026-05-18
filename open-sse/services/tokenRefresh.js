@@ -534,6 +534,9 @@ export async function getAccessToken(provider, credentials, log) {
 }
 
 async function _getAccessTokenInternal(provider, credentials, log) {
+  // Providers that use imported API keys — no refresh needed
+  if (provider === "devin") return credentials;
+
   switch (provider) {
     case "gemini":
     case "gemini-cli":
@@ -584,6 +587,9 @@ async function _getAccessTokenInternal(provider, credentials, log) {
  * Refresh token by provider type (helper for handlers)
  */
 export async function refreshTokenByProvider(provider, credentials, log) {
+  // Providers that use imported API keys — no refresh needed
+  if (provider === "devin") return credentials;
+
   if (!credentials.refreshToken) return null;
 
   switch (provider) {

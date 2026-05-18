@@ -176,6 +176,15 @@ export const KIRO_CONFIG = {
   authMethods: ["builder-id", "idc", "google", "github", "import"],
 };
 
+// Devin AI (Windsurf/Codeium backend) Configuration
+// The Devin CLI is built on Windsurf's infrastructure — auth is a Windsurf API key
+export const DEVIN_CONFIG = {
+  // Windsurf inference API
+  apiUrl: "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage",
+  // Windsurf user status endpoint (used to validate API key)
+  userStatusUrl: "https://server.codeium.com/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+};
+
 // Cursor OAuth Configuration (Import Token from Cursor IDE)
 // Cursor stores credentials in SQLite database: state.vscdb
 // Keys: cursorAuth/accessToken, storage.serviceMachineId
@@ -267,6 +276,7 @@ export const PROVIDERS = {
   OPENAI: "openai",
   GITHUB: "github",
   KIRO: "kiro",
+  DEVIN: "devin",
   CURSOR: "cursor",
   KIMI_CODING: "kimi-coding",
   KILOCODE: "kilocode",

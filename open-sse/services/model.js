@@ -62,6 +62,9 @@ const ALIAS_TO_PROVIDER_ID = {
   vertex: "vertex",
   vxp: "vertex-partner",
   "vertex-partner": "vertex-partner",
+  // Devin AI
+  dv: "devin",
+  devin: "devin",
   // Web cookie providers
   gw: "grok-web",
   "grok-web": "grok-web",

@@ -205,6 +205,15 @@ export const PROVIDERS = {
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev"
   },
+  devin: {
+    baseUrl: "https://server.codeium.com",
+    format: "devin",
+    retry: { 429: 2 },
+    headers: {
+      "Content-Type": "application/connect+proto",
+      "Connect-Protocol-Version": "1",
+    },
+  },
   cursor: {
     baseUrl: "https://api2.cursor.sh",
     chatPath: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",

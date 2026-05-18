@@ -15,6 +15,7 @@ import { GrokWebExecutor } from "./grok-web.js";
 import { PerplexityWebExecutor } from "./perplexity-web.js";
 import { OllamaLocalExecutor } from "./ollama-local.js";
 import { CommandCodeExecutor } from "./commandcode.js";
+import { DevinExecutor } from "./devin.js";
 import { DefaultExecutor } from "./default.js";
 
 const executors = {
@@ -37,6 +38,8 @@ const executors = {
   "perplexity-web": new PerplexityWebExecutor(),
   "ollama-local": new OllamaLocalExecutor(),
   commandcode: new CommandCodeExecutor(),
+  devin: new DevinExecutor(),
+  dv: new DevinExecutor(), // Alias for devin
 };
 
 const defaultCache = new Map();
@@ -70,3 +73,4 @@ export { GrokWebExecutor } from "./grok-web.js";
 export { PerplexityWebExecutor } from "./perplexity-web.js";
 export { OllamaLocalExecutor } from "./ollama-local.js";
 export { CommandCodeExecutor } from "./commandcode.js";
+export { DevinExecutor } from "./devin.js";

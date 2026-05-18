@@ -72,3 +72,10 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+# Local-only artifacts
+.playwright-mcp/
+__pycache__/
+*.pyc
+devin-*.png
+devin_sessions_tmp.db*
