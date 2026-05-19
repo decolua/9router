@@ -18,7 +18,21 @@ export function openaiToClaudeRequest(model, body, stream) {
   };
 
   // Temperature
-  if (body.temperature !== undefined) {
+  //
+  // Claude's Messages API rejects `temperature` when extended thinking is active.
+  // Two cases where thinking is on:
+  //   (a) Caller passes `body.thinking` or `body.reasoning_effort` (handled below
+  //       — `result.thinking` becomes truthy, and we strip temperature at the end).
+  //   (b) The request targets Claude OAuth (claude-code), which always sends
+  //       `Anthropic-Beta: ...,interleaved-thinking-2025-05-14,...` in headers.
+  //       The model is forced into thinking server-side, but neither `body.thinking`
+  //       nor `result.thinking` will be set, so we must detect this by model name.
+  //       This affects claude-opus-4.x and claude-sonnet-4.x (the families that
+  //       support extended thinking).
+  //
+  // For models that don't force thinking (haiku, older sonnets), preserve temperature.
+  const modelForcesThinking = /claude-(?:opus|sonnet)-4/i.test(model);
+  if (body.temperature !== undefined && !modelForcesThinking) {
     result.temperature = body.temperature;
   }
 
@@ -196,6 +210,14 @@ Respond ONLY with the JSON object, no other text.`);
     } else if (budget) {
       result.thinking = { type: "enabled", budget_tokens: budget };
     }
+  }
+
+  // Final guard: Claude rejects `temperature` whenever extended thinking is
+  // enabled. If we set `result.thinking` above from `body.thinking` or
+  // `body.reasoning_effort`, drop temperature defensively (the model-based
+  // strip earlier already covers Claude OAuth's forced-thinking case).
+  if (result.thinking && result.temperature !== undefined) {
+    delete result.temperature;
   }
 
   // Attach toolNameMap to result for response translation
