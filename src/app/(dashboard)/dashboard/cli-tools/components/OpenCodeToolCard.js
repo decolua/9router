@@ -432,7 +432,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                                                 }
                                               }}
                                               title="Remove model"
-                                              className="overflow-hidden w-0 group-hover/chip:w-4 transition-all duration-150 text-white hover:text-red-400 flex items-center justify-center shrink-0 ml-0.5 cursor-pointer"
+                                              className="flex items-center justify-center shrink-0 ml-0.5 cursor-pointer text-white hover:text-red-400 transition-colors"
                                             >
                                               <span className="material-symbols-outlined text-[12px]">close</span>
                                             </button>
