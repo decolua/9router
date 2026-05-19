@@ -190,5 +190,14 @@
   "Sudo Password": "Sudo-wachtwoord",
   "Click to add, click again to remove. Changes are saved automatically.": "Klik om toe te voegen, klik opnieuw om te verwijderen. Wijzigingen worden automatisch opgeslagen.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Risicokennisgeving: Deze provider gebruikt een abonnement/OAuth-sessie die niet officieel is gelicentieerd voor proxy/router-gebruik. Account kan worden beperkt of verbannen. Gebruik op eigen risico.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM onderschept HTTPS-verkeer van IDE-tools (Antigravity, GitHub Copilot, Kiro) via lokale CA om verzoeken om te leiden naar uw providers. Kan ToS schenden → risico op accountban. Gebruik op eigen risico."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM onderschept HTTPS-verkeer van IDE-tools (Antigravity, GitHub Copilot, Kiro) via lokale CA om verzoeken om te leiden naar uw providers. Kan ToS schenden → risico op accountban. Gebruik op eigen risico.",
+  "Select all": "Alles selecteren",
+  "Unselect all": "Alles deselecteren",
+  "Click a model to select it.": "Klik op een model om het te selecteren.",
+  "No models selected": "Geen modellen geselecteerd",
+  "Add Model": "Model toevoegen",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Laad eerst op via Billing, dan Services → AI → Top Up om saldo om te zetten in AI-credits. Ga dan naar het tabblad API Keys en klik op Add API Key (rechtsboven).",
+  "Click a model to set as active": "Klik op een model om het als actief in te stellen",
+  "Select Model": "Model selecteren",
+  "Click to clear active model": "Klik om actief model te wissen"
 }

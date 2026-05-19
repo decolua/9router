@@ -190,5 +190,14 @@
   "Sudo Password": "كلمة مرور Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "انقر للإضافة، انقر مرة أخرى للإزالة. يتم حفظ التغييرات تلقائيًا.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ تنبيه مخاطر: يستخدم هذا الموفر اشتراكًا/جلسة OAuth غير مرخصة رسميًا للاستخدام عبر البروكسي/الراوتر. قد يتم تقييد الحساب أو حظره. الاستخدام على مسؤوليتك الخاصة.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ يعترض MITM حركة مرور HTTPS لأدوات IDE (Antigravity، GitHub Copilot، Kiro) عبر CA محلية لإعادة توجيه الطلبات إلى مزوديك. قد ينتهك شروط الخدمة → خطر حظر الحساب. الاستخدام على مسؤوليتك الخاصة."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ يعترض MITM حركة مرور HTTPS لأدوات IDE (Antigravity، GitHub Copilot، Kiro) عبر CA محلية لإعادة توجيه الطلبات إلى مزوديك. قد ينتهك شروط الخدمة → خطر حظر الحساب. الاستخدام على مسؤوليتك الخاصة.",
+  "Select all": "تحديد الكل",
+  "Unselect all": "إلغاء تحديد الكل",
+  "Click a model to select it.": "انقر على نموذج لتحديده.",
+  "No models selected": "لم يتم تحديد نماذج",
+  "Add Model": "إضافة نموذج",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "قم بالشحن عبر الفوترة أولاً، ثم الخدمات ← الذكاء الاصطناعي ← شحن الرصيد لتحويل الرصيد إلى رصيد ذكاء اصطناعي. ثم انتقل إلى تبويب مفاتيح API وانقر على إضافة مفتاح API (أعلى اليمين).",
+  "Click a model to set as active": "انقر على نموذج لتعيينه كنموذج نشط",
+  "Select Model": "اختر نموذجاً",
+  "Click to clear active model": "انقر لمسح النموذج النشط"
 }

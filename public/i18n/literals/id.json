@@ -190,5 +190,14 @@
   "Sudo Password": "Kata Sandi Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Klik untuk menambah, klik lagi untuk menghapus. Perubahan disimpan secara otomatis.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Pemberitahuan Risiko: Penyedia ini menggunakan sesi langganan/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router. Akun mungkin dibatasi atau diblokir. Gunakan dengan risiko Anda sendiri.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM mencegat lalu lintas HTTPS alat IDE (Antigravity, GitHub Copilot, Kiro) melalui CA lokal untuk mengalihkan permintaan ke penyedia Anda. Mungkin melanggar ToS → risiko ban akun. Gunakan dengan risiko Anda sendiri."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM mencegat lalu lintas HTTPS alat IDE (Antigravity, GitHub Copilot, Kiro) melalui CA lokal untuk mengalihkan permintaan ke penyedia Anda. Mungkin melanggar ToS → risiko ban akun. Gunakan dengan risiko Anda sendiri.",
+  "Select all": "Pilih semua",
+  "Unselect all": "Batalkan semua pilihan",
+  "Click a model to select it.": "Klik model untuk memilihnya.",
+  "No models selected": "Tidak ada model yang dipilih",
+  "Add Model": "Tambah Model",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Top up melalui Billing terlebih dahulu, lalu Services → AI → Top Up untuk mengonversi saldo menjadi kredit AI. Kemudian buka tab API Keys dan klik Add API Key (kanan atas).",
+  "Click a model to set as active": "Klik model untuk menjadikannya aktif",
+  "Select Model": "Pilih Model",
+  "Click to clear active model": "Klik untuk menghapus model aktif"
 }

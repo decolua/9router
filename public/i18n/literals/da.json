@@ -190,5 +190,14 @@
   "Sudo Password": "Sudo-adgangskode",
   "Click to add, click again to remove. Changes are saved automatically.": "Klik for at tilføje, klik igen for at fjerne. Ændringer gemmes automatisk.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Risikomeddelelse: Denne udbyder bruger et abonnement/OAuth-session, der ikke er officielt licenseret til proxy/router-brug. Kontoen kan blive begrænset eller forbudt. Brug på eget ansvar.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM opfanger HTTPS-trafik fra IDE-værktøjer (Antigravity, GitHub Copilot, Kiro) via lokal CA for at omdirigere anmodninger til dine udbydere. Kan overtræde ToS → risiko for kontoforbud. Brug på eget ansvar."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM opfanger HTTPS-trafik fra IDE-værktøjer (Antigravity, GitHub Copilot, Kiro) via lokal CA for at omdirigere anmodninger til dine udbydere. Kan overtræde ToS → risiko for kontoforbud. Brug på eget ansvar.",
+  "Select all": "Vælg alle",
+  "Unselect all": "Fravælg alle",
+  "Click a model to select it.": "Klik på en model for at vælge den.",
+  "No models selected": "Ingen modeller valgt",
+  "Add Model": "Tilføj model",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Top op via Billing først, derefter Services → AI → Top Up for at konvertere saldo til AI-kreditter. Gå derefter til fanen API Keys og klik på Add API Key (øverst til højre).",
+  "Click a model to set as active": "Klik på en model for at sætte den som aktiv",
+  "Select Model": "Vælg model",
+  "Click to clear active model": "Klik for at rydde aktiv model"
 }

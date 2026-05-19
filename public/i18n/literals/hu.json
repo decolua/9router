@@ -190,5 +190,14 @@
   "Sudo Password": "Sudo jelszó",
   "Click to add, click again to remove. Changes are saved automatically.": "Kattintson a hozzáadáshoz, kattintson újra az eltávolításhoz. A változtatások automatikusan mentésre kerülnek.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Kockázati figyelmeztetés: Ez a szolgáltató olyan előfizetést/OAuth munkamenetet használ, amely hivatalosan nincs proxy/router használatra engedélyezve. A fiók korlátozható vagy letiltható. Saját felelősségre használja.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ A MITM elfogja az IDE eszközök (Antigravity, GitHub Copilot, Kiro) HTTPS forgalmát helyi CA-n keresztül, hogy átirányítsa a kéréseket a szolgáltatóidhoz. Megsértheti a ToS-t → fiók letiltási kockázat. Saját felelősségre használja."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ A MITM elfogja az IDE eszközök (Antigravity, GitHub Copilot, Kiro) HTTPS forgalmát helyi CA-n keresztül, hogy átirányítsa a kéréseket a szolgáltatóidhoz. Megsértheti a ToS-t → fiók letiltási kockázat. Saját felelősségre használja.",
+  "Select all": "Összes kijelölése",
+  "Unselect all": "Összes kijelölés megszüntetése",
+  "Click a model to select it.": "Kattintson egy modellre a kiválasztáshoz.",
+  "No models selected": "Nincs kiválasztott modell",
+  "Add Model": "Modell hozzáadása",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Először töltse fel a Billingen keresztül, majd Services → AI → Top Up az egyenleg AI kreditté alakításához. Ezután lépjen az API Keys fülre, és kattintson az Add API Key gombra (jobb felső sarokban).",
+  "Click a model to set as active": "Kattintson egy modellre az aktívként való beállításhoz",
+  "Select Model": "Modell kiválasztása",
+  "Click to clear active model": "Kattintson az aktív modell törléséhez"
 }
