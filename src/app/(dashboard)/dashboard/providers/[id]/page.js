@@ -42,6 +42,7 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [bulkUpdatingConnections, setBulkUpdatingConnections] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
@@ -464,6 +465,62 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleBulkSetActive = async (isActive) => {
+    if (selectedConnectionIds.length === 0 || bulkUpdatingConnections) return;
+    setBulkUpdatingConnections(true);
+    try {
+      let failed = 0;
+      for (const id of selectedConnectionIds) {
+        try {
+          const res = await fetch(`/api/providers/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isActive }),
+          });
+          if (!res.ok) failed += 1;
+        } catch (error) {
+          console.log("Error bulk updating connection status:", error);
+          failed += 1;
+        }
+      }
+      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
+      await fetchConnections();
+    } finally {
+      setBulkUpdatingConnections(false);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedConnectionIds.length === 0 || bulkUpdatingConnections) return;
+    const targetIds = [...selectedConnectionIds];
+    const count = targetIds.length;
+    setConfirmState({
+      title: "Delete Connections",
+      message: `Delete ${count} selected connection${count === 1 ? "" : "s"}?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        setBulkUpdatingConnections(true);
+        try {
+          let failed = 0;
+          for (const id of targetIds) {
+            try {
+              const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+              if (!res.ok) failed += 1;
+            } catch (error) {
+              console.log("Error bulk deleting connection:", error);
+              failed += 1;
+            }
+          }
+          if (failed > 0) alert(`Deleted with ${failed} failed request(s).`);
+          clearSelection();
+          await fetchConnections();
+        } finally {
+          setBulkUpdatingConnections(false);
+        }
+      }
+    });
+  };
+
   const handleSwapPriority = async (index1, index2) => {
     // Optimistic update state
     const newConnections = [...connections];
@@ -567,7 +624,7 @@ export default function ProviderDetailPage() {
   };
 
   const handleApplySinglePool = (proxyPoolId) => {
-    const targets = connections.map((c) => ({ connectionId: c.id, proxyPoolId }));
+    const targets = selectedConnections.map((c) => ({ connectionId: c.id, proxyPoolId }));
     return applyProxyAssignments(targets);
   };
 
@@ -577,7 +634,7 @@ export default function ProviderDetailPage() {
       alert("No active proxy pools available.");
       return;
     }
-    const targets = connections.map((c, i) => ({
+    const targets = selectedConnections.map((c, i) => ({
       connectionId: c.id,
       proxyPoolId: activePools[i % activePools.length].id,
     }));
@@ -591,7 +648,15 @@ export default function ProviderDetailPage() {
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {connections
         .map((conn, index) => (
-          <div key={conn.id} className="flex min-w-0 items-stretch">
+          <div key={conn.id} className={`flex min-w-0 items-stretch ${isSelected(conn.id) ? "bg-primary/5" : ""}`}>
+            <label className="flex shrink-0 items-center px-2" title="Select connection">
+              <input
+                type="checkbox"
+                checked={isSelected(conn.id)}
+                onChange={() => toggleSelectConnection(conn.id)}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+            </label>
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
@@ -638,9 +703,12 @@ export default function ProviderDetailPage() {
     <Modal
       isOpen={showBulkProxyModal}
       onClose={closeBulkProxyModal}
-      title={`Apply Proxy (${connections.length} connections)`}
+      title={`Apply Proxy (${selectedConnections.length} selected)`}
     >
       <div className="flex flex-col gap-3">
+        {selectedProxySummary && (
+          <p className="text-xs text-text-muted">{selectedProxySummary}</p>
+        )}
         <div className="flex flex-col">
           <button
             onClick={handleApplyOneToOne}
@@ -1032,16 +1100,6 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              {connections.length > 0 && proxyPools.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="lan"
-                  onClick={() => setShowBulkProxyModal(true)}
-                >
-                  Apply Proxy
-                </Button>
-              )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
@@ -1080,6 +1138,80 @@ export default function ProviderDetailPage() {
               </div>
             </div>
           </div>
+
+          {connections.length > 0 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-sidebar/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-text-main">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAllConnections}
+                    className="h-4 w-4 rounded border-border accent-primary"
+                  />
+                  {allSelected ? "Deselect all" : "Select all"}
+                </label>
+                <span className="text-xs text-text-muted">
+                  {selectedConnectionIds.length} selected of {connections.length}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                {proxyPools.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="lan"
+                    onClick={openBulkProxyModal}
+                    disabled={selectedConnectionIds.length === 0 || bulkUpdatingConnections}
+                    className="w-full sm:w-auto"
+                  >
+                    Proxy
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="toggle_on"
+                  onClick={() => handleBulkSetActive(true)}
+                  disabled={selectedConnectionIds.length === 0 || bulkUpdatingConnections}
+                  className="w-full sm:w-auto"
+                >
+                  Enable
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="toggle_off"
+                  onClick={() => handleBulkSetActive(false)}
+                  disabled={selectedConnectionIds.length === 0 || bulkUpdatingConnections}
+                  className="w-full sm:w-auto"
+                >
+                  Disable
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="delete"
+                  onClick={handleBulkDelete}
+                  disabled={selectedConnectionIds.length === 0 || bulkUpdatingConnections}
+                  className="w-full sm:w-auto"
+                >
+                  Delete
+                </Button>
+                {selectedConnectionIds.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={clearSelection}
+                    disabled={bulkUpdatingConnections}
+                    className="w-full sm:w-auto"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
