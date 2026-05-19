@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal, Tooltip } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -46,10 +46,13 @@ export default function ProviderDetailPage() {
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
+  const [refreshingModels, setRefreshingModels] = useState(false);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [disabledSearch, setDisabledSearch] = useState("");
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -343,6 +346,18 @@ export default function ProviderDetailPage() {
     if (!fetcher) return;
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
+
+  const handleRefreshModels = async () => {
+    const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+    if (!fetcher) return;
+    setRefreshingModels(true);
+    try {
+      const data = await fetchSuggestedModels(fetcher, true);
+      setSuggestedModels(data);
+    } finally {
+      setRefreshingModels(false);
+    }
+  };
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -703,6 +718,14 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // Compute disabled/active models at component scope so they're accessible outside renderModelsSection
+  const allLlmModels = [
+    ...models,
+    ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+  ].filter((m) => !m.type || m.type === "llm");
+  const disabledSet = new Set(disabledModelIds);
+  const disabledDisplayModels = allLlmModels.filter((m) => disabledSet.has(m.id));
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -721,13 +744,7 @@ export default function ProviderDetailPage() {
     }
     // Combine hardcoded models with Kilo free models (deduplicated)
     // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
-    const allModels = [
-      ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => !m.type || m.type === "llm");
-    const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
+    const displayModels = allLlmModels.filter((m) => !disabledSet.has(m.id));
     // Custom models added by user (stored as aliases: modelId → providerAlias/modelId)
     const customModels = Object.entries(modelAliases)
       .filter(([alias, fullModel]) => {
@@ -746,61 +763,105 @@ export default function ProviderDetailPage() {
       }));
 
     return (
-      <div className="flex flex-wrap gap-3">
-        {/* Custom models first */}
-        {customModels.map((model) => (
-          <ModelRow
-            key={model.id}
-            model={{ id: model.id }}
-            fullModel={`${providerDisplayAlias}/${model.id}`}
-            alias={model.alias}
-            copied={copied}
-            onCopy={copy}
-            onSetAlias={() => {}}
-            onDeleteAlias={() => handleDeleteAlias(model.alias)}
-            testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelId === model.id}
-            isCustom
-            isFree={false}
+      <div className="flex flex-col gap-4">
+        {/* Search box */}
+        <div className="relative">
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">search</span>
+          <input
+            type="text"
+            placeholder="Search models..."
+            value={modelSearch}
+            onChange={(e) => setModelSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
-        ))}
+          {modelSearch && (
+            <button onClick={() => setModelSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
+        </div>
 
-        {displayModels.map((model) => {
-          const fullModel = `${providerStorageAlias}/${model.id}`;
-          const oldFormatModel = `${providerId}/${model.id}`;
-          const existingAlias = Object.entries(modelAliases).find(
-            ([, m]) => m === fullModel || m === oldFormatModel
-          )?.[0];
-          return (
+        {/* Models grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {/* Custom models first — sorted alphabetically */}
+          {customModels
+            .filter(m => !modelSearch || m.id.toLowerCase().includes(modelSearch.toLowerCase()))
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map((model) => (
             <ModelRow
               key={model.id}
-              model={model}
+              model={{ id: model.id }}
               fullModel={`${providerDisplayAlias}/${model.id}`}
-              alias={existingAlias}
+              alias={model.alias}
               copied={copied}
               onCopy={copy}
-              onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+              onSetAlias={() => {}}
+              onDeleteAlias={() => setConfirmState({
+                title: "Remove Custom Model",
+                message: `Remove "${model.alias}" from your custom models? This cannot be undone.`,
+                onConfirm: () => { handleDeleteAlias(model.alias); setConfirmState(null); },
+              })}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
-              isFree={model.isFree}
-              onDisable={() => handleDisableModel(model.id)}
+              isCustom
+              isFree={false}
             />
-          );
-        })}
+          ))}
 
-        {/* Add model button — inline, same style as model chips */}
-        <button
-          onClick={() => setShowAddCustomModel(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
-        >
-          <span className="material-symbols-outlined text-sm">add</span>
-          Add Model
-        </button>
+          {displayModels
+            .filter(m => !modelSearch ||
+              m.id.toLowerCase().includes(modelSearch.toLowerCase()) ||
+              (m.name && m.name.toLowerCase().includes(modelSearch.toLowerCase()))
+            )
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map((model) => {
+              const fullModel = `${providerStorageAlias}/${model.id}`;
+              const oldFormatModel = `${providerId}/${model.id}`;
+              const existingAlias = Object.entries(modelAliases).find(
+                ([, m]) => m === fullModel || m === oldFormatModel
+              )?.[0];
+              return (
+                <ModelRow
+                  key={model.id}
+                  model={model}
+                  fullModel={`${providerDisplayAlias}/${model.id}`}
+                  alias={existingAlias}
+                  copied={copied}
+                  onCopy={copy}
+                  onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
+                  onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+                  testStatus={modelTestResults[model.id]}
+                  onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+                  isTesting={testingModelId === model.id}
+                  isFree={model.isFree}
+                  onDisable={() => handleDisableModel(model.id)}
+                />
+              );
+            })}
 
-        {/* Suggested models from provider API — show only models not yet added */}
+          {/* Add model button */}
+          {!modelSearch && (
+            <button
+              onClick={() => setShowAddCustomModel(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5"
+            >
+              <span className="material-symbols-outlined text-sm">add</span>
+              Add Model
+            </button>
+          )}
+
+          {/* No results */}
+          {modelSearch && customModels.filter(m => m.id.toLowerCase().includes(modelSearch.toLowerCase())).length === 0 &&
+            displayModels.filter(m => m.id.toLowerCase().includes(modelSearch.toLowerCase()) || (m.name && m.name.toLowerCase().includes(modelSearch.toLowerCase()))).length === 0 && (
+            <div className="col-span-full text-center py-6 text-text-muted text-xs">
+              <span className="material-symbols-outlined text-2xl block mb-1">search_off</span>
+              No models found for &quot;{modelSearch}&quot;
+            </div>
+          )}
+        </div>
+
+        {/* Suggested models */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set(Object.values(modelAliases));
           const hardcodedIds = new Set(models.map((m) => m.id));
@@ -809,7 +870,7 @@ export default function ProviderDetailPage() {
           );
           if (notAdded.length === 0) return null;
           return (
-            <div className="w-full mt-2">
+            <div className="w-full">
               <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
@@ -830,26 +891,6 @@ export default function ProviderDetailPage() {
             </div>
           );
         })()}
-
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
-          <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
-            <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleEnableModel(m.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                  title="Restore model"
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  {m.id}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -898,8 +939,7 @@ export default function ProviderDetailPage() {
         </Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
           <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: `${providerInfo.color}15` }}
+            className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-white"
           >
             {headerImgError ? (
               <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
@@ -950,16 +990,6 @@ export default function ProviderDetailPage() {
         <div className="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
           <span className="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
           <p className="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{providerInfo.notice.text}</p>
-          {providerInfo.notice.apiKeyUrl && (
-            <a
-              href={providerInfo.notice.apiKeyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
-            >
-              Get API Key →
-            </a>
-          )}
         </div>
       )}
 
@@ -1139,35 +1169,128 @@ export default function ProviderDetailPage() {
       {/* Models */}
       <Card>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold">
-            {"Available Models"}
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            Available Models
+            {!isCompatible && allLlmModels.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary">
+                {allLlmModels.length - disabledDisplayModels.length}
+              </span>
+            )}
           </h2>
-          {!isCompatible && (() => {
-            const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
-            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
-            return (
-              <div className="flex gap-2">
-                {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                    Active All
-                  </Button>
-                )}
-                {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
-                    Disable All
-                  </Button>
-                )}
-              </div>
-            );
-          })()}
+          <div className="flex gap-2 items-center">
+            {(OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher && (
+              <Button size="sm" variant="ghost" onClick={handleRefreshModels} loading={refreshingModels} icon="refresh">
+                Refresh
+              </Button>
+            )}
+            {!isCompatible && (() => {
+              const allIds = [
+                ...models,
+                ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+              ].filter((m) => !m.type || m.type === "llm").map((m) => m.id);
+              const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+              return (
+                <div className="flex gap-2">
+                  {disabledModelIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                      Active All
+                    </Button>
+                  )}
+                  {activeIds.length > 0 && (
+                    <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                      Disable All
+                    </Button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
         )}
         {renderModelsSection()}
+
+        {/* Disabled models — separate section inside same card */}
+        {!isCompatible && disabledDisplayModels.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                Disabled Models
+                <span className="px-1.5 py-0.5 rounded-full text-[11px] font-medium bg-primary/10 text-primary">
+                  {disabledDisplayModels.length}
+                </span>
+              </h2>
+              <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                Enable All
+              </Button>
+            </div>
+            {/* Disabled search */}
+            <div className="relative mb-3">
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px]">search</span>
+              <input
+                type="text"
+                placeholder="Search disabled models..."
+                value={disabledSearch}
+                onChange={(e) => setDisabledSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+              />
+              {disabledSearch && (
+                <button onClick={() => setDisabledSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main">
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {disabledDisplayModels
+                .filter(m => !disabledSearch ||
+                  m.id.toLowerCase().includes(disabledSearch.toLowerCase()) ||
+                  (m.name && m.name.toLowerCase().includes(disabledSearch.toLowerCase()))
+                )
+                .sort((a, b) => a.id.localeCompare(b.id))
+                .map((m) => {
+                  const fullModel = `${providerDisplayAlias}/${m.id}`;
+                  return (
+                    <div
+                      key={m.id}
+                      className="group min-w-0 rounded-lg border border-dashed border-border px-3 py-2 hover:bg-sidebar/50 hover:border-primary/40 transition-colors"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="material-symbols-outlined shrink-0 text-base text-text-muted">smart_toy</span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <Tooltip text={fullModel} position="top" className="relative w-full">
+                            <code className="block w-full truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted">{fullModel}</code>
+                          </Tooltip>
+                          {m.name && <span className="truncate pl-1 text-[9px] italic text-text-muted/70">{m.name}</span>}
+                        </div>
+                        <div className="relative shrink-0 group/btn">
+                          <button
+                            onClick={() => handleEnableModel(m.id)}
+                            className="rounded p-0.5 text-text-muted hover:bg-primary/10 hover:text-primary transition-colors"
+                            title="Restore model"
+                          >
+                            <span className="material-symbols-outlined text-sm">add_circle</span>
+                          </button>
+                          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+                            Restore
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              {disabledSearch && disabledDisplayModels.filter(m =>
+                m.id.toLowerCase().includes(disabledSearch.toLowerCase()) ||
+                (m.name && m.name.toLowerCase().includes(disabledSearch.toLowerCase()))
+              ).length === 0 && (
+                <div className="col-span-full text-center py-4 text-text-muted text-xs">
+                  <span className="material-symbols-outlined text-2xl block mb-1">search_off</span>
+                  No disabled models found for &quot;{disabledSearch}&quot;
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
 
       {bulkActionModal}

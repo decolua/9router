@@ -1,4 +1,7 @@
+"use client";
+
 import PropTypes from "prop-types";
+import Tooltip from "@/shared/components/Tooltip";
 
 export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable }) {
   const borderColor = testStatus === "ok"
@@ -14,16 +17,18 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     : undefined;
 
   return (
-    <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
-      <div className="flex min-w-0 items-start gap-2 sm:items-center">
+    <div className={`group min-w-0 rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
+      <div className="flex min-w-0 items-center gap-2">
         <span
           className="material-symbols-outlined shrink-0 text-base"
           style={iconColor ? { color: iconColor } : undefined}
         >
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{fullModel}</code>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <Tooltip text={fullModel} position="top" className="relative block w-full">
+            <code className="block w-full truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted cursor-default">{fullModel}</code>
+          </Tooltip>
           {model.name && <span className="truncate pl-1 text-[9px] italic text-text-muted/70">{model.name}</span>}
         </div>
         {onTest && (
@@ -56,21 +61,31 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           </span>
         </div>
         {isCustom ? (
-          <button
-            onClick={onDeleteAlias}
-            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
-            title="Remove custom model"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
+          <div className="relative shrink-0 group/btn">
+            <button
+              onClick={onDeleteAlias}
+              className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
+              title="Remove custom model"
+            >
+              <span className="material-symbols-outlined text-sm">delete</span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              Remove
+            </span>
+          </div>
         ) : onDisable ? (
-          <button
-            onClick={onDisable}
-            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
-            title="Disable this model"
-          >
-            <span className="material-symbols-outlined text-sm">close</span>
-          </button>
+          <div className="relative shrink-0 group/btn">
+            <button
+              onClick={onDisable}
+              className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-orange-500/10 hover:text-orange-500 sm:opacity-0 sm:group-hover:opacity-100"
+              title="Disable model"
+            >
+              <span className="material-symbols-outlined text-sm">block</span>
+            </button>
+            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+              Disable
+            </span>
+          </div>
         ) : null}
       </div>
     </div>
