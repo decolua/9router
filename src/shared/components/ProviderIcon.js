@@ -16,11 +16,11 @@ export default function ProviderIcon({
   if (!src || errored) {
     return (
       <span
-        className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
+        className={`inline-flex items-center justify-center font-bold rounded-lg bg-white ${className}`.trim()}
         style={{
           width: size,
           height: size,
-          color: fallbackColor,
+          color: fallbackColor || "#1a1a1a",
           fontSize: Math.max(10, Math.floor(size * 0.38)),
         }}
       >
@@ -35,7 +35,7 @@ export default function ProviderIcon({
       alt={alt}
       width={size}
       height={size}
-      className={className}
+      className={`bg-white rounded-lg ${className}`.trim()}
       onError={() => setErrored(true)}
     />
   );

@@ -29,7 +29,7 @@ const getPageInfo = (pathname) => {
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: `/providers/${providerId}.png` },
+        { label: provider?.name || providerId, image: `/providers/${providerId}.png`, textIcon: provider?.textIcon || providerId.slice(0, 2).toUpperCase() },
       ],
     };
   }
@@ -62,6 +62,7 @@ const getPageInfo = (pathname) => {
           {
             label: providerInfo.name,
             image: `/providers/${providerInfo.id}.png`,
+            textIcon: providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase(),
           },
         ],
       };
@@ -262,7 +263,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                         alt={crumb.label}
                         size={28}
                         className="object-contain rounded max-w-[28px] max-h-[28px]"
-                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
+                        fallbackText={crumb.textIcon || crumb.label.slice(0, 2).toUpperCase()}
                       />
                     )}
                     <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
