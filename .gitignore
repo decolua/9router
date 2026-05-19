@@ -72,3 +72,8 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+.claude/
+plans/
+.repomixignore
+CLAUDE.md
