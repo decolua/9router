@@ -383,7 +383,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const handleManualSubmit = async () => {
     try {
       setError(null);
-      const url = new URL(callbackUrl);
+
+      const input = callbackUrl.trim();
+
+      // Detect raw JWT access token (starts with eyJ) — skip URL parsing
+      if (input.startsWith("eyJ") && input.includes(".")) {
+        await exchangeTokens(input, null);
+        return;
+      }
+
+      const url = new URL(input);
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
