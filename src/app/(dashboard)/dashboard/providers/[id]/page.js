@@ -16,6 +16,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import CodexBulkImportModal from "./CodexBulkImportModal";
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -50,6 +51,7 @@ export default function ProviderDetailPage() {
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
+  const [showCodexBulkImportModal, setShowCodexBulkImportModal] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -1095,6 +1097,17 @@ export default function ProviderDetailPage() {
                     Cookie
                   </Button>
                 )}
+                {!isCompatible && providerId === "codex" && (
+                  <Button
+                    size="sm"
+                    icon="upload"
+                    variant="secondary"
+                    onClick={() => setShowCodexBulkImportModal(true)}
+                    title="Import accounts from JSON files"
+                  >
+                    Import JSON
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   icon="add"
@@ -1119,6 +1132,18 @@ export default function ProviderDetailPage() {
                       className="w-full sm:w-auto"
                     >
                       Cookie
+                    </Button>
+                  )}
+                  {providerId === "codex" && (
+                    <Button
+                      size="sm"
+                      icon="upload"
+                      variant="secondary"
+                      onClick={() => setShowCodexBulkImportModal(true)}
+                      title="Import accounts from JSON files"
+                      className="w-full sm:w-auto"
+                    >
+                      Import JSON
                     </Button>
                   )}
                   <Button
@@ -1257,6 +1282,13 @@ export default function ProviderDetailPage() {
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
+        />
+      )}
+      {providerId === "codex" && (
+        <CodexBulkImportModal
+          isOpen={showCodexBulkImportModal}
+          onSuccess={fetchConnections}
+          onClose={() => setShowCodexBulkImportModal(false)}
         />
       )}
 
