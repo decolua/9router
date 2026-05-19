@@ -15,7 +15,27 @@ function getConnectionLabel(connection) {
   return connection.name;
 }
 
-function sortVisibleConnections(connections, quotaData, expiringFirst) {
+function getConnectionQuotaRemaining(connection, quotaData) {
+  const quota = quotaData[connection.id]?.quotas?.[0];
+  if (!quota) return Number.POSITIVE_INFINITY;
+  if (typeof quota.remaining === "number") return quota.remaining;
+  return Number.POSITIVE_INFINITY;
+}
+
+function sortVisibleConnections(connections, quotaData, expiringFirst, providerFilter, quotaSortMode) {
+  if (providerFilter === "codex" && quotaSortMode !== "default") {
+    return [...connections].sort((a, b) => {
+      const remainingA = getConnectionQuotaRemaining(a, quotaData);
+      const remainingB = getConnectionQuotaRemaining(b, quotaData);
+      const remainingDiff = quotaSortMode === "remaining-asc"
+        ? remainingA - remainingB
+        : remainingB - remainingA;
+
+      if (remainingDiff !== 0) return remainingDiff;
+      return (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "");
+    });
+  }
+
   if (!expiringFirst) return connections;
 
   const getEarliestResetTime = (connection) => {
@@ -494,8 +514,8 @@ export default function ProviderLimits() {
   }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
 
   const sortedConnections = useMemo(
-    () => sortVisibleConnections(connections, quotaData, expiringFirst),
-    [connections, quotaData, expiringFirst],
+    () => sortVisibleConnections(connections, quotaData, expiringFirst, providerFilter, quotaSortMode),
+    [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
   // Connection is depleted when any quota entry hit the threshold
@@ -701,18 +721,20 @@ export default function ProviderLimits() {
             ))}
           </select>
 
-          <select
-            value={quotaSortMode}
-            onChange={(event) => setQuotaSortMode(event.target.value)}
-            className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
-            aria-label="Sort quota rows"
-          >
-            {QUOTA_SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          {providerFilter === "codex" && (
+            <select
+              value={quotaSortMode}
+              onChange={(event) => setQuotaSortMode(event.target.value)}
+              className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+              aria-label="Sort Codex quotas by remaining"
+            >
+              {QUOTA_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
 
           <button
             type="button"
@@ -915,7 +937,8 @@ export default function ProviderLimits() {
                   <QuotaTable
                     quotas={quota?.quotas}
                     compact
-                    sortMode={quotaSortMode}
+                    sortMode="default"
+                    showSortLabel={conn.provider === "codex" && quotaSortMode !== "default"}
                   />
                 )}
               </div>
