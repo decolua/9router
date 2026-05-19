@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -68,8 +69,18 @@ export class KiroExecutor extends BaseExecutor {
 
       // Success - transform and return
       // For Kiro, we need to transform the binary EventStream to SSE
-      // Create a TransformStream to convert binary to SSE text
-      const transformedResponse = this.transformEventStreamToSSE(response, model);
+      // Create a TransformStream to convert binary to SSE text.
+      //
+      // We pass a `thinkingExpected` hint based on the request body. When the
+      // user enabled thinking, Claude on Kiro streams its reasoning **inline**
+      // as `<thinking>…</thinking>` blocks inside `assistantResponseEvent`
+      // rather than as separate `reasoningContentEvent` frames. The transform
+      // stream uses this flag to split that inline reasoning back into the
+      // OpenAI `delta.reasoning_content` channel.
+      const upstreamUserContent =
+        transformedBody?.conversationState?.currentMessage?.userInputMessage?.content || "";
+      const thinkingExpected = upstreamUserContent.includes("<thinking_mode>enabled</thinking_mode>");
+      const transformedResponse = this.transformEventStreamToSSE(response, model, { thinkingExpected });
       return { response: transformedResponse, url, headers, transformedBody };
     }
   }
@@ -77,8 +88,19 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Transform AWS EventStream binary response to SSE text stream
    * Using TransformStream instead of ReadableStream.pull() to avoid Workers timeout
+   *
+   * @param {Response} response  Upstream raw fetch response (binary EventStream).
+   * @param {string}   model     Logical model id (kept in OpenAI chunks for clients).
+   * @param {object}   [opts]
+   * @param {boolean}  [opts.thinkingExpected=false]
+   *   When true, scan inbound `assistantResponseEvent.content` for inline
+   *   `<thinking>…</thinking>` blocks and split them out into the OpenAI
+   *   `delta.reasoning_content` channel. Required for Claude on Kiro because
+   *   it streams reasoning inline (not as `reasoningContentEvent`) when
+   *   `<thinking_mode>enabled</thinking_mode>` is in the system prompt.
    */
-  transformEventStreamToSSE(response, model) {
+  transformEventStreamToSSE(response, model, opts = {}) {
+    const thinkingExpected = !!opts.thinkingExpected;
     let buffer = new Uint8Array(0);
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
@@ -90,7 +112,91 @@ export class KiroExecutor extends BaseExecutor {
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      // Inline-thinking splitter state. `thinkingMode === true` means we are
+      // currently inside a `<thinking>…</thinking>` block, so subsequent text
+      // should be routed to `delta.reasoning_content`. `pendingTag` carries
+      // an unfinished tag fragment (e.g. `<thi`) across frames.
+      thinkingMode: false,
+      pendingTag: ""
+    };
+
+    // ---- Helpers ----------------------------------------------------------
+    // We declare these as locals (not arrow methods on `state`) so the
+    // TransformStream's `transform` function can call them directly via
+    // closure. They mutate `state.thinkingMode`, `state.pendingTag`, and
+    // emit OpenAI-shaped chunks via the supplied `controller`.
+    /**
+     * Emit a content delta. Sends `role: "assistant"` on the very first chunk
+     * of any kind (matching OpenAI's wire format).
+     */
+    const emitContent = (controller, content) => {
+      if (!content) return;
+      const chunkOut = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: chunkIndex === 0
+            ? { role: "assistant", content }
+            : { content },
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkOut)}\n\n`));
+    };
+
+    /**
+     * Emit a reasoning delta. Behaves like emitContent but writes the text to
+     * `delta.reasoning_content` so downstream translators (Anthropic /
+     * thinking_blocks, Claude SSE, etc.) can re-wrap it correctly.
+     */
+    const emitReasoning = (controller, reasoning) => {
+      if (!reasoning) return;
+      state.hasReasoningContent = true;
+      const reasoningDelta =
+        state.reasoningChunkCount === 0 && chunkIndex === 0
+          ? { role: "assistant", reasoning_content: reasoning }
+          : { reasoning_content: reasoning };
+      const chunkOut = {
+        id: responseId,
+        object: "chat.completion.chunk",
+        created,
+        model,
+        choices: [{
+          index: 0,
+          delta: reasoningDelta,
+          finish_reason: null
+        }]
+      };
+      chunkIndex++;
+      state.reasoningChunkCount++;
+      controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunkOut)}\n\n`));
+    };
+
+    /**
+     * Stream-safe `<thinking>` / `</thinking>` splitter.
+     *
+     * Walks one `assistantResponseEvent.content` slice at a time and emits
+     * either content or reasoning chunks based on the current mode. It carries
+     * a `pendingTag` buffer across slices so a tag split between frames
+     * (e.g. `…</think` then `ing>foo`) is still recognised.
+     *
+     * The splitter is only engaged when `thinkingExpected === true`. For
+     * non-thinking requests we keep the original passthrough path so any
+     * literal `<thinking>` text the user asked for in their answer is left
+     * alone.
+     */
+    const runSplitter = (controller, raw) => {
+      splitInlineThinking(
+        state,
+        raw,
+        (s) => emitContent(controller, s),
+        (s) => emitReasoning(controller, s)
+      );
     };
 
     const transformStream = new TransformStream({
@@ -127,22 +233,16 @@ export class KiroExecutor extends BaseExecutor {
           if (eventType === "assistantResponseEvent" && event.payload?.content) {
             const content = event.payload.content;
             state.totalContentLength += content.length;
-            
-            const chunk = {
-              id: responseId,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{
-                index: 0,
-                delta: chunkIndex === 0
-                  ? { role: "assistant", content }
-                  : { content },
-                finish_reason: null
-              }]
-            };
-            chunkIndex++;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+
+            if (thinkingExpected) {
+              // Claude on Kiro emits reasoning inline as `<thinking>…</thinking>`
+              // when the system prompt enables thinking. Split it into the
+              // OpenAI reasoning_content channel so downstream consumers see
+              // the same shape they would get from a native reasoning model.
+              runSplitter(controller, content);
+            } else {
+              emitContent(controller, content);
+            }
           }
 
           // Handle reasoningContentEvent (Kiro thinking / reasoning)
@@ -376,6 +476,14 @@ export class KiroExecutor extends BaseExecutor {
       },
 
       flush(controller) {
+        // Drain any pending inline-thinking tag fragment so we don't drop
+        // trailing characters when the stream ends mid-tag (e.g. `<thi`).
+        flushPendingThinking(
+          state,
+          (s) => emitContent(controller, s),
+          (s) => emitReasoning(controller, s)
+        );
+
         // Emit finish chunk if not already sent
         if (!state.finishEmitted) {
           state.finishEmitted = true;

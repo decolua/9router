@@ -1,43 +1,66 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 
 /**
  * Kiro Auth Method Selection Modal
- * Auto-detects token from AWS SSO cache or allows manual import
+ * Auto-detects token from AWS SSO cache or allows manual import.
+ *
+ * Manual import accepts multiple refresh tokens at once — paste one per line
+ * (or whitespace / comma / semicolon separated). Each token is validated and
+ * persisted independently; the modal reports a per-token summary on completion.
  */
 export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [idcStartUrl, setIdcStartUrl] = useState("");
   const [idcRegion, setIdcRegion] = useState("us-east-1");
-  const [refreshToken, setRefreshToken] = useState("");
+  const [refreshTokens, setRefreshTokens] = useState("");
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
-  const [autoDetected, setAutoDetected] = useState(false);
+  const [autoDetected, setAutoDetected] = useState(0);
+  const [importResult, setImportResult] = useState(null);
 
-  // Auto-detect token when import method is selected
+  // Live token count (handles whitespace / comma / semicolon separators).
+  const tokenCount = useMemo(() => {
+    return refreshTokens
+      .split(/[\s,;]+/g)
+      .map((t) => t.trim())
+      .filter(Boolean).length;
+  }, [refreshTokens]);
+
+  // Auto-detect token(s) from AWS SSO cache when import method is selected.
   useEffect(() => {
     if (selectedMethod !== "import" || !isOpen) return;
 
     const autoDetect = async () => {
       setAutoDetecting(true);
       setError(null);
-      setAutoDetected(false);
+      setAutoDetected(0);
+      setImportResult(null);
 
       try {
-        const res = await fetch("/api/oauth/kiro/auto-import");
+        const res = await fetch("/api/oauth/kiro/auto-import?all=1");
         const data = await res.json();
 
         if (data.found) {
-          setRefreshToken(data.refreshToken);
-          setAutoDetected(true);
+          const list = Array.isArray(data.tokens) && data.tokens.length > 0
+            ? data.tokens.map((t) => t.refreshToken)
+            : data.refreshToken
+              ? [data.refreshToken]
+              : [];
+          if (list.length > 0) {
+            setRefreshTokens(list.join("\n"));
+            setAutoDetected(list.length);
+          } else {
+            setError(data.error || "No tokens found in AWS SSO cache");
+          }
         } else {
           setError(data.error || "Could not auto-detect token");
         }
-      } catch (err) {
+      } catch {
         setError("Failed to auto-detect token");
       } finally {
         setAutoDetecting(false);
@@ -50,41 +73,74 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const handleMethodSelect = (method) => {
     setSelectedMethod(method);
     setError(null);
+    setImportResult(null);
   };
 
   const handleBack = () => {
     setSelectedMethod(null);
     setError(null);
+    setImportResult(null);
+    setRefreshTokens("");
   };
 
-  const handleImportToken = async () => {
-    if (!refreshToken.trim()) {
-      setError("Please enter a refresh token");
+  const handleImportTokens = async () => {
+    const tokens = refreshTokens
+      .split(/[\s,;]+/g)
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (tokens.length === 0) {
+      setError("Please paste at least one refresh token");
       return;
     }
 
     setImporting(true);
     setError(null);
+    setImportResult(null);
 
     try {
       const res = await fetch("/api/oauth/kiro/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+        body: JSON.stringify({ refreshTokens: tokens }),
       });
 
       const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data.error || "Import failed");
+      // The API returns 200/422 with imported/failed arrays. 4xx/5xx with an
+      // `error` field only happens for malformed payloads.
+      if (!data || (typeof data.success !== "boolean" && data.error)) {
+        throw new Error(data?.error || "Import failed");
       }
 
-      // Success - notify parent to refresh connections
-      onMethodSelect("import");
+      const imported = Array.isArray(data.imported) ? data.imported : [];
+      const failed = Array.isArray(data.failed) ? data.failed : [];
+      setImportResult({ imported, failed });
+
+      if (imported.length === 0 && failed.length > 0) {
+        setError(
+          failed.length === 1
+            ? failed[0].error || "Token validation failed"
+            : `All ${failed.length} tokens failed to import`
+        );
+      }
+      // Stay open so the user can review the per-token outcome. The "Done"
+      // button below calls onMethodSelect("import") which triggers parent
+      // refresh + close.
     } catch (err) {
       setError(err.message);
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleImportDone = () => {
+    if (importResult && importResult.imported.length > 0) {
+      // Tell parent to refresh its connection list and close the modal.
+      onMethodSelect("import");
+    } else {
+      // No imports succeeded — just go back to method selection.
+      handleBack();
     }
   };
 
@@ -184,7 +240,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 <div className="flex-1">
                   <h3 className="font-semibold mb-1">Import Token</h3>
                   <p className="text-sm text-text-muted">
-                    Paste refresh token from Kiro IDE.
+                    Paste one or more refresh tokens from Kiro IDE. Bulk import supported.
                   </p>
                 </div>
               </div>
@@ -307,7 +363,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                     progress_activity
                   </span>
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Auto-detecting token...</h3>
+                <h3 className="text-lg font-semibold mb-2">Auto-detecting tokens...</h3>
                 <p className="text-sm text-text-muted">
                   Reading from AWS SSO cache
                 </p>
@@ -318,24 +374,26 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
             {!autoDetecting && (
               <>
                 {/* Success message if auto-detected */}
-                {autoDetected && (
+                {autoDetected > 0 && !importResult && (
                   <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
                     <div className="flex gap-2">
                       <span className="material-symbols-outlined text-green-600 dark:text-green-400">check_circle</span>
                       <p className="text-sm text-green-800 dark:text-green-200">
-                        Token auto-detected from Kiro IDE successfully!
+                        {autoDetected === 1
+                          ? "Token auto-detected from Kiro IDE successfully!"
+                          : `${autoDetected} tokens auto-detected from AWS SSO cache.`}
                       </p>
                     </div>
                   </div>
                 )}
 
                 {/* Info message if not auto-detected */}
-                {!autoDetected && !error && (
+                {autoDetected === 0 && !error && !importResult && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
                     <div className="flex gap-2">
                       <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
                       <p className="text-sm text-blue-800 dark:text-blue-200">
-                        Kiro IDE not detected. Please paste your refresh token manually.
+                        Kiro IDE not detected. Paste one or more refresh tokens below — one per line.
                       </p>
                     </div>
                   </div>
@@ -343,28 +401,86 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Refresh Token <span className="text-red-500">*</span>
+                    Refresh Tokens <span className="text-red-500">*</span>
                   </label>
-                  <Input
-                    value={refreshToken}
-                    onChange={(e) => setRefreshToken(e.target.value)}
-                    placeholder="Token will be auto-filled..."
-                    className="font-mono text-sm"
+                  <textarea
+                    value={refreshTokens}
+                    onChange={(e) => setRefreshTokens(e.target.value)}
+                    placeholder={"aorAAAAAG...\naorAAAAAG...\naorAAAAAG..."}
+                    rows={6}
+                    spellCheck={false}
+                    className="w-full py-2.5 px-3 text-sm font-mono text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out resize-y"
                   />
+                  <p className="text-xs text-text-muted mt-1">
+                    {tokenCount > 0
+                      ? `${tokenCount} token${tokenCount === 1 ? "" : "s"} ready to import`
+                      : "Paste one or more refresh tokens. Separate by newline, comma, or whitespace."}
+                  </p>
                 </div>
 
-                {error && (
+                {/* Per-token result summary */}
+                {importResult && (
+                  <div className="space-y-2">
+                    {importResult.imported.length > 0 && (
+                      <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                        <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-1">
+                          ✓ Imported {importResult.imported.length} token{importResult.imported.length === 1 ? "" : "s"}
+                        </p>
+                        <ul className="text-xs text-green-700 dark:text-green-300 space-y-0.5 font-mono">
+                          {importResult.imported.map((r, i) => (
+                            <li key={`ok-${i}`}>
+                              {r.refreshToken}
+                              {r.email ? ` — ${r.email}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {importResult.failed.length > 0 && (
+                      <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                        <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-1">
+                          ✗ Failed {importResult.failed.length} token{importResult.failed.length === 1 ? "" : "s"}
+                        </p>
+                        <ul className="text-xs text-red-700 dark:text-red-300 space-y-0.5">
+                          {importResult.failed.map((r, i) => (
+                            <li key={`err-${i}`}>
+                              <span className="font-mono">{r.refreshToken}</span>
+                              {": "}
+                              <span>{r.error}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {error && !importResult && (
                   <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
                     <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
                   </div>
                 )}
 
                 <div className="flex gap-2">
-                  <Button onClick={handleImportToken} fullWidth disabled={importing || !refreshToken.trim()}>
-                    {importing ? "Importing..." : "Import Token"}
-                  </Button>
-                  <Button onClick={handleBack} variant="ghost" fullWidth>
-                    Back
+                  {!importResult && (
+                    <Button
+                      onClick={handleImportTokens}
+                      fullWidth
+                      disabled={importing || tokenCount === 0}
+                    >
+                      {importing
+                        ? "Importing..."
+                        : tokenCount > 1
+                          ? `Import ${tokenCount} Tokens`
+                          : "Import Token"}
+                    </Button>
+                  )}
+                  <Button
+                    onClick={importResult ? handleImportDone : handleBack}
+                    variant={importResult ? "primary" : "ghost"}
+                    fullWidth
+                  >
+                    {importResult ? "Done" : "Back"}
                   </Button>
                 </div>
               </>
