@@ -203,7 +203,7 @@ export const PROVIDER_MODELS = {
     // { id: "trinity-large-preview-free", name: "Trinity Large Preview" },
   ],
 
-  sp: [  // SumoPod
+  sumopod: [  // SumoPod
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
@@ -256,7 +256,7 @@ export const PROVIDER_MODELS = {
     { id: "openai/gpt-oss-20b", name: "GPT OSS 20B" },
   ],
 
-  x5l: [  // X5Lab
+  x5lab: [  // X5Lab
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
     { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
@@ -947,8 +947,8 @@ export function getModelQuotaFamily(aliasOrId, modelId) {
   return found?.quotaFamily || "normal";
 }
 
-// OAuth providers that use short aliases (everything else: alias = id)
-const OAUTH_ALIASES = {
+// Providers whose alias differs from their ID (OAuth and select API-key providers)
+const PROVIDER_ALIASES = {
   claude: "cc",
   codex: "cx",
   "gemini-cli": "gc",
@@ -970,7 +970,7 @@ const OAUTH_ALIASES = {
 
 // Derived from PROVIDERS — no need to maintain manually
 export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
-  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+  Object.keys(PROVIDERS).map(id => [id, PROVIDER_ALIASES[id] || id])
 );
 
 export function getModelsByProviderId(providerId) {
