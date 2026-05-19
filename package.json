@@ -4,12 +4,12 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --port 20128",
+    "dev": "next dev --webpack --port 20128 -H 0.0.0.0",
     "build": "next build --webpack",
-    "start": "next start",
-    "dev:bun": "bun --bun next dev --webpack --port 20128",
+    "start": "next start --port 20128 --hostname 0.0.0.0",
+    "dev:bun": "bun --bun next dev --webpack --port 20128 -H 0.0.0.0",
     "build:bun": "bun --bun next build --webpack",
-    "start:bun": "bun ./.next/standalone/server.js"
+    "start:bun": "HOSTNAME=0.0.0.0 PORT=20128 bun ./.next/standalone/server.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
