@@ -76,6 +76,19 @@ export function calculatePercentage(used, total) {
 }
 
 /**
+ * Get remaining percentage from a normalized quota row
+ * @param {Object} quota - Normalized quota object
+ * @returns {number} Remaining percentage (0-100)
+ */
+export function getRemainingPercentage(quota) {
+  if (quota?.remainingPercentage !== undefined) {
+    return Math.round(quota.remainingPercentage);
+  }
+
+  return calculatePercentage(quota?.used, quota?.total);
+}
+
+/**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
  * @param {Object} data - Raw quota data from provider
