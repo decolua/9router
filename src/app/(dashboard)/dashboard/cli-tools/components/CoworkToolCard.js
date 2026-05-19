@@ -80,7 +80,7 @@ export default function CoworkToolCard({
     if (status?.cowork?.models?.length) {
       const models = status.cowork.models;
       setSelectedModels(models);
-      // Default all groups collapsed
+      // Initialize all groups as expanded (false = expanded, true = collapsed)
       const groups = groupModelsByProvider(models);
       setCollapsedGroups(Object.fromEntries(Object.keys(groups).map(k => [k, false])));
     }
