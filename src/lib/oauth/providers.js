@@ -53,15 +53,15 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
-// Extract codex account info from id_token
+// Extract codex account info from id_token or access token
 export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
   if (!payload) return {};
   const chatgpt = payload["https://api.openai.com/auth"] || {};
   return {
     email: payload.email,
-    chatgptAccountId: chatgpt.chatgpt_account_id,
-    chatgptPlanType: chatgpt.chatgpt_plan_type,
+    chatgptAccountId: chatgpt.chatgpt_account_id || payload.account_id,
+    chatgptPlanType: chatgpt.chatgpt_plan_type || payload.plan_type,
   };
 }
 

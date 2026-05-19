@@ -143,15 +143,29 @@ export async function POST(request, { params }) {
       if (code && code.startsWith("eyJ") && code.includes(".")) {
         const { extractCodexAccountInfo } = await import("@/lib/oauth/providers");
         const info = extractCodexAccountInfo(code);
+
+        // Also decode JWT directly for ChatGPT website tokens which use
+        // top-level account_id/plan_type instead of nested openai auth claims
+        let directPayload = {};
+        try {
+          const b64 = code.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+          const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+          directPayload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+        } catch {}
+
+        const accountId = info.chatgptAccountId || directPayload.account_id;
+        const planType = info.chatgptPlanType || directPayload.plan_type;
+        const email = info.email || directPayload.email;
+
         const providerSpecificData = { authMethod: "access_token" };
-        if (info.chatgptAccountId) providerSpecificData.chatgptAccountId = info.chatgptAccountId;
-        if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
+        if (accountId) providerSpecificData.chatgptAccountId = accountId;
+        if (planType) providerSpecificData.chatgptPlanType = planType;
 
         const connection = await createProviderConnection({
           provider,
           authType: "access_token",
           accessToken: code,
-          email: info.email || null,
+          email: email || null,
           providerSpecificData,
           testStatus: "active",
         });
