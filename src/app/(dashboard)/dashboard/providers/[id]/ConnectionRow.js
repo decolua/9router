@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -109,6 +109,23 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return "default";
   };
 
+  const getOneByOneVariant = () => {
+    if (!oneByOneStatus) return "default";
+    if (oneByOneStatus.state === "success") return "success";
+    if (oneByOneStatus.state === "failed") return "error";
+    if (oneByOneStatus.state === "testing") return "primary";
+    return "default";
+  };
+
+  const getOneByOneLabel = () => {
+    if (!oneByOneStatus) return null;
+    if (oneByOneStatus.state === "queued") return "queued";
+    if (oneByOneStatus.state === "testing") return "testing";
+    if (oneByOneStatus.state === "success") return "success";
+    if (oneByOneStatus.state === "failed") return oneByOneStatus.error ? `failed: ${oneByOneStatus.error}` : "failed";
+    return null;
+  };
+
   return (
     <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
@@ -152,6 +169,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
+            )}
+            {getOneByOneLabel() && (
+              <Badge variant={getOneByOneVariant()} size="sm">
+                {getOneByOneLabel()}
+              </Badge>
             )}
           </div>
           {hasAnyProxy && (
@@ -258,5 +280,9 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  oneByOneStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
+  }),
 };
 

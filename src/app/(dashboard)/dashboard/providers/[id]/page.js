@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -16,6 +16,12 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+
+const ONE_BY_ONE_DELAY_MS = 1000;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export default function ProviderDetailPage() {
   const params = useParams();
@@ -50,6 +56,12 @@ export default function ProviderDetailPage() {
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
+  const [oneByOneRunning, setOneByOneRunning] = useState(false);
+  const [oneByOneStopping, setOneByOneStopping] = useState(false);
+  const [oneByOneCurrentConnectionId, setOneByOneCurrentConnectionId] = useState(null);
+  const [oneByOneResults, setOneByOneResults] = useState({});
+  const [oneByOneSummary, setOneByOneSummary] = useState(null);
+  const stopOneByOneRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -376,6 +388,98 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleRunOneByOneTest = async () => {
+    if (oneByOneRunning || connections.length === 0) return;
+
+    const queuedState = Object.fromEntries(
+      connections.map((connection) => [connection.id, { state: "queued", error: null }]),
+    );
+
+    stopOneByOneRef.current = false;
+    setOneByOneRunning(true);
+    setOneByOneStopping(false);
+    setOneByOneCurrentConnectionId(null);
+    setOneByOneResults(queuedState);
+    setOneByOneSummary({ total: connections.length, completed: 0, passed: 0, failed: 0, stopped: false });
+
+    let passed = 0;
+    let failed = 0;
+
+    try {
+      for (let index = 0; index < connections.length; index += 1) {
+        if (stopOneByOneRef.current) {
+          setOneByOneSummary({
+            total: connections.length,
+            completed: index,
+            passed,
+            failed,
+            stopped: true,
+          });
+          break;
+        }
+
+        const connection = connections[index];
+        setOneByOneCurrentConnectionId(connection.id);
+        setOneByOneResults((prev) => ({
+          ...prev,
+          [connection.id]: { state: "testing", error: null },
+        }));
+
+        try {
+          const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+          const data = await res.json();
+          const valid = !!data.valid;
+
+          if (valid) {
+            passed += 1;
+          } else {
+            failed += 1;
+          }
+
+          setOneByOneResults((prev) => ({
+            ...prev,
+            [connection.id]: {
+              state: valid ? "success" : "failed",
+              error: valid ? null : (data.error || null),
+            },
+          }));
+        } catch (error) {
+          failed += 1;
+          setOneByOneResults((prev) => ({
+            ...prev,
+            [connection.id]: {
+              state: "failed",
+              error: error.message || "Test failed",
+            },
+          }));
+        }
+
+        setOneByOneSummary({
+          total: connections.length,
+          completed: index + 1,
+          passed,
+          failed,
+          stopped: false,
+        });
+
+        if (index < connections.length - 1) {
+          await sleep(ONE_BY_ONE_DELAY_MS);
+        }
+      }
+    } finally {
+      setOneByOneCurrentConnectionId(null);
+      setOneByOneRunning(false);
+      setOneByOneStopping(false);
+      stopOneByOneRef.current = false;
+    }
+  };
+
+  const handleStopOneByOneTest = () => {
+    if (!oneByOneRunning) return;
+    stopOneByOneRef.current = true;
+    setOneByOneStopping(true);
+  };
+
   const handleDelete = async (id) => {
     setConfirmState({
       title: "Delete Connection",
@@ -625,6 +729,7 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                oneByOneStatus={oneByOneResults[conn.id] || null}
               />
             </div>
           </div>
@@ -1042,6 +1147,30 @@ export default function ProviderDetailPage() {
                   Apply Proxy
                 </Button>
               )}
+              {connections.length > 0 && (
+                <>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="sync"
+                    onClick={handleRunOneByOneTest}
+                    disabled={oneByOneRunning}
+                  >
+                    {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
+                  </Button>
+                  {oneByOneRunning && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="stop"
+                      onClick={handleStopOneByOneTest}
+                      disabled={oneByOneStopping}
+                    >
+                      {oneByOneStopping ? "Stopping..." : "Stop"}
+                    </Button>
+                  )}
+                </>
+              )}
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
@@ -1106,6 +1235,22 @@ export default function ProviderDetailPage() {
             </div>
           ) : (
             <>
+              {oneByOneSummary && (
+                <div className="mb-4 rounded-lg border border-black/10 bg-black/[0.02] px-3 py-2 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span>Total: {oneByOneSummary.total}</span>
+                    <span>Completed: {oneByOneSummary.completed}</span>
+                    <span>Passed: {oneByOneSummary.passed}</span>
+                    <span>Failed: {oneByOneSummary.failed}</span>
+                    {oneByOneSummary.stopped && (
+                      <span className="text-amber-600 dark:text-amber-400">Stopped</span>
+                    )}
+                    {oneByOneRunning && oneByOneCurrentConnectionId && (
+                      <span>Running: {connections.find((conn) => conn.id === oneByOneCurrentConnectionId)?.name || oneByOneCurrentConnectionId}</span>
+                    )}
+                  </div>
+                </div>
+              )}
               {connectionsList}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
