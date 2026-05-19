@@ -106,17 +106,10 @@ export async function createProviderConnection(data) {
         if (incomingWs && existingWs) return incomingWs === existingWs;
         return true; // fallback: email-only match for non-workspace providers
       });
-    } else if (data.authType === "access_token" && data.email) {
-      const incomingWs = data.providerSpecificData?.chatgptAccountId;
-      existing = all.find(c => {
-        if (c.authType !== "access_token" || c.email !== data.email) return false;
-        const existingWs = c.providerSpecificData?.chatgptAccountId;
-        if (incomingWs && existingWs) return incomingWs === existingWs;
-        return true;
-      });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
     }
+    // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
