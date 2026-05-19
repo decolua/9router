@@ -9,7 +9,8 @@ import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 
 function getConnectionLabel(connection) {
-  const isEmail = (value) => typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  const isEmail = (value) =>
+    typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   if (isEmail(connection.email)) return connection.email;
   if (isEmail(connection.name)) return connection.name;
   return connection.name;
@@ -22,17 +23,26 @@ function getConnectionQuotaRemaining(connection, quotaData) {
   return Number.POSITIVE_INFINITY;
 }
 
-function sortVisibleConnections(connections, quotaData, expiringFirst, providerFilter, quotaSortMode) {
+function sortVisibleConnections(
+  connections,
+  quotaData,
+  expiringFirst,
+  providerFilter,
+  quotaSortMode,
+) {
   if (providerFilter === "codex" && quotaSortMode !== "default") {
     return [...connections].sort((a, b) => {
       const remainingA = getConnectionQuotaRemaining(a, quotaData);
       const remainingB = getConnectionQuotaRemaining(b, quotaData);
-      const remainingDiff = quotaSortMode === "remaining-asc"
-        ? remainingA - remainingB
-        : remainingB - remainingA;
+      const remainingDiff =
+        quotaSortMode === "remaining-asc"
+          ? remainingA - remainingB
+          : remainingB - remainingA;
 
       if (remainingDiff !== 0) return remainingDiff;
-      return (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "");
+      return (getConnectionLabel(a) || "").localeCompare(
+        getConnectionLabel(b) || "",
+      );
     });
   }
 
@@ -40,15 +50,24 @@ function sortVisibleConnections(connections, quotaData, expiringFirst, providerF
 
   const getEarliestResetTime = (connection) => {
     const resetTimes = (quotaData[connection.id]?.quotas || [])
-      .map((quota) => (quota.resetAt ? new Date(quota.resetAt).getTime() : Number.POSITIVE_INFINITY))
+      .map((quota) =>
+        quota.resetAt
+          ? new Date(quota.resetAt).getTime()
+          : Number.POSITIVE_INFINITY,
+      )
       .filter((time) => Number.isFinite(time));
-    return resetTimes.length > 0 ? Math.min(...resetTimes) : Number.POSITIVE_INFINITY;
+    return resetTimes.length > 0
+      ? Math.min(...resetTimes)
+      : Number.POSITIVE_INFINITY;
   };
 
   return [...connections].sort((a, b) => {
     const expiryDiff = getEarliestResetTime(a) - getEarliestResetTime(b);
     if (expiryDiff !== 0) return expiryDiff;
-    return (a.provider || "").localeCompare(b.provider || "") || (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "");
+    return (
+      (a.provider || "").localeCompare(b.provider || "") ||
+      (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "")
+    );
   });
 }
 
@@ -62,7 +81,9 @@ function buildLoadingState(connections) {
 
 function filterQuotaStateByConnections(state, connections) {
   const visibleIds = new Set(connections.map((connection) => connection.id));
-  return Object.fromEntries(Object.entries(state).filter(([id]) => visibleIds.has(id)));
+  return Object.fromEntries(
+    Object.entries(state).filter(([id]) => visibleIds.has(id)),
+  );
 }
 
 function getConnectionsPageRange(pagination) {
@@ -80,7 +101,8 @@ function getConnectionsEmptyMessage(totals, providerFilter, accountFilter) {
     return {
       icon: "cloud_off",
       title: "No Providers Connected",
-      description: "Connect to providers with OAuth to track your API quota limits and usage.",
+      description:
+        "Connect to providers with OAuth to track your API quota limits and usage.",
     };
   }
 
@@ -88,16 +110,18 @@ function getConnectionsEmptyMessage(totals, providerFilter, accountFilter) {
     return {
       icon: "filter_alt_off",
       title: "No Accounts Match Current Filters",
-      description: providerFilter === "all"
-        ? "Try changing the account status filter to see more quota trackers."
-        : `No ${accountFilter === "inactive" ? "turned off" : accountFilter === "active" ? "active" : "matching"} accounts found for ${providerFilter}.`,
+      description:
+        providerFilter === "all"
+          ? "Try changing the account status filter to see more quota trackers."
+          : `No ${accountFilter === "inactive" ? "turned off" : accountFilter === "active" ? "active" : "matching"} accounts found for ${providerFilter}.`,
     };
   }
 
   return {
     icon: "filter_alt_off",
     title: "No Accounts On This Page",
-    description: "Try moving to another page or refreshing the current filters.",
+    description:
+      "Try moving to another page or refreshing the current filters.",
   };
 }
 
@@ -105,8 +129,8 @@ function sortRequestFromExpiringFirst(expiringFirst) {
   return expiringFirst ? "expiring" : "priority";
 }
 
-function getPageSizeLabel(pageSize) {
-  return `${pageSize} / page`;
+function getPageSizeLabel(pageSize, isCustomPageSize) {
+  return isCustomPageSize ? `Custom: ${pageSize} / page` : `${pageSize} / page`;
 }
 
 function getConnectionsPaginationSummary(pagination) {
@@ -115,11 +139,23 @@ function getConnectionsPaginationSummary(pagination) {
 }
 
 function getSafePagination(pagination, fallbackPageSize) {
-  return pagination || { page: 1, pageSize: fallbackPageSize, total: 0, totalPages: 1 };
+  return (
+    pagination || {
+      page: 1,
+      pageSize: fallbackPageSize,
+      total: 0,
+      totalPages: 1,
+    }
+  );
 }
 
 function getSafeTotals(totals, fallbackTotal = 0) {
-  return totals || { eligibleConnections: fallbackTotal, providerFilteredConnections: fallbackTotal };
+  return (
+    totals || {
+      eligibleConnections: fallbackTotal,
+      providerFilteredConnections: fallbackTotal,
+    }
+  );
 }
 
 function shouldResetPage(previousValue, nextValue) {
@@ -153,6 +189,8 @@ const QUOTA_SORT_OPTIONS = [
   { value: "remaining-desc", label: "% quota: high to low" },
 ];
 const CONNECTIONS_PAGE_SIZE = 20;
+const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+const ACCOUNT_PAGE_SIZE_MAX = 500;
 
 export default function ProviderLimits() {
   const [connections, setConnections] = useState([]);
@@ -178,49 +216,63 @@ export default function ProviderLimits() {
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [bulkToggling, setBulkToggling] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(CONNECTIONS_PAGE_SIZE);
-  const [pagination, setPagination] = useState({ page: 1, pageSize: CONNECTIONS_PAGE_SIZE, total: 0, totalPages: 1 });
-  const [totals, setTotals] = useState({ eligibleConnections: 0, providerFilteredConnections: 0 });
+  const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
+  const [customPageSizeInput, setCustomPageSizeInput] = useState(String(CONNECTIONS_PAGE_SIZE));
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: CONNECTIONS_PAGE_SIZE,
+    total: 0,
+    totalPages: 1,
+  });
+  const [totals, setTotals] = useState({
+    eligibleConnections: 0,
+    providerFilteredConnections: 0,
+  });
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
 
-  const fetchConnections = useCallback(async (targetPage = page) => {
-    try {
-      const params = new URLSearchParams({
-        page: String(targetPage),
-        pageSize: String(pageSize),
-        accountStatus: accountFilter,
-        sort: "priority",
-      });
+  const fetchConnections = useCallback(
+    async (targetPage = page) => {
+      try {
+        const params = new URLSearchParams({
+          page: String(targetPage),
+          pageSize: String(pageSize),
+          accountStatus: accountFilter,
+          sort: "priority",
+        });
 
-      if (providerFilter !== "all") {
-        params.set("provider", providerFilter);
+        if (providerFilter !== "all") {
+          params.set("provider", providerFilter);
+        }
+
+        const response = await fetch(
+          `/api/providers/client?${params.toString()}`,
+        );
+        if (!response.ok) throw new Error("Failed to fetch connections");
+
+        const data = await response.json();
+        const connectionList = data.connections || [];
+        const nextPagination = getSafePagination(data.pagination, pageSize);
+        const nextTotals = getSafeTotals(data.totals, connectionList.length);
+
+        setConnections(connectionList);
+        setProviderOptions(getProviderOptions(data.providerOptions));
+        setPagination(nextPagination);
+        setTotals(nextTotals);
+        setPage(getPaginationPageValue(data.pagination, targetPage));
+        return connectionList;
+      } catch (error) {
+        console.error("Error fetching connections:", error);
+        setConnections([]);
+        setProviderOptions([]);
+        setPagination({ page: 1, pageSize, total: 0, totalPages: 1 });
+        setTotals({ eligibleConnections: 0, providerFilteredConnections: 0 });
+        return [];
       }
-
-      const response = await fetch(`/api/providers/client?${params.toString()}`);
-      if (!response.ok) throw new Error("Failed to fetch connections");
-
-      const data = await response.json();
-      const connectionList = data.connections || [];
-      const nextPagination = getSafePagination(data.pagination, pageSize);
-      const nextTotals = getSafeTotals(data.totals, connectionList.length);
-
-      setConnections(connectionList);
-      setProviderOptions(getProviderOptions(data.providerOptions));
-      setPagination(nextPagination);
-      setTotals(nextTotals);
-      setPage(getPaginationPageValue(data.pagination, targetPage));
-      return connectionList;
-    } catch (error) {
-      console.error("Error fetching connections:", error);
-      setConnections([]);
-      setProviderOptions([]);
-      setPagination({ page: 1, pageSize, total: 0, totalPages: 1 });
-      setTotals({ eligibleConnections: 0, providerFilteredConnections: 0 });
-      return [];
-    }
-  }, [accountFilter, expiringFirst, page, pageSize, providerFilter]);
+    },
+    [accountFilter, expiringFirst, page, pageSize, providerFilter],
+  );
 
   // Fetch quota for a specific connection
   const fetchQuota = useCallback(async (connectionId, provider) => {
@@ -303,57 +355,63 @@ export default function ProviderLimits() {
     [fetchQuota],
   );
 
-  const handleDeleteConnection = useCallback(async (id) => {
-    if (!confirm("Delete this connection?")) return;
-    setDeletingId(id);
-    try {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        setQuotaData((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setLoading((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        setErrors((prev) => {
-          const next = { ...prev };
-          delete next[id];
-          return next;
-        });
-        await reconcileConnectionsPage(fetchConnections, page);
+  const handleDeleteConnection = useCallback(
+    async (id) => {
+      if (!confirm("Delete this connection?")) return;
+      setDeletingId(id);
+      try {
+        const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+        if (res.ok) {
+          setQuotaData((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          setLoading((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          setErrors((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+          await reconcileConnectionsPage(fetchConnections, page);
+        }
+      } catch (error) {
+        console.error("Error deleting connection:", error);
+      } finally {
+        setDeletingId(null);
       }
-    } catch (error) {
-      console.error("Error deleting connection:", error);
-    } finally {
-      setDeletingId(null);
-    }
-  }, [fetchConnections, page]);
+    },
+    [fetchConnections, page],
+  );
 
-  const handleToggleConnectionActive = useCallback(async (id, isActive) => {
-    setTogglingId(id);
-    try {
-      const res = await fetch(`/api/providers/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isActive }),
-      });
-      if (res.ok) {
-        setQuotaData((prev) => {
-          const next = { ...prev };
-          return next;
+  const handleToggleConnectionActive = useCallback(
+    async (id, isActive) => {
+      setTogglingId(id);
+      try {
+        const res = await fetch(`/api/providers/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive }),
         });
-        await reconcileConnectionsPage(fetchConnections, page);
+        if (res.ok) {
+          setQuotaData((prev) => {
+            const next = { ...prev };
+            return next;
+          });
+          await reconcileConnectionsPage(fetchConnections, page);
+        }
+      } catch (error) {
+        console.error("Error updating connection status:", error);
+      } finally {
+        setTogglingId(null);
       }
-    } catch (error) {
-      console.error("Error updating connection status:", error);
-    } finally {
-      setTogglingId(null);
-    }
-  }, [fetchConnections, page]);
+    },
+    [fetchConnections, page],
+  );
 
   const handleUpdateConnection = useCallback(
     async (formData) => {
@@ -406,8 +464,12 @@ export default function ProviderLimits() {
       const visibleConnections = await fetchConnections(page);
 
       setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) => filterQuotaStateByConnections(prev, visibleConnections));
-      setQuotaData((prev) => filterQuotaStateByConnections(prev, visibleConnections));
+      setErrors((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
+      setQuotaData((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
 
       await Promise.all(
         visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
@@ -428,8 +490,12 @@ export default function ProviderLimits() {
       setConnectionsLoading(false);
 
       setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) => filterQuotaStateByConnections(prev, visibleConnections));
-      setQuotaData((prev) => filterQuotaStateByConnections(prev, visibleConnections));
+      setErrors((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
+      setQuotaData((prev) =>
+        filterQuotaStateByConnections(prev, visibleConnections),
+      );
 
       await Promise.all(
         visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
@@ -514,7 +580,14 @@ export default function ProviderLimits() {
   }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
 
   const sortedConnections = useMemo(
-    () => sortVisibleConnections(connections, quotaData, expiringFirst, providerFilter, quotaSortMode),
+    () =>
+      sortVisibleConnections(
+        connections,
+        quotaData,
+        expiringFirst,
+        providerFilter,
+        quotaSortMode,
+      ),
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
@@ -566,12 +639,18 @@ export default function ProviderLimits() {
     bulkSetActive(ids, true);
   };
 
-  const selectedProviderLabel = providerFilter === "all" ? "All providers" : providerFilter;
+  const selectedProviderLabel =
+    providerFilter === "all" ? "All providers" : providerFilter;
   const hasEligibleConnections = totals.eligibleConnections > 0;
   const hasVisibleConnections = sortedConnections.length > 0;
-  const emptyState = getConnectionsEmptyMessage(totals, providerFilter, accountFilter);
+  const emptyState = getConnectionsEmptyMessage(
+    totals,
+    providerFilter,
+    accountFilter,
+  );
   const connectionsPageSummary = getConnectionsPaginationSummary(pagination);
-  const pageSizeLabel = getPageSizeLabel(pageSize);
+  const isCustomPageSize = !ACCOUNT_PAGE_SIZE_OPTIONS.includes(pageSize);
+  const pageSizeLabel = getPageSizeLabel(pageSize, isCustomPageSize);
 
   if (!connectionsLoading && !hasEligibleConnections) {
     return (
@@ -632,7 +711,9 @@ export default function ProviderLimits() {
             >
               <span className="flex min-w-0 items-center gap-1.5">
                 {providerFilter === "all" ? (
-                  <span className="material-symbols-outlined text-[14px] text-text-muted">apps</span>
+                  <span className="material-symbols-outlined text-[14px] text-text-muted">
+                    apps
+                  </span>
                 ) : (
                   <ProviderIcon
                     src={`/providers/${providerFilter}.png`}
@@ -642,9 +723,13 @@ export default function ProviderLimits() {
                     fallbackText={providerFilter.slice(0, 2).toUpperCase()}
                   />
                 )}
-                <span className="truncate capitalize hidden lg:inline">{selectedProviderLabel}</span>
+                <span className="truncate capitalize hidden lg:inline">
+                  {selectedProviderLabel}
+                </span>
               </span>
-              <span className="material-symbols-outlined text-[14px] text-text-muted">expand_more</span>
+              <span className="material-symbols-outlined text-[14px] text-text-muted">
+                expand_more
+              </span>
             </button>
 
             {providerMenuOpen && (
@@ -667,9 +752,15 @@ export default function ProviderLimits() {
                     }}
                     className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${providerFilter === "all" ? "bg-primary/10 text-primary" : "text-text-primary hover:bg-black/5 dark:hover:bg-white/10"}`}
                   >
-                    <span className="material-symbols-outlined text-[22px]">apps</span>
+                    <span className="material-symbols-outlined text-[22px]">
+                      apps
+                    </span>
                     <span className="font-medium">All providers</span>
-                    {providerFilter === "all" && <span className="material-symbols-outlined ml-auto text-[20px]">check</span>}
+                    {providerFilter === "all" && (
+                      <span className="material-symbols-outlined ml-auto text-[20px]">
+                        check
+                      </span>
+                    )}
                   </button>
                   <div className="my-1 h-px bg-black/10 dark:bg-white/10" />
                   <div className="max-h-72 overflow-y-auto pr-1">
@@ -693,8 +784,14 @@ export default function ProviderLimits() {
                           className="size-6 rounded-md object-contain"
                           fallbackText={provider.slice(0, 2).toUpperCase()}
                         />
-                        <span className="font-medium capitalize">{provider}</span>
-                        {providerFilter === provider && <span className="material-symbols-outlined ml-auto text-[20px]">check</span>}
+                        <span className="font-medium capitalize">
+                          {provider}
+                        </span>
+                        {providerFilter === provider && (
+                          <span className="material-symbols-outlined ml-auto text-[20px]">
+                            check
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -743,7 +840,9 @@ export default function ProviderLimits() {
             className={`flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors ${expiringFirst ? "border-amber-500/40 bg-amber-500/10 text-amber-500" : "border-black/10 text-text-primary hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5"}`}
             title="Sort accounts by earliest quota reset time"
           >
-            <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
+            <span className="material-symbols-outlined text-[14px]">
+              hourglass_top
+            </span>
             <span className="hidden sm:inline">Expiring first</span>
           </button>
 
@@ -767,9 +866,78 @@ export default function ProviderLimits() {
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/30 px-2 text-xs text-emerald-500 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
             title="Enable connections that still have quota on the current page"
           >
-            <span className="material-symbols-outlined text-[14px]">check_circle</span>
+            <span className="material-symbols-outlined text-[14px]">
+              check_circle
+            </span>
             <span className="hidden sm:inline">Turn on Available</span>
           </button>
+
+          <div className="flex items-center gap-1.5">
+            <select
+              value={isCustomPageSize ? "custom" : String(pageSize)}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                if (nextValue === "custom") {
+                  return;
+                }
+                const nextPageSize = Number.parseInt(nextValue, 10);
+                if (Number.isFinite(nextPageSize)) {
+                  setPage(1);
+                  setPageSize(nextPageSize);
+                  setCustomPageSizeInput(String(nextPageSize));
+                }
+              }}
+              className="h-8 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+              aria-label="Accounts per page"
+            >
+              {ACCOUNT_PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={String(option)}>
+                  {option} / page
+                </option>
+              ))}
+              <option value="custom">Custom</option>
+            </select>
+            <input
+              type="number"
+              min="1"
+              max={String(ACCOUNT_PAGE_SIZE_MAX)}
+              inputMode="numeric"
+              value={customPageSizeInput}
+              onChange={(event) => setCustomPageSizeInput(event.target.value)}
+              onBlur={() => {
+                const parsedValue = Number.parseInt(customPageSizeInput, 10);
+                if (!Number.isFinite(parsedValue)) {
+                  setCustomPageSizeInput(String(pageSize));
+                  return;
+                }
+                const nextPageSize = Math.min(
+                  ACCOUNT_PAGE_SIZE_MAX,
+                  Math.max(1, parsedValue),
+                );
+                setPage(1);
+                setPageSize(nextPageSize);
+                setCustomPageSizeInput(String(nextPageSize));
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                const parsedValue = Number.parseInt(customPageSizeInput, 10);
+                if (!Number.isFinite(parsedValue)) {
+                  setCustomPageSizeInput(String(pageSize));
+                  return;
+                }
+                const nextPageSize = Math.min(
+                  ACCOUNT_PAGE_SIZE_MAX,
+                  Math.max(1, parsedValue),
+                );
+                setPage(1);
+                setPageSize(nextPageSize);
+                setCustomPageSizeInput(String(nextPageSize));
+              }}
+              className="h-8 w-20 rounded-lg border border-black/10 bg-black/[0.02] px-2 text-xs text-text-primary outline-none transition-colors hover:bg-black/5 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/10"
+              aria-label="Custom accounts per page"
+              placeholder="Custom"
+            />
+          </div>
 
           {/* Auto-refresh toggle */}
           <button
@@ -784,9 +952,13 @@ export default function ProviderLimits() {
             >
               {autoRefresh ? "toggle_on" : "toggle_off"}
             </span>
-            <span className="hidden text-text-primary sm:inline">Auto-refresh</span>
+            <span className="hidden text-text-primary sm:inline">
+              Auto-refresh
+            </span>
             {autoRefresh && (
-              <span className="text-[10px] text-text-muted tabular-nums">({countdown}s)</span>
+              <span className="text-[10px] text-text-muted tabular-nums">
+                ({countdown}s)
+              </span>
             )}
           </button>
 
@@ -798,7 +970,11 @@ export default function ProviderLimits() {
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
             title="Refresh all"
           >
-            <span className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}>refresh</span>
+            <span
+              className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}
+            >
+              refresh
+            </span>
           </button>
         </div>
       </div>
@@ -806,7 +982,8 @@ export default function ProviderLimits() {
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Expiring-first currently reorders accounts inside the current page. Cross-page ordering still follows backend pagination.
+          Expiring-first currently reorders accounts inside the current page.
+          Cross-page ordering still follows backend pagination.
         </div>
       )}
 
@@ -845,7 +1022,9 @@ export default function ProviderLimits() {
                         {conn.provider}
                       </h3>
                       {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">{getConnectionLabel(conn)}</p>
+                        <p className="text-xs text-text-muted truncate">
+                          {getConnectionLabel(conn)}
+                        </p>
                       ) : null}
                     </div>
                   </div>
@@ -938,7 +1117,9 @@ export default function ProviderLimits() {
                     quotas={quota?.quotas}
                     compact
                     sortMode="default"
-                    showSortLabel={conn.provider === "codex" && quotaSortMode !== "default"}
+                    showSortLabel={
+                      conn.provider === "codex" && quotaSortMode !== "default"
+                    }
                   />
                 )}
               </div>
@@ -956,22 +1137,56 @@ export default function ProviderLimits() {
             <div className="flex items-center justify-end gap-1.5">
               <button
                 type="button"
-                onClick={() => setPage((currentPage) => Math.max(1, currentPage - 1))}
-                disabled={pagination.page <= 1 || connectionsLoading || refreshingAll}
+                onClick={() => setPage(1)}
+                disabled={
+                  pagination.page <= 1 || connectionsLoading || refreshingAll
+                }
                 className="flex h-8 items-center rounded-lg border border-black/10 px-3 text-xs text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
               >
-                Prev accounts
+                First Page
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setPage((currentPage) => Math.max(1, currentPage - 1))
+                }
+                disabled={
+                  pagination.page <= 1 || connectionsLoading || refreshingAll
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
+                aria-label="Previous accounts page"
+              >
+                <span className="material-symbols-outlined text-[16px]">chevron_left</span>
               </button>
               <div className="text-xs text-text-muted">
                 Page {pagination.page} / {pagination.totalPages}
               </div>
               <button
                 type="button"
-                onClick={() => setPage((currentPage) => Math.min(pagination.totalPages, currentPage + 1))}
-                disabled={pagination.page >= pagination.totalPages || connectionsLoading || refreshingAll}
+                onClick={() =>
+                  setPage((currentPage) =>
+                    Math.min(pagination.totalPages, currentPage + 1),
+                  )
+                }
+                disabled={
+                  pagination.page >= pagination.totalPages ||
+                  connectionsLoading ||
+                  refreshingAll
+                }
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
+                aria-label="Next accounts page"
+              >
+                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(pagination.totalPages)}
+                disabled={
+                  pagination.page >= pagination.totalPages || connectionsLoading || refreshingAll
+                }
                 className="flex h-8 items-center rounded-lg border border-black/10 px-3 text-xs text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
               >
-                Next accounts
+                Last Page
               </button>
             </div>
           </div>

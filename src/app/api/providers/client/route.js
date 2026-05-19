@@ -20,7 +20,7 @@ const SAFE_PSD_FIELDS = [
 ];
 
 const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
 
 function maskName(name) {
   if (typeof name !== "string" || name.length <= 16) return name;
