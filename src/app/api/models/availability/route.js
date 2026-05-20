@@ -3,6 +3,7 @@ import {
   getProviderConnections,
   updateProviderConnection,
 } from "@/lib/localDb";
+import { formatCodexConnectionName } from "@/shared/utils/codexWorkspace";
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
@@ -33,7 +34,7 @@ export async function GET() {
           status: "cooldown",
           until: lock.until,
           connectionId: connection.id,
-          connectionName: connection.name || connection.email || connection.id,
+          connectionName: formatCodexConnectionName(connection, connection.id),
           lastError: connection.lastError || null,
         });
       }
@@ -44,7 +45,7 @@ export async function GET() {
           model: "__all",
           status: "unavailable",
           connectionId: connection.id,
-          connectionName: connection.name || connection.email || connection.id,
+          connectionName: formatCodexConnectionName(connection, connection.id),
           lastError: connection.lastError || null,
         });
       }

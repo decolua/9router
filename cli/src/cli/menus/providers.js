@@ -159,6 +159,28 @@ function countConnectionsByProvider(connections) {
   return counts;
 }
 
+function getCodexWorkspaceId(connection = {}) {
+  const data = connection.providerSpecificData || {};
+  return data.chatgptAccountId || data.chatgptWorkspaceId || data.accountId || "";
+}
+
+function formatCodexWorkspaceLabel(connection = {}) {
+  if ((connection.provider || connection.providerId) !== "codex") return "";
+  const data = connection.providerSpecificData || {};
+  const workspaceId = getCodexWorkspaceId(connection);
+  const workspaceIdSuffix = workspaceId ? (workspaceId.length > 12 ? workspaceId.slice(-8) : workspaceId) : "";
+  return [
+    data.chatgptPlanType,
+    workspaceIdSuffix,
+  ].filter(Boolean).join(" / ");
+}
+
+function formatConnectionName(connection = {}) {
+  const baseName = connection.name || connection.email || connection.displayName || "Unnamed";
+  const codexWorkspaceLabel = formatCodexWorkspaceLabel(connection);
+  return codexWorkspaceLabel ? `${baseName} / ${codexWorkspaceLabel}` : baseName;
+}
+
 /**
  * Show main providers menu
  * @param {Array<string>} breadcrumb - Breadcrumb path
@@ -293,7 +315,7 @@ async function showProviderDetail(providerId, authType, allConnections, breadcru
     },
     formatItem: (conn) => {
       const status = conn.testStatus === "active" ? "✓" : conn.testStatus === "error" ? "✗" : "?";
-      const name = conn.name || conn.email || conn.displayName || "Unnamed";
+      const name = formatConnectionName(conn);
       return `${name} (${status})`;
     },
     onSelect: async (conn) => {
@@ -315,7 +337,7 @@ async function showProviderDetail(providerId, authType, allConnections, breadcru
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showConnectionActions(connection, providerId, breadcrumb = []) {
-  const name = connection.name || connection.email || connection.displayName || "Unnamed";
+  const name = formatConnectionName(connection);
   const status = connection.testStatus === "active" ? "✓ Active" : 
                  connection.testStatus === "error" ? "✗ Error" : "? Unknown";
   
@@ -453,10 +475,11 @@ async function handleAddApiKeyConnection(providerId) {
 async function handleAddOAuthConnection(providerId) {
   clearScreen();
   const provider = ALL_PROVIDERS[providerId];
+  const oauthMeta = {};
   
   // Step 1: Get auth URL
   showStatus("Requesting authorization URL...", "info");
-  const authResult = await api.getOAuthAuthUrl(providerId);
+  const authResult = await api.getOAuthAuthUrl(providerId, oauthMeta);
   
   if (!authResult.success) {
     showStatus(`Failed: ${authResult.error}`, "error");
@@ -532,7 +555,8 @@ async function handleAddOAuthConnection(providerId) {
     code,
     redirectUri,
     codeVerifier,
-    state: urlState || state
+    state: urlState || state,
+    ...(Object.keys(oauthMeta).length > 0 ? { meta: oauthMeta } : {})
   });
   
   if (exchangeResult.success) {

@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { formatCodexConnectionName } from "@/shared/utils/codexWorkspace.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -107,7 +108,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (preferredConnectionId) {
       connection = availableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
-        log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
+        log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${formatCodexConnectionName(connection, "unnamed")})`);
       }
     }
     if (connection) {
@@ -163,7 +164,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
       projectId: connection.projectId,
-      connectionName: connection.displayName || connection.name || connection.email || connection.id,
+      connectionName: formatCodexConnectionName(connection, connection.id),
       copilotToken: connection.providerSpecificData?.copilotToken,
       providerSpecificData: {
         ...(connection.providerSpecificData || {}),
@@ -225,7 +226,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+  const connName = conn ? formatCodexConnectionName(conn, connectionId.slice(0, 8)) : connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {

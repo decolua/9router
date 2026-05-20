@@ -1,6 +1,6 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { getProviderConnectionById, updateProviderConnection } from "../../lib/localDb.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -151,13 +151,19 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 
     if (newCredentials.accessToken)         updates.accessToken  = newCredentials.accessToken;
     if (newCredentials.refreshToken)        updates.refreshToken = newCredentials.refreshToken;
+    if (newCredentials.idToken)             updates.idToken      = newCredentials.idToken;
     if (newCredentials.expiresIn) {
       updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
       updates.expiresIn = newCredentials.expiresIn;
     }
     if (newCredentials.providerSpecificData) {
+      let existingProviderSpecificData = newCredentials.existingProviderSpecificData;
+      if (existingProviderSpecificData === undefined) {
+        const existing = await getProviderConnectionById(connectionId);
+        existingProviderSpecificData = existing?.providerSpecificData || {};
+      }
       updates.providerSpecificData = {
-        ...(newCredentials.existingProviderSpecificData || {}),
+        ...(existingProviderSpecificData || {}),
         ...newCredentials.providerSpecificData,
       };
     }

@@ -15,6 +15,23 @@ import {
   clearCodexSession,
 } from "@/lib/oauth/utils/server";
 
+function getExpectedCodexWorkspace(meta = {}) {
+  const value = meta?.allowed_workspace_id || meta?.workspace_id || meta?.expectedWorkspaceId || "";
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function validateCodexWorkspace(provider, tokenData, meta) {
+  if (provider !== "codex") return null;
+  const expected = getExpectedCodexWorkspace(meta);
+  if (!expected) return null;
+
+  const actual = tokenData?.providerSpecificData?.chatgptAccountId;
+  if (actual !== expected) {
+    return `Codex login returned workspace ${actual || "unknown"}, expected ${expected}`;
+  }
+  return null;
+}
+
 /**
  * Dynamic OAuth API Route
  * Handles: authorize, exchange, device-code, poll
@@ -49,10 +66,11 @@ export async function GET(request, { params }) {
       const state = searchParams.get("state");
       const codeVerifier = searchParams.get("code_verifier");
       const redirectUri = searchParams.get("redirect_uri");
+      const expectedWorkspaceId = searchParams.get("allowed_workspace_id") || searchParams.get("workspace_id") || "";
       const result = await startCodexProxy(Number(appPort));
       let serverSide = false;
       if (result.success && state && codeVerifier && redirectUri) {
-        serverSide = registerCodexSession({ state, codeVerifier, redirectUri });
+        serverSide = registerCodexSession({ state, codeVerifier, redirectUri, expectedWorkspaceId });
       }
       return NextResponse.json({ ...result, serverSide });
     }
@@ -147,12 +165,17 @@ export async function POST(request, { params }) {
 
       // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
       const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      const workspaceError = validateCodexWorkspace(provider, tokenData, meta);
+      if (workspaceError) {
+        return NextResponse.json({ error: workspaceError }, { status: 400 });
+      }
 
       // Save to database
       const connection = await createProviderConnection({
         provider,
         authType: "oauth",
         ...tokenData,
+        ...(provider === "codex" && getExpectedCodexWorkspace(meta) ? { skipLegacyCodexMerge: true } : {}),
         expiresAt: tokenData.expiresIn 
           ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString() 
           : null,

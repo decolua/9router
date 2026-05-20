@@ -1,6 +1,7 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { buildCodexProviderSpecificData } from "../../src/lib/oauth/codexClaims.js";
 
 // Default token expiry buffer (refresh if expires within 5 minutes)
 export const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000;
@@ -263,18 +264,23 @@ export async function refreshCodexToken(refreshToken, log) {
   }
 
   const tokens = await response.json();
+  const providerSpecificData = buildCodexProviderSpecificData(tokens);
 
   log?.info?.("TOKEN_REFRESH", "Successfully refreshed Codex token", {
     hasNewAccessToken: !!tokens.access_token,
     hasNewRefreshToken: !!tokens.refresh_token,
+    hasNewIdToken: !!tokens.id_token,
     expiresIn: tokens.expires_in,
   });
 
-  return {
+  const refreshed = {
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token || refreshToken,
     expiresIn: tokens.expires_in,
   };
+  if (tokens.id_token) refreshed.idToken = tokens.id_token;
+  if (providerSpecificData) refreshed.providerSpecificData = providerSpecificData;
+  return refreshed;
   } catch (error) {
     log?.error?.("TOKEN_REFRESH", `Network error refreshing Codex token: ${error.message}`);
     return null;
@@ -798,4 +804,3 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
   log?.error?.("TOKEN_REFRESH", `All ${maxRetries} retry attempts failed`);
   return null;
 }
-

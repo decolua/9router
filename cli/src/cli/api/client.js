@@ -203,12 +203,18 @@ async function getProviderModels(id) {
  * @param {string} provider - Provider ID
  * @returns {Promise<Object>} { success, data: { authUrl, codeVerifier, state, redirectUri } }
  */
-async function getOAuthAuthUrl(provider) {
+async function getOAuthAuthUrl(provider, meta = {}) {
   // Codex requires fixed port 1455 and path /auth/callback
   const redirectUri = provider === "codex" 
     ? "http://localhost:1455/auth/callback"
     : "http://localhost:20128/callback";
-  return makeRequest("GET", `/api/oauth/${provider}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`);
+  const params = new URLSearchParams({ redirect_uri: redirectUri });
+  Object.entries(meta || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      params.set(key, String(value).trim());
+    }
+  });
+  return makeRequest("GET", `/api/oauth/${provider}/authorize?${params.toString()}`);
 }
 
 /**

@@ -91,14 +91,71 @@ describe("DB SQLite layer — public API parity", () => {
   it("providerConnections: optional fields persisted via JSON column", async () => {
     const c = await sqliteDb.createProviderConnection({
       provider: "p2", authType: "oauth", email: "x@y.com",
-      accessToken: "tok", refreshToken: "rtok", expiresAt: 12345,
+      accessToken: "tok", refreshToken: "rtok", idToken: "idtok", expiresAt: 12345,
       providerSpecificData: { foo: "bar" },
     });
     const back = await sqliteDb.getProviderConnectionById(c.id);
     expect(back.accessToken).toBe("tok");
     expect(back.refreshToken).toBe("rtok");
+    expect(back.idToken).toBe("idtok");
     expect(back.expiresAt).toBe(12345);
     expect(back.providerSpecificData).toEqual({ foo: "bar" });
+  });
+
+  it("providerConnections: codex OAuth upserts by email plus workspace", async () => {
+    const personal = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "same@example.com",
+      accessToken: "personal-token",
+      providerSpecificData: { chatgptAccountId: "acct-personal", chatgptPlanType: "plus" },
+    });
+    const business = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "same@example.com",
+      accessToken: "business-token",
+      providerSpecificData: { chatgptAccountId: "acct-business", chatgptPlanType: "business" },
+    });
+    const reloginBusiness = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "same@example.com",
+      accessToken: "business-token-2",
+      providerSpecificData: { chatgptAccountId: "acct-business", chatgptPlanType: "business" },
+    });
+
+    expect(personal.id).not.toBe(business.id);
+    expect(reloginBusiness.id).toBe(business.id);
+
+    const list = (await sqliteDb.getProviderConnections({ provider: "codex" }))
+      .filter((c) => c.email === "same@example.com");
+    expect(list).toHaveLength(2);
+    const updatedBusiness = await sqliteDb.getProviderConnectionById(business.id);
+    expect(updatedBusiness.accessToken).toBe("business-token-2");
+    expect(updatedBusiness.providerSpecificData.chatgptAccountId).toBe("acct-business");
+  });
+
+  it("providerConnections: explicit codex workspace does not overwrite legacy login", async () => {
+    const legacy = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "legacy@example.com",
+      accessToken: "legacy-token",
+    });
+    const workspace = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "legacy@example.com",
+      accessToken: "workspace-token",
+      skipLegacyCodexMerge: true,
+      providerSpecificData: { chatgptAccountId: "acct-explicit-business" },
+    });
+
+    expect(workspace.id).not.toBe(legacy.id);
+    const list = (await sqliteDb.getProviderConnections({ provider: "codex" }))
+      .filter((c) => c.email === "legacy@example.com");
+    expect(list).toHaveLength(2);
   });
 
   it("providerNodes: CRUD", async () => {

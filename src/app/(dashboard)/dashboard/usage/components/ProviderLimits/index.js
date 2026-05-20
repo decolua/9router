@@ -8,6 +8,7 @@ import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS, USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { formatCodexWorkspaceLabel } from "@/shared/utils/codexWorkspace";
 
 // Connection is eligible for the quota page when it uses OAuth or is an apikey provider whitelisted for quota
 const isUsageEligible = (conn) =>
@@ -652,8 +653,10 @@ export default function ProviderLimits() {
                       {(() => {
                         const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
                         const label = isEmail(conn.email) ? conn.email : (isEmail(conn.name) ? conn.name : conn.name);
-                        return label ? (
-                          <p className="text-xs text-text-muted truncate">{label}</p>
+                        const workspaceLabel = conn.provider === "codex" ? formatCodexWorkspaceLabel(conn) : "";
+                        const displayLabel = workspaceLabel && label ? `${label} / ${workspaceLabel}` : label;
+                        return displayLabel ? (
+                          <p className="text-xs text-text-muted truncate">{displayLabel}</p>
                         ) : null;
                       })()}
                     </div>

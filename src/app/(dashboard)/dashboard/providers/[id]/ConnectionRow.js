@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
+import { formatCodexWorkspaceLabel } from "@/shared/utils/codexWorkspace";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
@@ -66,9 +67,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   };
 
   const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  const displayName = isOAuth
+  const baseDisplayName = isOAuth
     ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
     : connection.name;
+  const codexWorkspaceId = connection.providerSpecificData?.chatgptAccountId || connection.providerSpecificData?.chatgptWorkspaceId;
+  const codexWorkspaceLabel = connection.provider === "codex" && (codexWorkspaceId || connection.providerSpecificData?.chatgptPlanType)
+    ? formatCodexWorkspaceLabel(connection)
+    : "";
+  const displayName = codexWorkspaceLabel ? `${baseDisplayName} / ${codexWorkspaceLabel}` : baseDisplayName;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -235,6 +241,8 @@ ConnectionRow.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
+    provider: PropTypes.string,
+    providerSpecificData: PropTypes.object,
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
@@ -259,4 +267,3 @@ ConnectionRow.propTypes = {
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
 };
-

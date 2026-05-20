@@ -128,11 +128,12 @@ const pendingExchanges = new Map();
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, expectedWorkspaceId = "" }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    expectedWorkspaceId: typeof expectedWorkspaceId === "string" ? expectedWorkspaceId.trim() : "",
     status: "pending",
     createdAt: Date.now(),
   });
@@ -210,10 +211,17 @@ export function startCodexProxy(appPort) {
             session.codeVerifier,
             state
           );
+          if (
+            session.expectedWorkspaceId &&
+            tokenData?.providerSpecificData?.chatgptAccountId !== session.expectedWorkspaceId
+          ) {
+            throw new Error(`Codex login returned workspace ${tokenData?.providerSpecificData?.chatgptAccountId || "unknown"}, expected ${session.expectedWorkspaceId}`);
+          }
           const connection = await createProviderConnection({
             provider: "codex",
             authType: "oauth",
             ...tokenData,
+            ...(session.expectedWorkspaceId ? { skipLegacyCodexMerge: true } : {}),
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -273,4 +281,3 @@ export function stopCodexProxy() {
     codexProxyServer = null;
   }
 }
-

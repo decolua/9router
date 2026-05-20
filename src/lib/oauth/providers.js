@@ -25,44 +25,16 @@ import {
   CODEBUDDY_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
-
-const BASE64_BLOCK_SIZE = 4;
-
-/**
- * Decode JWT access token and extract a stable account identifier for display/upsert.
- * @param {string} accessToken
- * @returns {string|undefined}
- */
-function decodeJwtPayload(jwt) {
-  try {
-    if (!jwt || typeof jwt !== "string") return null;
-    const parts = jwt.split(".");
-    if (parts.length !== 3) return null;
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const missingPadding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const padded = base64 + "=".repeat(missingPadding);
-    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-  } catch {
-    return null;
-  }
-}
+import {
+  buildCodexProviderSpecificData,
+  decodeJwtPayload,
+  extractCodexAccountInfo,
+} from "./codexClaims";
 
 function extractEmailFromAccessToken(accessToken) {
   const payload = decodeJwtPayload(accessToken);
   if (!payload) return undefined;
   return payload.email || payload.preferred_username || payload.sub || undefined;
-}
-
-// Extract codex account info from id_token
-export function extractCodexAccountInfo(idToken) {
-  const payload = decodeJwtPayload(idToken);
-  if (!payload) return {};
-  const chatgpt = payload["https://api.openai.com/auth"] || {};
-  return {
-    email: payload.email,
-    chatgptAccountId: chatgpt.chatgpt_account_id,
-    chatgptPlanType: chatgpt.chatgpt_plan_type,
-  };
 }
 
 // Provider configurations
@@ -129,7 +101,7 @@ const PROVIDERS = {
     flowType: "authorization_code_pkce",
     fixedPort: 1455,
     callbackPath: "/auth/callback",
-    buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
+    buildAuthUrl: (config, redirectUri, state, codeChallenge, meta = {}) => {
       const params = {
         response_type: "code",
         client_id: config.clientId,
@@ -140,6 +112,9 @@ const PROVIDERS = {
         ...config.extraParams,
         state: state,
       };
+      const rawWorkspaceId = meta.allowed_workspace_id || meta.workspace_id || "";
+      const workspaceId = typeof rawWorkspaceId === "string" ? rawWorkspaceId.trim() : "";
+      if (workspaceId) params.allowed_workspace_id = workspaceId;
       const queryString = Object.entries(params)
         .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
         .join("&");
@@ -168,20 +143,17 @@ const PROVIDERS = {
 
       return await response.json();
     },
-    mapTokens: (tokens) => {
+    mapTokens: (tokens, extra = {}) => {
       const info = extractCodexAccountInfo(tokens.id_token);
+      const providerSpecificData = buildCodexProviderSpecificData(tokens);
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
       };
+      if (tokens.id_token) mapped.idToken = tokens.id_token;
       if (info.email) mapped.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
-        mapped.providerSpecificData = {
-          chatgptAccountId: info.chatgptAccountId,
-          chatgptPlanType: info.chatgptPlanType,
-        };
-      }
+      if (providerSpecificData) mapped.providerSpecificData = providerSpecificData;
       return mapped;
     },
   },
@@ -1296,21 +1268,24 @@ export async function backfillCodexEmails() {
     const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
     const connections = await getProviderConnections();
     const targets = connections.filter((c) => {
-      if (c.provider !== "codex" || c.authType !== "oauth" || !c.idToken) return false;
+      if (c.provider !== "codex" || c.authType !== "oauth") return false;
       const hasEmail = !!c.email;
       const hasAccountInfo = !!c.providerSpecificData?.chatgptAccountId;
       return !hasEmail || !hasAccountInfo;
     });
     for (const conn of targets) {
       const info = extractCodexAccountInfo(conn.idToken);
-      if (!info.email && !info.chatgptAccountId) continue;
+      const accountId = conn.providerSpecificData?.chatgptAccountId || info.chatgptAccountId;
+      if (!info.email && !accountId) continue;
       const patch = {};
       if (!conn.email && info.email) patch.email = info.email;
-      if (info.chatgptAccountId || info.chatgptPlanType) {
+      if (accountId || info.chatgptPlanType) {
         patch.providerSpecificData = {
           ...(conn.providerSpecificData || {}),
-          chatgptAccountId: info.chatgptAccountId,
-          chatgptPlanType: info.chatgptPlanType,
+          ...(accountId ? { chatgptAccountId: accountId } : {}),
+          ...(info.chatgptPlanType ? { chatgptPlanType: info.chatgptPlanType } : {}),
+          ...(info.chatgptUserId ? { chatgptUserId: info.chatgptUserId } : {}),
+          ...(info.chatgptAccountIsFedramp ? { chatgptAccountIsFedramp: true } : {}),
         };
       }
       if (Object.keys(patch).length) {

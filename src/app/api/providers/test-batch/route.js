@@ -7,6 +7,7 @@ import {
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
+import { formatCodexConnectionName } from "@/shared/utils/codexWorkspace";
 import { testSingleConnection } from "../[id]/test/testUtils.js";
 
 function getAuthGroup(providerId, connection = null) {
@@ -88,7 +89,7 @@ export async function POST(request) {
         results.push({
           provider: conn.provider,
           connectionId: conn.id,
-          connectionName: conn.name || conn.email || conn.provider,
+          connectionName: formatCodexConnectionName(conn, conn.provider),
           authType: conn.authType || getAuthGroup(conn.provider, conn),
           valid: data.valid,
           latencyMs: data.latencyMs || 0,
@@ -101,7 +102,7 @@ export async function POST(request) {
         results.push({
           provider: conn.provider,
           connectionId: conn.id,
-          connectionName: conn.name || conn.email || conn.provider,
+          connectionName: formatCodexConnectionName(conn, conn.provider),
           authType: conn.authType || getAuthGroup(conn.provider, conn),
           valid: false,
           latencyMs: 0,

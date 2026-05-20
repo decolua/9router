@@ -6,6 +6,7 @@ import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelpe
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
+import { refreshCodexToken } from "../services/tokenRefresh.js";
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -21,6 +22,11 @@ function hashContent(text) {
 
 function generateSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function getCodexAccountId(credentials) {
+  const data = credentials?.providerSpecificData || {};
+  return data.chatgptAccountId || data.chatgptWorkspaceId || data.accountId || "";
 }
 
 // Extract text content from an input item
@@ -86,12 +92,22 @@ export class CodexExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
+    const accountId = getCodexAccountId(credentials);
+    if (accountId) headers["ChatGPT-Account-ID"] = accountId;
+    if (credentials?.providerSpecificData?.chatgptAccountIsFedramp === true) {
+      headers["X-OpenAI-Fedramp"] = "true";
+    }
     return headers;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const base = super.buildUrl(model, stream, urlIndex, credentials);
     return this._isCompact ? `${base}/compact` : base;
+  }
+
+  async refreshCredentials(credentials, log) {
+    if (!credentials?.refreshToken) return null;
+    return refreshCodexToken(credentials.refreshToken, log);
   }
 
   /**

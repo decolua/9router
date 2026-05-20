@@ -10,6 +10,7 @@ import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import ConnectionsCard from "@/app/(dashboard)/dashboard/providers/components/ConnectionsCard";
 import ModelsCard from "@/app/(dashboard)/dashboard/providers/components/ModelsCard";
+import { formatCodexWorkspaceLabel } from "@/shared/utils/codexWorkspace";
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { getTtsVoicesForModel } from "open-sse/config/ttsModels.js";
 import { GOOGLE_TTS_LANGUAGES } from "open-sse/config/googleTtsLanguages.js";
@@ -1176,11 +1177,11 @@ function GenericExampleCard({ providerId, kind }) {
             >
               <option value="">Auto (by priority)</option>
               {connections.map((c) => {
-                const plan = c.providerSpecificData?.chatgptPlanType;
+                const workspaceLabel = c.provider === "codex" ? formatCodexWorkspaceLabel(c) : "";
                 const label = c.email || c.name || c.id.slice(0, 8);
                 return (
                   <option key={c.id} value={c.id}>
-                    {label}{plan ? ` [${plan}]` : ""}
+                    {label}{workspaceLabel ? ` [${workspaceLabel}]` : ""}
                   </option>
                 );
               })}

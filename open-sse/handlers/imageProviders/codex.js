@@ -9,17 +9,30 @@ const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
 
-function decodeAccountId(idToken) {
+function decodeAccountInfo(idToken) {
   try {
     const parts = String(idToken || "").split(".");
-    if (parts.length !== 3) return null;
+    if (parts.length !== 3) return {};
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const pad = (4 - (b64.length % 4)) % 4;
     const payload = JSON.parse(Buffer.from(b64 + "=".repeat(pad), "base64").toString("utf8"));
-    return payload?.["https://api.openai.com/auth"]?.chatgpt_account_id || null;
+    const auth = payload?.["https://api.openai.com/auth"] || {};
+    return {
+      accountId: auth.chatgpt_account_id || auth.account_id || null,
+      isFedramp: auth.chatgpt_account_is_fedramp === true,
+    };
   } catch {
-    return null;
+    return {};
   }
+}
+
+function getCodexAccountInfo(creds) {
+  const data = creds?.providerSpecificData || {};
+  const decoded = decodeAccountInfo(creds?.idToken);
+  return {
+    accountId: data.chatgptAccountId || data.chatgptWorkspaceId || data.accountId || decoded.accountId || "",
+    isFedramp: data.chatgptAccountIsFedramp === true || decoded.isFedramp === true,
+  };
 }
 
 function stripImageSuffix(model) {
@@ -147,8 +160,8 @@ export default {
   stream: true,
   buildUrl: () => CODEX_RESPONSES_URL,
   buildHeaders: (creds) => {
-    const accountId = creds?.providerSpecificData?.chatgptAccountId || decodeAccountId(creds?.idToken);
-    return {
+    const { accountId, isFedramp } = getCodexAccountInfo(creds);
+    const headers = {
       "accept": "text/event-stream, application/json",
       "authorization": `Bearer ${creds?.accessToken || ""}`,
       "chatgpt-account-id": accountId || "",
@@ -159,6 +172,8 @@ export default {
       "version": CODEX_VERSION,
       "x-client-request-id": randomUUID(),
     };
+    if (isFedramp) headers["x-openai-fedramp"] = "true";
+    return headers;
   },
   buildBody: (model, body) => {
     const refs = [];

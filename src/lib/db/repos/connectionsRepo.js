@@ -1,10 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { getCodexWorkspaceId } from "../../oauth/codexClaims.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
-  "accessToken", "refreshToken", "expiresAt", "tokenType",
+  "accessToken", "refreshToken", "idToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
   "consecutiveUseCount",
@@ -28,7 +29,7 @@ function rowToConn(row) {
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, skipLegacyCodexMerge, ...rest } = c;
   return {
     id,
     provider,
@@ -54,6 +55,48 @@ function upsert(db, c) {
        data=excluded.data, updatedAt=excluded.updatedAt`,
     [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt]
   );
+}
+
+function findExistingOAuthConnection(all, data) {
+  if (!data.email && data.provider !== "codex") return null;
+
+  if (data.provider === "codex") {
+    const incomingWorkspaceId = getCodexWorkspaceId(data);
+    const incomingEmail = data.email || null;
+
+    if (incomingWorkspaceId) {
+      const exact = all.find((c) => {
+        if (c.authType !== "oauth") return false;
+        if (getCodexWorkspaceId(c) !== incomingWorkspaceId) return false;
+        if (!incomingEmail || !c.email) return true;
+        return c.email === incomingEmail;
+      });
+      if (exact) return exact;
+
+      if (!data.skipLegacyCodexMerge) {
+        // Upgrade a single legacy Codex OAuth connection that predates workspace IDs.
+        const legacyMatches = all.filter((c) => (
+          c.authType === "oauth" &&
+          !getCodexWorkspaceId(c) &&
+          incomingEmail &&
+          c.email === incomingEmail
+        ));
+        if (legacyMatches.length === 1) return legacyMatches[0];
+      }
+      return null;
+    }
+
+    if (incomingEmail) {
+      return all.find((c) => (
+        c.authType === "oauth" &&
+        c.email === incomingEmail &&
+        !getCodexWorkspaceId(c)
+      )) || null;
+    }
+    return null;
+  }
+
+  return all.find(c => c.authType === "oauth" && c.email === data.email) || null;
 }
 
 export async function getProviderConnections(filter = {}) {
@@ -97,14 +140,20 @@ export async function createProviderConnection(data) {
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
-      existing = all.find(c => c.authType === "oauth" && c.email === data.email);
+    if (data.authType === "oauth") {
+      existing = findExistingOAuthConnection(all, data);
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
     }
 
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
+      if (data.providerSpecificData) {
+        merged.providerSpecificData = {
+          ...(existing.providerSpecificData || {}),
+          ...data.providerSpecificData,
+        };
+      }
       upsert(db, merged);
       result = merged;
       return;
@@ -190,7 +239,7 @@ export async function cleanupProviderConnections() {
   const db = await getAdapter();
   const fieldsToCheck = [
     "displayName", "email", "globalPriority", "defaultModel",
-    "accessToken", "refreshToken", "expiresAt", "tokenType",
+    "accessToken", "refreshToken", "idToken", "expiresAt", "tokenType",
     "scope", "projectId", "apiKey", "testStatus",
     "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn",
     "consecutiveUseCount",

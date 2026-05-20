@@ -51,7 +51,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
           state,
-          ...(oauthMeta ? { meta: oauthMeta } : {}),
+          ...((authData.meta || oauthMeta) ? { meta: authData.meta || oauthMeta } : {}),
         }),
       });
 
@@ -64,7 +64,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [authData, provider, onSuccess]);
+  }, [authData, provider, onSuccess, oauthMeta]);
 
   // Poll for device code token
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
@@ -131,6 +131,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     if (!provider) return;
     try {
       setError(null);
+      callbackProcessedRef.current = false;
 
       // Device code flow providers
       const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy"];
@@ -185,6 +186,17 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (oauthMeta) {
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
       }
+      const rawWorkspaceId = provider === "codex"
+        ? (oauthMeta?.allowed_workspace_id || oauthMeta?.workspace_id || "")
+        : "";
+      const workspaceId = typeof rawWorkspaceId === "string" ? rawWorkspaceId.trim() : "";
+      if (workspaceId) {
+        authorizeUrl.searchParams.set("allowed_workspace_id", workspaceId);
+      }
+      const exchangeMeta = {
+        ...(oauthMeta || {}),
+        ...(workspaceId ? { allowed_workspace_id: workspaceId } : {}),
+      };
       const res = await fetch(authorizeUrl.toString());
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -199,6 +211,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("state", data.state);
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          if (workspaceId) proxyUrl.searchParams.set("allowed_workspace_id", workspaceId);
           const proxyRes = await fetch(proxyUrl.toString());
           const proxyData = await proxyRes.json();
           codexProxyActive = proxyData.success;
@@ -208,7 +221,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
 
-      setAuthData({ ...data, redirectUri, codexServerSide });
+      setAuthData({
+        ...data,
+        redirectUri,
+        codexServerSide,
+        meta: Object.keys(exchangeMeta).length > 0 ? exchangeMeta : null,
+      });
 
       if (provider === "codex" && codexProxyActive) {
         // Proxy active: callback will be handled server-side (auto-exchange) or via channels (fallback)
