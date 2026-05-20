@@ -47,7 +47,8 @@ export default function CoworkToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [modelSelectOpen, setModelSelectOpen] = useState(false);
-  const [editingCombo, setEditingCombo] = useState(null); // { id, name, models }
+  const [editingCombo, setEditingCombo] = useState(null);
+  const [availableCombos, setAvailableCombos] = useState([]); // { id, name, models }
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ type: "url", name: "", url: "", command: "", args: "" });
@@ -73,6 +74,12 @@ export default function CoworkToolCard({
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) setModelAliases(data.aliases || {});
+      })
+      .catch(() => {});
+    fetch("/api/combos")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setAvailableCombos((data.combos || []).filter(c => c.name.startsWith("claude-")));
       })
       .catch(() => {});
   }, [isExpanded]);
@@ -421,15 +428,35 @@ export default function CoworkToolCard({
                                           </span>
                                        );
                                      })}
-                                     {group.isCombo && (
-                                       <button
-                                         onClick={() => setComboModalOpen(true)}
-                                         disabled={!hasActiveProviders}
-                                         className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
-                                       >
-                                         + Combo
-                                       </button>
-                                     )}
+                                     {group.isCombo && (() => {
+                                       const addableExisting = availableCombos.filter(c => !selectedModels.includes(c.name));
+                                       return (
+                                         <>
+                                           <button
+                                             onClick={() => setComboModalOpen(true)}
+                                             disabled={!hasActiveProviders}
+                                             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs leading-none border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
+                                           >
+                                             <span className="material-symbols-outlined text-[12px]">add</span>
+                                             Combo
+                                           </button>
+                                           {addableExisting.map(c => (
+                                             <button
+                                               key={c.id}
+                                               onClick={() => {
+                                                 setSelectedModels(prev => [...prev, c.name]);
+                                                 setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
+                                               }}
+                                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-primary/40 hover:text-primary transition-colors leading-none"
+                                               title={`Add ${c.name}`}
+                                             >
+                                               {c.name}
+                                               <span className="material-symbols-outlined text-[12px]">add</span>
+                                             </button>
+                                           ))}
+                                         </>
+                                       );
+                                     })()}
                                    </div>
                                  )}
                               </div>
@@ -439,11 +466,35 @@ export default function CoworkToolCard({
                       )}
                     </div>
                     {/* Show + Combo button if no combo group exists yet */}
-                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
-                      </div>
-                    )}
+                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (() => {
+                      const addableExisting = availableCombos.filter(c => !selectedModels.includes(c.name));
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            onClick={() => setComboModalOpen(true)}
+                            disabled={!hasActiveProviders}
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs leading-none border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
+                          >
+                            <span className="material-symbols-outlined text-[12px]">add</span>
+                            Combo
+                          </button>
+                          {addableExisting.map(c => (
+                            <button
+                              key={c.id}
+                              onClick={() => {
+                                setSelectedModels(prev => [...prev, c.name]);
+                                setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-primary/40 hover:text-primary transition-colors leading-none"
+                              title={`Add ${c.name}`}
+                            >
+                              {c.name}
+                              <span className="material-symbols-outlined text-[12px]">add</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
