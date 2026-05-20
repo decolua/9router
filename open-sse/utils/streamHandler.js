@@ -113,10 +113,20 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         }
         controller.enqueue(value);
       } catch (error) {
+        const wasConnected = streamController.isConnected();
         streamController.handleError(error);
         reader.cancel().catch(() => {});
         writer.abort().catch(() => {});
-        controller.error(error);
+        
+        if (!wasConnected || error.name === "AbortError" || error.message?.includes("aborted")) {
+          try {
+            controller.close();
+          } catch (e) {
+            // Stream might already be closed or cancelled
+          }
+        } else {
+          controller.error(error);
+        }
       }
     },
 
