@@ -9,7 +9,7 @@ if ($containerExists) {
     docker start 9router
 } else {
     Write-Host "Container not found. Running new container..." -ForegroundColor Yellow
-    docker run -d --name 9router -p 20128:20128 --env-file .env -v 9router-data:/app/data 9router
+    docker run -d --name 9router -p 127.0.0.1:20128:20128 --env-file .env -v 9router-data:/app/data 9router
 }
 
 Write-Host "`nContainer started. Showing logs..." -ForegroundColor Green

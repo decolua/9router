@@ -14,7 +14,7 @@ docker build -t 9router .
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "`nRunning container..." -ForegroundColor Green
-    docker run -d --name 9router -p 20128:20128 --env-file .env -v 9router-data:/app/data 9router
+    docker run -d --name 9router -p 127.0.0.1:20128:20128 --env-file .env -v 9router-data:/app/data 9router
     
     Write-Host "`nContainer running. Showing logs..." -ForegroundColor Green
     docker logs -f 9router
