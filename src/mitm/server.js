@@ -106,7 +106,7 @@ function getMappedModel(tool, model) {
   try {
     const aliases = getMitmAlias(tool);
     if (!aliases) return null;
-    // Normalize via synonym map (e.g., gemini-default → gemini-3-flash)
+    // Normalize via synonym map (e.g., gemini-default → gemini-3.5-flash)
     const lookup = MODEL_SYNONYMS?.[tool]?.[model] || model;
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback

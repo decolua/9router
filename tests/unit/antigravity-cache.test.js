@@ -53,7 +53,7 @@ async function callAg({ accessToken, projectId, sessionId, longText, userText })
   const baseUrl = PROVIDERS.antigravity.baseUrls[0];
   const body = {
     project: projectId,
-    model: "gemini-3-flash",
+    model: "gemini-3.5-flash",
     userAgent: "antigravity",
     requestType: "agent",
     requestId: `agent-${crypto.randomUUID()}`,
