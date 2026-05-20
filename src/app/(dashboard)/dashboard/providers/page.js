@@ -617,12 +617,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div
-              className="size-8 shrink-0 rounded-lg flex items-center justify-center"
-              style={{
-                backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}`,
-              }}
-            >
+            <div className="size-8 shrink-0 rounded-lg flex items-center justify-center bg-white">
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
@@ -745,12 +740,7 @@ function ApiKeyProviderCard({
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div
-              className="size-8 shrink-0 rounded-lg flex items-center justify-center"
-              style={{
-                backgroundColor: `${provider.color?.length > 7 ? provider.color : provider.color + "15"}`,
-              }}
-            >
+            <div className="size-8 shrink-0 rounded-lg flex items-center justify-center bg-white">
               <ProviderIcon
                 src={getIconPath()}
                 alt={provider.name}

@@ -190,5 +190,14 @@
   "Sudo Password": "Parola Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Faceți clic pentru a adăuga, faceți clic din nou pentru a elimina. Modificările sunt salvate automat.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Notificare de risc: Acest furnizor folosește un abonament/sesiune OAuth care nu este licențiat oficial pentru utilizare proxy/router. Contul poate fi restricționat sau interzis. Utilizați pe propriul risc.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM interceptează traficul HTTPS al instrumentelor IDE (Antigravity, GitHub Copilot, Kiro) prin CA locală pentru a redirecționa cererile către furnizorii dvs. Poate încălca ToS → risc de interzicere a contului. Utilizați pe propriul risc."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM interceptează traficul HTTPS al instrumentelor IDE (Antigravity, GitHub Copilot, Kiro) prin CA locală pentru a redirecționa cererile către furnizorii dvs. Poate încălca ToS → risc de interzicere a contului. Utilizați pe propriul risc.",
+  "Select all": "Selectează tot",
+  "Unselect all": "Deselectează tot",
+  "Click a model to select it.": "Faceți clic pe un model pentru a-l selecta.",
+  "No models selected": "Niciun model selectat",
+  "Add Model": "Adaugă model",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Încărcați mai întâi prin Billing, apoi Services → AI → Top Up pentru a converti soldul în credite AI. Apoi mergeți la fila API Keys și faceți clic pe Add API Key (dreapta sus).",
+  "Click a model to set as active": "Faceți clic pe un model pentru a-l seta ca activ",
+  "Select Model": "Selectează model",
+  "Click to clear active model": "Faceți clic pentru a șterge modelul activ"
 }

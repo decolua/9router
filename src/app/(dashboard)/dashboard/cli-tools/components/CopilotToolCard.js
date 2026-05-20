@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { getProviderInfo, groupModelsByProvider } from "./providerPrefixMap";
 
 export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -19,6 +20,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [selectedModels, setSelectedModels] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const selectedModelsRef = useRef([]);
 
   useEffect(() => {
@@ -48,7 +50,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
       const entry = status.config.find((e) => e.name === "9Router");
       if (entry?.models?.length > 0) {
-        setSelectedModels(entry.models.map((m) => m.id));
+        const models = entry.models.map((m) => m.id);
+        setSelectedModels(models);
+        // Default all groups collapsed
+        const groups = groupModelsByProvider(models);
+        setCollapsedGroups(Object.fromEntries(Object.keys(groups).map(k => [k, true])));
       }
     }
   }, [status]);
@@ -246,18 +252,50 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-2">
-                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                    <div className="rounded border border-border overflow-hidden">
                       {selectedModels.length === 0 ? (
-                        <span className="text-xs text-text-muted">No models selected</span>
+                        <div className="flex items-center min-h-[28px] px-2 py-1.5 bg-surface">
+                          <span className="text-xs text-text-muted">No models selected</span>
+                        </div>
                       ) : (
-                        selectedModels.map((model) => (
-                          <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
-                            {model}
-                            <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-red-500">
-                              <span className="material-symbols-outlined text-[12px]">close</span>
-                            </button>
-                          </span>
-                        ))
+                        <div className="flex flex-col">
+                          {Object.entries(groupModelsByProvider(selectedModels)).map(([groupKey, group], idx, arr) => {
+                            const isCollapsed = collapsedGroups[groupKey] !== false;
+                            return (
+                              <div key={groupKey} className={idx < arr.length - 1 ? "border-b border-border" : ""}>
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedGroups(prev => ({ ...prev, [groupKey]: !isCollapsed }))}
+                                  className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-surface hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                  {group.icon ? (
+                                    <Image src={group.icon} alt={group.name} width={14} height={14} className="size-3.5 object-contain rounded-sm shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
+                                  ) : (
+                                    <span className="material-symbols-outlined text-[14px] text-text-muted shrink-0">smart_toy</span>
+                                  )}
+                                  <span className="text-xs font-medium text-text-main flex-1 text-left">{group.name}</span>
+                                  <span className="text-[10px] text-text-muted mr-1">{group.models.length}</span>
+                                  <span className={`material-symbols-outlined text-[14px] text-text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}>expand_more</span>
+                                </button>
+                                {!isCollapsed && (
+                                  <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-border">
+                                    {group.models.map((model) => {
+                                      const { modelName } = getProviderInfo(model);
+                                      return (
+                                        <span key={model} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                                          {modelName}
+                                          <button onClick={(e) => { e.stopPropagation(); removeModel(model); }} className="ml-0.5 hover:text-red-500">
+                                            <span className="material-symbols-outlined text-[12px]">close</span>
+                                          </button>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                     <div>
@@ -298,11 +336,21 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
         }}
         onSelect={(model) => {
           if (!selectedModels.includes(model.value)) {
-            setSelectedModels([...selectedModels, model.value]);
+            setSelectedModels(prev => [...prev, model.value]);
           }
         }}
+        onSelectMany={(models) => {
+          setSelectedModels(prev => {
+            const toAdd = models.map(m => m.value).filter(v => !prev.includes(v));
+            return [...prev, ...toAdd];
+          });
+        }}
         onDeselect={(model) => {
-          setSelectedModels(selectedModels.filter(m => m !== model.value));
+          setSelectedModels(prev => prev.filter(m => m !== model.value));
+        }}
+        onDeselectMany={(models) => {
+          const values = new Set(models.map(m => m.value));
+          setSelectedModels(prev => prev.filter(m => !values.has(m)));
         }}
         selectedModel={null}
         activeProviders={activeProviders}

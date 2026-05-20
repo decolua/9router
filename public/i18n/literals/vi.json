@@ -190,5 +190,14 @@
   "Sudo Password": "Mật khẩu Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Nhấp để thêm, nhấp lại để xóa. Thay đổi được lưu tự động.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Cảnh báo rủi ro: Provider này sử dụng subscription/OAuth không được cấp phép chính thức cho mục đích proxy/router. Tài khoản có thể bị hạn chế hoặc cấm. Người dùng tự chịu trách nhiệm.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM chặn lưu lượng HTTPS của các IDE tools (Antigravity, GitHub Copilot, Kiro) qua CA cục bộ để chuyển hướng request đến providers của bạn. Có thể vi phạm ToS → rủi ro bị ban tài khoản. Sử dụng với rủi ro của bạn."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM chặn lưu lượng HTTPS của các IDE tools (Antigravity, GitHub Copilot, Kiro) qua CA cục bộ để chuyển hướng request đến providers của bạn. Có thể vi phạm ToS → rủi ro bị ban tài khoản. Sử dụng với rủi ro của bạn.",
+  "Select all": "Chọn tất cả",
+  "Unselect all": "Bỏ chọn tất cả",
+  "Click a model to select it.": "Nhấp vào một mô hình để chọn nó.",
+  "No models selected": "Không có mô hình nào được chọn",
+  "Add Model": "Thêm mô hình",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Nạp tiền qua Billing trước, sau đó Services → AI → Top Up để chuyển đổi số dư thành tín dụng AI. Sau đó vào tab API Keys và nhấp Add API Key (góc trên bên phải).",
+  "Click a model to set as active": "Nhấp vào mô hình để đặt làm hoạt động",
+  "Select Model": "Chọn mô hình",
+  "Click to clear active model": "Nhấp để xóa mô hình hoạt động"
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
@@ -23,6 +23,8 @@ export default function ModelSelectModal({
   onClose,
   onSelect,
   onDeselect,
+  onSelectMany,
+  onDeselectMany,
   selectedModel,
   activeProviders = [],
   title = "Select Model",
@@ -45,6 +47,21 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [lastAction, setLastAction] = useState(null); // { groupId, type: 'select'|'deselect', models[] }
+  const undoTimerRef = useRef(null);
+
+  const clearUndo = useCallback(() => {
+    setLastAction(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  }, []);
+
+  const scheduleUndo = useCallback((action) => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setLastAction(action);
+    undoTimerRef.current = setTimeout(() => setLastAction(null), 5000);
+  }, []);
+
+  useEffect(() => () => { if (undoTimerRef.current) clearTimeout(undoTimerRef.current); }, []);
 
   const fetchCombos = async () => {
     try {
@@ -318,11 +335,9 @@ export default function ModelSelectModal({
     return combos.filter(c => c.name.toLowerCase().includes(query));
   }, [combos, searchQuery, kindFilter]);
 
-  // Sort models alphabetically, with added models floated to top
+  // Sort models alphabetically, preserving order regardless of selected state
   const sortModels = (models) => {
-    const added = models.filter(m => addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
-    const rest = models.filter(m => !addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
-    return [...added, ...rest];
+    return [...models].sort((a, b) => a.name.localeCompare(b.name));
   };
 
   // Filter models by search query
@@ -379,10 +394,17 @@ export default function ModelSelectModal({
       footer={null}
     >
       {/* Info bar */}
-      <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
-        <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
-        <span>Click to add, click again to remove. Changes are saved automatically.</span>
-      </div>
+      {closeOnSelect ? (
+        <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
+          <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
+          <span>Click a model to select it.</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
+          <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
+          <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        </div>
+      )}
 
       {/* Search - compact */}
       <div className="mb-3">
@@ -409,7 +431,55 @@ export default function ModelSelectModal({
               <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
               <span className="text-xs font-medium text-primary">Combos</span>
               <span className="text-[10px] text-text-muted">({filteredCombos.length})</span>
+              {!closeOnSelect && filteredCombos.length > 0 && (() => {
+                const allCombosAdded = filteredCombos.every(c => addedModelValues.includes(c.name));
+                return (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (allCombosAdded) {
+                        const toRemove = filteredCombos.map(c => ({ id: c.name, name: c.name, value: c.name }));
+                        if (onDeselectMany) onDeselectMany(toRemove);
+                        else toRemove.forEach(m => onDeselect && onDeselect(m));
+                        scheduleUndo({ groupId: "__combos__", type: "deselect", models: toRemove });
+                      } else {
+                        const toAdd = filteredCombos.filter(c => !addedModelValues.includes(c.name)).map(c => ({ id: c.name, name: c.name, value: c.name }));
+                        if (onSelectMany) onSelectMany(toAdd);
+                        else toAdd.forEach(m => onSelect(m));
+                        scheduleUndo({ groupId: "__combos__", type: "select", models: toAdd });
+                      }
+                    }}
+                    className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-border text-text-muted hover:border-primary hover:text-primary transition-colors cursor-pointer"
+                  >
+                    {allCombosAdded ? "Unselect all" : "Select all"}
+                  </button>
+                );
+              })()}
             </div>
+
+            {/* Undo bar for combos */}
+            {lastAction?.groupId === "__combos__" && (
+              <div className="flex items-center gap-2 mb-1.5 px-2 py-1 bg-surface border border-border rounded text-[10px] text-text-muted">
+                <span>{lastAction.type === "select" ? `Added ${lastAction.models.length} combo${lastAction.models.length > 1 ? "s" : ""}` : `Removed ${lastAction.models.length} combo${lastAction.models.length > 1 ? "s" : ""}`}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (lastAction.type === "select") {
+                      if (onDeselectMany) onDeselectMany(lastAction.models);
+                      else lastAction.models.forEach(m => onDeselect && onDeselect(m));
+                    } else {
+                      if (onSelectMany) onSelectMany(lastAction.models);
+                      else lastAction.models.forEach(m => onSelect(m));
+                    }
+                    clearUndo();
+                  }}
+                  className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-primary/40 text-primary hover:bg-primary/10 transition-colors cursor-pointer font-medium"
+                >
+                  Undo
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-1.5">
               {filteredCombos.map((combo) => {
                 const isSelected = selectedModel === combo.name;
@@ -439,7 +509,11 @@ export default function ModelSelectModal({
         )}
 
         {/* Provider models */}
-        {Object.entries(filteredGroups).map(([providerId, group]) => (
+        {Object.entries(filteredGroups).map(([providerId, group]) => {
+          const nonPlaceholderModels = group.models.filter(m => !m.isPlaceholder);
+          const allAdded = nonPlaceholderModels.length > 0 && nonPlaceholderModels.every(m => addedModelValues.includes(m.value));
+
+          return (
           <div key={providerId}>
             {/* Provider header */}
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
@@ -456,7 +530,51 @@ export default function ModelSelectModal({
               <span className="text-[10px] text-text-muted">
                 ({group.models.length})
               </span>
+              {!closeOnSelect && nonPlaceholderModels.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (allAdded) {
+                      const toRemove = nonPlaceholderModels.filter(m => addedModelValues.includes(m.value));
+                      if (onDeselectMany) onDeselectMany(toRemove);
+                      else toRemove.forEach(m => onDeselect && onDeselect(m));
+                      scheduleUndo({ groupId: providerId, type: "deselect", models: toRemove });
+                    } else {
+                      const toAdd = nonPlaceholderModels.filter(m => !addedModelValues.includes(m.value));
+                      if (onSelectMany) onSelectMany(toAdd);
+                      else toAdd.forEach(m => onSelect(m));
+                      scheduleUndo({ groupId: providerId, type: "select", models: toAdd });
+                    }
+                  }}
+                  className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-border text-text-muted hover:border-primary hover:text-primary transition-colors cursor-pointer"
+                >
+                  {allAdded ? "Unselect all" : "Select all"}
+                </button>
+              )}
             </div>
+
+            {/* Undo bar */}
+            {lastAction?.groupId === providerId && (
+              <div className="flex items-center gap-2 mb-1.5 px-2 py-1 bg-surface border border-border rounded text-[10px] text-text-muted">
+                <span>{lastAction.type === "select" ? `Added ${lastAction.models.length} model${lastAction.models.length > 1 ? "s" : ""}` : `Removed ${lastAction.models.length} model${lastAction.models.length > 1 ? "s" : ""}`}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (lastAction.type === "select") {
+                      if (onDeselectMany) onDeselectMany(lastAction.models);
+                      else lastAction.models.forEach(m => onDeselect && onDeselect(m));
+                    } else {
+                      if (onSelectMany) onSelectMany(lastAction.models);
+                      else lastAction.models.forEach(m => onSelect(m));
+                    }
+                    clearUndo();
+                  }}
+                  className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-primary/40 text-primary hover:bg-primary/10 transition-colors cursor-pointer font-medium"
+                >
+                  Undo
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
@@ -502,7 +620,8 @@ export default function ModelSelectModal({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
           <div className="text-center py-4 text-text-muted">
@@ -522,6 +641,8 @@ ModelSelectModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   onSelect: PropTypes.func.isRequired,
   onDeselect: PropTypes.func,
+  onSelectMany: PropTypes.func,
+  onDeselectMany: PropTypes.func,
   selectedModel: PropTypes.string,
   activeProviders: PropTypes.arrayOf(
     PropTypes.shape({

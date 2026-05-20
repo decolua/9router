@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import Modal from "./Modal";
 import Input from "./Input";
 import Button from "./Button";
@@ -8,8 +12,14 @@ import ModelSelectModal from "./ModelSelectModal";
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
-// Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+// Inline editable + sortable model item
+function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 999 : undefined,
+  };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -23,7 +33,25 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
     if (e.key === "Escape") { setDraft(model); setEditing(false); }
   };
   return (
-    <div className="group flex min-w-0 items-center gap-1.5 rounded-md bg-black/[0.02] px-2 py-1 transition-colors hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md bg-black/[0.02] px-2 py-1 transition-colors hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+    >
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        type="button"
+        className="cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
+        title="Drag to reorder"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="9" cy="4" r="2"/><circle cx="15" cy="4" r="2"/>
+          <circle cx="9" cy="12" r="2"/><circle cx="15" cy="12" r="2"/>
+          <circle cx="9" cy="20" r="2"/><circle cx="15" cy="20" r="2"/>
+        </svg>
+      </button>
       <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
       {editing ? (
         <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={handleKeyDown}
@@ -51,7 +79,6 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
 
 // Reusable Combo create/edit modal. forcePrefix auto-prepends to name.
 export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, forcePrefix = "", title }) {
-  // Strip prefix when editing existing combo so user only edits suffix
   const initialName = combo?.name
     ? (forcePrefix && combo.name.startsWith(forcePrefix) ? combo.name.slice(forcePrefix.length) : combo.name)
     : "";
@@ -61,6 +88,23 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  // Derived from models — same pattern as /dashboard/combos
+  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = modelItems.findIndex((m) => m.uid === active.id);
+      const newIndex = modelItems.findIndex((m) => m.uid === over.id);
+      setModels((prev) => arrayMove(prev, oldIndex, newIndex));
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -77,26 +121,27 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
   const handleNameChange = (e) => {
     let value = e.target.value;
-    // If user types prefix manually, strip it (we always prepend)
     if (forcePrefix && value.startsWith(forcePrefix)) value = value.slice(forcePrefix.length);
     setName(value);
     if (value) validateName(value); else setNameError("");
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    if (!models.includes(model.value)) setModels((prev) => [...prev, model.value]);
   };
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels((prev) => prev.filter((m) => m !== model.value));
   };
-  const handleRemoveModel = (i) => setModels(models.filter((_, idx) => idx !== i));
+  const handleRemoveModel = (i) => setModels((prev) => prev.filter((_, idx) => idx !== i));
   const handleMoveUp = (i) => {
     if (i === 0) return;
-    const a = [...models]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; setModels(a);
+    setModels((prev) => { const a = [...prev]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return a; });
   };
   const handleMoveDown = (i) => {
-    if (i === models.length - 1) return;
-    const a = [...models]; [a[i], a[i + 1]] = [a[i + 1], a[i]]; setModels(a);
+    setModels((prev) => {
+      if (i === prev.length - 1) return prev;
+      const a = [...prev]; [a[i], a[i + 1]] = [a[i + 1], a[i]]; return a;
+    });
   };
 
   const handleSave = async () => {
@@ -133,22 +178,26 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
           <div>
             <label className="text-sm font-medium mb-1.5 block">Models</label>
-            {models.length === 0 ? (
+            {modelItems.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
             ) : (
-              <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                {models.map((model, index) => (
-                  <ModelItem key={index} index={index} model={model}
-                    isFirst={index === 0} isLast={index === models.length - 1}
-                    onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
-                    onMoveUp={() => handleMoveUp(index)}
-                    onMoveDown={() => handleMoveDown(index)}
-                    onRemove={() => handleRemoveModel(index)} />
-                ))}
-              </div>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
+                <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
+                  <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
+                    {modelItems.map(({ uid, model }, index) => (
+                      <ModelItem key={uid} id={uid} index={index} model={model}
+                        isFirst={index === 0} isLast={index === modelItems.length - 1}
+                        onEdit={(newVal) => { const updated = [...models]; updated[index] = newVal; setModels(updated); }}
+                        onMoveUp={() => handleMoveUp(index)}
+                        onMoveDown={() => handleMoveDown(index)}
+                        onRemove={() => handleRemoveModel(index)} />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
             <button onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1">

@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { getProviderInfo, groupModelsByProvider } from "./providerPrefixMap";
 
 export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -24,6 +25,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [selectedModels, setSelectedModels] = useState([]);
   const [activeModel, setActiveModel] = useState("");
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const selectedModelsRef = useRef([]);
 
   useEffect(() => {
@@ -62,6 +64,19 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       setSubagentModel(status.config.agent.explorer.model.replace("9router/", ""));
     }
   }, [status]);
+
+  // Collapse all groups by default, expand only the group containing activeModel
+  useEffect(() => {
+    const models = status?.opencode?.models || selectedModels;
+    const active = status?.opencode?.activeModel || activeModel;
+    const groups = groupModelsByProvider(models);
+    const activeGroupKey = active ? (getProviderInfo(active).prefix || "__other__") : null;
+    const initial = {};
+    for (const key of Object.keys(groups)) {
+      initial[key] = key !== activeGroupKey;
+    }
+    setCollapsedGroups(initial);
+  }, [status?.opencode?.models, status?.opencode?.activeModel]);
 
   const fetchModelAliases = async () => {
     try {
@@ -324,109 +339,161 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 flex flex-col gap-2">
-                    <div className="flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                    <div className="rounded border border-border overflow-hidden">
                       {selectedModels.length === 0 ? (
-                        <span className="text-xs text-text-muted">No models selected</span>
+                        <div className="flex items-center min-h-[28px] px-2 py-1.5 bg-surface">
+                          <span className="text-xs text-text-muted">No models selected</span>
+                        </div>
                       ) : (
-                        selectedModels.map((model) => (
-                          <span
-                            key={model}
-                            onClick={async () => {
-                              if (model === activeModel) {
-                                try {
-                                  const res = await fetch("/api/cli-tools/opencode-settings", {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ clearActiveModel: true }),
-                                  });
-                                  if (res.ok) {
-                                    setActiveModel("");
-                                    checkStatus();
-                                  }
-                                } catch (error) {
-                                  console.log("Error clearing active model:", error);
-                                }
-                              } else {
-                                setActiveModel(model);
-                              }
-                            }}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
-                              model === activeModel
-                                ? "bg-primary/10 text-primary border border-primary"
-                                : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
-                            }`}
-                            title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
-                          >
-                            {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
-                            {model}
-                            <button
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  const res = await fetch(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
-                                  if (res.ok) {
-                                    const newModels = selectedModels.filter((m) => m !== model);
-                                    setSelectedModels(newModels);
-                                    if (activeModel === model) {
-                                      setActiveModel("");
-                                    }
-                                    checkStatus();
-                                  }
-                                } catch (error) {
-                                  console.log("Error removing model:", error);
-                                }
-                              }}
-                              className="ml-0.5 hover:text-red-500"
-                            >
-                              <span className="material-symbols-outlined text-[12px]">close</span>
-                            </button>
-                          </span>
-                        ))
+                        <div className="flex flex-col">
+                          {Object.entries(groupModelsByProvider(selectedModels)).map(([groupKey, group], idx, arr) => {
+                            const isCollapsed = collapsedGroups[groupKey];
+                            return (
+                              <div key={groupKey} className={idx < arr.length - 1 ? "border-b border-border" : ""}>
+                                {/* Group header */}
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))}
+                                  className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-surface hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                   {group.isCombo ? (
+                                     <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px", width: "14px", height: "14px" }}>layers</span>
+                                   ) : group.icon ? (
+                                     <Image src={group.icon} alt={group.name} width={14} height={14} className="size-3.5 object-contain rounded-sm shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
+                                   ) : (
+                                     <span className="material-symbols-outlined text-text-muted shrink-0" style={{ fontSize: "14px", width: "14px", height: "14px" }}>smart_toy</span>
+                                   )}
+                                  <span className="text-xs font-medium text-text-main flex-1 text-left">{group.name}</span>
+                                   <span className="text-xs text-text-muted mr-1">{group.models.length}</span>
+                                  <span className={`material-symbols-outlined text-[14px] text-text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}>expand_more</span>
+                                </button>
+                                 {/* Group models */}
+                                 {!isCollapsed && (
+                                   <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-border">
+                                     {group.models.slice().sort((a, b) => a.localeCompare(b)).map((model) => {
+                                       const { modelName } = getProviderInfo(model);
+                                       const isActive = model === activeModel;
+                                       return (
+                                         <span
+                                           key={model}
+                                           onClick={async () => {
+                                             if (isActive) {
+                                               try {
+                                                 const res = await fetch("/api/cli-tools/opencode-settings", {
+                                                   method: "PATCH",
+                                                   headers: { "Content-Type": "application/json" },
+                                                   body: JSON.stringify({ clearActiveModel: true }),
+                                                 });
+                                                 if (res.ok) {
+                                                   setActiveModel("");
+                                                   // Don't collapse group when clearing active
+                                                   checkStatus();
+                                                 }
+                                               } catch (error) {
+                                                 console.log("Error clearing active model:", error);
+                                               }
+                                             } else {
+                                               const newGroupKey = getProviderInfo(model).prefix || "__other__";
+                                               const oldGroupKey = activeModel ? (getProviderInfo(activeModel).prefix || "__other__") : null;
+                                               setActiveModel(model);
+                                               setCollapsedGroups(prev => {
+                                                 const next = { ...prev, [newGroupKey]: false };
+                                                 if (oldGroupKey && oldGroupKey !== newGroupKey) next[oldGroupKey] = true;
+                                                 return next;
+                                               });
+                                             }
+                                           }}
+                                           className={`group/chip relative inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors overflow-hidden ${
+                                             isActive
+                                               ? "bg-primary/10 text-primary border border-primary pl-10"
+                                               : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
+                                           }`}
+                                           title={isActive ? "Click to clear active model" : "Click to set as active"}
+                                         >
+                                           {isActive && (
+                                             <span className="absolute left-0 top-0 bottom-0 aspect-square flex items-center justify-center bg-primary text-white">
+                                               <span className="material-symbols-outlined" style={{ fontSize: "16px" }}>check</span>
+                                             </span>
+                                           )}
+                                           {modelName}
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await fetch(`/api/cli-tools/opencode-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
+                                                  if (res.ok) {
+                                                    const newModels = selectedModels.filter((m) => m !== model);
+                                                    setSelectedModels(newModels);
+                                                    if (activeModel === model) setActiveModel("");
+                                                    checkStatus();
+                                                  }
+                                                } catch (error) {
+                                                  console.log("Error removing model:", error);
+                                                }
+                                              }}
+                                              title="Remove model"
+                                              className="flex items-center justify-center shrink-0 ml-0.5 cursor-pointer text-white hover:text-red-400 transition-colors"
+                                            >
+                                              <span className="material-symbols-outlined text-[12px]">close</span>
+                                            </button>
+                                         </span>
+                                       );
+                                     })}
+                                   </div>
+                                 )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                      <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
-                      <span className="text-xs text-text-muted">
-                        {selectedModels.length > 0 && activeModel ? (
-                          <>Active: <span className="text-primary">{activeModel}</span></>
-                        ) : selectedModels.length > 0 ? (
-                          <span className="text-yellow-500">Click a model to set/clear active</span>
-                        ) : (
-                          "Select models to add"
-                        )}
-                      </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => setModalOpen(true)}
+                        disabled={!activeProviders?.length}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium transition-colors ${activeProviders?.length ? "bg-primary text-white hover:bg-primary-hover cursor-pointer" : "opacity-50 cursor-not-allowed bg-surface border border-border text-text-muted"}`}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>add</span>
+                        Add Model
+                      </button>
+                      {selectedModels.length > 0 && !activeModel && (
+                        <span className="text-xs text-yellow-500">Click a model to set as active</span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Subagent Model */}
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
-                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Subagent Model</span>
-                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <input
-                    type="text"
-                    value={subagentModel}
-                    onChange={(e) => setSubagentModel(e.target.value)}
-                    placeholder={selectedModel || "provider/model-id (defaults to main model)"}
-                    className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
-                  />
-                  <button
-                    onClick={() => setSubagentModalOpen(true)}
-                    disabled={!activeProviders?.length}
-                    className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
-                  >
-                    Select Model
-                  </button>
-                  {subagentModel && (
-                    <button
-                      onClick={() => setSubagentModel("")}
-                      className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
-                      title="Clear (will use main model)"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">close</span>
-                    </button>
-                  )}
-                </div>
+                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Subagent Model</span>
+                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                   <div className="relative w-full min-w-0">
+                     <input
+                       type="text"
+                       value={subagentModel}
+                       onChange={(e) => setSubagentModel(e.target.value)}
+                       placeholder={selectedModel || "provider/model-id (defaults to main model)"}
+                       className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5 pr-7"
+                     />
+                     {subagentModel && (
+                       <button
+                         onClick={() => setSubagentModel("")}
+                         className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                         title="Clear (will use main model)"
+                       >
+                         <span className="material-symbols-outlined text-[14px]">close</span>
+                       </button>
+                     )}
+                   </div>
+                   <button
+                     onClick={() => setSubagentModalOpen(true)}
+                     disabled={!activeProviders?.length}
+                     className={`w-full sm:w-auto inline-flex items-center gap-1 rounded px-2.5 py-2 text-xs font-medium transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-primary text-white hover:bg-primary-hover cursor-pointer" : "opacity-50 cursor-not-allowed bg-surface border border-border text-text-muted"}`}
+                   >
+                     <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>smart_toy</span>
+                     Select Model
+                   </button>
+                 </div>
               </div>
 
               {message && (
@@ -460,16 +527,35 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
         }}
         onSelect={(model) => {
           if (!selectedModels.includes(model.value)) {
-            setSelectedModels([...selectedModels, model.value]);
-            if (!activeModel) setActiveModel(model.value);
+            setSelectedModels(prev => {
+              const next = [...prev, model.value];
+              if (!activeModel) setActiveModel(model.value);
+              return next;
+            });
           }
         }}
+        onSelectMany={(models) => {
+          setSelectedModels(prev => {
+            const toAdd = models.map(m => m.value).filter(v => !prev.includes(v));
+            const next = [...prev, ...toAdd];
+            if (!activeModel && toAdd.length > 0) setActiveModel(toAdd[0]);
+            return next;
+          });
+        }}
         onDeselect={(model) => {
-          const remaining = selectedModels.filter(m => m !== model.value);
-          setSelectedModels(remaining);
-          if (activeModel === model.value) {
-            setActiveModel(remaining[0] || "");
-          }
+          setSelectedModels(prev => {
+            const remaining = prev.filter(m => m !== model.value);
+            if (activeModel === model.value) setActiveModel(remaining[0] || "");
+            return remaining;
+          });
+        }}
+        onDeselectMany={(models) => {
+          const values = new Set(models.map(m => m.value));
+          setSelectedModels(prev => {
+            const remaining = prev.filter(m => !values.has(m));
+            if (values.has(activeModel)) setActiveModel(remaining[0] || "");
+            return remaining;
+          });
         }}
         selectedModel={null}
         activeProviders={activeProviders}

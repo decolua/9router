@@ -5,6 +5,7 @@ import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal, M
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
+import { getProviderInfo, groupModelsByProvider } from "./providerPrefixMap";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
 
@@ -46,9 +47,12 @@ export default function CoworkToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [modelSelectOpen, setModelSelectOpen] = useState(false);
+  const [editingCombo, setEditingCombo] = useState(null);
+  const [availableCombos, setAvailableCombos] = useState([]); // { id, name, models }
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ type: "url", name: "", url: "", command: "", args: "" });
+  const [collapsedGroups, setCollapsedGroups] = useState({});
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -72,11 +76,21 @@ export default function CoworkToolCard({
         if (data) setModelAliases(data.aliases || {});
       })
       .catch(() => {});
+    fetch("/api/combos")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data) setAvailableCombos((data.combos || []).filter(c => c.name.startsWith("claude-")));
+      })
+      .catch(() => {});
   }, [isExpanded]);
 
   useEffect(() => {
     if (status?.cowork?.models?.length) {
-      setSelectedModels(status.cowork.models);
+      const models = status.cowork.models;
+      setSelectedModels(models);
+      // Initialize all groups as expanded (false = expanded, true = collapsed)
+      const groups = groupModelsByProvider(models);
+      setCollapsedGroups(Object.fromEntries(Object.keys(groups).map(k => [k, false])));
     }
     if (status?.cowork?.baseUrl && !customBaseUrl) {
       setCustomBaseUrl(stripV1(status.cowork.baseUrl));
@@ -175,8 +189,41 @@ export default function CoworkToolCard({
       if (!selectedModels.includes(name)) {
         setSelectedModels([...selectedModels, name]);
       }
+      // Auto-expand Combos group after creating
+      setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
       setComboModalOpen(false);
       setMessage({ type: "success", text: `Combo "${name}" created and added.` });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    }
+  };
+
+  const handleViewCombo = async (comboName) => {
+    try {
+      const res = await fetch("/api/combos");
+      const data = await res.json();
+      const combo = (data.combos || []).find(c => c.name === comboName);
+      if (combo) setEditingCombo(combo);
+    } catch (error) {
+      console.log("Error fetching combo:", error);
+    }
+  };
+
+  const handleUpdateCombo = async ({ name, models }) => {
+    if (!editingCombo?.id) return;
+    try {
+      const res = await fetch(`/api/combos/${editingCombo.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, models }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: "error", text: err.error || "Failed to update combo" });
+        return;
+      }
+      setEditingCombo(null);
+      setMessage({ type: "success", text: `Combo "${name}" updated.` });
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     }
@@ -186,6 +233,9 @@ export default function CoworkToolCard({
     const value = model?.value || model?.name || model;
     if (!value || selectedModels.includes(value)) return;
     setSelectedModels((prev) => [...prev, value]);
+    // Keep group expanded after adding
+    const groupKey = getProviderInfo(value).prefix || "__combo__";
+    setCollapsedGroups(prev => ({ ...prev, [groupKey]: false }));
   };
 
   const handleRemoveModel = (model) => {
@@ -294,7 +344,7 @@ export default function CoworkToolCard({
           {!checking && status?.installed && (
             <>
               <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <BaseUrlSelect
@@ -310,7 +360,7 @@ export default function CoworkToolCard({
                 </div>
 
                 {status?.cowork?.baseUrl && (
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-start sm:gap-2">
                     <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
                     <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                     <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
@@ -319,31 +369,132 @@ export default function CoworkToolCard({
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-start sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
-                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Models</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-                  <div className="flex-1 flex items-center gap-2">
-                    <div className="flex-1 flex flex-wrap gap-1.5 min-h-[28px] px-2 py-1.5 bg-surface rounded border border-border">
+                  <div className="flex-1 flex flex-col gap-2">
+                    <div className="rounded border border-border overflow-hidden">
                       {selectedModels.length === 0 ? (
-                        <span className="text-xs text-text-muted">No models selected</span>
+                        <div className="flex items-center min-h-[28px] px-2 py-1.5 bg-surface">
+                          <span className="text-xs text-text-muted">No models selected</span>
+                        </div>
                       ) : (
-                        selectedModels.map((m) => (
-                          <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
-                            {m}
-                            <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
-                              <span className="material-symbols-outlined text-[12px]">close</span>
-                            </button>
-                          </span>
-                        ))
+                        <div className="flex flex-col">
+                          {Object.entries(groupModelsByProvider(selectedModels)).map(([groupKey, group], idx, arr) => {
+                            const isCollapsed = collapsedGroups[groupKey] !== false;
+                            return (
+                              <div key={groupKey} className={idx < arr.length - 1 ? "border-b border-border" : ""}>
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedGroups(prev => ({ ...prev, [groupKey]: !isCollapsed }))}
+                                  className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-surface hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                   {group.icon ? (
+                                     <Image src={group.icon} alt={group.name} width={14} height={14} className="size-3.5 object-contain rounded-sm shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
+                                   ) : group.isCombo ? (
+                                     <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px", width: "14px", height: "14px" }}>layers</span>
+                                   ) : (
+                                     <span className="material-symbols-outlined text-[14px] text-text-muted shrink-0">smart_toy</span>
+                                   )}
+                                  <span className="text-xs font-medium text-text-main flex-1 text-left">{group.name}</span>
+                                  <span className="text-[10px] text-text-muted mr-1">{group.models.length}</span>
+                                  <span className={`material-symbols-outlined text-[14px] text-text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}>expand_more</span>
+                                </button>
+                                 {!isCollapsed && (
+                                   <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-border">
+                                     {group.models.map((m) => {
+                                       const { modelName } = getProviderInfo(m);
+                                       return (
+                                          <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                                            {modelName}
+                                            {group.isCombo && (
+                                              <button
+                                                onClick={() => handleViewCombo(m)}
+                                                className="ml-0.5 hover:text-primary transition-colors"
+                                                title="Edit combo"
+                                              >
+                                                <span className="material-symbols-outlined text-[12px]">edit</span>
+                                              </button>
+                                            )}
+                                            <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
+                                              <span className="material-symbols-outlined text-[12px]">close</span>
+                                            </button>
+                                          </span>
+                                       );
+                                     })}
+                                     {group.isCombo && (() => {
+                                       const addableExisting = availableCombos.filter(c => !selectedModels.includes(c.name));
+                                       return (
+                                         <>
+                                           <button
+                                             onClick={() => setComboModalOpen(true)}
+                                             disabled={!hasActiveProviders}
+                                             className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs leading-none border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
+                                           >
+                                             <span className="material-symbols-outlined text-[12px]">add</span>
+                                             Combo
+                                           </button>
+                                           {addableExisting.map(c => (
+                                             <button
+                                               key={c.id}
+                                               onClick={() => {
+                                                 setSelectedModels(prev => [...prev, c.name]);
+                                                 setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
+                                               }}
+                                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-primary/40 hover:text-primary transition-colors leading-none"
+                                               title={`Add ${c.name}`}
+                                             >
+                                               {c.name}
+                                               <span className="material-symbols-outlined text-[12px]">add</span>
+                                             </button>
+                                           ))}
+                                         </>
+                                       );
+                                     })()}
+                                   </div>
+                                 )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
-                    <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
+                    {/* Show + Combo button if no combo group exists yet */}
+                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (() => {
+                      const addableExisting = availableCombos.filter(c => !selectedModels.includes(c.name));
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            onClick={() => setComboModalOpen(true)}
+                            disabled={!hasActiveProviders}
+                            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs leading-none border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
+                          >
+                            <span className="material-symbols-outlined text-[12px]">add</span>
+                            Combo
+                          </button>
+                          {addableExisting.map(c => (
+                            <button
+                              key={c.id}
+                              onClick={() => {
+                                setSelectedModels(prev => [...prev, c.name]);
+                                setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-primary/40 hover:text-primary transition-colors leading-none"
+                              title={`Add ${c.name}`}
+                            >
+                              {c.name}
+                              <span className="material-symbols-outlined text-[12px]">add</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -524,11 +675,38 @@ export default function CoworkToolCard({
         title="Create Cowork Combo"
       />
 
+      {editingCombo && (
+        <ComboFormModal
+          isOpen={!!editingCombo}
+          combo={editingCombo}
+          onClose={() => setEditingCombo(null)}
+          onSave={handleUpdateCombo}
+          activeProviders={activeProviders}
+          forcePrefix="claude-"
+          title={`Edit Combo: ${editingCombo.name}`}
+        />
+      )}
+
       <ModelSelectModal
         isOpen={modelSelectOpen}
         onClose={() => setModelSelectOpen(false)}
         onSelect={handleAddModel}
+        onSelectMany={(models) => {
+          const toAdd = models.map(m => m.value || m.name || m);
+          setSelectedModels(prev => [...prev, ...toAdd.filter(v => !prev.includes(v))]);
+          // Keep groups expanded after adding
+          const groupKeys = new Set(toAdd.map(v => getProviderInfo(v).prefix || "__combo__"));
+          setCollapsedGroups(prev => {
+            const next = { ...prev };
+            groupKeys.forEach(k => { next[k] = false; });
+            return next;
+          });
+        }}
         onDeselect={handleRemoveModel}
+        onDeselectMany={(models) => {
+          const values = new Set(models.map(m => m.value || m.name || m));
+          setSelectedModels(prev => prev.filter(m => !values.has(m)));
+        }}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
         title="Select Cowork Model"
@@ -631,9 +809,9 @@ export default function CoworkToolCard({
                 }}
                 className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:opacity-90 cursor-pointer"
               >Add</button>
-            </div>
-          </div>
-        </div>
+                    </div>
+                  </div>
+                </div>
       )}
     </Card>
   );

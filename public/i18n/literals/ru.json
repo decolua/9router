@@ -190,5 +190,14 @@
   "Sudo Password": "Пароль sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Нажмите, чтобы добавить, нажмите ещё раз, чтобы удалить. Изменения сохраняются автоматически.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Уведомление о риске: Этот провайдер использует сессию подписки/OAuth, не имеющую официальной лицензии для использования через прокси/маршрутизатор. Аккаунт может быть ограничен или заблокирован. Используйте на свой страх и риск.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM перехватывает HTTPS-трафик IDE-инструментов (Antigravity, GitHub Copilot, Kiro) через локальный CA для перенаправления запросов вашим провайдерам. Может нарушить ToS → риск блокировки аккаунта. Используйте на свой страх и риск."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM перехватывает HTTPS-трафик IDE-инструментов (Antigravity, GitHub Copilot, Kiro) через локальный CA для перенаправления запросов вашим провайдерам. Может нарушить ToS → риск блокировки аккаунта. Используйте на свой страх и риск.",
+  "Select all": "Выбрать все",
+  "Unselect all": "Снять все выборы",
+  "Click a model to select it.": "Нажмите на модель, чтобы выбрать её.",
+  "No models selected": "Модели не выбраны",
+  "Add Model": "Добавить модель",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Сначала пополните через Billing, затем Services → AI → Top Up для конвертации баланса в AI-кредиты. Затем перейдите на вкладку API Keys и нажмите Add API Key (вверху справа).",
+  "Click a model to set as active": "Нажмите на модель, чтобы установить её активной",
+  "Select Model": "Выбрать модель",
+  "Click to clear active model": "Нажмите, чтобы очистить активную модель"
 }

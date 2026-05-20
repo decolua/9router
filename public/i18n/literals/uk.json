@@ -190,5 +190,14 @@
   "Sudo Password": "Пароль Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Натисніть, щоб додати, натисніть ще раз, щоб видалити. Зміни зберігаються автоматично.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Сповіщення про ризик: Цей провайдер використовує сесію підписки/OAuth, яка офіційно не ліцензована для використання через проксі/маршрутизатор. Обліковий запис може бути обмежений або заблокований. Використовуйте на свій страх і ризик.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM перехоплює HTTPS-трафік IDE-інструментів (Antigravity, GitHub Copilot, Kiro) через локальний CA для перенаправлення запитів до ваших провайдерів. Може порушити ToS → ризик блокування облікового запису. Використовуйте на свій страх і ризик."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM перехоплює HTTPS-трафік IDE-інструментів (Antigravity, GitHub Copilot, Kiro) через локальний CA для перенаправлення запитів до ваших провайдерів. Може порушити ToS → ризик блокування облікового запису. Використовуйте на свій страх і ризик.",
+  "Select all": "Вибрати все",
+  "Unselect all": "Скасувати вибір усіх",
+  "Click a model to select it.": "Натисніть на модель, щоб вибрати її.",
+  "No models selected": "Моделі не вибрані",
+  "Add Model": "Додати модель",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Спочатку поповніть через Billing, потім Services → AI → Top Up для конвертації балансу в AI-кредити. Потім перейдіть на вкладку API Keys і натисніть Add API Key (вгорі праворуч).",
+  "Click a model to set as active": "Натисніть на модель, щоб встановити її активною",
+  "Select Model": "Вибрати модель",
+  "Click to clear active model": "Натисніть, щоб очистити активну модель"
 }

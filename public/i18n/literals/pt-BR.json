@@ -190,5 +190,14 @@
   "Sudo Password": "Senha sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Clique para adicionar, clique novamente para remover. As alterações são salvas automaticamente.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Aviso de Risco: Este provedor usa uma sessão de assinatura/OAuth não licenciada oficialmente para uso de proxy/roteador. A conta pode ser restrita ou banida. Use por sua conta e risco.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM intercepta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar solicitações aos seus provedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM intercepta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar solicitações aos seus provedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco.",
+  "Select all": "Selecionar tudo",
+  "Unselect all": "Desmarcar tudo",
+  "Click a model to select it.": "Clique em um modelo para selecioná-lo.",
+  "No models selected": "Nenhum modelo selecionado",
+  "Add Model": "Adicionar modelo",
+  "Top up via Billing first, then Services → AI → Top Up to convert balance to AI credits. Then go to API Keys tab and click Add API Key (top right).": "Faça recarga via Billing primeiro, depois Services → AI → Top Up para converter saldo em créditos de IA. Em seguida, vá para a aba API Keys e clique em Add API Key (canto superior direito).",
+  "Click a model to set as active": "Clique em um modelo para defini-lo como ativo",
+  "Select Model": "Selecionar modelo",
+  "Click to clear active model": "Clique para limpar o modelo ativo"
 }
