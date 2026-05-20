@@ -32,6 +32,8 @@ const URL_PATTERNS = {
 const MODEL_SYNONYMS = {
   antigravity: {
     "gemini-default": "gemini-3.5-flash",
+    "gemini-3.5-flash-high": "gemini-3.5-flash-high",
+    "gemini-3.5-flash-medium": "gemini-3.5-flash-medium",
     "gemini-3.5-flash": "gemini-3.5-flash",
     "gemini-3-flash": "gemini-3-flash",
     // TODO: Enable when Antigravity officially lists Claude Opus 4.7.
@@ -46,6 +48,8 @@ const MODEL_SYNONYMS = {
 // Order matters: more specific patterns first. Catches AG renamed variants (e.g. gemini-pro-agent)
 const MODEL_PATTERNS = {
   antigravity: [
+    { match: /flash.*high|high.*flash/i,  alias: "gemini-3.5-flash-high" },
+    { match: /flash.*medium|medium.*flash/i, alias: "gemini-3.5-flash-medium" },
     { match: /flash/i,                   alias: "gemini-3.5-flash" },
     { match: /pro.*low|low.*pro/i,       alias: "gemini-3.1-pro-low" },
     { match: /gemini.*pro|pro.*gemini/i, alias: "gemini-3.1-pro-high" },

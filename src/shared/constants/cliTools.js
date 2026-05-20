@@ -9,11 +9,13 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
     // TODO: Enable claude-opus-4-7-thinking when Antigravity officially lists Claude Opus 4.7.
-    modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3.5-flash", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low", "gemini-pro-agent"],
+    modelAliases: ["claude-opus-4-6-thinking", "claude-sonnet-4-6", "gemini-3.5-flash-high", "gemini-3.5-flash-medium", "gemini-3.5-flash", "gemini-3-flash", "gpt-oss-120b-medium", "gemini-3-pro-high", "gemini-3-pro-low", "gemini-pro-agent"],
     defaultModels: [
       { id: "gemini-pro-agent", name: "Gemini Pro Agent (AG v1.23+ Agent Mode)", alias: "gemini-pro-agent" },
       { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro High", alias: "gemini-3.1-pro-high" },
       { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro Low", alias: "gemini-3.1-pro-low" },
+      { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash High", alias: "gemini-3.5-flash-high" },
+      { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash Medium", alias: "gemini-3.5-flash-medium" },
       { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash / Default", alias: "gemini-3.5-flash" },
       { id: "gemini-3-flash", name: "Gemini 3 Flash (Legacy)", alias: "gemini-3-flash" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
@@ -382,4 +384,3 @@ export const getProviderModelsForMapping = (providers) => {
   });
   return result;
 };
-
