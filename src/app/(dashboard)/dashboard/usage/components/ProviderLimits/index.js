@@ -7,6 +7,7 @@ import Toggle from "@/shared/components/Toggle";
 import { parseQuotaData, calculatePercentage } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
+import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 function getConnectionLabel(connection) {
   const isEmail = (value) =>
@@ -175,6 +176,33 @@ async function reconcileConnectionsPage(fetchConnections, targetPage) {
   return nextConnections;
 }
 
+const QUOTA_CACHE_KEY = "quotaCacheData";
+
+function getQuotaCache() {
+  if (typeof window === "undefined") return {};
+  try {
+    const cached = window.localStorage.getItem(QUOTA_CACHE_KEY);
+    return cached ? JSON.parse(cached) : {};
+  } catch (error) {
+    console.error("Error reading quota cache:", error);
+    return {};
+  }
+}
+
+function setQuotaCache(connectionId, quotaEntry) {
+  if (typeof window === "undefined") return;
+  try {
+    const cache = getQuotaCache();
+    cache[connectionId] = {
+      ...quotaEntry,
+      cachedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.error("Error writing quota cache:", error);
+  }
+}
+
 const REFRESH_INTERVAL_MS = 60000; // 60 seconds
 const DEPLETED_QUOTA_THRESHOLD = 5; // percent
 const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
@@ -217,7 +245,9 @@ export default function ProviderLimits() {
   const [bulkToggling, setBulkToggling] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
-  const [customPageSizeInput, setCustomPageSizeInput] = useState(String(CONNECTIONS_PAGE_SIZE));
+  const [customPageSizeInput, setCustomPageSizeInput] = useState(
+    String(CONNECTIONS_PAGE_SIZE),
+  );
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: CONNECTIONS_PAGE_SIZE,
@@ -304,13 +334,15 @@ export default function ProviderLimits() {
             `[ProviderLimits] Auth error for ${provider}:`,
             errorMsg,
           );
+          const quotaEntry = {
+            quotas: [],
+            message: errorMsg,
+          };
           setQuotaData((prev) => ({
             ...prev,
-            [connectionId]: {
-              quotas: [],
-              message: errorMsg,
-            },
+            [connectionId]: quotaEntry,
           }));
+          setQuotaCache(connectionId, quotaEntry);
           return;
         }
 
@@ -323,15 +355,18 @@ export default function ProviderLimits() {
       // Parse quota data using provider-specific parser
       const parsedQuotas = parseQuotaData(provider, data);
 
+      const quotaEntry = {
+        quotas: parsedQuotas,
+        plan: data.plan || null,
+        message: data.message || null,
+        raw: data,
+      };
+
       setQuotaData((prev) => ({
         ...prev,
-        [connectionId]: {
-          quotas: parsedQuotas,
-          plan: data.plan || null,
-          message: data.message || null,
-          raw: data,
-        },
+        [connectionId]: quotaEntry,
       }));
+      setQuotaCache(connectionId, quotaEntry);
     } catch (error) {
       console.error(
         `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
@@ -377,6 +412,22 @@ export default function ProviderLimits() {
             delete next[id];
             return next;
           });
+
+          if (typeof window !== "undefined") {
+            try {
+              const cache = getQuotaCache();
+              if (cache[id]) {
+                delete cache[id];
+                window.localStorage.setItem(
+                  QUOTA_CACHE_KEY,
+                  JSON.stringify(cache),
+                );
+              }
+            } catch (e) {
+              console.error("Error deleting cache entry:", e);
+            }
+          }
+
           await reconcileConnectionsPage(fetchConnections, page);
         }
       } catch (error) {
@@ -489,18 +540,62 @@ export default function ProviderLimits() {
       const visibleConnections = await fetchConnections(page);
       setConnectionsLoading(false);
 
-      setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
-      setQuotaData((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
+      const cache = getQuotaCache();
+      const nextLoading = {};
+      const cachedQuotas = {};
+      const connectionsToFetch = [];
+      let latestCachedAt = null;
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
-      setLastUpdated(new Date());
+      visibleConnections.forEach((conn) => {
+        const cachedEntry = cache[conn.id];
+        if (cachedEntry) {
+          nextLoading[conn.id] = false;
+          cachedQuotas[conn.id] = {
+            quotas: cachedEntry.quotas,
+            plan: cachedEntry.plan,
+            message: cachedEntry.message,
+            raw: cachedEntry.raw,
+          };
+          if (cachedEntry.cachedAt) {
+            const cachedTime = new Date(cachedEntry.cachedAt);
+            if (!latestCachedAt || cachedTime > latestCachedAt) {
+              latestCachedAt = cachedTime;
+            }
+          }
+        } else {
+          nextLoading[conn.id] = true;
+          connectionsToFetch.push(conn);
+        }
+      });
+
+      setLoading(nextLoading);
+      setErrors((prev) => {
+        const nextErrors = filterQuotaStateByConnections(
+          prev,
+          visibleConnections,
+        );
+        visibleConnections.forEach((conn) => {
+          if (cache[conn.id]) {
+            nextErrors[conn.id] = null;
+          }
+        });
+        return nextErrors;
+      });
+      setQuotaData((prev) => ({
+        ...filterQuotaStateByConnections(prev, visibleConnections),
+        ...cachedQuotas,
+      }));
+
+      if (latestCachedAt) {
+        setLastUpdated(latestCachedAt);
+      }
+
+      if (connectionsToFetch.length > 0) {
+        await Promise.all(
+          connectionsToFetch.map((conn) => fetchQuota(conn.id, conn.provider)),
+        );
+        setLastUpdated(new Date());
+      }
     };
 
     initializeData();
@@ -697,6 +792,11 @@ export default function ProviderLimits() {
           <h2 className="text-xl font-semibold text-text-primary">
             Provider Limits
           </h2>
+          {lastUpdated && (
+            <span className="text-xs text-text-muted bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-full font-medium">
+              Last updated: {new Date(lastUpdated).toLocaleTimeString()}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1156,7 +1256,9 @@ export default function ProviderLimits() {
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
                 aria-label="Previous accounts page"
               >
-                <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  chevron_left
+                </span>
               </button>
               <div className="text-xs text-text-muted">
                 Page {pagination.page} / {pagination.totalPages}
@@ -1176,13 +1278,17 @@ export default function ProviderLimits() {
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
                 aria-label="Next accounts page"
               >
-                <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                <span className="material-symbols-outlined text-[16px]">
+                  chevron_right
+                </span>
               </button>
               <button
                 type="button"
                 onClick={() => setPage(pagination.totalPages)}
                 disabled={
-                  pagination.page >= pagination.totalPages || connectionsLoading || refreshingAll
+                  pagination.page >= pagination.totalPages ||
+                  connectionsLoading ||
+                  refreshingAll
                 }
                 className="flex h-8 items-center rounded-lg border border-black/10 px-3 text-xs text-text-primary transition-colors hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-white/5"
               >
