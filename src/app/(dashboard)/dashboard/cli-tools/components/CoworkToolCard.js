@@ -427,8 +427,7 @@ export default function CoworkToolCard({
                                          disabled={!hasActiveProviders}
                                          className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
                                        >
-                                         <span className="material-symbols-outlined text-[11px]">add</span>
-                                          + Combo
+                                         + Combo
                                        </button>
                                      )}
                                    </div>
@@ -439,6 +438,12 @@ export default function CoworkToolCard({
                         </div>
                       )}
                     </div>
+                    {/* Show + Combo button if no combo group exists yet */}
+                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -754,12 +759,6 @@ export default function CoworkToolCard({
                 className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:opacity-90 cursor-pointer"
               >Add</button>
                     </div>
-                    {/* Show + Combo button if no combo group exists yet */}
-                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
-                      </div>
-                    )}
                   </div>
                 </div>
       )}
