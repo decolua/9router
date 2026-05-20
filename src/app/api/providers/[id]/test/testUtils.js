@@ -228,7 +228,8 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };
 
   // Cursor uses protobuf API - can only verify token exists, not test endpoint
-  if (config.tokenExists) {
+  // access_token connections use agent identity tokens - not testable via standard API
+  if (config.tokenExists || connection.authType === "access_token") {
     return { valid: true, error: null, refreshed: false, newTokens: null };
   }
 
