@@ -974,6 +974,8 @@ export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
 );
 
 export function getModelsByProviderId(providerId) {
+  // Try providerId directly first, then fall back to alias lookup
+  if (PROVIDER_MODELS[providerId]) return PROVIDER_MODELS[providerId];
   const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
   return PROVIDER_MODELS[alias] || [];
 }
