@@ -47,6 +47,7 @@ export default function CoworkToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [modelSelectOpen, setModelSelectOpen] = useState(false);
+  const [editingCombo, setEditingCombo] = useState(null); // { id, name, models }
   const [marketplaceOpen, setMarketplaceOpen] = useState(false);
   const [addMcpOpen, setAddMcpOpen] = useState(false);
   const [addMcpForm, setAddMcpForm] = useState({ type: "url", name: "", url: "", command: "", args: "" });
@@ -181,8 +182,41 @@ export default function CoworkToolCard({
       if (!selectedModels.includes(name)) {
         setSelectedModels([...selectedModels, name]);
       }
+      // Auto-expand Combos group after creating
+      setCollapsedGroups(prev => ({ ...prev, __combo__: false }));
       setComboModalOpen(false);
       setMessage({ type: "success", text: `Combo "${name}" created and added.` });
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    }
+  };
+
+  const handleViewCombo = async (comboName) => {
+    try {
+      const res = await fetch("/api/combos");
+      const data = await res.json();
+      const combo = (data.combos || []).find(c => c.name === comboName);
+      if (combo) setEditingCombo(combo);
+    } catch (error) {
+      console.log("Error fetching combo:", error);
+    }
+  };
+
+  const handleUpdateCombo = async ({ name, models }) => {
+    if (!editingCombo?.id) return;
+    try {
+      const res = await fetch(`/api/combos/${editingCombo.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, models }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        setMessage({ type: "error", text: err.error || "Failed to update combo" });
+        return;
+      }
+      setEditingCombo(null);
+      setMessage({ type: "success", text: `Combo "${name}" updated.` });
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     }
@@ -365,29 +399,45 @@ export default function CoworkToolCard({
                                   <span className="text-[10px] text-text-muted mr-1">{group.models.length}</span>
                                   <span className={`material-symbols-outlined text-[14px] text-text-muted transition-transform ${isCollapsed ? "-rotate-90" : ""}`}>expand_more</span>
                                 </button>
-                                {!isCollapsed && (
-                                  <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-border">
-                                    {group.models.map((m) => {
-                                      const { modelName } = getProviderInfo(m);
-                                      return (
-                                        <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
-                                          {modelName}
-                                          <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
-                                            <span className="material-symbols-outlined text-[12px]">close</span>
-                                          </button>
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                                 {!isCollapsed && (
+                                   <div className="flex flex-wrap gap-1.5 px-2 py-1.5 bg-black/[0.02] dark:bg-white/[0.02] border-t border-border">
+                                     {group.models.map((m) => {
+                                       const { modelName } = getProviderInfo(m);
+                                       return (
+                                          <span key={m} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border">
+                                            {modelName}
+                                            {group.isCombo && (
+                                              <button
+                                                onClick={() => handleViewCombo(m)}
+                                                className="ml-0.5 hover:text-primary transition-colors"
+                                                title="Edit combo"
+                                              >
+                                                <span className="material-symbols-outlined text-[12px]">edit</span>
+                                              </button>
+                                            )}
+                                            <button onClick={() => handleRemoveModel(m)} className="ml-0.5 hover:text-red-500">
+                                              <span className="material-symbols-outlined text-[12px]">close</span>
+                                            </button>
+                                          </span>
+                                       );
+                                     })}
+                                     {group.isCombo && (
+                                       <button
+                                         onClick={() => setComboModalOpen(true)}
+                                         disabled={!hasActiveProviders}
+                                         className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-xs border border-dashed transition-colors ${hasActiveProviders ? "border-primary/40 text-primary hover:bg-primary/10 cursor-pointer" : "opacity-50 cursor-not-allowed border-border text-text-muted"}`}
+                                       >
+                                         <span className="material-symbols-outlined text-[11px]">add</span>
+                                          + Combo
+                                       </button>
+                                     )}
+                                   </div>
+                                 )}
                               </div>
                             );
                           })}
                         </div>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
                     </div>
                   </div>
                 </div>
@@ -569,6 +619,18 @@ export default function CoworkToolCard({
         title="Create Cowork Combo"
       />
 
+      {editingCombo && (
+        <ComboFormModal
+          isOpen={!!editingCombo}
+          combo={editingCombo}
+          onClose={() => setEditingCombo(null)}
+          onSave={handleUpdateCombo}
+          activeProviders={activeProviders}
+          forcePrefix="claude-"
+          title={`Edit Combo: ${editingCombo.name}`}
+        />
+      )}
+
       <ModelSelectModal
         isOpen={modelSelectOpen}
         onClose={() => setModelSelectOpen(false)}
@@ -691,9 +753,15 @@ export default function CoworkToolCard({
                 }}
                 className="px-3 py-1.5 rounded bg-primary text-white text-xs font-medium hover:opacity-90 cursor-pointer"
               >Add</button>
-            </div>
-          </div>
-        </div>
+                    </div>
+                    {/* Show + Combo button if no combo group exists yet */}
+                    {!Object.values(groupModelsByProvider(selectedModels)).some(g => g.isCombo) && (
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setComboModalOpen(true)} disabled={!hasActiveProviders} className={`shrink-0 px-2 py-1.5 rounded border text-xs whitespace-nowrap transition-colors ${hasActiveProviders ? "bg-primary/10 border-primary/40 text-primary hover:bg-primary/20 cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>+ Combo</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
       )}
     </Card>
   );

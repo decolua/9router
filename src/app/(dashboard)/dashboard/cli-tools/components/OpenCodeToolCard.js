@@ -356,10 +356,10 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                                   onClick={() => setCollapsedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))}
                                   className="w-full flex items-center gap-1.5 px-2 py-1.5 bg-surface hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                 >
-                                   {group.icon ? (
-                                     <Image src={group.icon} alt={group.name} width={14} height={14} className="size-3.5 object-contain rounded-sm shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
-                                   ) : group.isCombo ? (
+                                   {group.isCombo ? (
                                      <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px", width: "14px", height: "14px" }}>layers</span>
+                                   ) : group.icon ? (
+                                     <Image src={group.icon} alt={group.name} width={14} height={14} className="size-3.5 object-contain rounded-sm shrink-0" onError={(e) => { e.target.style.display = "none"; }} />
                                    ) : (
                                      <span className="material-symbols-outlined text-text-muted shrink-0" style={{ fontSize: "14px", width: "14px", height: "14px" }}>smart_toy</span>
                                    )}
