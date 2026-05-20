@@ -2,7 +2,7 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
-import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
+import { ANTIGRAVITY_VERSION, CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // GitHub API config
@@ -38,6 +38,65 @@ const ANTIGRAVITY_CONFIG = {
   clientSecret: "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",
   userAgent: getPlatformUserAgent(),
 };
+
+const ANTIGRAVITY_QUOTA_MODEL_ALIASES = {
+  "gemini-3-flash-agent": {
+    id: "gemini-3.5-flash-high",
+    displayName: "Gemini 3.5 Flash (High)",
+  },
+  "gemini-3.5-flash-low": {
+    id: "gemini-3.5-flash-medium",
+    displayName: "Gemini 3.5 Flash (Medium)",
+  },
+  "gemini-3.5-flash-high": {
+    id: "gemini-3.5-flash-high",
+    displayName: "Gemini 3.5 Flash (High)",
+  },
+  "gemini-3.5-flash-medium": {
+    id: "gemini-3.5-flash-medium",
+    displayName: "Gemini 3.5 Flash (Medium)",
+  },
+  "gemini-3.5-flash": {
+    id: "gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+  },
+};
+
+const ANTIGRAVITY_IMPORTANT_MODELS = new Set([
+  "claude-opus-4-6-thinking",
+  "claude-sonnet-4-6",
+  "gemini-3.1-pro-high",
+  "gemini-3.1-pro-low",
+  "gemini-3-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-high",
+  "gemini-3.5-flash-medium",
+  "gemini-3-flash-agent",
+  "gemini-3.5-flash-low",
+  "gpt-oss-120b-medium",
+]);
+
+export function normalizeAntigravityQuotaModel(modelKey, displayName = "") {
+  const rawKey = String(modelKey || "").trim();
+  const normalizedKey = rawKey.toLowerCase();
+  const rawDisplayName = String(displayName || "").trim();
+  const normalizedDisplayName = rawDisplayName.toLowerCase();
+
+  const alias = ANTIGRAVITY_QUOTA_MODEL_ALIASES[normalizedKey];
+  if (alias) return alias;
+
+  if (normalizedDisplayName.includes("gemini 3.5 flash (high)")) {
+    return ANTIGRAVITY_QUOTA_MODEL_ALIASES["gemini-3.5-flash-high"];
+  }
+  if (normalizedDisplayName.includes("gemini 3.5 flash (medium)")) {
+    return ANTIGRAVITY_QUOTA_MODEL_ALIASES["gemini-3.5-flash-medium"];
+  }
+
+  return {
+    id: rawKey,
+    displayName: rawDisplayName || rawKey,
+  };
+}
 
 // Codex (OpenAI) API config
 const CODEX_CONFIG = {
@@ -342,7 +401,7 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
           "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
           "Content-Type": "application/json",
           "X-Client-Name": "antigravity",
-          "X-Client-Version": "1.107.0",
+          "X-Client-Version": ANTIGRAVITY_VERSION,
           "x-request-source": "local", // MITM bypass
         },
         body: JSON.stringify({
@@ -377,24 +436,16 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
 
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
     if (data.models) {
-      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
-      const importantModels = [
-        'claude-opus-4-6-thinking',
-        'claude-sonnet-4-6',
-        'gemini-3.1-pro-high',
-        'gemini-3.1-pro-low',
-        'gemini-3-flash',
-        'gpt-oss-120b-medium',
-      ];
-
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
         if (!info.quotaInfo) {
           continue;
         }
 
+        const quotaModel = normalizeAntigravityQuotaModel(modelKey, info.displayName);
+
         // Skip internal models and non-important models
-        if (info.isInternal || !importantModels.includes(modelKey)) {
+        if (!ANTIGRAVITY_IMPORTANT_MODELS.has(quotaModel.id)) {
           continue;
         }
 
@@ -406,14 +457,14 @@ async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptio
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
 
-        // Use modelKey as key (matches PROVIDER_MODELS id)
-        quotas[modelKey] = {
+        // Use normalized public key (matches PROVIDER_MODELS ag ids)
+        quotas[quotaModel.id] = {
           used,
           total,
           resetAt: parseResetTime(info.quotaInfo.resetTime),
           remainingPercentage,
           unlimited: false,
-          displayName: info.displayName || modelKey,
+          displayName: quotaModel.displayName || info.displayName || quotaModel.id,
         };
       }
     }

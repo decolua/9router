@@ -18,6 +18,78 @@ function sanitizeFunctionName(name) {
 const MAX_RETRY_AFTER_MS = 10000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
 
+const ANTIGRAVITY_WIRE_MODEL_OVERRIDES = new Map([
+  ["gemini-3.5-flash-high", "gemini-3-flash-agent"],
+  ["gemini-3.5-flash", "gemini-3.5-flash-low"],
+  ["gemini-3.5-flash-medium", "gemini-3.5-flash-low"],
+  ["gemini-3-flash-high", "gemini-3-flash"],
+  ["gemini-3-flash-medium", "gemini-3-flash"],
+  ["gemini-3-flash-low", "gemini-3-flash"],
+]);
+
+function normalizeModelId(model) {
+  return String(model || "").trim().replace(/^models\//i, "").toLowerCase();
+}
+
+export function resolveAntigravityWireModel(model) {
+  return ANTIGRAVITY_WIRE_MODEL_OVERRIDES.get(normalizeModelId(model)) || model;
+}
+
+export function getAntigravityDefaultThinkingLevel(model) {
+  switch (normalizeModelId(model)) {
+    case "gemini-3.5-flash-high":
+      return "high";
+    case "gemini-3.5-flash-medium":
+      return "medium";
+    default:
+      return "";
+  }
+}
+
+function hasExplicitThinkingConfig(generationConfig) {
+  const thinkingConfig = generationConfig?.thinkingConfig;
+  if (!thinkingConfig || typeof thinkingConfig !== "object") return false;
+  return (
+    thinkingConfig.thinkingLevel != null ||
+    thinkingConfig.thinking_level != null ||
+    thinkingConfig.thinkingBudget != null ||
+    thinkingConfig.thinking_budget != null
+  );
+}
+
+function applyDefaultVariantThinkingConfig(generationConfig, model) {
+  const thinkingLevel = getAntigravityDefaultThinkingLevel(model);
+  if (!thinkingLevel || hasExplicitThinkingConfig(generationConfig)) {
+    return generationConfig;
+  }
+
+  return {
+    ...generationConfig,
+    thinkingConfig: {
+      ...(generationConfig.thinkingConfig || {}),
+      thinkingLevel,
+      includeThoughts: true,
+    },
+  };
+}
+
+export async function readAntigravityResponseBodyForRetry(response) {
+  const readableResponse = typeof response?.clone === "function" ? response.clone() : response;
+  return await readableResponse?.text?.().catch(() => "") || "";
+}
+
+export function shouldRetryAntigravityEndpointUnavailable(status, bodyText) {
+  if (status === HTTP_STATUS.NOT_FOUND) return true;
+  if (status !== HTTP_STATUS.FORBIDDEN || !bodyText) return false;
+
+  const message = String(bodyText).toLowerCase();
+  return (
+    message.includes("gemini for google cloud api (staging)") &&
+    message.includes("staging-cloudaicompanion.sandbox.googleapis.com") &&
+    message.includes("disabled")
+  );
+}
+
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
@@ -43,6 +115,7 @@ export class AntigravityExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
+    const wireModel = resolveAntigravityWireModel(model);
 
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
@@ -81,10 +154,11 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
-    const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
+    let generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
+    generationConfig = applyDefaultVariantThinkingConfig(generationConfig, model);
 
     const transformedRequest = {
       ...requestWithoutTools,
@@ -99,7 +173,7 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       ...body,
       project: projectId,
-      model: model,
+      model: wireModel,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,
@@ -226,6 +300,15 @@ export class AntigravityExecutor extends BaseExecutor {
           body: JSON.stringify(transformedBody),
           signal
         }, proxyOptions);
+
+        if ((response.status === HTTP_STATUS.NOT_FOUND || response.status === HTTP_STATUS.FORBIDDEN) && urlIndex + 1 < fallbackCount) {
+          const errorBody = await readAntigravityResponseBodyForRetry(response);
+          if (shouldRetryAntigravityEndpointUnavailable(response.status, errorBody)) {
+            log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
+            lastStatus = response.status;
+            continue;
+          }
+        }
 
         if (response.status === HTTP_STATUS.RATE_LIMITED || response.status === HTTP_STATUS.SERVICE_UNAVAILABLE) {
           // Try to get retry time from headers first

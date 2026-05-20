@@ -1,4 +1,5 @@
 import { platform, arch } from "os";
+import { ANTIGRAVITY_HEADERS } from "./appConstants.js";
 
 // === OS/Arch helpers ===
 function mapStainlessOs() {
@@ -105,10 +106,11 @@ export const PROVIDERS = {
   antigravity: {
     baseUrls: [
       "https://daily-cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://autopush-cloudcode-pa.sandbox.googleapis.com",
+      "https://cloudcode-pa.googleapis.com",
     ],
     format: "antigravity",
-    headers: { "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}` },
+    headers: { ...ANTIGRAVITY_HEADERS },
     clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
     clientSecret: "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"
   },
