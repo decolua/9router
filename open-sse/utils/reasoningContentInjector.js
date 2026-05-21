@@ -8,7 +8,9 @@ const PLACEHOLDER = " ";
 const PROVIDER_RULES = {
   deepseek: { scope: "all" },
   minimax: { scope: "all" },
-  "minimax-cn": { scope: "all" }
+  "minimax-cn": { scope: "all" },
+  "xiaomi-mimo": { scope: "all" },
+  "xiaomi-tokenplan": { scope: "all" }
 };
 
 // Model-level rules: matched by predicate against model id
