@@ -5,6 +5,7 @@ import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { downgradeJsonSchema } from "../utils/jsonSchemaCompat.js";
 
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
@@ -12,7 +13,9 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    return injectReasoningContent({ provider: this.provider, model, body });
+    let transformed = injectReasoningContent({ provider: this.provider, model, body });
+    transformed = downgradeJsonSchema({ provider: this.provider, body: transformed });
+    return transformed;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
