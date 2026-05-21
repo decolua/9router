@@ -4,9 +4,11 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { ANTIGRAVITY_VERSION, getPlatformUserAgent, INTERNAL_REQUEST_HEADER } from "open-sse/config/appConstants.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+const ANTIGRAVITY_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -34,6 +36,82 @@ const parseGeminiCliModels = (data) => {
   }
 
   return [];
+};
+
+const ANTIGRAVITY_MODEL_ALIASES = {
+  "gemini-3-flash-agent": { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)" },
+  "gemini-3.5-flash-low": { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium)" },
+  "gemini-3.5-flash-high": { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)" },
+  "gemini-3.5-flash-medium": { id: "gemini-3.5-flash-medium", name: "Gemini 3.5 Flash (Medium)" },
+  "gemini-3.5-flash": { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
+};
+
+const normalizeAntigravityModel = (id, name) => {
+  const rawId = String(id || "").trim();
+  const normalizedId = rawId.toLowerCase();
+  const rawName = String(name || "").trim();
+  const normalizedName = rawName.toLowerCase();
+
+  if (ANTIGRAVITY_MODEL_ALIASES[normalizedId]) {
+    return ANTIGRAVITY_MODEL_ALIASES[normalizedId];
+  }
+  if (normalizedName.includes("gemini 3.5 flash (high)")) {
+    return ANTIGRAVITY_MODEL_ALIASES["gemini-3.5-flash-high"];
+  }
+  if (normalizedName.includes("gemini 3.5 flash (medium)")) {
+    return ANTIGRAVITY_MODEL_ALIASES["gemini-3.5-flash-medium"];
+  }
+
+  return { id: rawId, name: rawName || rawId };
+};
+
+const isKnownAntigravityModel = (id, name) => {
+  const normalizedId = String(id || "").trim().toLowerCase();
+  const normalizedName = String(name || "").trim().toLowerCase();
+  return (
+    !!ANTIGRAVITY_MODEL_ALIASES[normalizedId] ||
+    normalizedName.includes("gemini 3.5 flash (high)") ||
+    normalizedName.includes("gemini 3.5 flash (medium)")
+  );
+};
+
+const parseAntigravityModels = (data) => {
+  const models = [];
+
+  if (Array.isArray(data?.models)) {
+    for (const item of data.models) {
+      const id = item?.id || item?.model || item?.name;
+      if (!id) continue;
+      models.push({
+        id,
+        name: item?.displayName || item?.name || id,
+        isInternal: item?.isInternal,
+      });
+    }
+  } else if (data?.models && typeof data.models === "object") {
+    for (const [id, info] of Object.entries(data.models)) {
+      models.push({
+        id,
+        name: info?.displayName || info?.name || id,
+        isInternal: info?.isInternal,
+      });
+    }
+  }
+
+  const byId = new Map();
+  for (const model of models) {
+    const normalized = normalizeAntigravityModel(model.id, model.name);
+    if (!normalized.id) continue;
+    if (model.isInternal && !isKnownAntigravityModel(model.id, model.name)) continue;
+    byId.set(normalized.id, { ...model, id: normalized.id, name: normalized.name });
+  }
+
+  return Array.from(byId.values());
+};
+
+const buildAntigravityModelsBody = (connection) => {
+  const projectId = connection?.projectId || connection?.providerSpecificData?.projectId;
+  return projectId ? { project: projectId } : {};
 };
 
 const appendCodexReviewModels = (models) => models.flatMap((model) => {
@@ -153,13 +231,19 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: parseCodexModels
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    url: ANTIGRAVITY_MODELS_URL,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": getPlatformUserAgent(),
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": ANTIGRAVITY_VERSION,
+      [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    body: {},
-    parseResponse: (data) => data.models || []
+    body: buildAntigravityModelsBody,
+    parseResponse: parseAntigravityModels
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -461,7 +545,8 @@ export async function GET(request, { params }) {
     };
 
     if (config.body && config.method === "POST") {
-      fetchOptions.body = JSON.stringify(config.body);
+      const requestBody = typeof config.body === "function" ? config.body(connection) : config.body;
+      fetchOptions.body = JSON.stringify(requestBody);
     }
 
     const response = await fetch(url, fetchOptions);

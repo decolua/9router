@@ -3,6 +3,7 @@ import { platform, arch } from "os";
 // === Gemini CLI ===
 export const GEMINI_CLI_VERSION = "0.34.0";
 export const GEMINI_CLI_API_CLIENT = "google-genai-sdk/1.41.0 gl-node/v22.19.0";
+export const ANTIGRAVITY_VERSION = "2.0.1";
 
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {
@@ -56,7 +57,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return `antigravity/${ANTIGRAVITY_VERSION} ${platform()}/${arch()}`;
 }
 
 export const CLIENT_METADATA = {
@@ -126,7 +127,7 @@ export const AG_DEFAULT_TOOLS = new Set([
 
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": `antigravity/${ANTIGRAVITY_VERSION} ${platform()}/${arch()}`
 };
 
 // Cloud Code Assist API
