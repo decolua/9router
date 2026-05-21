@@ -1,5 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { parseImageDataUrl } from "../helpers/imageHelper.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../helpers/maxTokensHelper.js";
 
@@ -234,16 +235,24 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
           });
         } else if (part.type === "image_url") {
           const url = part.image_url.url;
-          const match = url.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
+          const image = parseImageDataUrl(url);
+          if (image) {
             blocks.push({
               type: "image",
-              source: { type: "base64", media_type: match[1], data: match[2] }
+              source: { type: "base64", media_type: image.mediaType, data: image.data }
             });
           } else if (url.startsWith("http://") || url.startsWith("https://")) {
             blocks.push({
               type: "image",
               source: { type: "url", url }
+            });
+          }
+        } else if (part.type === "image" && part.image) {
+          const image = parseImageDataUrl(part.image);
+          if (image) {
+            blocks.push({
+              type: "image",
+              source: { type: "base64", media_type: image.mediaType, data: image.data }
             });
           }
         } else if (part.type === "image" && part.source) {
@@ -378,4 +387,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-

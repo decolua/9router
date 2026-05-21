@@ -7,6 +7,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { normalizeResponsesInput } from "../helpers/responsesApiHelper.js";
+import { parseImageDataUrl } from "../helpers/imageHelper.js";
 
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
@@ -237,6 +238,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
             if (c.type === "image_url") {
               const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
               return { type: "input_image", image_url: url, detail: c.image_url?.detail || "auto" };
+            }
+            if (c.type === "image" && parseImageDataUrl(c.image)) {
+              return { type: "input_image", image_url: c.image, detail: c.detail || "auto" };
             }
             if (c.type === "input_image") return c;
             // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text

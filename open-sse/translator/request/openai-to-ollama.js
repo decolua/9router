@@ -1,5 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { parseImageDataUrl } from "../helpers/imageHelper.js";
 
 /**
  * Convert OpenAI request to Ollama format
@@ -164,8 +165,9 @@ function normalizeContent(content) {
 
 /**
  * Extract base64 images from OpenAI multimodal content blocks.
- * OpenAI image block format:
+ * Supported image block formats:
  *   { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+ *   { type: "image", image: "data:image/png;base64,..." }
  * Ollama expects raw base64 strings in message.images[].
  */
 function extractImagesFromContent(content) {
@@ -174,15 +176,16 @@ function extractImagesFromContent(content) {
   const images = [];
 
   for (const block of content) {
-    if (!block || block.type !== "image_url") continue;
+    if (!block) continue;
 
-    const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
-    if (typeof url !== "string" || !url) continue;
+    const url = block.type === "image_url"
+      ? (typeof block.image_url === "string" ? block.image_url : block.image_url?.url)
+      : (block.type === "image" ? block.image : null);
 
-    const m = url.match(/^data:[^;]+;base64,([\s\S]+)$/);
-    if (!m) continue;
+    const image = parseImageDataUrl(url);
+    if (!image) continue;
 
-    images.push(m[1]);
+    images.push(image.data);
   }
 
   return images;

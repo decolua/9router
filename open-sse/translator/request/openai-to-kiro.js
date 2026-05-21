@@ -11,6 +11,7 @@ import {
   buildThinkingSystemPrefix,
   KIRO_AGENTIC_SYSTEM_PROMPT
 } from "../../config/kiroConstants.js";
+import { parseImageDataUrl } from "../helpers/imageHelper.js";
 
 /**
  * Convert OpenAI messages to Kiro format
@@ -28,6 +29,13 @@ function convertMessages(messages, tools, model) {
 
   // Image support is pre-filtered by caps in translateRequest before reaching here
   const supportsImages = true;
+
+  const pushDataUrlImage = (dataUrl) => {
+    const image = parseImageDataUrl(dataUrl);
+    if (!image) return false;
+    pendingImages.push({ format: image.format, source: { bytes: image.data } });
+    return true;
+  };
 
   const flushPending = () => {
     if (currentRole === "user") {
@@ -124,16 +132,16 @@ function convertMessages(messages, tools, model) {
           } else if (supportsImages && c.type === "image_url") {
             // OpenAI format: image_url.url with data URI
             const url = c.image_url?.url || "";
-            const base64Match = url.match(/^data:([^;]+);base64,(.+)$/);
-            if (base64Match) {
-              const mediaType = base64Match[1];
-              const format = mediaType.split("/")[1] || mediaType;
-              pendingImages.push({ format, source: { bytes: base64Match[2] } });
-            } else if (url.startsWith("http://") || url.startsWith("https://")) {
+            if (!pushDataUrlImage(url) && (url.startsWith("http://") || url.startsWith("https://"))) {
               // Kiro only supports base64 — fallback to URL text
               textParts.push(`[Image: ${url}]`);
             }
           } else if (supportsImages && c.type === "image") {
+            // AI SDK format: image is a data URI string.
+            if (pushDataUrlImage(c.image)) {
+              continue;
+            }
+
             // Claude format: source.type = "base64", source.media_type, source.data
             if (c.source?.type === "base64" && c.source?.data) {
               const mediaType = c.source.media_type || "image/png";

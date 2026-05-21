@@ -1,3 +1,16 @@
+export function parseImageDataUrl(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) return null;
+  const mediaType = match[1];
+  const data = match[2];
+  return {
+    mediaType,
+    data,
+    format: mediaType.split("/")[1] || mediaType
+  };
+}
+
 /**
  * Fetch a remote image URL and return it as a base64 data URI.
  * Used when upstream providers (Codex, etc.) require inline base64 images
