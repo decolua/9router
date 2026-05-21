@@ -373,7 +373,6 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       cloudflaredProcess = null;
       clearPid();
       console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
-      if (logTail) console.log(`[Tunnel] cloudflared log tail:\n${logTail.slice(-1500)}`);
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
