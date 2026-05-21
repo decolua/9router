@@ -253,14 +253,14 @@ export class CursorExecutor extends BaseExecutor {
           status: response.status,
           headers: { "Content-Type": "application/json" }
         });
-        return { response: errorResponse, url, headers, transformedBody: body };
+        return { response: errorResponse, url, headers, transformedBody };
       }
 
       const transformedResponse = stream !== false
         ? this.transformProtobufToSSE(response.body, model, body)
         : this.transformProtobufToJSON(response.body, model, body);
 
-      return { response: transformedResponse, url, headers, transformedBody: body };
+      return { response: transformedResponse, url, headers, transformedBody };
     } catch (error) {
       const errorResponse = new Response(JSON.stringify({
         error: {
@@ -272,7 +272,7 @@ export class CursorExecutor extends BaseExecutor {
         status: HTTP_STATUS.SERVER_ERROR,
         headers: { "Content-Type": "application/json" }
       });
-      return { response: errorResponse, url, headers, transformedBody: body };
+      return { response: errorResponse, url, headers, transformedBody };
     }
   }
 
