@@ -34,6 +34,12 @@ const PUBLIC_API_PATHS = [
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
 const PUBLIC_PREFIXES = ["/v1", "/v1beta", "/api/v1", "/api/v1beta"];
 
+const LLM_API_CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
+
 // Always require JWT token regardless of requireLogin setting
 const ALWAYS_PROTECTED = [
   "/api/shutdown",
@@ -123,6 +129,20 @@ async function canAccessPublicLlmApi(request) {
   return await hasValidApiKey(request);
 }
 
+function llmApiCorsPreflight() {
+  return new Response(null, {
+    status: 204,
+    headers: LLM_API_CORS_HEADERS,
+  });
+}
+
+function publicLlmApiAuthError() {
+  return NextResponse.json(
+    { error: "API key required for remote API access" },
+    { status: 401, headers: LLM_API_CORS_HEADERS },
+  );
+}
+
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + JWT cookie (blocks unauth raw clients)
@@ -182,8 +202,9 @@ export async function proxy(request) {
   }
 
   if (isPublicLlmApi(pathname)) {
+    if (request.method === "OPTIONS") return llmApiCorsPreflight();
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    return publicLlmApiAuthError();
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

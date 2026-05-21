@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   jsonResponse: vi.fn((body, init) => ({
     status: init?.status || 200,
     body,
+    headers: new Headers(init?.headers),
   })),
   getSettings: vi.fn(),
   validateApiKey: vi.fn(),
@@ -35,10 +36,11 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
-function request(pathname, headers = {}) {
+function request(pathname, headers = {}, method = "GET") {
   const normalizedHeaders = new Headers(headers);
   return {
     nextUrl: { pathname },
+    method,
     headers: normalizedHeaders,
     cookies: { get: vi.fn(() => undefined) },
     url: `http://localhost${pathname}`,
@@ -66,6 +68,22 @@ describe("dashboard guard public LLM API access", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+
+  it("allows remote public LLM API CORS preflight without API key", async () => {
+    const response = await proxy(request("/v1/messages", {
+      host: "localhost:20128",
+      origin: "https://pivot.claude.ai",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization,anthropic-version,content-type",
+    }, "OPTIONS"));
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(response.headers.get("Access-Control-Allow-Methods")).toContain("POST");
+    expect(response.headers.get("Access-Control-Allow-Headers")).toBe("*");
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
   it("allows loopback rewritten public LLM API without API key", async () => {
