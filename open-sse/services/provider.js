@@ -1,5 +1,6 @@
 import { PROVIDERS } from "../config/providers.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
+import { normalizeAnthropicVersionHeader } from "../utils/anthropicHeaders.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -227,7 +228,7 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
     }
     // Add default Anthropic version if not present (some proxies require it)
-    if (!headers["anthropic-version"]) {
+    if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) {
       headers["anthropic-version"] = "2023-06-01";
     }
   } else {
@@ -310,6 +311,8 @@ export function buildProviderHeaders(provider, credentials, stream = true, body 
         break;
     }
   }
+
+  normalizeAnthropicVersionHeader(headers);
 
   // Stream accept header
   if (stream) {

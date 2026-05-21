@@ -1,5 +1,6 @@
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { normalizeAnthropicVersionHeader } from "../utils/anthropicHeaders.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -52,7 +53,7 @@ export class BaseExecutor {
       } else if (credentials.accessToken) {
         headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       }
-      if (!headers["anthropic-version"]) {
+      if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) {
         headers["anthropic-version"] = "2023-06-01";
       }
     } else {
@@ -63,6 +64,8 @@ export class BaseExecutor {
         headers["Authorization"] = `Bearer ${credentials.apiKey}`;
       }
     }
+
+    normalizeAnthropicVersionHeader(headers);
 
     if (stream) {
       headers["Accept"] = "text/event-stream";

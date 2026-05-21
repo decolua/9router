@@ -3,6 +3,7 @@ import { PROVIDERS, resolveXiaomiTokenplanBaseUrl } from "../config/providers.js
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+import { normalizeAnthropicVersionHeader } from "../utils/anthropicHeaders.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
@@ -110,7 +111,7 @@ export class DefaultExecutor extends BaseExecutor {
           } else if (credentials.accessToken) {
             headers["Authorization"] = `Bearer ${credentials.accessToken}`;
           }
-          if (!headers["anthropic-version"]) {
+          if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) {
             headers["anthropic-version"] = "2023-06-01";
           }
         } else if (this.provider === "gitlab") {
@@ -128,7 +129,9 @@ export class DefaultExecutor extends BaseExecutor {
         } else if (this.config?.format === "claude") {
           // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
           headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
+          if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) {
+            headers["anthropic-version"] = "2023-06-01";
+          }
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
@@ -160,6 +163,8 @@ export class DefaultExecutor extends BaseExecutor {
         }
       }
     }
+
+    normalizeAnthropicVersionHeader(headers);
 
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;
