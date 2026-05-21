@@ -7,6 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { migrateCodexFeatureFlags } from "@/shared/utils/codexConfig";
 
 const execAsync = promisify(exec);
 
@@ -126,6 +127,7 @@ export async function POST(request) {
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
       parsed = parsedToWritable(parseTOML(existingConfig));
+      migrateCodexFeatureFlags(parsed);
     } catch { /* No existing config */ }
 
     // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
@@ -185,6 +187,7 @@ export async function DELETE() {
     try {
       const existingConfig = await fs.readFile(configPath, "utf-8");
       parsed = parsedToWritable(parseTOML(existingConfig));
+      migrateCodexFeatureFlags(parsed);
     } catch (error) {
       if (error.code === "ENOENT") {
         return NextResponse.json({
