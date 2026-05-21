@@ -1,4 +1,5 @@
 // Gemini helper functions for translator
+import { parseImageDataUrl } from "./imageHelper.js";
 
 // Unsupported JSON Schema constraints that should be removed for Antigravity
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
@@ -42,15 +43,17 @@ export function convertOpenAIContentToParts(content) {
       if (item.type === "text") {
         parts.push({ text: item.text });
       } else if (item.type === "image_url" && item.image_url?.url?.startsWith("data:")) {
-        const url = item.image_url.url;
-        const commaIndex = url.indexOf(",");
-        if (commaIndex !== -1) {
-          const mimePart = url.substring(5, commaIndex); // skip "data:"
-          const data = url.substring(commaIndex + 1);
-          const mimeType = mimePart.split(";")[0];
-
+        const image = parseImageDataUrl(item.image_url.url);
+        if (image) {
           parts.push({
-            inlineData: { mime_type: mimeType, data: data }
+            inlineData: { mime_type: image.mediaType, data: image.data }
+          });
+        }
+      } else if (item.type === "image" && item.image) {
+        const image = parseImageDataUrl(item.image);
+        if (image) {
+          parts.push({
+            inlineData: { mime_type: image.mediaType, data: image.data }
           });
         }
       } else if (item.type === "image_url" && item.image_url?.url && (item.image_url.url.startsWith("http://") || item.image_url.url.startsWith("https://"))) {
@@ -369,4 +372,3 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   return cleaned;
 }
-

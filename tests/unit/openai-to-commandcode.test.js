@@ -85,6 +85,23 @@ describe("openaiToCommandCode — content shape", () => {
     expect(Array.isArray(a.content)).toBe(true);
     expect(a.content[0]).toEqual({ type: "text", text: "b" });
   });
+
+  it("intentionally omits AI SDK image parts as text placeholders", () => {
+    const out = openaiToCommandCode(MODEL, {
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "Describe" },
+          { type: "image", image: "data:image/png;base64,iVBORw0KGgo=" }
+        ]
+      }],
+    }, true);
+
+    expect(out.params.messages[0].content).toEqual([
+      { type: "text", text: "Describe" },
+      { type: "text", text: "[image omitted]" }
+    ]);
+  });
 });
 
 describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {

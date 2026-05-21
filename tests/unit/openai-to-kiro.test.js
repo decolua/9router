@@ -83,6 +83,28 @@ describe("buildKiroPayload", () => {
       expect(currentMsg.userInputMessage.images[1].format).toBe("png");
     });
 
+    it("should forward base64 image from AI SDK image content part", () => {
+      const fakeBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      const body = {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "Describe this image" },
+              { type: "image", image: `data:image/png;base64,${fakeBase64}` }
+            ]
+          }
+        ]
+      };
+
+      const result = buildKiroPayload("claude-sonnet-4.6", body, true, {});
+
+      const currentMsg = result.conversationState.currentMessage;
+      expect(currentMsg.userInputMessage.images).toHaveLength(1);
+      expect(currentMsg.userInputMessage.images[0].format).toBe("png");
+      expect(currentMsg.userInputMessage.images[0].source.bytes).toBe(fakeBase64);
+    });
+
     it("should not include images field when images array is empty", () => {
       const body = {
         messages: [

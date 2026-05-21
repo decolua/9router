@@ -10,6 +10,27 @@ import { describe, it, expect } from "vitest";
 import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.js";
 
 describe("openaiToClaudeRequest", () => {
+  describe("image forwarding", () => {
+    it("should convert AI SDK image content part to Claude image block", () => {
+      const fakeBase64 = "iVBORw0KGgo=";
+      const result = openaiToClaudeRequest("claude-sonnet-4.5", {
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: "Describe this image" },
+            { type: "image", image: `data:image/png;base64,${fakeBase64}` }
+          ]
+        }]
+      }, false);
+
+      expect(result.messages[0].content[0]).toEqual({ type: "text", text: "Describe this image" });
+      expect(result.messages[0].content[1]).toEqual({
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: fakeBase64 }
+      });
+    });
+  });
+
   describe("response_format handling", () => {
     it("should inject JSON schema instructions for json_schema type", () => {
       const body = {
