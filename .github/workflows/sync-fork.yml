@@ -1,0 +1,34 @@
+name: Sync Fork
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
+      - name: Sync with upstream
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git
+          git fetch upstream
+          git checkout master
+
+          # Merge upstream, auto-accepting upstream changes on conflict
+          git merge upstream/master --no-edit -X theirs || {
+            echo "Merge failed unexpectedly"
+            exit 1
+          }
+
+          git push origin master
