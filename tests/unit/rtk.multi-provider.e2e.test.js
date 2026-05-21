@@ -97,7 +97,7 @@ function chatBodyWithDiff(model, diff) {
 const ROUTES = [
   { name: "claude (cc/* → openai→claude)",        model: "cc/claude-opus-4-7" },
   { name: "codex (cx/* → openai→openai-responses)", model: "cx/gpt-5.4" },
-  { name: "antigravity (ag/* → openai→antigravity)", model: "ag/gemini-3-flash" },
+  { name: "antigravity (ag/* → openai→antigravity)", model: "ag/gemini-3.5-flash" },
   { name: "cursor (cu/* → openai→cursor)",         model: "cu/claude-4.5-sonnet" },
   { name: "kiro (kr/* → openai→kiro)",             model: "kr/claude-sonnet-4.5" },
   { name: "gemini (gemini/* → openai→gemini)",     model: "gemini/gemini-2.5-flash" },
