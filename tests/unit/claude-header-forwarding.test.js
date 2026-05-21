@@ -228,6 +228,45 @@ describe("DefaultExecutor.buildHeaders() — claude provider cold start (no cach
   });
 });
 
+describe("DefaultExecutor.buildHeaders() — claude-format header casing", () => {
+  let DefaultExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("open-sse/executors/default.js");
+    DefaultExecutor = mod.DefaultExecutor || mod.default;
+  });
+
+  it("does not send duplicate anthropic-version headers for generic claude providers", () => {
+    const executor = new DefaultExecutor("agentrouter");
+    const headers = executor.buildHeaders({ apiKey: "key" }, false);
+    const versionKeys = Object.keys(headers).filter(
+      (key) => key.toLowerCase() === "anthropic-version",
+    );
+
+    expect(versionKeys).toEqual(["anthropic-version"]);
+    expect(headers["anthropic-version"]).toBe("2023-06-01");
+  });
+
+  it("normalizes static Title-Case version headers for anthropic-compatible providers", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    executor.config.headers = { "Anthropic-Version": "2023-06-01" };
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://api.anthropic.com/v1" },
+      },
+      false,
+    );
+    const versionKeys = Object.keys(headers).filter(
+      (key) => key.toLowerCase() === "anthropic-version",
+    );
+
+    expect(versionKeys).toEqual(["anthropic-version"]);
+    expect(headers["anthropic-version"]).toBe("2023-06-01");
+  });
+});
+
 // ─── anthropic-compatible header stripping ────────────────────────────────────
 
 describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", () => {
