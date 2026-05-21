@@ -41,6 +41,19 @@ const debugLog = (...args) => {
   if (CURSOR_STREAM_DEBUG) console.log(...args);
 };
 
+function isComposerModel(model) {
+  const modelId = String(model || "").split("/").pop();
+  return /^composer(?:-|$)/i.test(modelId);
+}
+
+function visibleComposerContentFromThinking(thinking) {
+  if (!thinking) return "";
+  const endTag = "</think>";
+  const endIdx = thinking.lastIndexOf(endTag);
+  if (endIdx < 0) return "";
+  return thinking.slice(endIdx + endTag.length).trimStart();
+}
+
 function decompressPayload(payload, flags) {
   // Check if payload is JSON error (starts with {"error")
   if (payload.length > 10 && payload[0] === 0x7b && payload[1] === 0x22) {
@@ -264,6 +277,7 @@ export class CursorExecutor extends BaseExecutor {
 
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -373,7 +387,13 @@ export class CursorExecutor extends BaseExecutor {
       }
 
       if (result.text) totalContent += result.text;
+      if (result.thinking) totalThinking += result.thinking;
     }
+
+    const visibleComposerContent = isComposerModel(model)
+      ? visibleComposerContentFromThinking(totalThinking)
+      : "";
+    const finalContent = totalContent || visibleComposerContent;
 
     debugLog(
       `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
@@ -400,14 +420,14 @@ export class CursorExecutor extends BaseExecutor {
 
     const message = {
       role: "assistant",
-      content: totalContent || null
+      content: finalContent || null
     };
 
     if (toolCalls.length > 0) {
       message.tool_calls = toolCalls;
     }
 
-    const usage = estimateUsage(body, totalContent.length, FORMATS.OPENAI);
+    const usage = estimateUsage(body, finalContent.length, FORMATS.OPENAI);
 
     const completion = {
       id: responseId,
@@ -435,6 +455,8 @@ export class CursorExecutor extends BaseExecutor {
     const chunks = [];
     let offset = 0;
     let totalContent = "";
+    let totalThinking = "";
+    let emittedComposerThinkingContentLength = 0;
     const toolCalls = [];
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
@@ -634,6 +656,34 @@ export class CursorExecutor extends BaseExecutor {
             ]
           })}\n\n`
         );
+      }
+
+      if (isComposerModel(model) && result.thinking) {
+        totalThinking += result.thinking;
+        const visibleContent = visibleComposerContentFromThinking(totalThinking);
+        if (visibleContent.length > emittedComposerThinkingContentLength) {
+          const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
+          emittedComposerThinkingContentLength = visibleContent.length;
+          totalContent += deltaContent;
+          chunks.push(
+            `data: ${JSON.stringify({
+              id: responseId,
+              object: "chat.completion.chunk",
+              created,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta:
+                    chunks.length === 0 && toolCalls.length === 0
+                      ? { role: "assistant", content: deltaContent }
+                      : { content: deltaContent },
+                  finish_reason: null
+                }
+              ]
+            })}\n\n`
+          );
+        }
       }
     }
 

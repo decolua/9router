@@ -1,3 +1,14 @@
+# v0.4.58 (2026-05-21)
+
+## Features
+- xAI Grok provider (OAuth, API key, image)
+- Provider limits: paginated accounts with page size controls
+
+## Fixes
+- Tailscale: fix connection status on Windows (#1300)
+- Tunnel: fix false "checking" when tunnel URL is reachable
+- Stream: fix pipe errors on client disconnect/abort
+
 # v0.4.55 (2026-05-18)
 
 ## Features

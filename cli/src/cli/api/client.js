@@ -26,9 +26,12 @@ function getDataDir() {
 }
 
 const MACHINE_ID_FILE = path.join(getDataDir(), "machine-id");
+const AUTH_DIR = path.join(getDataDir(), "auth");
+const CLI_SECRET_FILE = path.join(AUTH_DIR, "cli-secret");
 
 let config = { ...DEFAULT_CONFIG };
 let cachedCliToken = null;
+let cachedCliSecret = null;
 
 // Read raw machineId from shared file (written by server) → guarantees token match
 function loadRawMachineId() {
@@ -39,10 +42,26 @@ function loadRawMachineId() {
   try { return machineIdSync(); } catch { return ""; }
 }
 
+// Random secret shared with server via file → token unpredictable from machineId alone.
+function loadCliSecret() {
+  if (cachedCliSecret) return cachedCliSecret;
+  try {
+    cachedCliSecret = fs.readFileSync(CLI_SECRET_FILE, "utf8").trim();
+    if (cachedCliSecret) return cachedCliSecret;
+  } catch {}
+  cachedCliSecret = crypto.randomBytes(32).toString("hex");
+  try {
+    fs.mkdirSync(AUTH_DIR, { recursive: true });
+    fs.writeFileSync(CLI_SECRET_FILE, cachedCliSecret, { mode: 0o600 });
+  } catch {}
+  return cachedCliSecret;
+}
+
 function getCliToken() {
   if (cachedCliToken !== null) return cachedCliToken;
   const raw = loadRawMachineId();
-  cachedCliToken = raw ? crypto.createHash("sha256").update(raw + CLI_TOKEN_SALT).digest("hex").substring(0, 16) : "";
+  const secret = loadCliSecret();
+  cachedCliToken = raw ? crypto.createHash("sha256").update(raw + CLI_TOKEN_SALT + secret).digest("hex").substring(0, 16) : "";
   return cachedCliToken;
 }
 

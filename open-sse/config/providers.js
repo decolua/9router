@@ -272,7 +272,11 @@ export const PROVIDERS = {
   },
   xai: {
     baseUrl: "https://api.x.ai/v1/chat/completions",
-    format: "openai"
+    responsesUrl: "https://api.x.ai/v1/responses",
+    format: "openai",
+    clientId: "b1a00492-073a-47ea-816f-4c329264a828",
+    tokenUrl: "https://auth.x.ai/oauth2/token",
+    refreshUrl: "https://auth.x.ai/oauth2/token"
   },
   mistral: {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
