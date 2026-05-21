@@ -83,4 +83,54 @@ describe("CursorExecutor Composer thinking-field responses", () => {
     expect(payload.choices[0].message.content).toBeNull();
     expect(JSON.stringify(payload)).not.toContain("SHOULD_NOT_APPEAR");
   });
+
+  it("strips Composer `<｜final｜>` sentinel markers from non-streaming output", async () => {
+    const executor = new CursorExecutor();
+    const buffer = cursorResponseFrame({
+      thinking: "reasoning</think><｜final｜>OK_PR1310<｜/final｜>",
+    });
+
+    const response = executor.transformProtobufToJSON(buffer, "cu/composer-2.5", {
+      messages: [{ role: "user", content: "reply OK" }],
+    });
+    const payload = await response.json();
+
+    expect(payload.choices[0].message.content).toBe("OK_PR1310");
+    expect(payload.choices[0].message.content).not.toMatch(/final/i);
+  });
+
+  it("strips ASCII `<|final|>` sentinel markers from non-streaming output", async () => {
+    const executor = new CursorExecutor();
+    const buffer = cursorResponseFrame({
+      thinking: "reasoning</think><|final|>HELLO<|/final|>",
+    });
+
+    const response = executor.transformProtobufToJSON(buffer, "cu/composer-2.5", {
+      messages: [{ role: "user", content: "hi" }],
+    });
+    const payload = await response.json();
+
+    expect(payload.choices[0].message.content).toBe("HELLO");
+  });
+
+  it("does not leak partial `<｜final｜>` marker across streamed Composer chunks", async () => {
+    const executor = new CursorExecutor();
+    const buffer = Buffer.concat([
+      cursorResponseFrame({ thinking: "reasoning</think><｜fina" }),
+      cursorResponseFrame({ thinking: "l｜>OK_S" }),
+      cursorResponseFrame({ thinking: "TREAM" }),
+    ]);
+
+    const response = executor.transformProtobufToSSE(buffer, "cu/composer-2.5", {
+      messages: [{ role: "user", content: "reply" }],
+    });
+    const events = parseSSE(await response.text());
+    const content = events
+      .map((event) => event.choices?.[0]?.delta?.content || "")
+      .join("");
+
+    expect(content).toBe("OK_STREAM");
+    expect(JSON.stringify(events)).not.toContain("final");
+    expect(JSON.stringify(events)).not.toContain("｜");
+  });
 });
