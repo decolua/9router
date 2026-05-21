@@ -11,6 +11,11 @@ import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
+import {
+  parseComposerToolCalls,
+  createStreamingState,
+  feedStreamingChunk
+} from "../utils/composerToolCalls.js";
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -393,7 +398,7 @@ export class CursorExecutor extends BaseExecutor {
     const visibleComposerContent = isComposerModel(model)
       ? visibleComposerContentFromThinking(totalThinking)
       : "";
-    const finalContent = totalContent || visibleComposerContent;
+    let finalContent = totalContent || visibleComposerContent;
 
     debugLog(
       `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
@@ -416,6 +421,23 @@ export class CursorExecutor extends BaseExecutor {
     }
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
+
+    // Cursor Composer models embed tool calls inline as DeepSeek-style
+    // markers in their visible text (e.g. `<｜tool▁calls▁begin｜>...<｜tool▁calls▁end｜>`)
+    // rather than via the structured protobuf tool_call frames. Parse and
+    // convert them to OpenAI tool_calls so downstream clients (Hermes,
+    // OpenAI SDK consumers, etc.) can handle them natively. We only do
+    // this when the protobuf path produced no tool calls of its own, to
+    // avoid double-emitting.
+    if (isComposerModel(model) && toolCalls.length === 0 && finalContent) {
+      const parsed = parseComposerToolCalls(finalContent);
+      if (parsed.toolCalls.length > 0) {
+        for (const tc of parsed.toolCalls) {
+          toolCalls.push(tc);
+        }
+        finalContent = parsed.content;
+      }
+    }
 
 
     const message = {
@@ -461,6 +483,13 @@ export class CursorExecutor extends BaseExecutor {
     const toolCallsMap = new Map(); // Track streaming tool calls by ID
     const finalizedIds = new Set();
     const emittedToolCallIds = new Set();
+    // Composer DeepSeek-format tool-call extraction (see composerToolCalls.js).
+    // We buffer the visible composer content stream, suppress text that
+    // belongs inside `<｜tool▁calls▁begin｜>...<｜tool▁calls▁end｜>`, and emit
+    // structured tool_calls SSE chunks once the block closes.
+    const composerStreamingState = isComposerModel(model) ? createStreamingState() : null;
+    let composerAccumulated = "";
+    let composerToolCallsEmitted = false;
     let frameCount = 0;
 
     debugLog(`[CURSOR BUFFER SSE] Total length: ${buffer.length} bytes`);
@@ -662,9 +691,116 @@ export class CursorExecutor extends BaseExecutor {
         totalThinking += result.thinking;
         const visibleContent = visibleComposerContentFromThinking(totalThinking);
         if (visibleContent.length > emittedComposerThinkingContentLength) {
-          const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
-          emittedComposerThinkingContentLength = visibleContent.length;
-          totalContent += deltaContent;
+          // Feed the full visible content into the DeepSeek tool-call
+          // streaming parser. It returns only the prefix that is safe to
+          // emit (i.e. before any `<｜tool▁calls▁begin｜>` marker or its
+          // partial prefix), and tells us when the tool-call block has
+          // closed so we can emit structured tool_calls SSE chunks.
+          const parseOut = composerStreamingState
+            ? feedStreamingChunk(composerStreamingState, visibleContent)
+            : { safeDelta: visibleContent.slice(emittedComposerThinkingContentLength), ready: false, toolCalls: [] };
+          composerAccumulated = visibleContent;
+          emittedComposerThinkingContentLength = composerStreamingState
+            ? composerStreamingState.emitted
+            : visibleContent.length;
+          const deltaContent = parseOut.safeDelta;
+          if (deltaContent) {
+            totalContent += deltaContent;
+            chunks.push(
+              `data: ${JSON.stringify({
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [
+                  {
+                    index: 0,
+                    delta:
+                      chunks.length === 0 && toolCalls.length === 0
+                        ? { role: "assistant", content: deltaContent }
+                        : { content: deltaContent },
+                    finish_reason: null
+                  }
+                ]
+              })}\n\n`
+            );
+          }
+          if (parseOut.ready && parseOut.toolCalls.length > 0 && !composerToolCallsEmitted) {
+            composerToolCallsEmitted = true;
+            for (let i = 0; i < parseOut.toolCalls.length; i++) {
+              const tc = parseOut.toolCalls[i];
+              const toolCallIndex = toolCalls.length;
+              toolCalls.push({
+                id: tc.id,
+                type: tc.type,
+                index: toolCallIndex,
+                function: {
+                  name: tc.function.name,
+                  arguments: tc.function.arguments
+                }
+              });
+              emittedToolCallIds.add(tc.id);
+              chunks.push(
+                `data: ${JSON.stringify({
+                  id: responseId,
+                  object: "chat.completion.chunk",
+                  created,
+                  model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: toolCallIndex,
+                            id: tc.id,
+                            type: "function",
+                            function: {
+                              name: tc.function.name,
+                              arguments: tc.function.arguments
+                            }
+                          }
+                        ]
+                      },
+                      finish_reason: null
+                    }
+                  ]
+                })}\n\n`
+              );
+            }
+          }
+        }
+      }
+    }
+
+    debugLog(
+      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`
+    );
+
+    // End-of-stream Composer DeepSeek fallback: if the stream ended with
+    // the tool-call block opened but never closed (or arrived in one big
+    // chunk we didn't catch mid-stream), try a final non-streaming parse
+    // on the accumulated visible content so we still emit structured
+    // tool_calls and don't leak the markers as plain text.
+    if (
+      isComposerModel(model) &&
+      !composerToolCallsEmitted &&
+      composerAccumulated
+    ) {
+      const parsed = parseComposerToolCalls(composerAccumulated);
+      if (parsed.toolCalls.length > 0) {
+        for (const tc of parsed.toolCalls) {
+          const toolCallIndex = toolCalls.length;
+          toolCalls.push({
+            id: tc.id,
+            type: tc.type,
+            index: toolCallIndex,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments
+            }
+          });
+          emittedToolCallIds.add(tc.id);
           chunks.push(
             `data: ${JSON.stringify({
               id: responseId,
@@ -674,22 +810,28 @@ export class CursorExecutor extends BaseExecutor {
               choices: [
                 {
                   index: 0,
-                  delta:
-                    chunks.length === 0 && toolCalls.length === 0
-                      ? { role: "assistant", content: deltaContent }
-                      : { content: deltaContent },
+                  delta: {
+                    tool_calls: [
+                      {
+                        index: toolCallIndex,
+                        id: tc.id,
+                        type: "function",
+                        function: {
+                          name: tc.function.name,
+                          arguments: tc.function.arguments
+                        }
+                      }
+                    ]
+                  },
                   finish_reason: null
                 }
               ]
             })}\n\n`
           );
         }
+        composerToolCallsEmitted = true;
       }
     }
-
-    debugLog(
-      `[CURSOR BUFFER SSE] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, toolCalls array: ${toolCalls.length}`
-    );
 
     // Finalize all remaining tool calls in map (stream may have ended without isLast=true)
     for (const [id, tc] of toolCallsMap.entries()) {
