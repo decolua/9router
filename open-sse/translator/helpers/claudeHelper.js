@@ -91,6 +91,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
+  // anthropic-compatible third-party providers reject Claude-Code-specific fields
+  // that the official Anthropic API accepts (context_management, output_config).
+  if (provider?.startsWith("anthropic-compatible")) {
+    delete body.context_management;
+    delete body.output_config;
+  }
+
   // 1. System: remove all cache_control, add only to last block with ttl 1h
   if (body.system && Array.isArray(body.system)) {
     body.system = body.system.map((block, i) => {

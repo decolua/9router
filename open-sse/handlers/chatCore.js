@@ -90,6 +90,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model };
+    // Strip fields that anthropic-compatible third-party providers reject
+    if (provider?.startsWith("anthropic-compatible")) {
+      delete translatedBody.context_management;
+      delete translatedBody.output_config;
+    }
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, model, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
