@@ -2,6 +2,9 @@
  * Usage Fetcher - Get usage data from provider APIs
  */
 
+import fs from "fs";
+import path from "path";
+import os from "os";
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
@@ -60,6 +63,11 @@ const CLAUDE_CONFIG = {
 export async function getUsageForProvider(connection, proxyOptions = null) {
   const { provider, accessToken, apiKey, providerSpecificData } = connection;
 
+  // Check if the connection has custom quota configuration in providerSpecificData
+  if (providerSpecificData?.customQuotaUrl) {
+    return await getCustomQuotaUsage(connection, proxyOptions);
+  }
+
   switch (provider) {
     case "github":
       return await getGitHubUsage(accessToken, providerSpecificData, proxyOptions);
@@ -78,7 +86,7 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "iflow":
       return await getIflowUsage(accessToken);
     case "ollama":
-      return await getOllamaUsage(accessToken);
+      return await getOllamaUsage(accessToken || apiKey, providerSpecificData, proxyOptions);
     case "glm":
     case "glm-cn":
       return await getGlmUsage(apiKey, provider, proxyOptions);
@@ -95,6 +103,14 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
       return await getSiliconFlowUsage(apiKey, proxyOptions);
     case "nebius":
       return await getNebiusUsage(apiKey, proxyOptions);
+    case "openrouter":
+      return await getOpenRouterUsage(apiKey, proxyOptions);
+    case "grok-web":
+      return await getGrokWebUsage(apiKey, proxyOptions);
+    case "perplexity-web":
+      return await getPerplexityWebUsage(apiKey, proxyOptions);
+    case "commandcode":
+      return await getCommandCodeUsage(apiKey, proxyOptions);
     default:
       return getDashboardMessage(provider);
   }
@@ -677,6 +693,9 @@ async function getCodexUsage(accessToken, proxyOptions = null) {
     }, proxyOptions);
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Codex session expired or unauthorized. Please re-authorize the connection." };
+      }
       return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
     }
 
@@ -897,20 +916,172 @@ async function getIflowUsage(accessToken) {
  * and has no public usage API — free tier has light usage limits (resets every 5h & 7d).
  * This returns an informational message with the plan details.
  */
-async function getOllamaUsage(accessToken, providerSpecificData) {
-  try {
-    // Ollama Cloud does not expose a public quota/usage API.
-    // The provider is configured as noAuth with a notice explaining limits.
-    // We return a graceful message so the UI shows a friendly state instead of an error.
-    const plan = providerSpecificData?.plan || "Free";
-    return {
-      plan,
-      message: "Ollama Cloud uses a free tier with light usage limits (resets every 5h & 7d). For detailed usage tracking, visit ollama.com/settings/keys.",
-      quotas: [],
-    };
-  } catch (error) {
-    return { message: "Unable to fetch Ollama Cloud usage." };
+async function getOllamaUsage(accessToken, providerSpecificData = null, proxyOptions = null) {
+  const finalKey = accessToken;
+  if (!finalKey) {
+    return { message: "Ollama Cloud API key not available." };
   }
+
+  const candidateUrls = [
+    "https://ollama.com/api/tags",
+    "https://ollama.com/api/user",
+    "https://ollama.com/api/billing"
+  ];
+
+  let lastStatus = 0;
+  let lastErrorMsg = "";
+  let rateLimitInfo = null;
+
+  for (const url of candidateUrls) {
+    try {
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${finalKey}`,
+            "Accept": "application/json"
+          }
+        },
+        proxyOptions
+      );
+
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Ollama Cloud session invalid or expired." };
+      }
+
+      if (response.ok) {
+        // Parse rate limits if present in headers
+        const remainingHeader = response.headers?.get("x-ratelimit-remaining") || response.headers?.get("ratelimit-remaining");
+        const limitHeader = response.headers?.get("x-ratelimit-limit") || response.headers?.get("ratelimit-limit");
+        if (remainingHeader && limitHeader) {
+          const total = parseFloat(limitHeader) || 0;
+          const remaining = parseFloat(remainingHeader) || 0;
+          rateLimitInfo = {
+            used: Math.max(0, total - remaining),
+            total,
+            remaining,
+            remainingPercentage: total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 100,
+            unlimited: false,
+            displayName: "Rate Limit (Requests)"
+          };
+        }
+
+        const text = await response.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          // Response is not valid JSON, which is fine
+        }
+
+        const parsed = parseOllamaData(data, providerSpecificData, rateLimitInfo);
+        if (parsed) {
+          return parsed;
+        }
+      }
+      lastStatus = response.status;
+    } catch (error) {
+      lastErrorMsg = error.message;
+    }
+  }
+
+  const plan = providerSpecificData?.plan || "Free";
+  const quotas = {};
+  if (rateLimitInfo) {
+    quotas.rateLimit = rateLimitInfo;
+  } else {
+    quotas.session = {
+      used: 0,
+      total: 1,
+      remaining: 1,
+      unlimited: true,
+      displayName: "Connection Status"
+    };
+  }
+
+  return {
+    plan: `Ollama Cloud (${plan})`,
+    message: `Ollama Cloud session active. balance/credits fetch failed or undocumented format. (HTTP ${lastStatus || lastErrorMsg})`,
+    quotas
+  };
+}
+
+function parseOllamaData(data, providerSpecificData, rateLimitInfo) {
+  if (!data || typeof data !== "object") return null;
+
+  let plan = providerSpecificData?.plan || "Free";
+  const rawPlan = data.plan || data.planName || data.tier || data.subscription?.plan || data.user?.plan || data.user?.tier;
+  if (rawPlan) {
+    plan = rawPlan;
+  }
+
+  const quotas = {};
+  if (rateLimitInfo) {
+    quotas.rateLimit = rateLimitInfo;
+  }
+
+  let total = undefined;
+  let used = undefined;
+  let remaining = undefined;
+
+  const quotaObj = data.quota || data.balance || data.billing || data.user?.quota || data.subscription?.quota;
+  if (quotaObj && typeof quotaObj === "object") {
+    total = quotaObj.total || quotaObj.limit || quotaObj.max;
+    used = quotaObj.used || quotaObj.spent || quotaObj.consumed;
+    remaining = quotaObj.remaining || quotaObj.left || quotaObj.balance;
+  }
+
+  if (total === undefined) total = data.total || data.limit || data.quotaTotal;
+  if (used === undefined) used = data.used || data.spent || data.quotaUsed;
+  if (remaining === undefined) remaining = data.remaining || data.left || data.balance || data.quotaRemaining;
+
+  if (remaining === undefined && total !== undefined && used !== undefined) {
+    remaining = total - used;
+  }
+  if (used === undefined && total !== undefined && remaining !== undefined) {
+    used = total - remaining;
+  }
+  if (total === undefined && remaining !== undefined && used !== undefined) {
+    total = remaining + used;
+  }
+
+  if (remaining !== undefined) {
+    const totalVal = parseFloat(total) || 0;
+    const usedVal = parseFloat(used) || 0;
+    const remainingVal = parseFloat(remaining) || 0;
+    const isUnlimited = totalVal === 0 && remainingVal === 0;
+
+    let percentage = 100;
+    if (totalVal > 0) {
+      percentage = Math.max(0, Math.min(100, (remainingVal / totalVal) * 100));
+    }
+
+    quotas.credits = {
+      used: usedVal,
+      total: totalVal,
+      remaining: remainingVal,
+      remainingPercentage: percentage,
+      unlimited: isUnlimited,
+      displayName: "Quota"
+    };
+  }
+
+  if (Object.keys(quotas).length === 0) {
+    quotas.session = {
+      used: 0,
+      total: 1,
+      remaining: 1,
+      unlimited: true,
+      displayName: "Connection Status"
+    };
+  }
+
+  return {
+    plan: `Ollama Cloud (${plan})`,
+    message: "Ollama Cloud session is active.",
+    quotas
+  };
 }
 
 /**
@@ -1506,6 +1677,7 @@ async function getNebiusUsage(apiKey, proxyOptions = null) {
 // ── Dashboard Link Messages ──────────────────────────────────────────────
 
 const DASHBOARD_URLS = {
+  commandcode: "https://commandcode.ai/studio",
   groq: "https://console.groq.com/settings/usage",
   mistral: "https://console.mistral.ai/usage",
   perplexity: "https://www.perplexity.ai/settings/usage",
@@ -1553,6 +1725,159 @@ const DASHBOARD_URLS = {
   "aws-polly": "https://console.aws.amazon.com/iam/home",
 };
 
+// ── CommandCode Usage Fetcher ─────────────────────────────────────────────
+
+async function getCommandCodeUsage(apiKey, proxyOptions = null) {
+  let finalKey = apiKey;
+
+  if (!finalKey) {
+    try {
+      const home = os.homedir();
+      const authPath = path.join(home, ".commandcode", "auth.json");
+      if (fs.existsSync(authPath)) {
+        const authData = JSON.parse(fs.readFileSync(authPath, "utf8"));
+        finalKey = authData.apiKey;
+      }
+    } catch (e) {
+      console.warn("[CommandCode] Failed to auto-read auth.json:", e.message);
+    }
+  }
+
+  if (!finalKey) {
+    return { message: "CommandCode API key not available." };
+  }
+
+  const candidateUrls = [
+    "https://api.commandcode.ai/alpha/billing",
+    "https://api.commandcode.ai/alpha/user",
+    "https://api.commandcode.ai/alpha/me"
+  ];
+
+  let lastStatus = 0;
+  let lastErrorMsg = "";
+
+  for (const url of candidateUrls) {
+    try {
+      const response = await proxyAwareFetch(
+        url,
+        {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${finalKey}`,
+            "x-command-code-version": "0.25.7",
+            "x-cli-environment": "cli",
+            "Accept": "application/json"
+          }
+        },
+        proxyOptions
+      );
+
+      if (response.status === 401 || response.status === 403) {
+        return { message: "CommandCode session invalid or expired." };
+      }
+
+      if (response.ok) {
+        const data = await response.json();
+        const parsed = parseCommandCodeData(data);
+        if (parsed) {
+          return parsed;
+        }
+      }
+      lastStatus = response.status;
+    } catch (error) {
+      lastErrorMsg = error.message;
+    }
+  }
+
+  return {
+    plan: "CommandCode (CLI Key)",
+    message: `CommandCode CLI session active. balance/credits fetch failed or undocumented format. (HTTP ${lastStatus || lastErrorMsg})`,
+    quotas: {
+      credits: {
+        used: 0,
+        total: 1,
+        remaining: 1,
+        unlimited: true,
+        displayName: "Credits (Status Active)"
+      }
+    }
+  };
+}
+
+function parseCommandCodeData(data) {
+  if (!data || typeof data !== "object") return null;
+
+  let total = undefined;
+  let used = undefined;
+  let remaining = undefined;
+  let plan = "CommandCode";
+
+  const rawPlan = data.plan || data.planName || data.tier || data.subscription?.plan || data.user?.plan || data.user?.tier;
+  if (rawPlan) {
+    plan = `CommandCode ${rawPlan}`;
+  }
+
+  const creditObj = data.credits || data.balance || data.billing || data.quota || data.user?.credits || data.user?.balance;
+  if (creditObj && typeof creditObj === "object") {
+    total = creditObj.total || creditObj.limit || creditObj.allowance || creditObj.max;
+    used = creditObj.used || creditObj.spent || creditObj.consumed;
+    remaining = creditObj.remaining || creditObj.left || creditObj.balance;
+  }
+
+  if (total === undefined) total = data.total || data.limit || data.creditsTotal;
+  if (used === undefined) used = data.used || data.spent || data.creditsUsed || data.usedCredits;
+  if (remaining === undefined) remaining = data.remaining || data.left || data.balance || data.creditsRemaining;
+
+  if (remaining === undefined && total !== undefined && used !== undefined) {
+    remaining = total - used;
+  }
+  if (used === undefined && total !== undefined && remaining !== undefined) {
+    used = total - remaining;
+  }
+  if (total === undefined && remaining !== undefined && used !== undefined) {
+    total = remaining + used;
+  }
+
+  if (remaining === undefined) {
+    const runsUsed = data.runsUsed || data.used_runs || data.requests;
+    const runsLimit = data.runsLimit || data.limit_runs || data.total_runs;
+    if (runsUsed !== undefined && runsLimit !== undefined) {
+      total = runsLimit;
+      used = runsUsed;
+      remaining = runsLimit - runsUsed;
+    }
+  }
+
+  if (remaining !== undefined) {
+    const totalVal = parseFloat(total) || 0;
+    const usedVal = parseFloat(used) || 0;
+    const remainingVal = parseFloat(remaining) || 0;
+    const isUnlimited = totalVal === 0 && remainingVal === 0;
+
+    let percentage = 100;
+    if (totalVal > 0) {
+      percentage = Math.max(0, Math.min(100, (remainingVal / totalVal) * 100));
+    }
+
+    return {
+      plan,
+      quotas: {
+        credits: {
+          used: usedVal,
+          total: totalVal,
+          remaining: remainingVal,
+          remainingPercentage: percentage,
+          resetAt: parseResetTime(data.resetAt || data.resetDate || data.nextReset || data.billing?.reset),
+          unlimited: isUnlimited,
+          displayName: "Credits (USD)"
+        }
+      }
+    };
+  }
+
+  return null;
+}
+
 function getDashboardMessage(provider) {
   const url = DASHBOARD_URLS[provider];
   if (url) {
@@ -1565,4 +1890,337 @@ function getDashboardMessage(provider) {
     message: `Usage API not implemented for ${provider}.`,
     quotas: [],
   };
+}
+
+// ── OpenRouter Key Info ──────────────────────────────────────────────────
+
+async function getOpenRouterUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenRouter API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(
+      "https://openrouter.ai/api/v1/auth/key",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "OpenRouter API key invalid or expired." };
+      }
+      return { message: `OpenRouter key API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    if (!json || !json.data) {
+      return { message: "OpenRouter key API returned invalid response." };
+    }
+
+    const { label, limit, usage, is_free_tier } = json.data;
+    const used = typeof usage === "number" ? usage : 0;
+    const hasLimit = typeof limit === "number" && limit > 0;
+    const total = hasLimit ? limit : 0;
+    const remaining = hasLimit ? Math.max(0, limit - used) : 0;
+    const remainingPercentage = hasLimit ? (remaining / limit) * 100 : null;
+
+    return {
+      plan: is_free_tier ? "OpenRouter (Free)" : "OpenRouter",
+      label: label || "Default Key",
+      quotas: {
+        balance: {
+          used,
+          total,
+          remaining,
+          remainingPercentage,
+          resetAt: null,
+          unlimited: !hasLimit,
+          displayName: `Credits (USD)`,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `OpenRouter error: ${error.message}` };
+  }
+}
+
+// ── Perplexity Web Session Status ────────────────────────────────────────
+
+async function getPerplexityWebUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Perplexity session cookie not available." };
+  }
+
+  let sessionToken = apiKey;
+  if (sessionToken.startsWith("__Secure-next-auth.session-token=")) {
+    sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);
+  }
+
+  try {
+    const response = await proxyAwareFetch(
+      "https://www.perplexity.ai/api/auth/session",
+      {
+        method: "GET",
+        headers: {
+          Cookie: `__Secure-next-auth.session-token=${sessionToken}`,
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Perplexity session invalid or expired. Re-paste your cookie." };
+      }
+      return { message: `Perplexity session error (${response.status}).` };
+    }
+
+    const data = await response.json();
+    const user = data?.user || {};
+    const subStatus = user.subscription_status || "free";
+    const isPro = subStatus === "active" || user.active_subscription === "pro" || user.plus_subscription === true;
+
+    return {
+      plan: isPro ? "Perplexity Pro (Active)" : "Perplexity Free",
+      message: `Logged in as ${user.email || user.name || "Perplexity User"}. Status: ${subStatus}.`,
+      quotas: {
+        subscription: {
+          used: isPro ? 0 : 1,
+          total: 1,
+          remaining: isPro ? 1 : 0,
+          remainingPercentage: isPro ? 100 : 0,
+          resetAt: null,
+          unlimited: isPro,
+          displayName: "Pro Subscription Status",
+        }
+      },
+    };
+  } catch (error) {
+    return { message: `Perplexity Web error: ${error.message}` };
+  }
+}
+
+// ── Grok Web Session Status ──────────────────────────────────────────────
+
+async function getGrokWebUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Grok SSO cookie not available." };
+  }
+
+  let token = apiKey;
+  if (token.startsWith("sso=")) token = token.slice(4);
+
+  try {
+    const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
+    const traceId = Math.random().toString(16).slice(2, 18).padStart(16, "0");
+    const spanId = Math.random().toString(16).slice(2, 10).padStart(8, "0");
+
+    const response = await proxyAwareFetch(
+      "https://grok.com/rest/app-chat/conversations/new",
+      {
+        method: "POST",
+        headers: {
+          Accept: "*/*",
+          "Content-Type": "application/json",
+          Cookie: `sso=${token}`,
+          Origin: "https://grok.com",
+          Referer: "https://grok.com/",
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+          "x-statsig-id": statsigId,
+          "x-xai-request-id": crypto.randomUUID(),
+          traceparent: `00-${traceId}-${spanId}-00`,
+        },
+        body: JSON.stringify({
+          temporary: true,
+          modelName: "grok-4",
+          modelMode: "MODEL_MODE_GROK_4",
+          message: "ping",
+          fileAttachments: [],
+          imageAttachments: [],
+          disableSearch: false,
+          enableImageGeneration: false,
+          returnImageBytes: false,
+          returnRawGrokInXaiRequest: false,
+          enableImageStreaming: false,
+          imageGenerationCount: 0,
+          forceConcise: false,
+          toolOverrides: {},
+          enableSideBySide: true,
+          sendFinalMetadata: true,
+          isReasoning: false,
+          disableTextFollowUps: true,
+          disableMemory: true,
+          forceSideBySide: false,
+          isAsyncChat: false,
+          disableSelfHarmShortCircuit: false,
+        }),
+      },
+      proxyOptions
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "Grok Web auth failed. SSO cookie may be expired." };
+    }
+
+    return {
+      plan: "Grok Web Premium",
+      message: "Grok Web session is active and reachable.",
+      quotas: {
+        session: {
+          used: 0,
+          total: 1,
+          remaining: 1,
+          remainingPercentage: 100,
+          resetAt: null,
+          unlimited: true,
+          displayName: "Session Status",
+        }
+      },
+    };
+  } catch (error) {
+    return { message: `Grok Web error: ${error.message}` };
+  }
+}
+
+// ── Simple JSON dot-path value extractor ─────────────────────────────────
+
+function getValueByPath(obj, path) {
+  if (!path || !obj) return undefined;
+  const parts = path.split(".");
+  let current = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    const arrayMatch = part.match(/^([^\[]+)\[(\d+)\]$/);
+    if (arrayMatch) {
+      const key = arrayMatch[1];
+      const index = parseInt(arrayMatch[2], 10);
+      current = current[key];
+      if (Array.isArray(current)) {
+        current = current[index];
+      } else {
+        return undefined;
+      }
+    } else {
+      current = current[part];
+    }
+  }
+  return current;
+}
+
+// ── Generic Custom Quota Fetcher ─────────────────────────────────────────
+
+async function getCustomQuotaUsage(connection, proxyOptions = null) {
+  const { apiKey, providerSpecificData } = connection;
+  const url = providerSpecificData.customQuotaUrl;
+  const method = providerSpecificData.customQuotaMethod || "GET";
+  const bodyStr = providerSpecificData.customQuotaBody || null;
+  const headersStr = providerSpecificData.customQuotaHeaders || null;
+
+  const totalPath = providerSpecificData.customQuotaJsonPathTotal || null;
+  const usedPath = providerSpecificData.customQuotaJsonPathUsed || null;
+  const remainingPath = providerSpecificData.customQuotaJsonPathRemaining || null;
+  const resetPath = providerSpecificData.customQuotaJsonPathResetAt || null;
+  const displayName = providerSpecificData.customQuotaDisplayName || "Quota / Balance";
+
+  try {
+    let headers = {};
+    if (headersStr) {
+      try {
+        headers = typeof headersStr === "string" ? JSON.parse(headersStr) : headersStr;
+      } catch (e) {
+        console.warn("[Custom Quota] Failed to parse headers JSON, using as raw Cookie/Authorization:", e.message);
+        if (headersStr.includes(":") || headersStr.includes("{")) {
+          // keep empty
+        } else {
+          if (headersStr.startsWith("Bearer ") || headersStr.length > 50) {
+            headers["Authorization"] = headersStr.startsWith("Bearer ") ? headersStr : `Bearer ${headersStr}`;
+          } else {
+            headers["Cookie"] = headersStr;
+          }
+        }
+      }
+    }
+
+    const hasAuth = Object.keys(headers).some(h => ["authorization", "cookie", "x-api-key"].includes(h.toLowerCase()));
+    if (!hasAuth && apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    const fetchOptions = {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...headers
+      }
+    };
+
+    if (bodyStr && method !== "GET" && method !== "HEAD") {
+      fetchOptions.body = bodyStr;
+    }
+
+    const response = await proxyAwareFetch(url, fetchOptions, proxyOptions);
+    if (!response.ok) {
+      return { message: `Custom Quota API returned HTTP ${response.status}.` };
+    }
+
+    const data = await response.json();
+
+    const rawTotal = totalPath ? getValueByPath(data, totalPath) : undefined;
+    const rawUsed = usedPath ? getValueByPath(data, usedPath) : undefined;
+    const rawRemaining = remainingPath ? getValueByPath(data, remainingPath) : undefined;
+    const rawReset = resetPath ? getValueByPath(data, resetPath) : undefined;
+
+    const total = typeof rawTotal === "number" ? rawTotal : (parseFloat(rawTotal) || 0);
+    const used = typeof rawUsed === "number" ? rawUsed : (parseFloat(rawUsed) || 0);
+    const remaining = typeof rawRemaining === "number" ? rawRemaining : (parseFloat(rawRemaining) || 0);
+
+    const hasTotal = rawTotal !== undefined && rawTotal !== null;
+    const hasUsed = rawUsed !== undefined && rawUsed !== null;
+    const hasRemaining = rawRemaining !== undefined && rawRemaining !== null;
+
+    let finalTotal = total;
+    let finalUsed = used;
+    let finalRemaining = remaining;
+    let unlimited = false;
+
+    if (hasRemaining && !hasTotal && !hasUsed) {
+      finalTotal = remaining;
+      finalUsed = 0;
+      unlimited = true;
+    } else if (hasTotal && hasUsed && !hasRemaining) {
+      finalRemaining = Math.max(0, total - used);
+    } else if (hasTotal && hasRemaining && !hasUsed) {
+      finalUsed = Math.max(0, total - remaining);
+    } else if (!hasTotal) {
+      unlimited = true;
+    }
+
+    const remainingPercentage = (!unlimited && finalTotal > 0)
+      ? (finalRemaining / finalTotal) * 100
+      : null;
+
+    return {
+      plan: "Custom Plan",
+      quotas: {
+        custom: {
+          used: finalUsed,
+          total: finalTotal,
+          remaining: finalRemaining,
+          remainingPercentage,
+          resetAt: parseResetTime(rawReset),
+          unlimited,
+          displayName,
+        }
+      }
+    };
+  } catch (error) {
+    return { message: `Custom Quota error: ${error.message}` };
+  }
 }

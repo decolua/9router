@@ -271,6 +271,9 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "github",
   "codex",
   "gemini-cli",
+  // Cookie/Web-based providers
+  "grok-web",
+  "perplexity-web",
   // API-key providers with real quota/balance APIs
   "glm",
   "glm-cn",

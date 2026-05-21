@@ -114,13 +114,14 @@ export async function GET(request, { params }) {
       return Response.json({ error: "Connection not found" }, { status: 404 });
     }
 
-    // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
+    // Allow OAuth/cookie connections, plus whitelisted apikey providers (glm/minimax/...)
     const isOAuth = connection.authType === "oauth";
+    const isCookie = connection.authType === "cookie";
     const isApikeyEligible =
       connection.authType === "apikey" &&
       USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 
-    if (!isOAuth && !isApikeyEligible) {
+    if (!isOAuth && !isCookie && !isApikeyEligible) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 

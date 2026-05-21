@@ -106,7 +106,6 @@ export async function POST(request) {
     } catch { /* No existing config */ }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "sk_9router";
     const effectiveSubagentModel = subagentModel || modelsArray[0];
 
     // Ensure provider object
@@ -114,12 +113,13 @@ export async function POST(request) {
 
     // Preserve any existing 9router provider entry and its models
     const existingProvider = config.provider["9router"] || { npm: "@ai-sdk/openai-compatible", options: {}, models: {} };
+    const keyToUse = apiKey || existingProvider.options?.apiKey;
 
-    // Merge options (overwrite baseURL/apiKey)
+    // Merge options (overwrite baseURL, keep or set apiKey only when available)
     existingProvider.options = {
       ...existingProvider.options,
       baseURL: normalizedBaseUrl,
-      apiKey: keyToUse,
+      ...(keyToUse ? { apiKey: keyToUse } : {}),
     };
 
     // Ensure models map exists

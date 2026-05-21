@@ -98,6 +98,27 @@ describe("dashboard guard public LLM API access", () => {
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
+  it("allows loopback public LLM API with the local default key", async () => {
+    const response = await proxy(request("/api/v1/chat/completions", {
+      host: "localhost:20128",
+      authorization: "Bearer sk_9router",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects remote public LLM API with the local default key", async () => {
+    const response = await proxy(request("/api/v1/chat/completions", {
+      host: "router.example.com",
+      authorization: "Bearer sk_9router",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
   it("rejects remote beta public LLM API without API key", async () => {
     const response = await proxy(request("/v1beta/models", { host: "router.example.com" }));
 

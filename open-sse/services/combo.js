@@ -137,9 +137,10 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function} [options.preflightModel] - Optional function: (modelStr) => Promise<{skip, reason, retryAfter, status}>
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1 }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, preflightModel = null }) {
   // Apply rotation strategy if enabled
   const rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   
@@ -149,6 +150,20 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    if (typeof preflightModel === "function") {
+      const preflight = await preflightModel(modelStr);
+      if (preflight?.skip) {
+        const retryAfter = preflight.retryAfter || null;
+        if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+          earliestRetryAfter = retryAfter;
+        }
+        lastError = preflight.reason || `${modelStr} is unavailable`;
+        if (!lastStatus) lastStatus = preflight.status || 503;
+        log.warn("COMBO", `Skipping model ${modelStr}; ${lastError}${retryAfter ? ` until ${retryAfter}` : ""}`);
+        continue;
+      }
+    }
+
     const cooldownUntil = getComboModelCooldownUntil(comboName, modelStr);
     if (cooldownUntil) {
       const retryAfter = new Date(cooldownUntil).toISOString();

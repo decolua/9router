@@ -44,7 +44,9 @@ function sanitize(c) {
 
 function isUsageEligible(connection) {
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    connection.authType === "oauth" ||
+    connection.authType === "cookie" ||
+    USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
 }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import { getRotatedModels, handleComboChat, resetComboRoutingState } from "../../open-sse/services/combo.js";
 
@@ -92,5 +92,38 @@ describe("combo model cooldown fallback", () => {
       "provider/model-b",
       "provider/model-b",
     ]);
+  });
+
+  it("skips a model before attempting it when preflight says all accounts are locked", async () => {
+    const calls = [];
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const lockedUntil = new Date(Date.now() + 60_000).toISOString();
+    const handleSingleModel = async (_body, modelStr) => {
+      calls.push(modelStr);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const response = await handleComboChat({
+      body: {},
+      models: ["provider/model-a", "provider/model-b"],
+      handleSingleModel,
+      log,
+      comboName: "Hermes",
+      preflightModel: async (modelStr) => (
+        modelStr === "provider/model-a"
+          ? { skip: true, reason: "all accounts locked", retryAfter: lockedUntil, status: 503 }
+          : { skip: false }
+      ),
+    });
+
+    expect(response.status).toBe(200);
+    expect(calls).toEqual(["provider/model-b"]);
+    expect(log.warn).toHaveBeenCalledWith(
+      "COMBO",
+      expect.stringContaining("Skipping model provider/model-a; all accounts locked"),
+    );
   });
 });

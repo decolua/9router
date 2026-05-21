@@ -4,6 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  getProviderModelAvailability,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
@@ -104,6 +105,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: comboModels,
       handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      preflightModel: preflightComboModel,
       log,
       comboName: modelStr,
       comboStrategy,
@@ -113,6 +115,21 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Single model request
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+}
+
+async function preflightComboModel(modelStr) {
+  const modelInfo = await getModelInfo(modelStr);
+  if (!modelInfo.provider) return { skip: false };
+
+  const availability = await getProviderModelAvailability(modelInfo.provider, modelInfo.model);
+  if (availability.available) return { skip: false };
+
+  return {
+    skip: true,
+    reason: availability.reason || `${modelStr} is unavailable`,
+    retryAfter: availability.retryAfter || null,
+    status: availability.status || HTTP_STATUS.SERVICE_UNAVAILABLE,
+  };
 }
 
 /**
@@ -137,6 +154,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: comboModels,
         handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        preflightModel: preflightComboModel,
         log,
         comboName: modelStr,
         comboStrategy,
@@ -199,6 +217,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
         updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+      } else {
+        const accountName = credentials.connectionName || credentials.connectionId;
+        const errorMsg = `${provider} account ${accountName} has no Cloud Code project ID. Re-authorize or complete Google Cloud Code onboarding for this account; quota lookup can still show models without a chat-usable project.`;
+        await markAccountUnavailable(credentials.connectionId, HTTP_STATUS.FORBIDDEN, errorMsg, provider, model);
+        log.warn("AUTH", errorMsg);
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = errorMsg;
+        lastStatus = HTTP_STATUS.FORBIDDEN;
+        continue;
       }
     }
 

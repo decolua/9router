@@ -187,6 +187,58 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 }
 
 /**
+ * Fast read-only availability check for combo preflight.
+ * Avoids spending a combo attempt on a provider/model whose accounts are all
+ * already model-locked.
+ */
+export async function getProviderModelAvailability(provider, model = null) {
+  const providerId = resolveProviderId(provider);
+
+  if (FREE_PROVIDERS[providerId]?.noAuth) {
+    return { available: true };
+  }
+
+  const connections = await getProviderConnections({ provider: providerId, isActive: true });
+  if (connections.length === 0) {
+    return {
+      available: false,
+      reason: `No active credentials for provider: ${provider}`,
+      status: 503,
+    };
+  }
+
+  const availableConnections = connections.filter(c => !isModelLockActive(c, model));
+  if (availableConnections.length > 0) {
+    return { available: true };
+  }
+
+  const lockedConns = connections.filter(c => isModelLockActive(c, model));
+  const lockEntries = lockedConns
+    .map(c => ({ connection: c, until: getEarliestModelLockUntil(c) }))
+    .filter(entry => entry.until)
+    .sort((a, b) => new Date(a.until) - new Date(b.until));
+
+  const earliest = lockEntries[0] || null;
+  if (!earliest) {
+    return {
+      available: false,
+      reason: `${provider}/${model || "all"} has no currently available accounts`,
+      status: 503,
+    };
+  }
+
+  const retryAfterHuman = formatRetryAfter(earliest.until);
+  return {
+    available: false,
+    reason: `all ${connections.length} ${provider} account${connections.length === 1 ? "" : "s"} locked for ${model || "all"} (${retryAfterHuman})`,
+    retryAfter: earliest.until,
+    retryAfterHuman,
+    status: Number(earliest.connection?.errorCode) || 503,
+    lastError: earliest.connection?.lastError || null,
+  };
+}
+
+/**
  * Mark account+model as unavailable — locks modelLock_${model} in DB.
  * All errors (429, 401, 5xx, etc.) lock per model, not per account.
  * @param {string} connectionId
