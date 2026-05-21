@@ -85,8 +85,18 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "openai":
+      return await getOpenAIUsage(apiKey, proxyOptions);
+    case "anthropic":
+      return await getAnthropicApiKeyUsage(apiKey, proxyOptions);
+    case "deepseek":
+      return await getDeepSeekUsage(apiKey, proxyOptions);
+    case "siliconflow":
+      return await getSiliconFlowUsage(apiKey, proxyOptions);
+    case "nebius":
+      return await getNebiusUsage(apiKey, proxyOptions);
     default:
-      return { message: `Usage API not implemented for ${provider}` };
+      return getDashboardMessage(provider);
   }
 }
 
@@ -1130,4 +1140,429 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+// ── OpenAI Usage ────────────────────────────────────────────────────────
+
+/**
+ * OpenAI Usage — calls /v1/organization/usage for consumption data.
+ * Returns model-level usage with n_requests and token counts.
+ * Does NOT return hard limits (OpenAI doesn't expose those via API).
+ */
+async function getOpenAIUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenAI API key not available." };
+  }
+
+  try {
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const response = await proxyAwareFetch(
+      `https://api.openai.com/v1/organization/usage?date=${dateStr}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "OpenAI API key invalid or expired." };
+      }
+      return { message: `OpenAI usage API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const usageData = Array.isArray(json.data) ? json.data : [];
+    const quotas = {};
+
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    for (const entry of usageData) {
+      const name = entry.snapshot_id || entry.model_name || "unknown";
+      const nRequests = entry.n_requests || 0;
+      const nContextTokens = entry.n_context_tokens_total || 0;
+      const nGeneratedTokens = entry.n_generated_tokens_total || 0;
+      const totalTokens = nContextTokens + nGeneratedTokens;
+
+      quotas[name] = {
+        used: nRequests,
+        total: 0, // No hard limit available
+        remaining: totalTokens,
+        remainingPercentage: null,
+        resetAt: monthEnd.toISOString(),
+        unlimited: true,
+        displayName: name,
+        tokens: totalTokens,
+      };
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return {
+        plan: "OpenAI",
+        message: "OpenAI connected. No usage data available yet today.",
+        quotas: {},
+      };
+    }
+
+    return { plan: "OpenAI", quotas };
+  } catch (error) {
+    return { message: `OpenAI error: ${error.message}` };
+  }
+}
+
+// ── Anthropic API-key Usage ─────────────────────────────────────────────
+
+/**
+ * Anthropic API-key usage via org usage endpoint.
+ * Uses x-api-key header (not Bearer token like OAuth).
+ */
+async function getAnthropicApiKeyUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Anthropic API key not available." };
+  }
+
+  try {
+    const settingsResponse = await proxyAwareFetch(
+      CLAUDE_CONFIG.settingsUrl,
+      {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": CLAUDE_CONFIG.apiVersion,
+        },
+      },
+      proxyOptions
+    );
+
+    if (!settingsResponse.ok) {
+      if (settingsResponse.status === 401 || settingsResponse.status === 403) {
+        return { message: "Anthropic API key invalid or expired." };
+      }
+      return { message: `Anthropic settings API error (${settingsResponse.status}).` };
+    }
+
+    const settings = await settingsResponse.json();
+
+    if (!settings.organization_id) {
+      return {
+        plan: settings.plan || "Unknown",
+        message: "Anthropic connected. No organization found.",
+        quotas: {},
+      };
+    }
+
+    const usageResponse = await proxyAwareFetch(
+      CLAUDE_CONFIG.usageUrl.replace("{org_id}", settings.organization_id),
+      {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": CLAUDE_CONFIG.apiVersion,
+        },
+      },
+      proxyOptions
+    );
+
+    if (!usageResponse.ok) {
+      return {
+        plan: settings.plan || "Unknown",
+        message: "Anthropic connected. Usage details require admin access.",
+        quotas: {},
+      };
+    }
+
+    const usage = await usageResponse.json();
+    const quotas = {};
+
+    if (Array.isArray(usage.data)) {
+      const monthEnd = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth() + 1,
+        0,
+        23,
+        59,
+        59
+      ).toISOString();
+
+      for (const entry of usage.data) {
+        const name = entry.model || entry.snapshot_id || "unknown";
+        quotas[name] = {
+          used: entry.input_tokens + entry.output_tokens || 0,
+          total: 0,
+          remaining: 0,
+          remainingPercentage: null,
+          resetAt: monthEnd,
+          unlimited: true,
+          displayName: name,
+          tokens: entry.input_tokens + entry.output_tokens || 0,
+        };
+      }
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return {
+        plan: settings.plan || "Unknown",
+        message: "Anthropic connected. No usage data this month.",
+        quotas: {},
+      };
+    }
+
+    return {
+      plan: settings.plan || "Unknown",
+      organization: settings.organization_name,
+      quotas,
+    };
+  } catch (error) {
+    return { message: `Anthropic error: ${error.message}` };
+  }
+}
+
+// ── DeepSeek Balance ─────────────────────────────────────────────────────
+
+/**
+ * DeepSeek — fetches account balance (no usage/rate-limit API).
+ */
+async function getDeepSeekUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "DeepSeek API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(
+      "https://api.deepseek.com/user/balance",
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "DeepSeek API key invalid or expired." };
+      }
+      return { message: `DeepSeek balance API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const balanceInfos = Array.isArray(json.balance_infos) ? json.balance_infos : [];
+
+    if (balanceInfos.length === 0) {
+      return { message: "DeepSeek connected. Balance info not available." };
+    }
+
+    const info = balanceInfos[0];
+    const totalBalance = parseFloat(info.total_balance) || 0;
+    const toppedUp = parseFloat(info.topped_up_balance) || 0;
+    const granted = parseFloat(info.granted_balance) || 0;
+    const currency = info.currency || "CNY";
+
+    return {
+      plan: "DeepSeek",
+      quotas: {
+        balance: {
+          used: 0,
+          total: totalBalance,
+          remaining: totalBalance,
+          remainingPercentage: 100,
+          resetAt: null,
+          unlimited: false,
+          displayName: `Balance (${currency})`,
+          balance: totalBalance,
+          balanceCurrency: currency,
+          toppedUp,
+          granted,
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `DeepSeek error: ${error.message}` };
+  }
+}
+
+// ── SiliconFlow Balance ──────────────────────────────────────────────────
+
+/**
+ * SiliconFlow — fetches account balance from user info endpoint.
+ */
+async function getSiliconFlowUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "SiliconFlow API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(
+      "https://api.siliconflow.cn/v1/user/info",
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "SiliconFlow API key invalid or expired." };
+      }
+      return { message: `SiliconFlow user info API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+
+    if (!json.status && !json.data) {
+      return { message: "SiliconFlow connected. User info not available." };
+    }
+
+    const data = json.data || json;
+    const balance = typeof data.balance === "number" ? data.balance : parseFloat(data.balance) || 0;
+
+    return {
+      plan: "SiliconFlow",
+      quotas: {
+        balance: {
+          used: 0,
+          total: balance,
+          remaining: balance,
+          remainingPercentage: 100,
+          resetAt: null,
+          unlimited: false,
+          displayName: "Balance (CNY)",
+          balance,
+          balanceCurrency: "CNY",
+        },
+      },
+    };
+  } catch (error) {
+    return { message: `SiliconFlow error: ${error.message}` };
+  }
+}
+
+// ── Nebius Balance ───────────────────────────────────────────────────────
+
+/**
+ * Nebius — fetches billing/balance info.
+ */
+async function getNebiusUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Nebius API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(
+      "https://api.studio.nebius.ai/billing",
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      },
+      proxyOptions
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Nebius API key invalid or expired." };
+      }
+      return { message: `Nebius billing API error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const balance = typeof json.balance === "number" ? json.balance : parseFloat(json.balance) || null;
+
+    if (balance !== null) {
+      return {
+        plan: "Nebius",
+        quotas: {
+          balance: {
+            used: 0,
+            total: balance,
+            remaining: balance,
+            remainingPercentage: 100,
+            resetAt: null,
+            unlimited: false,
+            displayName: "Balance",
+            balance,
+            balanceCurrency: "USD",
+          },
+        },
+      };
+    }
+
+    return { message: "Nebius connected. Billing info not available.", quotas: {} };
+  } catch (error) {
+    return { message: `Nebius error: ${error.message}` };
+  }
+}
+
+// ── Dashboard Link Messages ──────────────────────────────────────────────
+
+const DASHBOARD_URLS = {
+  groq: "https://console.groq.com/settings/usage",
+  mistral: "https://console.mistral.ai/usage",
+  perplexity: "https://www.perplexity.ai/settings/usage",
+  together: "https://api.together.xyz/settings/billing",
+  fireworks: "https://fireworks.ai/account/usage",
+  cerebras: "https://cloud.cerebras.ai/usage",
+  cohere: "https://dashboard.cohere.com/usage",
+  xai: "https://console.x.ai",
+  hyperbolic: "https://app.hyperbolic.xyz/settings",
+  kimi: "https://platform.moonshot.ai/console/usage",
+  alicode: "https://bailian.console.aliyun.com",
+  "alicode-intl": "https://modelstudio.console.alibabacloud.com",
+  "xiaomi-mimo": "https://xiaomimimo.com",
+  "xiaomi-tokenplan": "https://mimo.xiaomi.com",
+  "volcengine-ark": "https://console.volcengine.com/ark",
+  "vercel-ai-gateway": "https://vercel.com/dashboard/~/ai-gateway",
+  openrouter: "https://openrouter.ai/activity",
+  gemini: "https://aistudio.google.com/app/apikey",
+  ollama: "https://ollama.com/settings/keys",
+  blackbox: "https://www.blackbox.ai/api-management",
+  chutes: "https://chutes.ai/app/api",
+  deepgram: "https://console.deepgram.com/usage",
+  assemblyai: "https://www.assemblyai.com/app/usage",
+  "fal-ai": "https://fal.ai/dashboard/keys",
+  "stability-ai": "https://platform.stability.ai/account/keys",
+  "black-forest-labs": "https://api.bfl.ai",
+  recraft: "https://www.recraft.ai/profile/api",
+  "voyage-ai": "https://dash.voyageai.com",
+  nvidia: "https://build.nvidia.com/settings/api-keys",
+  vertex: "https://console.cloud.google.com/vertex-ai",
+  "cloudflare-ai": "https://dash.cloudflare.com",
+  byteplus: "https://console.byteplus.com/ark",
+  tavily: "https://app.tavily.com/home",
+  "brave-search": "https://api-dashboard.search.brave.com/app/keys",
+  serper: "https://serper.dev/api-key",
+  exa: "https://dashboard.exa.ai/api-keys",
+  linkup: "https://app.linkup.so/api-keys",
+  searchapi: "https://www.searchapi.io/dashboard",
+  youcom: "https://api.you.com",
+  firecrawl: "https://www.firecrawl.dev/app/api-keys",
+  "jina-ai": "https://jina.ai",
+  elevenlabs: "https://elevenlabs.io/app/settings/api-keys",
+  huggingface: "https://huggingface.co/settings/tokens",
+  inworld: "https://platform.inworld.ai/api-keys",
+  "aws-polly": "https://console.aws.amazon.com/iam/home",
+};
+
+function getDashboardMessage(provider) {
+  const url = DASHBOARD_URLS[provider];
+  if (url) {
+    return {
+      message: `${provider} doesn't expose a public usage API. Check your dashboard: ${url}`,
+      quotas: [],
+    };
+  }
+  return {
+    message: `Usage API not implemented for ${provider}.`,
+    quotas: [],
+  };
 }

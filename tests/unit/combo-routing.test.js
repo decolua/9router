@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { getRotatedModels, resetComboRotation } from "../../open-sse/services/combo.js";
+import { getRotatedModels, handleComboChat, resetComboRoutingState } from "../../open-sse/services/combo.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
-    resetComboRotation();
+    resetComboRoutingState();
   });
 
   it("keeps existing one-request round-robin behavior by default", () => {
@@ -54,5 +54,43 @@ describe("combo round-robin routing", () => {
 
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
+  });
+});
+
+
+describe("combo model cooldown fallback", () => {
+  beforeEach(() => {
+    resetComboRoutingState();
+  });
+
+  it("skips a rate-limited combo model on the next request", async () => {
+    const calls = [];
+    const log = { info() {}, warn() {} };
+    const handleSingleModel = async (_body, modelStr) => {
+      calls.push(modelStr);
+      if (modelStr === "provider/model-a") {
+        return new Response(JSON.stringify({ error: { message: "FreeUsageLimitError: Rate limit exceeded" } }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const models = ["provider/model-a", "provider/model-b"];
+
+    const first = await handleComboChat({ body: {}, models, handleSingleModel, log, comboName: "Hermes" });
+    const second = await handleComboChat({ body: {}, models, handleSingleModel, log, comboName: "Hermes" });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(calls).toEqual([
+      "provider/model-a",
+      "provider/model-b",
+      "provider/model-b",
+    ]);
   });
 });

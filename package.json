@@ -9,7 +9,8 @@
     "start": "next start --port 20128 --hostname 0.0.0.0",
     "dev:bun": "bun --bun next dev --webpack --port 20128 -H 0.0.0.0",
     "build:bun": "bun --bun next build --webpack",
-    "start:bun": "HOSTNAME=0.0.0.0 PORT=20128 bun ./.next/standalone/server.js"
+    "start:bun": "HOSTNAME=0.0.0.0 PORT=20128 bun ./.next/standalone/server.js",
+    "postbuild": "node scripts/prepare-standalone-assets.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

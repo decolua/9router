@@ -1,8 +1,16 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { getModelTargetFormat } from "../config/providerModels.js";
+import { FORMATS } from "../translator/formats.js";
 
-// Models that use /zen/v1/messages (claude format)
-const MESSAGES_MODELS = new Set(["big-pickle"]);
+function getOpenCodePath(model) {
+  const targetFormat = getModelTargetFormat("oc", model);
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) return "/zen/v1/responses";
+  if (targetFormat === FORMATS.CLAUDE) return "/zen/v1/messages";
+  if (targetFormat === FORMATS.GEMINI) return `/zen/v1/models/${model}`;
+  return "/zen/v1/chat/completions";
+}
 
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
@@ -11,9 +19,7 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   buildUrl(model) {
     const base = "https://opencode.ai";
-    return MESSAGES_MODELS.has(model)
-      ? `${base}/zen/v1/messages`
-      : `${base}/zen/v1/chat/completions`;
+    return `${base}${getOpenCodePath(model)}`;
   }
 
   buildHeaders() {

@@ -10,6 +10,27 @@ import { unavailableResponse } from "../utils/error.js";
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
 const comboRotationState = new Map();
+const comboModelCooldowns = new Map();
+
+function getCooldownKey(comboName, modelStr) {
+  return `${comboName || "__default__"}::${modelStr}`;
+}
+
+function markComboModelCooldown(comboName, modelStr, cooldownMs) {
+  if (!cooldownMs || cooldownMs <= 0) return;
+  comboModelCooldowns.set(getCooldownKey(comboName, modelStr), Date.now() + cooldownMs);
+}
+
+function getComboModelCooldownUntil(comboName, modelStr) {
+  const key = getCooldownKey(comboName, modelStr);
+  const until = comboModelCooldowns.get(key);
+  if (!until) return null;
+  if (until <= Date.now()) {
+    comboModelCooldowns.delete(key);
+    return null;
+  }
+  return until;
+}
 
 function normalizeStickyLimit(stickyLimit) {
   const parsed = Number.parseInt(stickyLimit, 10);
@@ -73,6 +94,19 @@ export function resetComboRotation(comboName) {
   else comboRotationState.clear();
 }
 
+export function resetComboRoutingState(comboName) {
+  resetComboRotation(comboName);
+  if (!comboName) {
+    comboModelCooldowns.clear();
+    return;
+  }
+
+  const prefix = `${comboName}::`;
+  for (const key of comboModelCooldowns.keys()) {
+    if (key.startsWith(prefix)) comboModelCooldowns.delete(key);
+  }
+}
+
 /**
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
@@ -115,6 +149,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    const cooldownUntil = getComboModelCooldownUntil(comboName, modelStr);
+    if (cooldownUntil) {
+      const retryAfter = new Date(cooldownUntil).toISOString();
+      if (!earliestRetryAfter || cooldownUntil < new Date(earliestRetryAfter).getTime()) {
+        earliestRetryAfter = retryAfter;
+      }
+      lastError = `${modelStr} is cooling down after a recent provider failure`;
+      if (!lastStatus) lastStatus = 503;
+      log.warn("COMBO", `Skipping model ${modelStr}; cooling down until ${retryAfter}`);
+      continue;
+    }
+
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -164,6 +210,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
+      markComboModelCooldown(comboName, modelStr, cooldownMs);
+
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
@@ -171,6 +219,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
+      markComboModelCooldown(comboName, modelStr, 30 * 1000);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }

@@ -182,6 +182,69 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "anthropic":
+      case "openai":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.displayName || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              tokens: quota.tokens || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "deepseek":
+        if (data.quotas?.balance) {
+          const b = data.quotas.balance;
+          normalizedQuotas.push({
+            name: b.displayName || "Balance",
+            used: b.used || 0,
+            total: b.total || 0,
+            remaining: b.remaining !== undefined ? b.remaining : undefined,
+            remainingPercentage: b.remainingPercentage,
+            resetAt: b.resetAt || null,
+            balance: b.balance,
+            balanceCurrency: b.balanceCurrency,
+          });
+        }
+        break;
+
+      case "siliconflow":
+        if (data.quotas?.balance) {
+          const b = data.quotas.balance;
+          normalizedQuotas.push({
+            name: b.displayName || "Balance",
+            used: b.used || 0,
+            total: b.total || 0,
+            remaining: b.remaining !== undefined ? b.remaining : undefined,
+            remainingPercentage: b.remainingPercentage,
+            resetAt: b.resetAt || null,
+            balance: b.balance,
+            balanceCurrency: b.balanceCurrency,
+          });
+        }
+        break;
+
+      case "nebius":
+        if (data.quotas?.balance) {
+          const b = data.quotas.balance;
+          normalizedQuotas.push({
+            name: b.displayName || "Balance",
+            used: b.used || 0,
+            total: b.total || 0,
+            remaining: b.remaining !== undefined ? b.remaining : undefined,
+            remainingPercentage: b.remainingPercentage,
+            resetAt: b.resetAt || null,
+            balance: b.balance,
+            balanceCurrency: b.balanceCurrency,
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

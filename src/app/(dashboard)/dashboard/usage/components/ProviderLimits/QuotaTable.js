@@ -82,6 +82,23 @@ function sortQuotas(quotas, sortMode) {
 }
 
 /**
+ * Check if a quota row is a balance-only entry (no usage data, just a monetary balance).
+ */
+function isBalanceRow(quota) {
+  return quota.balance !== undefined || quota.balanceCurrency !== undefined;
+}
+
+/**
+ * Format a balance value with currency.
+ */
+function formatBalance(balance, currency) {
+  if (balance === undefined || balance === null) return "N/A";
+  const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
+  const num = typeof balance === "number" ? balance : parseFloat(balance) || 0;
+  return `${symbol}${num.toFixed(2)}`;
+}
+
+/**
  * Quota Table Component - Table-based display for quota data
  */
 export default function QuotaTable({
@@ -150,6 +167,50 @@ export default function QuotaTable({
         <table className="w-full table-fixed text-left">
           <tbody>
             {currentPageRows.map((quota) => {
+              const balance = isBalanceRow(quota);
+              if (balance) {
+                const currency = quota.balanceCurrency || "USD";
+                const balanceStr = formatBalance(quota.balance, currency);
+
+                return (
+                  <tr
+                    key={`${quota.name}-${quota.index}`}
+                    className="border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                  >
+                    <td className={`${cellPad} w-[30%]`}>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] shrink-0">💰</span>
+                        <span className={`${nameText} font-medium text-text-primary truncate`}>
+                          {quota.name}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className={`${cellPad} w-[45%]`}>
+                      <div className={compact ? "space-y-1" : "space-y-1.5"}>
+                        <div className="flex items-center gap-2">
+                          <span className={`${compact ? "text-xs" : "text-sm"} font-semibold text-green-600 dark:text-green-400`}>
+                            {balanceStr}
+                          </span>
+                        </div>
+                        {quota.toppedUp !== undefined && (
+                          <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
+                            <span className="text-text-muted">Topped up: {currency === "CNY" ? "¥" : "$"}{quota.toppedUp.toFixed(2)}</span>
+                            {quota.granted !== undefined && quota.granted > 0 && (
+                              <span className="text-text-muted">Granted: {currency === "CNY" ? "¥" : "$"}{quota.granted.toFixed(2)}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className={`${cellPad} w-[25%]`}>
+                      <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
+                    </td>
+                  </tr>
+                );
+              }
+
               const colors = getColorClasses(quota.remaining);
               const countdown = formatResetTime(quota.resetAt);
               const resetDisplay = formatResetTimeDisplay(quota.resetAt);
@@ -170,23 +231,33 @@ export default function QuotaTable({
 
                   <td className={`${cellPad} w-[45%]`}>
                     <div className={compact ? "space-y-1" : "space-y-1.5"}>
-                      <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
-                        quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
-                      }`}>
-                        <div
-                          className={`h-full transition-all duration-300 ${colors.bg}`}
-                          style={{ width: `${Math.min(quota.remaining, 100)}%` }}
-                        />
-                      </div>
-
-                      <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
-                        <span className="text-text-muted">
-                          {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
-                        </span>
-                        <span className={`font-medium ${colors.text}`}>
-                          {quota.remaining}%
-                        </span>
-                      </div>
+                      {quota.total > 0 ? (
+                        <>
+                          <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
+                            quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
+                          }`}>
+                            <div
+                              className={`h-full transition-all duration-300 ${colors.bg}`}
+                              style={{ width: `${Math.min(quota.remaining, 100)}%` }}
+                            />
+                          </div>
+                          <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
+                            <span className="text-text-muted">
+                              {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
+                            </span>
+                            <span className={`font-medium ${colors.text}`}>
+                              {quota.remaining}%
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}>
+                          <span className="text-text-muted">
+                            {(quota.tokens || quota.used || 0).toLocaleString()} tokens this month
+                          </span>
+                          <span className="font-medium text-text-muted">—</span>
+                        </div>
+                      )}
                     </div>
                   </td>
 
