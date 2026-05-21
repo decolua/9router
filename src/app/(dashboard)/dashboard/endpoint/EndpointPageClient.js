@@ -21,17 +21,17 @@ const CLIENT_PING_FAST_MS = 10000;
 const CLIENT_PING_SLOW_MS = 60000;
 const CLIENT_PING_TIMEOUT_MS = 5000;
 
-// Browser-side health probe: bypasses backend DNS issues (1.1.1.1 vs OS resolver).
-// Uses no-cors → opaque response means TLS+DNS reach succeeded, which is enough.
+// Browser-side health probe: must reach origin (not just CF edge).
+// CORS mode → res.ok=false for 5xx (Cloudflare Error 1033 when origin dead).
 async function clientPingUrl(url) {
   if (!url) return false;
   try {
-    await fetch(`${url}/api/health`, {
-      mode: "no-cors",
+    const res = await fetch(`${url}/api/health`, {
+      mode: "cors",
       cache: "no-store",
       signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
     });
-    return true;
+    return res.ok;
   } catch { return false; }
 }
 
@@ -162,6 +162,7 @@ export default function APIPageClient({ machineId }) {
         const ok = await clientPingAny(tunnelPublicUrl, tunnelUrl);
         tunnelClientReachableRef.current = ok;
         if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
+        else { tunnelMissRef.current += 1; if (tunnelMissRef.current >= REACHABLE_MISS_THRESHOLD) setTunnelReachable(false); }
       } else {
         tunnelClientReachableRef.current = false;
       }
@@ -169,6 +170,7 @@ export default function APIPageClient({ machineId }) {
         const ok = await clientPingUrl(tsUrl);
         tsClientReachableRef.current = ok;
         if (ok) { tsMissRef.current = 0; setTsReachable(true); if (!tsEverReachableRef.current) { tsEverReachableRef.current = true; setTsEverReachable(true); } }
+        else { tsMissRef.current += 1; if (tsMissRef.current >= REACHABLE_MISS_THRESHOLD) setTsReachable(false); }
       } else {
         tsClientReachableRef.current = false;
       }
@@ -345,8 +347,8 @@ export default function APIPageClient({ machineId }) {
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
       const ok = await Promise.any(targets.map(async (h) => {
-        const p = await fetch(h, { mode: "no-cors", cache: "no-store" });
-        if (p.ok || p.type === "opaque") return true;
+        const p = await fetch(h, { mode: "cors", cache: "no-store" });
+        if (p.ok) return true;
         throw new Error("not ready");
       })).catch(() => false);
       if (ok) {
