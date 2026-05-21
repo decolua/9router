@@ -112,7 +112,7 @@ function getMappedModel(tool, model) {
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
     if (prefixKey) return aliases[prefixKey];
-    // Pattern fallback: catches AG renamed variants (e.g. gemini-pro-agent → gemini-3.1-pro-high)
+    // Pattern fallback: catches AG renamed variants (e.g. deprecated pro IDs → gemini-pro-agent)
     const patterns = MODEL_PATTERNS?.[tool] || [];
     for (const { match, alias } of patterns) {
       if (match.test(lookup) && aliases[alias]) return aliases[alias];
