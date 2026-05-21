@@ -103,6 +103,11 @@ export class DefaultExecutor extends BaseExecutor {
         headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
         if (this.provider === "kimi-coding") Object.assign(headers, buildKimiHeaders());
         break;
+      case "pioneer":
+        // Pioneer AI accepts X-API-Key (preferred) or Bearer; we use X-API-Key
+        // because the FE bundle and docs both standardize on it.
+        headers["X-API-Key"] = credentials.apiKey || credentials.accessToken;
+        break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {
           if (credentials.apiKey) {

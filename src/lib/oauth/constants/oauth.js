@@ -238,6 +238,31 @@ export const GITLAB_CONFIG = {
   codeChallengeMethod: "S256",
 };
 
+// Pioneer AI Authentication Configuration
+// Pioneer uses Supabase Auth (gotrue-js) at https://db.pioneer.ai for the
+// web app session, and a separate REST API at https://api.pioneer.ai keyed
+// by `X-API-Key: pio_sk_...` for inference. We support three login paths:
+//   1. Direct API key paste            (pio_sk_...)
+//   2. Supabase refresh_token import   (sb-db-auth-token.refresh_token)
+//   3. Email + password (Supabase)     (gotrue grant_type=password)
+// All three paths funnel into a long-lived pio_sk_ key persisted as `apiKey`.
+// The Supabase anon key is the publishable key embedded in the Pioneer FE
+// bundle (agent.pioneer.ai) and is safe to ship client-side.
+export const PIONEER_CONFIG = {
+  supabaseUrl: "https://db.pioneer.ai",
+  supabaseAnonKey: "sb_publishable_AtlDtPFv9cqxkWcH1b7A1g_J3OZbosp",
+  apiBaseUrl: "https://api.pioneer.ai",
+  apiVersionBase: "https://api.pioneer.ai/v1",
+  apiKeyPrefix: "pio_sk_",
+  webAppUrl: "https://agent.pioneer.ai",
+  apiKeysUrl: "https://agent.pioneer.ai/settings/api-keys",
+  signupUrl: "https://agent.pioneer.ai/auth",
+  authMethods: ["apikey", "import", "password"],
+  // Pioneer enforces hCaptcha on Supabase password sign-in. Sitekey is
+  // safe to ship client-side (extracted from the official FE bundle).
+  hcaptchaSiteKey: "c646a2ec-0a3e-415c-affe-c502978ede9c",
+};
+
 // CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
 // Step 1: POST /v2/plugin/auth/state?platform=CLI → get { state, authUrl }
 // Step 2: Open authUrl in browser
@@ -273,4 +298,5 @@ export const PROVIDERS = {
   CLINE: "cline",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy",
+  PIONEER: "pioneer",
 };

@@ -441,6 +441,23 @@ export async function POST(request) {
           break;
         }
 
+        case "pioneer": {
+          // Pioneer AI: validate pio_sk_ key via /list-api-keys (X-API-Key header).
+          // 401/403 = invalid; anything else = valid.
+          if (!apiKey?.startsWith?.("pio_sk_")) {
+            return NextResponse.json({
+              valid: false,
+              error: "Invalid Pioneer API key format. Expected pio_sk_...",
+            });
+          }
+          const res = await fetch("https://api.pioneer.ai/list-api-keys", {
+            method: "GET",
+            headers: { "X-API-Key": apiKey, "Accept": "application/json" },
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
         case "blackbox": {
           const res = await fetch("https://api.blackbox.ai/chat/completions", {
             method: "POST",
