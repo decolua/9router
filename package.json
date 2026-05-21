@@ -51,7 +51,13 @@
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.15",
     "tailwindcss": "^4"
+  },
+  "overrides": {
+    "dompurify": "^3.4.5",
+    "next": {
+      "postcss": "^8.5.15"
+    }
   }
 }
