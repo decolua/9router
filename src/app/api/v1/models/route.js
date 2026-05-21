@@ -8,6 +8,7 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
+import { withModelTokenLimits } from "@/shared/utils/modelTokenLimits";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -133,6 +134,14 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+function modelListEntry(alias, modelId, metadata = {}) {
+  return withModelTokenLimits({
+    id: `${alias}/${modelId}`,
+    object: "model",
+    owned_by: alias,
+  }, metadata);
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -209,11 +218,7 @@ export async function buildModelsList(kindFilter) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
-          id: `${alias}/${model.id}`,
-          object: "model",
-          owned_by: alias,
-        });
+        models.push(modelListEntry(alias, model.id, model));
       }
     }
 
@@ -227,11 +232,7 @@ export async function buildModelsList(kindFilter) {
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
 
-      models.push({
-        id: `${providerAlias}/${modelId}`,
-        object: "model",
-        owned_by: providerAlias,
-      });
+      models.push(modelListEntry(providerAlias, modelId, customModel));
     }
   } else {
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
@@ -251,9 +252,7 @@ export async function buildModelsList(kindFilter) {
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
-      const staticModelKindById = new Map(
-        providerModels.map((m) => [m.id, modelKind(m)])
-      );
+      const staticModelById = new Map(providerModels.map((m) => [m.id, m]));
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -299,14 +298,16 @@ export async function buildModelsList(kindFilter) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-      const customModelIds = customModels
-        .filter((m) => {
-          if (!m?.id || (m.type && m.type !== "llm")) return false;
-          const alias = m.providerAlias;
-          return alias === staticAlias || alias === outputAlias || alias === providerId;
-        })
-        .map((m) => String(m.id).trim())
-        .filter((modelId) => modelId !== "");
+      const customModelById = new Map();
+      for (const customModel of customModels) {
+        if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
+        const alias = customModel.providerAlias;
+        if (!(alias === staticAlias || alias === outputAlias || alias === providerId)) continue;
+        const modelId = String(customModel.id).trim();
+        if (modelId) customModelById.set(modelId, customModel);
+      }
+
+      const customModelIds = Array.from(customModelById.keys());
 
       const aliasModelIds = Object.values(modelAliases || {})
         .filter((fullModel) => {
@@ -335,15 +336,12 @@ export async function buildModelsList(kindFilter) {
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer static metadata, otherwise infer from ID heuristics
-        const kind = staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
+        const staticModel = staticModelById.get(modelId);
+        const kind = staticModel ? modelKind(staticModel) : inferKindFromUnknownModelId(modelId);
         if (!kindFilter.includes(kind)) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
-        models.push({
-          id: `${outputAlias}/${modelId}`,
-          object: "model",
-          owned_by: outputAlias,
-        });
+        models.push(modelListEntry(outputAlias, modelId, customModelById.get(modelId) || staticModel));
       }
 
       // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS

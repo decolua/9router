@@ -1,5 +1,7 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
+import { getCustomModels } from "@/lib/localDb";
+import { withModelTokenLimits } from "@/shared/utils/modelTokenLimits";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -36,11 +38,11 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
     if (cfg.maxMaxResults) out.maxResults = cfg.maxMaxResults;
     if (cfg.requiredOptions) out.required = cfg.requiredOptions;
   }
-  return out;
+  return withModelTokenLimits(out, model);
 }
 
 // id format: "{alias}/{modelId}" - alias may also be providerId
-function lookup(fullId) {
+async function lookup(fullId) {
   if (!fullId || !fullId.includes("/")) return null;
   const slash = fullId.indexOf("/");
   const alias = fullId.slice(0, slash);
@@ -80,6 +82,27 @@ function lookup(fullId) {
       model: { id: "fetch", name: `${providerInfo.name} Fetch`, params: ["url", "format", "max_characters"] },
     });
   }
+
+  let customModels = [];
+  try {
+    customModels = await getCustomModels();
+  } catch (e) {
+    console.log("Could not fetch custom models");
+  }
+
+  const customModel = customModels.find((x) => {
+    if (!x?.id) return false;
+    const customAlias = x.providerAlias;
+    return (
+      String(x.id).trim() === modelId &&
+      (customAlias === alias || customAlias === providerId)
+    );
+  });
+  if (customModel) {
+    const kind = customModel.type || "llm";
+    return buildInfo({ alias, providerId, model: customModel, kind, providerInfo });
+  }
+
   return null;
 }
 
@@ -99,7 +122,7 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id);
+  const info = await lookup(id);
   if (!info) {
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },
