@@ -270,6 +270,22 @@ export default function ProfilePage() {
     }
   };
 
+  const patchGenericSettings = async (patch) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, ...data }));
+      }
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+    }
+  };
+
   const updateRequireLogin = async (requireLogin) => {
     try {
       const res = await fetch("/api/settings", {
@@ -925,6 +941,66 @@ export default function ProfilePage() {
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
+            </p>
+          </div>
+        </Card>
+
+        {/* Quota Guard */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">shield</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Quota Guard</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Enable Quota Guard</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Automatically skip accounts that exceed the quota threshold (e.g., 95%) to avoid unexpected charges
+                </p>
+              </div>
+              <Toggle
+                checked={settings.quotaGuardEnabled === true}
+                onChange={() => {
+                  const next = settings.quotaGuardEnabled !== true;
+                  patchGenericSettings({ quotaGuardEnabled: next });
+                }}
+                disabled={loading}
+              />
+            </div>
+
+            {settings.quotaGuardEnabled === true && (
+              <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm sm:text-base">Threshold (%)</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Block an account when its remaining quota drops below this value
+                  </p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <Input
+                    type="range"
+                    min="1"
+                    max="99"
+                    value={settings.quotaGuardThreshold ?? 95}
+                    onChange={(e) => {
+                      const val = Math.max(1, Math.min(99, Number(e.target.value) || 95));
+                      patchGenericSettings({ quotaGuardThreshold: val });
+                    }}
+                    disabled={loading}
+                    className="w-24 sm:w-32"
+                  />
+                  <span className="text-sm font-mono w-10 text-right">{settings.quotaGuardThreshold ?? 95}%</span>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              {settings.quotaGuardEnabled === true
+                ? `Accounts will be excluded from routing when usage reaches ${settings.quotaGuardThreshold ?? 95}%. Quota data is cached for 5 minutes per account.`
+                : "Disabled — all active accounts will be routed normally regardless of quota usage."}
             </p>
           </div>
         </Card>

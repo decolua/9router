@@ -2,11 +2,90 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, FREE_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers.js";
+import { getUsageForProvider } from "open-sse/services/usage.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+// ── Quota Guard (pre-request usage threshold check) ──────────
+// In-memory cache: connectionId → { used, total, timestamp }
+const quotaCache = new Map();
+const QUOTA_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
+
+function getQuotaThreshold(connection) {
+  // Per-connection override via providerSpecificData, then global connection-level data
+  return (connection.providerSpecificData?.quotaThreshold ??
+          connection.quotaThreshold ??
+          null);
+}
+
+async function getCachedQuotaPercent(connectionId, connection, proxyOptions) {
+  const cached = quotaCache.get(connectionId);
+  if (cached && Date.now() - cached.timestamp < QUOTA_CACHE_TTL_MS) {
+    return cached.percent;
+  }
+
+  // Fetch from provider API
+  try {
+    const usageResult = await getUsageForProvider(connection, proxyOptions);
+    if (usageResult.quotas && typeof usageResult.quotas === "object" && !Array.isArray(usageResult.quotas)) {
+      const percent = computeQuotaPercent(usageResult.quotas);
+      quotaCache.set(connectionId, { percent, timestamp: Date.now() });
+      return percent;
+    }
+  } catch (e) {
+    log.warn("QUOTA", `Failed to fetch quota for ${connection.provider} (${connectionId?.slice(0, 8)}): ${e.message}`);
+  }
+  return -1; // unknown
+}
+
+function computeQuotaPercent(quotas) {
+  if (!quotas || typeof quotas !== "object") return -1;
+  let minPercent = 100;
+  let found = false;
+
+  for (const entry of Object.values(quotas)) {
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.unlimited) continue;
+
+    let pct = -1;
+    if (typeof entry.remainingPercentage === "number" && entry.remainingPercentage >= 0) {
+      pct = 100 - entry.remainingPercentage;
+    } else if (typeof entry.total === "number" && entry.total > 0 && typeof entry.used === "number") {
+      pct = (entry.used / entry.total) * 100;
+    }
+
+    if (pct >= 0) {
+      minPercent = Math.min(minPercent, pct);
+      found = true;
+    }
+  }
+
+  return found ? minPercent : -1;
+}
+
+async function isConnectionQuotaExceeded(connection, settings, proxyOptions) {
+  // Check global enable
+  if (!settings.quotaGuardEnabled) return false;
+
+  // Per-connection threshold > 0, otherwise use global
+  const thresh = getQuotaThreshold(connection) ?? settings.quotaGuardThreshold ?? 95;
+  if (thresh <= 0 || thresh >= 100) return false;
+
+  // Only supported providers
+  if (!USAGE_SUPPORTED_PROVIDERS.includes(connection.provider)) return false;
+
+  const pct = await getCachedQuotaPercent(connection.id, connection, proxyOptions);
+  if (pct < 0) return false;
+
+  if (pct >= thresh) {
+    log.info("QUOTA", `${connection.provider} | conn ${connection.id?.slice(0, 8)} at ${pct.toFixed(1)}% >= ${thresh}% — excluded`);
+    return true;
+  }
+  return false;
+}
 
 /**
  * Get provider credentials from localDb
@@ -60,14 +139,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
-      if (excludeSet.has(c.id)) return false;
-      if (isModelLockActive(c, model)) return false;
-      return true;
-    });
+    // Filter out model-locked, excluded, and quota-exceeded connections
+    const availableConnections = await Promise.all(connections.map(async (c) => {
+      if (excludeSet.has(c.id)) return null;
+      if (isModelLockActive(c, model)) return null;
+      // Quota threshold guard (only for supported providers, cached to avoid API overhead)
+      const settings = await getSettings();
+      if (await isConnectionQuotaExceeded(c, settings, null)) return null;
+      return c;
+    }));
+    const filtered = availableConnections.filter(Boolean);
 
-    log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
+    log.debug("AUTH", `${provider} | available: ${filtered.length}/${connections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
@@ -77,7 +160,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     });
 
-    if (availableConnections.length === 0) {
+    if (filtered.length === 0) {
       // Find earliest lock expiry across all connections for retry timing
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
@@ -105,7 +188,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
-      connection = availableConnections.find((c) => c.id === preferredConnectionId);
+      connection = filtered.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
@@ -116,7 +199,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
 
       // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...filtered].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
@@ -136,7 +219,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         });
       } else {
         // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...filtered].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
@@ -153,7 +236,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      connection = filtered[0];
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});

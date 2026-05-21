@@ -85,6 +85,9 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "alicode":
+    case "alicode-intl":
+      return await getDashscopeUsage(apiKey, provider, proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -961,7 +964,162 @@ async function getGlmUsage(apiKey, provider, proxyOptions = null) {
   }
 }
 
-// ── MiniMax helpers ──────────────────────────────────────────────────────
+// DashScope (Alibaba Cloud / 百炼) config
+const DASHSCOPE_CONFIG = {
+  alicode: "https://dashscope.aliyuncs.com",
+  "alicode-intl": "https://dashscope-intl.aliyuncs.com",
+};
+
+// ── alicode / DashScope ─────────────────────────────────────────────
+/**
+ * DashScope (百炼) usage via balance + token statistics API.
+ * Returns monthly balance info (free-tier token cap vs used) when available.
+ */
+async function getDashscopeUsage(apiKey, provider, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "DashScope API key not available." };
+  }
+
+  const base = DASHSCOPE_CONFIG[provider] || DASHSCOPE_CONFIG.alicode;
+  const quotas = {};
+
+  // 1) Try balance endpoint — returns account balance + package info
+  try {
+    const balanceResp = await proxyAwareFetch(
+      `${base}/api/v1/users/balance`,
+      {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "X-DashScope-AuthMode": "api",
+        },
+      },
+      proxyOptions
+    );
+
+    if (balanceResp.ok) {
+      const bd = await balanceResp.json();
+      const pkg = bd.package_balance ?? bd.packageBalance ?? null;
+      if (pkg && typeof pkg === "object") {
+        const total = Number(pkg.total_count ?? pkg.totalCount ?? 0);
+        const used = Number(pkg.used_count ?? pkg.usedCount ?? 0);
+        if (total > 0) {
+          const remaining = Math.max(0, total - used);
+          quotas["token_package"] = {
+            used,
+            total,
+            remaining,
+            remainingPercentage: (remaining / total) * 100,
+            unlimited: false,
+          };
+        }
+      }
+
+      // Also capture coupon / balance info
+      const bal = Number(bd.balance ?? pkg?.balance ?? 0);
+      if (bal > 0) {
+        quotas["paid_balance"] = {
+          used: 0,
+          total: bal,
+          remaining: bal,
+          remainingPercentage: 100,
+          unlimited: true,
+        };
+      }
+    }
+  } catch (e) {
+    // Balance endpoint may not be available for all keys — ignore
+  }
+
+  // 2) Try token statistics — monthly quota per model/resource
+  try {
+    const now = new Date();
+    const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const statsResp = await proxyAwareFetch(
+      `${base}/api/v1/financing/statistics?unit=token&billDate=${ymd}`,
+      {
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "X-DashScope-AuthMode": "api",
+        },
+      },
+      proxyOptions
+    );
+
+    if (statsResp.ok) {
+      const sd = await statsResp.json();
+      const statItems = sd.statistic_item_list ?? sd.statisticItem ?? sd.statistics ?? [];
+      const dailyTotal = sd.daily_total_amount ?? sd.dailyTotal ?? 0;
+      if (dailyTotal) {
+        const usedVal = Number(dailyTotal) || 0;
+        // Token consumption today
+        quotas["today_tokens"] = {
+          used: usedVal,
+          total: usedVal, // daily consumption, no upper bound from this API
+          remaining: 0,
+          unlimited: true,
+          label: `Today's usage: ${usedVal.toLocaleString()} tokens`,
+        };
+      }
+      if (Array.isArray(statItems) && statItems.length) {
+        const modelUsage = {};
+        for (const item of statItems) {
+          const mid = item.model_id ?? item.modelId ?? "unknown";
+          const consumed = Number(item.consumption ?? item.amount ?? 0);
+          if (consumed > 0) {
+            modelUsage[mid] = (modelUsage[mid] || 0) + consumed;
+          }
+        }
+        if (Object.keys(modelUsage).length) {
+          for (const [mid, amt] of Object.entries(modelUsage)) {
+            quotas[`model_${mid}`] = {
+              used: amt,
+              total: amt,
+              remaining: 0,
+              unlimited: true,
+              label: `${mid}: ${amt.toLocaleString()} tokens today`,
+            };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Stats endpoint may not be available
+  }
+
+  // 3) Fallback: try free-tier token inquiry
+  if (Object.keys(quotas).length === 0) {
+    try {
+      const inquiryResp = await proxyAwareFetch(
+        `${base}/api/v1/inquiries/usage`,
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "X-DashScope-AuthMode": "api",
+          },
+          body: JSON.stringify({}),
+        },
+        proxyOptions
+      );
+      if (inquiryResp.ok) {
+        const id = await inquiryResp.json();
+        return {
+          plan: `${provider === "alicode-intl" ? "Intl" : "CN"} Free Tier`,
+          quotas: {},
+          message: `DashScope connected. Usage inquiry submitted (${id.task_id ?? id}).`,
+        };
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  return {
+    plan: `${provider === "alicode-intl" ? "Intl" : "CN"} Free Tier`,
+    quotas,
+    ...(Object.keys(quotas).length === 0 ? { message: "DashScope connected. Usage tracked per request." } : {}),
+  };
+}
 function getMiniMaxField(model, snakeKey, camelKey) {
   if (!model || typeof model !== "object") return null;
   return model[snakeKey] ?? model[camelKey] ?? null;

@@ -276,6 +276,8 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "glm-cn",
   "minimax",
   "minimax-cn",
+  "alicode",
+  "alicode-intl",
 ];
 
 // Subset that uses apikey auth (still surfaced on quota page)
@@ -284,4 +286,6 @@ export const USAGE_APIKEY_PROVIDERS = [
   "glm-cn",
   "minimax",
   "minimax-cn",
+  "alicode",
+  "alicode-intl",
 ];
