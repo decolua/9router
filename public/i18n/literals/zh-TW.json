@@ -190,5 +190,14 @@
   "Sudo Password": "Sudo 密碼",
   "Click to add, click again to remove. Changes are saved automatically.": "點擊新增，再次點擊移除。變更將自動儲存。",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 風險提示：此提供商使用的訂閱/OAuth 工作階段未獲官方授權用於代理/路由器使用。帳戶可能被限制或封禁。使用風險自負。",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 透過本地 CA 攔截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，將請求重新導向到您的提供商。可能違反 ToS → 帳戶封禁風險。使用風險自負。"
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 透過本地 CA 攔截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，將請求重新導向到您的提供商。可能違反 ToS → 帳戶封禁風險。使用風險自負。",
+  "Quota Guard": "配額守護",
+  "Enable Quota Guard": "啟用配額守護",
+  "Automatically skip accounts that exceed the quota threshold (e.g., 95%) to avoid unexpected charges": "自動跳過超過配額閾值的帳號（例如95%），避免意外扣費",
+  "Threshold (%)": "閾值 (%)",
+  "Block an account when its remaining quota drops below this value": "當剩餘配額低於此值時阻止該帳號",
+  "Enters exact percentage (1-99)": "精確輸入百分比 (1-99)",
+  "% threshold": "% 閾值",
+  "Accounts will be excluded when usage reaches the threshold. Quota data cached 5 min/account.": "當使用量達到閾值時將排除該帳號。配額數據每帳號快取 5 分鐘。",
+  "Disabled — all active accounts routed normally regardless of quota usage.": "已禁用 — 所有活躍帳號正常路由，不受配額使用量影響。"
 }

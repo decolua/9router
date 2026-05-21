@@ -979,28 +979,44 @@ export default function ProfilePage() {
                     Block an account when its remaining quota drops below this value
                   </p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <Input
-                    type="range"
-                    min="1"
-                    max="99"
-                    value={settings.quotaGuardThreshold ?? 95}
-                    onChange={(e) => {
-                      const val = Math.max(1, Math.min(99, Number(e.target.value) || 95));
-                      patchGenericSettings({ quotaGuardThreshold: val });
-                    }}
-                    disabled={loading}
-                    className="w-24 sm:w-32"
-                  />
-                  <span className="text-sm font-mono w-10 text-right">{settings.quotaGuardThreshold ?? 95}%</span>
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={settings.quotaGuardThreshold ?? 95}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        if (v >= 1 && v <= 99) patchGenericSettings({ quotaGuardThreshold: v });
+                      }}
+                      disabled={loading}
+                      className="w-16 text-center"
+                    />
+                    <span className="text-sm font-mono">%</span>
+                  </div>
+                  <div className="flex items-center gap-2 w-full">
+                    <Input
+                      type="range"
+                      min="1"
+                      max="99"
+                      value={settings.quotaGuardThreshold ?? 95}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(99, Number(e.target.value) || 95));
+                        patchGenericSettings({ quotaGuardThreshold: val });
+                      }}
+                      disabled={loading}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
               </div>
             )}
 
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.quotaGuardEnabled === true
-                ? `Accounts will be excluded from routing when usage reaches ${settings.quotaGuardThreshold ?? 95}%. Quota data is cached for 5 minutes per account.`
-                : "Disabled — all active accounts will be routed normally regardless of quota usage."}
+                ? "Accounts will be excluded when usage reaches the threshold. Quota data cached 5 min/account."
+                : "Disabled — all active accounts routed normally regardless of quota usage."}
             </p>
           </div>
         </Card>
