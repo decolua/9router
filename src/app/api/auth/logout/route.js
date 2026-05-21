@@ -8,5 +8,6 @@ export async function POST() {
   cookieStore.delete("oidc_state");
   cookieStore.delete("oidc_nonce");
   cookieStore.delete("oidc_code_verifier");
+  cookieStore.delete("cas_state");
   return NextResponse.json({ success: true });
 }
