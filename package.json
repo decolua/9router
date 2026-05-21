@@ -56,8 +56,6 @@
   },
   "overrides": {
     "dompurify": "^3.4.5",
-    "next": {
-      "postcss": "^8.5.15"
-    }
+    "postcss": "^8.5.15"
   }
 }

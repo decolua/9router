@@ -3,18 +3,18 @@ import { FORMATS } from "../translator/formats.js";
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
   if (!line) return null;
+  
+  const trimmed = line.trim();
+  if (!trimmed) return null;
 
-  // NDJSON format (Ollama): raw JSON lines without "data:" prefix
-  if (format === FORMATS.OLLAMA) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("{")) {
-      try {
-        return JSON.parse(trimmed);
-      } catch (error) {
-        return null;
-      }
+  // Handle raw JSON lines (NDJSON / Ollama style)
+  if (trimmed.startsWith("{")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      // If it failed to parse as raw JSON, it might be a malformed "data: {...}" line
+      // or something else. We continue to the "data:" check.
     }
-    return null;
   }
 
   // Standard SSE format: "data: {...}"

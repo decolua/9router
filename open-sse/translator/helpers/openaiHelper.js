@@ -50,6 +50,11 @@ export function filterToOpenAIFormat(body) {
         filteredContent.push({ type: "text", text: "" });
       }
       
+      // Flatten if only text blocks remain for better OpenAI compatibility
+      if (filteredContent.length > 0 && filteredContent.every(b => b.type === "text")) {
+        return { ...msg, content: filteredContent.map(b => b.text).join("\n") };
+      }
+      
       return { ...msg, content: filteredContent };
     }
     

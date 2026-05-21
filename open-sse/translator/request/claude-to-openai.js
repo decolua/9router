@@ -199,9 +199,10 @@ function convertClaudeMessage(msg) {
 
     // Return content
     if (parts.length > 0) {
+      const isAllText = parts.every(p => p.type === "text");
       return {
         role,
-        content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+        content: isAllText ? parts.map(p => p.text).join("\n") : parts
       };
     }
     

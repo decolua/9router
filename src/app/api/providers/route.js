@@ -122,6 +122,13 @@ export async function POST(request) {
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
 
+    if (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider)) {
+      const connections = await getProviderConnections({ provider });
+      if (connections.length > 0) {
+        return NextResponse.json({ error: "Only one connection is allowed for this compatible node" }, { status: 400 });
+      }
+    }
+
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
