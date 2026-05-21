@@ -147,7 +147,7 @@ export function openaiToClaudeResponse(chunk, state) {
         stopTextBlock(state, results);
 
         const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
+        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex, args: "" });
         
         // Strip prefix from tool name for response
         let toolName = tc.function?.name || "";
@@ -170,11 +170,7 @@ export function openaiToClaudeResponse(chunk, state) {
       if (tc.function?.arguments) {
         const toolInfo = state.toolCalls.get(idx);
         if (toolInfo) {
-          results.push({
-            type: "content_block_delta",
-            index: toolInfo.blockIndex,
-            delta: { type: "input_json_delta", partial_json: tc.function.arguments }
-          });
+          toolInfo.args += tc.function.arguments;
         }
       }
     }
@@ -186,6 +182,14 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     for (const [, toolInfo] of state.toolCalls) {
+      const partialJson = sanitizeToolArguments(toolInfo.args, toolInfo.name, state.requestBody);
+      if (partialJson) {
+        results.push({
+          type: "content_block_delta",
+          index: toolInfo.blockIndex,
+          delta: { type: "input_json_delta", partial_json: partialJson }
+        });
+      }
       results.push({
         type: "content_block_stop",
         index: toolInfo.blockIndex
@@ -206,6 +210,30 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   return results.length > 0 ? results : null;
+}
+
+function sanitizeToolArguments(args, toolName, requestBody) {
+  if (!args) return args;
+  try {
+    const parsed = JSON.parse(args);
+    const schema = findToolSchema(requestBody, toolName);
+    if (parsed && schema?.properties && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const required = new Set(schema.required || []);
+      for (const [key, value] of Object.entries(parsed)) {
+        if (value === "" && !required.has(key) && schema.properties[key]?.type === "string") {
+          delete parsed[key];
+        }
+      }
+      return JSON.stringify(parsed);
+    }
+  } catch { }
+  return args;
+}
+
+function findToolSchema(requestBody, toolName) {
+  if (!Array.isArray(requestBody?.tools)) return null;
+  const tool = requestBody.tools.find(t => t.name === toolName || t.function?.name === toolName);
+  return tool?.input_schema || tool?.function?.parameters || null;
 }
 
 // Convert OpenAI finish_reason to Claude stop_reason
