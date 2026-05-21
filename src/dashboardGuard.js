@@ -76,10 +76,15 @@ const LOCAL_ONLY_PATHS = [
   "/api/tunnel/tailscale-login",
   "/api/tunnel/tailscale-start-daemon",
   "/api/tunnel/tailscale-check",
-  "/api/tunnel/enable",
-  "/api/tunnel/disable",
   "/api/oauth/cursor/auto-import",
   "/api/oauth/kiro/auto-import",
+];
+
+// Tunnel toggles are safe to expose to an authenticated dashboard browser on the same origin,
+// even when the dashboard itself is served from a non-loopback host such as a VPS IP/domain.
+const REMOTE_BROWSER_LOCAL_ALLOWED_PATHS = [
+  "/api/tunnel/enable",
+  "/api/tunnel/disable",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -99,6 +104,18 @@ function isLocalRequest(request) {
     } catch { return false; }
   }
   return true;
+}
+
+function isSameOriginBrowserRequest(request) {
+  const host = request.headers.get("host");
+  const origin = request.headers.get("origin");
+  if (!host || !origin) return false;
+  try {
+    const originUrl = new URL(origin);
+    return originUrl.host.toLowerCase() === host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 function isPublicLlmApi(pathname) {
@@ -127,6 +144,11 @@ async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + JWT cookie (blocks unauth raw clients)
   if (isLocalRequest(request) && await hasValidToken(request)) return true;
+  if (
+    REMOTE_BROWSER_LOCAL_ALLOWED_PATHS.some((p) => request.nextUrl.pathname.startsWith(p)) &&
+    isSameOriginBrowserRequest(request) &&
+    await hasValidToken(request)
+  ) return true;
   return false;
 }
 
@@ -158,6 +180,7 @@ function isPublicApi(pathname) {
 
 export const __test__ = {
   isLocalRequest,
+  isSameOriginBrowserRequest,
   isPublicLlmApi,
   extractApiKey,
   canAccessPublicLlmApi,
