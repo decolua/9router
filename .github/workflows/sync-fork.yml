@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.SYNC_TOKEN }}
           fetch-depth: 0
 
       - name: Configure git
@@ -27,11 +27,8 @@ jobs:
           git remote add upstream https://github.com/decolua/9router.git
           git fetch upstream
           git checkout master
-
-          # Merge upstream, auto-accepting upstream changes on conflict
           git merge upstream/master --no-edit -X theirs || {
             echo "Merge failed unexpectedly"
             exit 1
           }
-
-          git push origin master
+          git push https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/rsingh888/eb-router.git master
