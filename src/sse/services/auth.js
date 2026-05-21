@@ -85,12 +85,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (earliest) {
         const earliestConn = lockedConns[0];
         log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        
+        let clientErrorCode = earliestConn?.errorCode || null;
+        if (clientErrorCode === 401 || clientErrorCode === 403 || clientErrorCode === 404) {
+          clientErrorCode = 429;
+        }
+
         return {
           allRateLimited: true,
           retryAfter: earliest,
           retryAfterHuman: formatRetryAfter(earliest),
           lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          lastErrorCode: clientErrorCode
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -228,12 +234,16 @@ export async function getProviderModelAvailability(provider, model = null) {
   }
 
   const retryAfterHuman = formatRetryAfter(earliest.until);
+  let status = Number(earliest.connection?.errorCode) || 503;
+  if (status === 401 || status === 403 || status === 404) {
+    status = 429;
+  }
   return {
     available: false,
     reason: `all ${connections.length} ${provider} account${connections.length === 1 ? "" : "s"} locked for ${model || "all"} (${retryAfterHuman})`,
     retryAfter: earliest.until,
     retryAfterHuman,
-    status: Number(earliest.connection?.errorCode) || 503,
+    status,
     lastError: earliest.connection?.lastError || null,
   };
 }
