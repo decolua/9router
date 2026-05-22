@@ -193,6 +193,23 @@ export function parseQuotaData(provider, data) {
               resetAt: quota.resetAt || null,
             });
           });
+        } else if (data.isValid !== undefined) {
+          // Custom usage format: { isValid, remaining, unit, planName, total, used, extra, resetAt }
+          // remaining should be calculated as percentage from remaining/total
+          const remaining = data.total > 0
+            ? Math.round((data.remaining / data.total) * 100)
+            : 0;
+          normalizedQuotas.push({
+            name: data.planName || data.unit || "Quota",
+            used: data.used ?? 0,
+            total: data.total ?? 0,
+            remaining,
+            unit: data.unit || null,
+            resetAt: data.resetAt || null,
+            extra: data.extra || null,
+            isValid: data.isValid,
+            invalidMessage: data.invalidMessage || null,
+          });
         }
     }
   } catch (error) {

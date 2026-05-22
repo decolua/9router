@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderNodeById } from "@/models";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -115,14 +116,29 @@ export async function GET(request, { params }) {
     }
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/...)
+    // Also allow connections with custom usage config at provider node level
     const isOAuth = connection.authType === "oauth";
     const isApikeyEligible =
       connection.authType === "apikey" &&
       USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 
-    if (!isOAuth && !isApikeyEligible) {
+    // Fetch provider node for custom usage config (node-level config shared by all connections under it)
+    // For compatible providers, provider IS the node ID
+    let providerNode = null;
+    const nodeId = connection.providerSpecificData?.providerNodeId || connection.provider;
+    providerNode = await getProviderNodeById(nodeId);
+    const nodeCustomUsage = providerNode?.customUsageConfig;
+    const hasCustomUsage = !!(nodeCustomUsage?.enabled && nodeCustomUsage?.script);
+
+    if (!isOAuth && !isApikeyEligible && !hasCustomUsage) {
       return Response.json({ message: "Usage not available for this connection" });
     }
+
+    // Use node-level customUsageConfig for usage fetching
+    const effectiveConnection = {
+      ...connection,
+      customUsageConfig: nodeCustomUsage,
+    };
 
     // Resolve connection proxy config; force strictProxy=false so quota/refresh fall back to direct on failure
     const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
@@ -147,8 +163,8 @@ export async function GET(request, { params }) {
       }
     }
 
-    // Fetch usage from provider API
-    let usage = await getUsageForProvider(connection, proxyOptions);
+    // Fetch usage from provider API using effective connection (with node-level customUsageConfig)
+    let usage = await getUsageForProvider(effectiveConnection, proxyOptions);
 
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)
@@ -156,7 +172,7 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, proxyOptions);
+        usage = await getUsageForProvider(effectiveConnection, proxyOptions);
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }

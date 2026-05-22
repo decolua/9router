@@ -6,32 +6,38 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, customUsageConfig } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
       return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
     }
 
-    if (!name?.trim()) {
+    // Use existing values when not provided (partial update support)
+    const updatedName = name !== undefined ? name?.trim() : node.name;
+    const updatedPrefix = prefix !== undefined ? prefix?.trim() : node.prefix;
+    const updatedBaseUrl = baseUrl !== undefined ? baseUrl?.trim() : node.baseUrl;
+    const updatedApiType = apiType !== undefined ? apiType : node.apiType;
+
+    if (!updatedName) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    if (!prefix?.trim()) {
+    if (!updatedPrefix) {
       return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
     }
 
     // Only validate apiType for OpenAI Compatible nodes
-    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses"].includes(apiType))) {
+    if (node.type === "openai-compatible" && (!updatedApiType || !["chat", "responses"].includes(updatedApiType))) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 
-    if (!baseUrl?.trim()) {
+    if (!updatedBaseUrl) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
     }
 
-    let sanitizedBaseUrl = baseUrl.trim();
-    
+    let sanitizedBaseUrl = updatedBaseUrl;
+
     // Sanitize Base URL for Anthropic Compatible
     if (node.type === "anthropic-compatible") {
       sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");
@@ -49,13 +55,17 @@ export async function PUT(request, { params }) {
     }
 
     const updates = {
-      name: name.trim(),
-      prefix: prefix.trim(),
+      name: updatedName,
+      prefix: updatedPrefix,
       baseUrl: sanitizedBaseUrl,
     };
 
     if (node.type === "openai-compatible") {
-      updates.apiType = apiType;
+      updates.apiType = updatedApiType;
+    }
+
+    if (customUsageConfig !== undefined) {
+      updates.customUsageConfig = customUsageConfig;
     }
 
     const updated = await updateProviderNode(id, updates);
@@ -65,8 +75,9 @@ export async function PUT(request, { params }) {
       updateProviderConnection(connection.id, {
         providerSpecificData: {
           ...(connection.providerSpecificData || {}),
-          prefix: prefix.trim(),
-          apiType: node.type === "openai-compatible" ? apiType : undefined,
+          providerNodeId: id, // Ensure providerNodeId is set for compatible providers
+          prefix: updatedPrefix,
+          apiType: node.type === "openai-compatible" ? updatedApiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
         }

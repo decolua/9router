@@ -16,6 +16,7 @@ import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
+import CustomUsageModal from "./CustomUsageModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -62,6 +63,7 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const [showCustomUsageModal, setShowCustomUsageModal] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -1123,6 +1125,15 @@ export default function ProviderDetailPage() {
               <Button
                 size="sm"
                 variant="secondary"
+                icon="data_object"
+                onClick={() => setShowCustomUsageModal(true)}
+                className="w-full sm:w-auto"
+              >
+                Usage
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
                 icon="delete"
                 onClick={async () => {
                   setConfirmState({
@@ -1441,6 +1452,34 @@ export default function ProviderDetailPage() {
         proxyPools={proxyPools}
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
+      />
+      <CustomUsageModal
+        isOpen={showCustomUsageModal}
+        providerNode={providerNode}
+        connection={isCompatible ? null : selectedConnection}
+        onSave={async (updates) => {
+          if (!providerNode) return;
+          try {
+            const res = await fetch(`/api/provider-nodes/${providerNode.id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(updates),
+            });
+            if (res.ok) {
+              await fetchConnections();
+              // Re-fetch provider node to get updated customUsageConfig
+              const nodeRes = await fetch(`/api/provider-nodes/${providerNode.id}`, { cache: "no-store" });
+              if (nodeRes.ok) {
+                const nodeData = await nodeRes.json();
+                setProviderNode(nodeData.node || nodeData);
+              }
+              setShowCustomUsageModal(false);
+            }
+          } catch (error) {
+            console.log("Error saving custom usage config:", error);
+          }
+        }}
+        onClose={() => setShowCustomUsageModal(false)}
       />
       {isCompatible && (
         <EditCompatibleNodeModal
