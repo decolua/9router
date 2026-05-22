@@ -1,3 +1,8 @@
+# v0.4.59 (2026-05-21)
+
+## Fixes
+- OAuth: fix login flow on Windows
+
 # v0.4.58 (2026-05-21)
 
 ## Features

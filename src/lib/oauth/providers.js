@@ -27,10 +27,56 @@ import {
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
-import {
-  decodeIdTokenEmail as decodeXaiIdTokenEmail,
-  discoverEndpoints as discoverXaiEndpoints,
-} from "./services/xai";
+
+// Inlined from services/xai.js to keep web route bundle free of `open` (CLI-only) package
+let cachedXaiDiscovery = null;
+
+function validateXaiOAuthEndpoint(rawUrl, field) {
+  const value = String(rawUrl || "").trim();
+  if (!value) throw new Error(`xai discovery ${field} is empty`);
+  let parsed;
+  try { parsed = new URL(value); } catch (err) {
+    throw new Error(`xai discovery ${field} is invalid: ${err.message}`);
+  }
+  if (parsed.protocol !== "https:") throw new Error(`xai discovery ${field} must use https: ${value}`);
+  const host = parsed.hostname.toLowerCase().trim();
+  if (host !== "x.ai" && !host.endsWith(".x.ai")) {
+    throw new Error(`xai discovery ${field} host ${host} is not on x.ai`);
+  }
+  return value;
+}
+
+async function discoverXaiEndpoints() {
+  if (cachedXaiDiscovery) return cachedXaiDiscovery;
+  try {
+    const res = await fetch(XAI_CONFIG.discoveryUrl, { headers: { Accept: "application/json" } });
+    if (res.ok) {
+      const data = await res.json();
+      cachedXaiDiscovery = {
+        authorizeUrl: validateXaiOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
+        tokenUrl: validateXaiOAuthEndpoint(data.token_endpoint, "token_endpoint"),
+      };
+      return cachedXaiDiscovery;
+    }
+  } catch { /* fall through to static fallback */ }
+  cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
+  return cachedXaiDiscovery;
+}
+
+function decodeXaiIdTokenEmail(idToken) {
+  if (!idToken || typeof idToken !== "string") return undefined;
+  const parts = idToken.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
+    const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8");
+    const payload = JSON.parse(json);
+    return payload.email || payload.preferred_username || payload.sub || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 const BASE64_BLOCK_SIZE = 4;
 

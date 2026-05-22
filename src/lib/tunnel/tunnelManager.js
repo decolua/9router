@@ -31,6 +31,10 @@ export function isTunnelManuallyDisabled() { return tunnelSvc.cancelToken.cancel
 export function isTunnelReconnecting() { return tunnelSvc.spawnInProgress; }
 export function isTailscaleReconnecting() { return tailscaleSvc.spawnInProgress; }
 
+// Callback invoked when cloudflared exits unexpectedly (set by initializeApp)
+let onTunnelUnexpectedExit = null;
+export function setTunnelUnexpectedExitCallback(cb) { onTunnelUnexpectedExit = cb; }
+
 // ─── Cloudflare Tunnel ───────────────────────────────────────────────────────
 
 async function registerTunnelUrl(shortId, tunnelUrl) {
@@ -55,10 +59,18 @@ export async function enableTunnel(localPort = 20128) {
   try {
     if (isCloudflaredRunning()) {
       const existing = loadState();
-      if (existing?.tunnelUrl && await probeUrlAlive(existing.tunnelUrl)) {
+      if (existing?.tunnelUrl && existing?.shortId) {
         const publicUrl = `https://r${existing.shortId}.abc-tunnel.us`;
-        console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
-        return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
+        // Reuse only if BOTH direct + public URL alive (avoid stale socket after network change)
+        const [directOk, publicOk] = await Promise.all([
+          probeUrlAlive(existing.tunnelUrl),
+          probeUrlAlive(publicUrl),
+        ]);
+        if (directOk && publicOk) {
+          console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
+          return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
+        }
+        console.log(`[Tunnel] stale (direct=${directOk} public=${publicOk}), respawn`);
       }
     }
 
@@ -76,6 +88,12 @@ export async function enableTunnel(localPort = 20128) {
       saveState({ shortId, tunnelUrl: url });
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
     };
+
+    // Register exit handler BEFORE spawn so it fires even on early exit
+    setUnexpectedExitHandler(() => {
+      console.warn("[Tunnel] cloudflared exited unexpectedly, scheduling respawn");
+      if (onTunnelUnexpectedExit) onTunnelUnexpectedExit();
+    });
 
     const { tunnelUrl } = await spawnQuickTunnel(localPort, onUrlUpdate);
     console.log(`[Tunnel] spawned: ${tunnelUrl}`);
