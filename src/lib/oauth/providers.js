@@ -27,56 +27,12 @@ import {
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
-
-// Inlined from services/xai.js to keep web route bundle free of `open` (CLI-only) package
-let cachedXaiDiscovery = null;
-
-function validateXaiOAuthEndpoint(rawUrl, field) {
-  const value = String(rawUrl || "").trim();
-  if (!value) throw new Error(`xai discovery ${field} is empty`);
-  let parsed;
-  try { parsed = new URL(value); } catch (err) {
-    throw new Error(`xai discovery ${field} is invalid: ${err.message}`);
-  }
-  if (parsed.protocol !== "https:") throw new Error(`xai discovery ${field} must use https: ${value}`);
-  const host = parsed.hostname.toLowerCase().trim();
-  if (host !== "x.ai" && !host.endsWith(".x.ai")) {
-    throw new Error(`xai discovery ${field} host ${host} is not on x.ai`);
-  }
-  return value;
-}
-
-async function discoverXaiEndpoints() {
-  if (cachedXaiDiscovery) return cachedXaiDiscovery;
-  try {
-    const res = await fetch(XAI_CONFIG.discoveryUrl, { headers: { Accept: "application/json" } });
-    if (res.ok) {
-      const data = await res.json();
-      cachedXaiDiscovery = {
-        authorizeUrl: validateXaiOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
-        tokenUrl: validateXaiOAuthEndpoint(data.token_endpoint, "token_endpoint"),
-      };
-      return cachedXaiDiscovery;
-    }
-  } catch { /* fall through to static fallback */ }
-  cachedXaiDiscovery = { authorizeUrl: XAI_CONFIG.authorizeUrl, tokenUrl: XAI_CONFIG.tokenUrl };
-  return cachedXaiDiscovery;
-}
-
-function decodeXaiIdTokenEmail(idToken) {
-  if (!idToken || typeof idToken !== "string") return undefined;
-  const parts = idToken.split(".");
-  if (parts.length !== 3) return undefined;
-  try {
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8");
-    const payload = JSON.parse(json);
-    return payload.email || payload.preferred_username || payload.sub || undefined;
-  } catch {
-    return undefined;
-  }
-}
+import {
+  decodeIdTokenClaims as decodeXaiIdTokenClaims,
+  decodeIdTokenEmail as decodeXaiIdTokenEmail,
+  discoverEndpoints as discoverXaiEndpoints,
+  validateTokenResponse as validateXaiTokenResponse,
+} from "./services/xai";
 
 const BASE64_BLOCK_SIZE = 4;
 
@@ -105,15 +61,15 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
-// Extract codex account info from id_token or access token
+// Extract codex account info from id_token
 export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
   if (!payload) return {};
   const chatgpt = payload["https://api.openai.com/auth"] || {};
   return {
     email: payload.email,
-    chatgptAccountId: chatgpt.chatgpt_account_id || payload.account_id,
-    chatgptPlanType: chatgpt.chatgpt_plan_type || payload.plan_type,
+    chatgptAccountId: chatgpt.chatgpt_account_id,
+    chatgptPlanType: chatgpt.chatgpt_plan_type,
   };
 }
 
@@ -291,20 +247,31 @@ const PROVIDERS = {
         const error = await response.text();
         throw new Error(`xAI token exchange failed: ${error}`);
       }
-      return await response.json();
+      return validateXaiTokenResponse(await response.json(), "exchange response");
     },
-    mapTokens: (tokens) => {
+    mapTokens: (tokens, extra, context = {}) => {
+      const { email, subject } = decodeXaiIdTokenClaims(tokens.id_token);
+      const expiresAt = tokens.expires_in
+        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        : undefined;
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
+        tokenType: tokens.token_type,
         scope: tokens.scope,
       };
-      const email = decodeXaiIdTokenEmail(tokens.id_token);
-      if (email) mapped.email = email;
-      if (tokens.id_token) {
-        mapped.providerSpecificData = { idToken: tokens.id_token };
-      }
+      if (expiresAt) mapped.expiresAt = expiresAt;
+      if (email || subject) mapped.email = email || subject;
+      mapped.providerSpecificData = {
+        ...(tokens.id_token ? { idToken: tokens.id_token } : {}),
+        ...(subject ? { sub: subject } : {}),
+        ...(context.redirectUri ? { redirectUri: context.redirectUri } : {}),
+        ...(context.tokenUrl ? { tokenEndpoint: context.tokenUrl } : {}),
+        baseUrl: XAI_CONFIG.apiBaseUrl,
+        authKind: "oauth",
+        lastRefresh: new Date().toISOString(),
+      };
       return mapped;
     },
   },
@@ -1352,7 +1319,7 @@ export async function exchangeTokens(providerName, code, redirectUri, codeVerifi
     extra = await provider.postExchange(tokens);
   }
 
-  return provider.mapTokens(tokens, extra);
+  return provider.mapTokens(tokens, extra, { redirectUri, codeVerifier, state, meta, tokenUrl: config.tokenUrl });
 }
 
 /**

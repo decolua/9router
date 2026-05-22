@@ -3,6 +3,7 @@ import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
+// Whitelist: only safe metadata fields exposed to UI
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
   "priority", "globalPriority", "isActive", "defaultModel",
@@ -11,6 +12,7 @@ const SAFE_FIELDS = [
   "createdAt", "updatedAt",
 ];
 
+// providerSpecificData fields safe to expose (non-secret config only)
 const SAFE_PSD_FIELDS = [
   "baseUrl", "azureEndpoint", "deployment", "apiVersion", "accountId",
   "region", "projectId", "resourceUrl", "proxyPoolId",
@@ -24,6 +26,7 @@ const MAX_PAGE_SIZE = 500;
 
 function maskName(name) {
   if (typeof name !== "string" || name.length <= 16) return name;
+  // Names like "hahask-uDUOg90..." may embed API keys — mask if looks like key
   if (/[a-zA-Z0-9_-]{32,}/.test(name)) return `${name.slice(0, 8)}***`;
   return name;
 }
@@ -73,6 +76,7 @@ function sortConnections(connections, sort) {
   });
 }
 
+// GET /api/providers/client - List connections for dashboard UI (whitelist only)
 export async function GET(request) {
   try {
     await backfillCodexEmails();

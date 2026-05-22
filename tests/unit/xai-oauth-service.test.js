@@ -100,6 +100,8 @@ describe("xai/oauth service", () => {
           access_token: "access-token",
           refresh_token: "refresh-token",
           expires_in: 3600,
+          id_token: `h.${Buffer.from(JSON.stringify({ email: "grok@example.com", sub: "sub-1" })).toString("base64url")}.s`,
+          token_type: "Bearer",
         }),
       });
 
@@ -120,6 +122,18 @@ describe("xai/oauth service", () => {
       accessToken: "access-token",
       refreshToken: "refresh-token",
       expiresIn: 3600,
+      tokenType: "Bearer",
+      email: "grok@example.com",
+      providerSpecificData: {
+        idToken: expect.any(String),
+        sub: "sub-1",
+        redirectUri: "http://127.0.0.1:56121/callback",
+        tokenEndpoint: "https://auth.x.ai/oauth2/token-from-discovery",
+        baseUrl: "https://api.x.ai/v1",
+        authKind: "oauth",
+        lastRefresh: expect.any(String),
+      },
     });
+    expect(new Date(tokens.expiresAt).getTime()).toBeGreaterThan(Date.now());
   });
 });

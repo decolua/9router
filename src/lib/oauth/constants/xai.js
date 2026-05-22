@@ -31,9 +31,6 @@ export const XAI_PKCE_VERIFIER_BYTES = 96;
 // Refresh tokens this many seconds before expiry
 export const XAI_REFRESH_LEAD_SECONDS = 5 * 60;
 
-// User-Agent — mirror Go grok-cli UA. Version is best-effort; xAI does not pin a specific version.
-export const XAI_USER_AGENT = "grok-cli/9router";
-
 /**
  * Aggregated config object — mirrors the shape of CLAUDE_CONFIG/CODEX_CONFIG in oauth.js.
  * Includes both the discovery-derived defaults and the static fallbacks used when
@@ -56,6 +53,5 @@ export const XAI_CONFIG = {
   callbackPath: XAI_CALLBACK_PATH,
   pkceVerifierBytes: XAI_PKCE_VERIFIER_BYTES,
   refreshLeadSeconds: XAI_REFRESH_LEAD_SECONDS,
-  userAgent: XAI_USER_AGENT,
   codeChallengeMethod: "S256",
 };
