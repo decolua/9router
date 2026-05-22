@@ -1,5 +1,4 @@
-import crypto from "crypto";
-import { loadState, saveState, generateShortId } from "./state.js";
+import { loadState, saveState, generateShortId, clearPid } from "./state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
@@ -9,7 +8,6 @@ import { waitForHealth, probeUrlAlive } from "./networkProbe.js";
 initDbHooks(getSettings, updateSettings);
 
 const WORKER_URL = process.env.TUNNEL_WORKER_URL || "https://abc-tunnel.us";
-const MACHINE_ID_SALT = "9router-tunnel-salt";
 
 // Per-service state (independent: tunnel ≠ tailscale)
 const tunnelSvc = {
@@ -33,42 +31,9 @@ export function isTunnelManuallyDisabled() { return tunnelSvc.cancelToken.cancel
 export function isTunnelReconnecting() { return tunnelSvc.spawnInProgress; }
 export function isTailscaleReconnecting() { return tailscaleSvc.spawnInProgress; }
 
-// ─── Reachable cache: background probe of tunnel URL /api/health ─────────────
-// UI uses this to know if the public URL actually serves content (not just process alive)
-const REACHABLE_TTL_MS = 30000;
-const tunnelReachable = { value: false, url: null, fetchedAt: 0, refreshing: false };
-const tailscaleReachable = { value: false, url: null, fetchedAt: 0, refreshing: false };
-
-function bgRefreshReachable(cache, url) {
-  if (cache.refreshing) return;
-  if (!url) { cache.value = false; cache.url = null; cache.fetchedAt = Date.now(); return; }
-  cache.refreshing = true;
-  probeUrlAlive(url)
-    .then((ok) => { cache.value = ok; })
-    .catch(() => { cache.value = false; })
-    .finally(() => {
-      cache.url = url;
-      cache.fetchedAt = Date.now();
-      cache.refreshing = false;
-    });
-}
-
-function readReachable(cache, url) {
-  // URL changed → invalidate
-  if (cache.url !== url) { cache.value = false; cache.fetchedAt = 0; }
-  if (Date.now() - cache.fetchedAt > REACHABLE_TTL_MS) bgRefreshReachable(cache, url);
-  return cache.value;
-}
-
-function getMachineId() {
-  try {
-    const { machineIdSync } = require("node-machine-id");
-    const raw = machineIdSync();
-    return crypto.createHash("sha256").update(raw + MACHINE_ID_SALT).digest("hex").substring(0, 16);
-  } catch (e) {
-    return crypto.randomUUID().replace(/-/g, "").substring(0, 16);
-  }
-}
+// Callback invoked when cloudflared exits unexpectedly (set by initializeApp)
+let onTunnelUnexpectedExit = null;
+export function setTunnelUnexpectedExitCallback(cb) { onTunnelUnexpectedExit = cb; }
 
 // ─── Cloudflare Tunnel ───────────────────────────────────────────────────────
 
@@ -94,10 +59,18 @@ export async function enableTunnel(localPort = 20128) {
   try {
     if (isCloudflaredRunning()) {
       const existing = loadState();
-      if (existing?.tunnelUrl && await probeUrlAlive(existing.tunnelUrl)) {
+      if (existing?.tunnelUrl && existing?.shortId) {
         const publicUrl = `https://r${existing.shortId}.abc-tunnel.us`;
-        console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
-        return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
+        // Reuse only if BOTH direct + public URL alive (avoid stale socket after network change)
+        const [directOk, publicOk] = await Promise.all([
+          probeUrlAlive(existing.tunnelUrl),
+          probeUrlAlive(publicUrl),
+        ]);
+        if (directOk && publicOk) {
+          console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
+          return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
+        }
+        console.log(`[Tunnel] stale (direct=${directOk} public=${publicOk}), respawn`);
       }
     }
 
@@ -105,7 +78,6 @@ export async function enableTunnel(localPort = 20128) {
     console.log("[Tunnel] killed existing cloudflared");
     throwIfCancelled(token, "tunnel");
 
-    const machineId = getMachineId();
     const existing = loadState();
     const shortId = existing?.shortId || generateShortId();
 
@@ -113,9 +85,15 @@ export async function enableTunnel(localPort = 20128) {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
       await registerTunnelUrl(shortId, url);
-      saveState({ shortId, machineId, tunnelUrl: url });
+      saveState({ shortId, tunnelUrl: url });
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
     };
+
+    // Register exit handler BEFORE spawn so it fires even on early exit
+    setUnexpectedExitHandler(() => {
+      console.warn("[Tunnel] cloudflared exited unexpectedly, scheduling respawn");
+      if (onTunnelUnexpectedExit) onTunnelUnexpectedExit();
+    });
 
     const { tunnelUrl } = await spawnQuickTunnel(localPort, onUrlUpdate);
     console.log(`[Tunnel] spawned: ${tunnelUrl}`);
@@ -123,21 +101,19 @@ export async function enableTunnel(localPort = 20128) {
 
     const publicUrl = `https://r${shortId}.abc-tunnel.us`;
     await registerTunnelUrl(shortId, tunnelUrl);
-    saveState({ shortId, machineId, tunnelUrl });
+    saveState({ shortId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
-    // Verify direct tunnel URL first (avoid CDN false positive on publicUrl)
-    await waitForHealth(tunnelUrl, token);
-    console.log("[Tunnel] direct URL healthy");
-    // Then verify public URL (DNS propagated through worker)
+    // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
     await waitForHealth(publicUrl, token);
     console.log("[Tunnel] public URL healthy");
-
-    // Prime reachable cache so UI shows correct state immediately
-    tunnelReachable.value = true;
-    tunnelReachable.url = tunnelUrl;
-    tunnelReachable.fetchedAt = Date.now();
+    // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked on some networks
+    if (!(await probeUrlAlive(tunnelUrl))) {
+      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+    } else {
+      console.log("[Tunnel] direct URL healthy");
+    }
 
     console.log("[Tunnel] enable success");
     return { success: true, tunnelUrl, shortId, publicUrl };
@@ -151,15 +127,20 @@ export async function enableTunnel(localPort = 20128) {
 
 export async function disableTunnel() {
   console.log("[Tunnel] disable");
+  // Abort any in-flight enable so it cannot resurrect state after we clear it
   tunnelSvc.cancelToken.cancelled = true;
   setUnexpectedExitHandler(null);
-  killCloudflared(tunnelSvc.activeLocalPort);
+
+  try { killCloudflared(tunnelSvc.activeLocalPort); } catch (e) { console.warn(`[Tunnel] kill warn: ${e.message}`); }
+  clearPid();
 
   const state = loadState();
-  if (state) saveState({ shortId: state.shortId, machineId: state.machineId, tunnelUrl: null });
+  if (state) saveState({ shortId: state.shortId, tunnelUrl: null });
 
   await updateSettings({ tunnelEnabled: false, tunnelUrl: "" });
-  tunnelReachable.value = false; tunnelReachable.url = null; tunnelReachable.fetchedAt = Date.now();
+  // Force-clear flags so a subsequent enable is not blocked by a stuck spawnInProgress
+  tunnelSvc.spawnInProgress = false;
+  tunnelSvc.activeLocalPort = null;
   return { success: true };
 }
 
@@ -173,8 +154,6 @@ export async function getTunnelStatus() {
 
   // Lazy: skip PID probe entirely when user disabled tunnel
   const running = settingsEnabled ? isCloudflaredRunning() : false;
-  // Reachable: cached background probe (never blocks the request)
-  const reachable = settingsEnabled && running ? readReachable(tunnelReachable, tunnelUrl) : false;
 
   return {
     enabled: settingsEnabled && running,
@@ -182,8 +161,7 @@ export async function getTunnelStatus() {
     tunnelUrl,
     shortId,
     publicUrl,
-    running,
-    reachable
+    running
   };
 }
 
@@ -263,12 +241,6 @@ export async function enableTailscale(localPort = 20128) {
       if (!he.message.startsWith("Health check timeout")) throw he;
       console.warn(`[Tailscale] health check timed out, will retry via watchdog`);
     }
-
-    if (reachableNow) {
-      tailscaleReachable.value = true;
-      tailscaleReachable.url = result.tunnelUrl;
-      tailscaleReachable.fetchedAt = Date.now();
-    }
     console.log(`[Tailscale] enable success (reachable=${reachableNow})`);
     return { success: true, tunnelUrl: result.tunnelUrl };
   } catch (e) {
@@ -284,7 +256,6 @@ export async function disableTailscale() {
   tailscaleSvc.cancelToken.cancelled = true;
   stopFunnel();
   await updateSettings({ tailscaleEnabled: false, tailscaleUrl: "" });
-  tailscaleReachable.value = false; tailscaleReachable.url = null; tailscaleReachable.fetchedAt = Date.now();
   return { success: true };
 }
 
@@ -295,14 +266,11 @@ export async function getTailscaleStatus() {
   // Skip probes entirely when disabled; check login before running (device removed = not logged in)
   const loggedIn = settingsEnabled ? isTailscaleLoggedIn() : false;
   const running = loggedIn ? isTailscaleRunning() : false;
-  // Reachable: cached background probe (never blocks the request)
-  const reachable = settingsEnabled && running ? readReachable(tailscaleReachable, tunnelUrl) : false;
   return {
     enabled: settingsEnabled && running,
     settingsEnabled,
     tunnelUrl,
     running,
-    loggedIn,
-    reachable
+    loggedIn
   };
 }

@@ -25,10 +25,32 @@ export class GeminiCLIExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     // Store model for use in buildHeaders (called by base.execute after transformRequest)
     this._currentModel = model;
-    if (!body.project && credentials?.projectId) {
-      body.project = credentials.projectId;
-    }
-    return body;
+    // Cloud Code Assist wraps the Gemini payload: { project, model, request: <body> }
+    if (body && body.request && body.model) return body;
+    return {
+      project: credentials?.projectId || body?.project,
+      model,
+      request: body
+    };
+  }
+
+  // Parse RetryInfo.retryDelay from Google API 429 body to surface upstream retry hint
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    if (response.status !== 429 || !bodyText) return base;
+    try {
+      const parsed = JSON.parse(bodyText);
+      const details = parsed?.error?.details;
+      if (Array.isArray(details)) {
+        for (const d of details) {
+          if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
+            base.retryAfter = d.retryDelay;
+            break;
+          }
+        }
+      }
+    } catch {}
+    return base;
   }
 
   async refreshCredentials(credentials, log) {

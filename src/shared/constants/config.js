@@ -75,6 +75,7 @@ export const PROVIDER_ENDPOINTS = {
   "volcengine-ark": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
   byteplus: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
   openai: "https://api.openai.com/v1/chat/completions",
+  "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1/chat/completions",
   anthropic: "https://api.anthropic.com/v1/messages",
   gemini: "https://generativelanguage.googleapis.com/v1beta/models",
   ollama: "https://ollama.com/api/chat",

@@ -18,6 +18,8 @@ const ALIAS_TO_PROVIDER_ID = {
   el: "elevenlabs",
   // API Key providers
   openai: "openai",
+  vercel: "vercel-ai-gateway",
+  "vercel-ai-gateway": "vercel-ai-gateway",
   anthropic: "anthropic",
   gemini: "gemini",
   openrouter: "openrouter",

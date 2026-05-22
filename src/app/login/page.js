@@ -7,12 +7,21 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [resetHint, setResetHint] = useState("");
+  const [retryAfter, setRetryAfter] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
   const [authMode, setAuthMode] = useState("password");
   const [oidcConfigured, setOidcConfigured] = useState(false);
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const router = useRouter();
+
+  // Countdown for rate-limit
+  useEffect(() => {
+    if (retryAfter <= 0) return;
+    const id = setInterval(() => setRetryAfter((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(id);
+  }, [retryAfter]);
 
   useEffect(() => {
     async function checkAuth() {
@@ -53,6 +62,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setResetHint("");
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -67,6 +77,8 @@ export default function LoginPage() {
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
+        if (data.resetHint) setResetHint(data.resetHint);
+        if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
     } catch (err) {
       setError("An error occurred. Please try again.");
@@ -143,6 +155,16 @@ export default function LoginPage() {
                     autoFocus={!oidcAvailable}
                   />
                   {error && <p className="text-xs text-red-500">{error}</p>}
+                  {retryAfter > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                    </p>
+                  )}
+                  {resetHint && (
+                    <p className="text-xs text-text-muted">
+                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                    </p>
+                  )}
                 </div>
 
                 <Button
@@ -150,8 +172,9 @@ export default function LoginPage() {
                   variant="primary"
                   className="w-full"
                   loading={loading}
+                  disabled={retryAfter > 0}
                 >
-                  Login
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">

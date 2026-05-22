@@ -4,14 +4,17 @@ const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
 const { execSync } = require("child_process");
-const { log, err, dumpRequest, createResponseDumper } = require("./logger");
-const { TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, getToolForHost } = require("./config");
+const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
+const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, getToolForHost } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
-const ENABLE_FILE_LOG = true;
+const ENABLE_FILE_LOG = IS_DEV;
+
+// Clear stale dump files on every MITM start (prevents unbounded disk usage)
+clearDumpDir();
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
 // Host rewrite for upstream forward: PROD cloudcode-pa is rate-limited (429),
@@ -108,7 +111,13 @@ function getMappedModel(tool, model) {
     if (aliases[lookup]) return aliases[lookup];
     // Prefix match fallback
     const prefixKey = Object.keys(aliases).find(k => k && aliases[k] && (lookup.startsWith(k) || k.startsWith(lookup)));
-    return prefixKey ? aliases[prefixKey] : null;
+    if (prefixKey) return aliases[prefixKey];
+    // Pattern fallback: catches AG renamed variants (e.g. gemini-pro-agent → gemini-3.1-pro-high)
+    const patterns = MODEL_PATTERNS?.[tool] || [];
+    for (const { match, alias } of patterns) {
+      if (match.test(lookup) && aliases[alias]) return aliases[alias];
+    }
+    return null;
   } catch { return null; }
 }
 
@@ -222,7 +231,7 @@ function killPort(port) {
       if (!out) return;
       pidList = out.split(/\r?\n/).map(s => s.trim()).filter(p => p && Number(p) !== process.pid && Number(p) > 4);
     } else {
-      const out = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
+      const out = execSync(`${LSOF_BIN} -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
       if (!out) return;
       pidList = out.split("\n").filter(p => p && Number(p) !== process.pid);
     }
