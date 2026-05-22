@@ -4,6 +4,9 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
+import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
+
+const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -14,6 +17,15 @@ function isTunnelRequest(request, settings) {
 
 export async function POST(request) {
   try {
+    const ip = getClientIp(request);
+    const lock = checkLock(ip);
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${lock.retryAfter}s. ${RESET_HINT}`, retryAfter: lock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfter) } }
+      );
+    }
+
     const { password } = await request.json();
     const settings = await getSettings();
 
@@ -39,13 +51,25 @@ export async function POST(request) {
     }
 
     if (isValid) {
+      recordSuccess(ip);
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    const { remainingBeforeLock } = recordFail(ip);
+    const postLock = checkLock(ip);
+    if (postLock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${postLock.retryAfter}s. ${RESET_HINT}`, retryAfter: postLock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(postLock.retryAfter) } }
+      );
+    }
+    return NextResponse.json(
+      { error: `Invalid password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
+      { status: 401 }
+    );
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
