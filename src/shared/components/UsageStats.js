@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -203,6 +203,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
+  const isInitialLoad = useRef(true);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
@@ -231,8 +232,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
     // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (!stats) setLoading(true);
-    else setFetching(true);
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      setLoading(true);
+    } else {
+      setFetching(true);
+    }
 
     fetch(`/api/usage/stats?period=${period}`)
       .then((r) => r.ok ? r.json() : null)
