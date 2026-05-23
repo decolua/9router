@@ -5,6 +5,32 @@ import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
+function parseValidExpiresAt(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatVietnameseExpiresAt(value) {
+  const timestamp = parseValidExpiresAt(value);
+  if (!timestamp) return null;
+
+  const formatter = new Intl.DateTimeFormat("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(new Date(timestamp));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.hour}:${byType.minute}:${byType.second} ${byType.day}-${byType.month}-${byType.year}`;
+}
+
+
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
@@ -74,6 +100,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const displayName = isOAuthConnection
     ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
     : (connection.name || connection.email || connection.displayName || "API Key");
+  const formattedExpiresAt = formatVietnameseExpiresAt(connection.expiresAt);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -156,6 +183,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {formattedExpiresAt && (
+            <div className="mt-1 text-xs text-text-muted">
+              Expire at: {formattedExpiresAt}
+            </div>
+          )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
