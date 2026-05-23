@@ -1,5 +1,3 @@
-Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ nguyên toàn bộ cú pháp và cấu trúc kỹ thuật.
-
 <div align="center">
   <img src="../images/9router.png?1" alt="Bảng điều khiển 9Router" width="800"/>
   
