@@ -150,7 +150,7 @@ export const PROVIDER_MODELS = {
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
   ],
-  qd: [  // Qoder AI - tier + frontier models (server-published catalog)
+  qd: [  // Qoder - tier + frontier models (server-published catalog)
     // Tier models — pick a quality/cost tradeoff
     { id: "auto", name: "Qoder Auto" },
     { id: "ultimate", name: "Qoder Ultimate" },
