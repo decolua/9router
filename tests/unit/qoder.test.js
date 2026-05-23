@@ -14,8 +14,9 @@ import crypto from "crypto";
 
 import { qoderEncodeBody } from "../../src/lib/qoder/encoding.js";
 import { buildCosyHeaders } from "../../src/lib/qoder/cosy.js";
-import { initiateDeviceFlow, generatePkcePair } from "../../src/lib/qoder/auth.js";
+import { initiateDeviceFlow, generatePkcePair, parseExpiry } from "../../src/lib/qoder/auth.js";
 import { QODER_CHAT_URL_ENCODED, QODER_MODEL_LIST_URL } from "../../src/lib/qoder/constants.js";
+import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qoder.js";
 
 describe("qoderEncodeBody", () => {
   it("preserves base64 length (input length divisible by 3)", () => {
@@ -234,5 +235,213 @@ describe("buildCosyHeaders", () => {
     expect(a["Cosy-Sigpath"]).toBe(b["Cosy-Sigpath"]);
     expect(a["Cosy-Machineid"]).toBe(b["Cosy-Machineid"]);
     expect(a["X-Request-Id"]).not.toBe(b["X-Request-Id"]);
+  });
+});
+
+describe("parseExpiry", () => {
+  // Regression for review finding #2: numeric expires_at was silently
+  // dropped because the function only inspected strings.
+  it("accepts ms-epoch as a JSON number", () => {
+    const future = Date.now() + 60_000;
+    expect(parseExpiry(future, undefined)).toBe(future);
+  });
+
+  it("accepts ms-epoch as a numeric string", () => {
+    const future = Date.now() + 60_000;
+    expect(parseExpiry(String(future), undefined)).toBe(future);
+  });
+
+  it("accepts RFC3339 strings", () => {
+    const iso = "2030-01-02T03:04:05Z";
+    expect(parseExpiry(iso, undefined)).toBe(Date.parse(iso));
+  });
+
+  // Regression for review finding #5: Date.parse("2026") returns Jan 1 2026,
+  // so a short numeric string like "2026" used to be interpreted as a year
+  // instead of falling through to the integer-ms branch. We now try the
+  // pure-numeric path first so this can't happen again.
+  it("does not interpret short numeric strings as a year", () => {
+    // "1700000000" (Unix seconds) should NOT come out as Date.parse("1700000000")
+    const result = parseExpiry("1700000000", undefined);
+    // 1.7e9 ms = 1970-01-20 — the function's contract is ms, so we expect
+    // exactly that value, not a year interpretation.
+    expect(result).toBe(1_700_000_000);
+  });
+
+  it("falls back to expiresInSeconds when expiresAt is missing", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, 60);
+    const after = Date.now();
+    expect(result).toBeGreaterThanOrEqual(before + 60_000);
+    expect(result).toBeLessThanOrEqual(after + 60_000);
+  });
+
+  // Regression for review finding #7: expiresInSeconds=0 used to be treated
+  // as missing and silently fabricated 30-day default. We now honor 0 as
+  // "already expired".
+  it("treats expires_in: 0 as already expired (now), not 30-day fallback", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, 0);
+    const after = Date.now();
+    expect(result).toBeGreaterThanOrEqual(before);
+    expect(result).toBeLessThanOrEqual(after);
+  });
+
+  it("falls back to ~30 days when both inputs are missing", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, undefined);
+    const expected = before + 30 * 24 * 60 * 60 * 1000;
+    // Allow a small skew to absorb test runtime.
+    expect(result).toBeGreaterThanOrEqual(expected - 5_000);
+    expect(result).toBeLessThanOrEqual(expected + 5_000);
+  });
+
+  it("falls back to ~30 days when both inputs are unparseable", () => {
+    const before = Date.now();
+    const result = parseExpiry("not-a-date", -5);
+    const expected = before + 30 * 24 * 60 * 60 * 1000;
+    expect(result).toBeGreaterThanOrEqual(expected - 5_000);
+    expect(result).toBeLessThanOrEqual(expected + 5_000);
+  });
+});
+
+describe("normalizeMessages", () => {
+  const { normalizeMessages } = qoderExecutorInternals;
+
+  it("hoists role:system out of messages into systemText", () => {
+    const result = normalizeMessages([
+      { role: "system", content: "you are helpful" },
+      { role: "user", content: "hi" },
+    ]);
+    expect(result.systemText).toBe("you are helpful");
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe("user");
+  });
+
+  it("flattens multipart text content into a string", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "part1" },
+          { type: "text", text: "part2" },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("part1\npart2");
+  });
+
+  it("joins multiple system messages with a blank line", () => {
+    const result = normalizeMessages([
+      { role: "system", content: "rule 1" },
+      { role: "system", content: "rule 2" },
+      { role: "user", content: "hi" },
+    ]);
+    expect(result.systemText).toBe("rule 1\n\nrule 2");
+  });
+
+  it("returns empty results for empty input", () => {
+    const result = normalizeMessages([]);
+    expect(result.messages).toEqual([]);
+    expect(result.systemText).toBe("");
+  });
+});
+
+describe("wrapQoderSSE", () => {
+  const { wrapQoderSSE } = qoderExecutorInternals;
+
+  // Helper: build a fake Response carrying the given lines as the body.
+  function makeResponse(lines, { status = 200 } = {}) {
+    const body = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const line of lines) controller.enqueue(encoder.encode(line));
+        controller.close();
+      },
+    });
+    return new Response(body, { status });
+  }
+
+  // Helper: drain a wrapped response into an array of decoded SSE events.
+  async function drain(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+    }
+    buf += decoder.decode();
+    return buf;
+  }
+
+  it("forwards an OpenAI envelope chunk and emits [DONE] in flush", async () => {
+    const inner = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
+    const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}\n\n`;
+    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const out = await drain(wrapped);
+    expect(out).toContain(`data: ${inner}\n\n`);
+    expect(out).toContain("data: [DONE]\n\n");
+  });
+
+  // Regression for review finding #4: a final data: line without a trailing
+  // newline used to be silently dropped from `buffer` in flush().
+  it("drains a trailing partial line without a newline in flush()", async () => {
+    const inner = JSON.stringify({ choices: [{ delta: { content: "tail" } }], finish_reason: "stop" });
+    // Note: NO trailing \n on the final line.
+    const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}`;
+    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const out = await drain(wrapped);
+    expect(out).toContain(`data: ${inner}\n\n`);
+  });
+
+  // Regression for review finding #3: chunks could leak past [DONE] when
+  // the success branch had no doneEmitted guard. We synthesize an error
+  // envelope (which sets doneEmitted=true) followed by a valid envelope
+  // and assert the second envelope is NOT forwarded.
+  it("does not forward chunks after [DONE] has been emitted", async () => {
+    const errorEnv = JSON.stringify({ statusCodeValue: 500, body: "boom" });
+    const validInner = JSON.stringify({ choices: [{ delta: { content: "leak" } }] });
+    const validEnv = JSON.stringify({ statusCodeValue: 200, body: validInner });
+    const wrapped = wrapQoderSSE(
+      makeResponse([`data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
+      "qoder/auto",
+    );
+    const out = await drain(wrapped);
+    expect(out).not.toContain("leak");
+    // Should still have a single [DONE].
+    const doneCount = (out.match(/data: \[DONE\]/g) || []).length;
+    expect(doneCount).toBe(1);
+  });
+
+  // Regression for review finding #6: literal newlines inside the inner
+  // OpenAI body would split the SSE frame across multiple data: lines.
+  // We now strip them so the frame stays a single event.
+  it("strips embedded newlines from inner body before forwarding", async () => {
+    const innerWithNewlines = '{"choices":[{"delta":{"content":"a\nb"}}]}';
+    const env = JSON.stringify({ statusCodeValue: 200, body: innerWithNewlines });
+    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
+    const out = await drain(wrapped);
+    // The forwarded data: line should be a single event terminated by \n\n
+    // and contain no internal \n other than the trailing pair.
+    const dataLine = out.split("\n\n").find((l) => l.startsWith("data: ") && !l.includes("[DONE]"));
+    expect(dataLine).toBeDefined();
+    // Body sans "data: " prefix should be valid JSON.
+    expect(() => JSON.parse(dataLine.slice("data: ".length))).not.toThrow();
+  });
+
+  it("upstream error envelope produces an error chunk + [DONE]", async () => {
+    const env = JSON.stringify({ statusCodeValue: 503, body: "service unavailable" });
+    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
+    const out = await drain(wrapped);
+    expect(out).toContain("[qoder error 503");
+    expect(out).toContain("data: [DONE]\n\n");
+  });
+
+  it("non-ok responses are returned unchanged (no transform)", () => {
+    const r = new Response("not ok", { status: 500 });
+    const wrapped = wrapQoderSSE(r, "qoder/auto");
+    expect(wrapped).toBe(r);
   });
 });

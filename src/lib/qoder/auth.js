@@ -186,7 +186,7 @@ export async function fetchUserInfo(accessToken) {
  * otherwise return a misleading year-2026 timestamp instead of falling
  * through to the integer branch.
  */
-function parseExpiry(expiresAt, expiresInSeconds) {
+export function parseExpiry(expiresAt, expiresInSeconds) {
   if (typeof expiresAt === "number" && Number.isFinite(expiresAt) && expiresAt > 0) {
     return expiresAt;
   }
