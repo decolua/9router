@@ -1,6 +1,8 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { updateProviderConnection, getProviderConnectionById } from "../../lib/localDb.js";
+import { resolveRotatedDbCredentials } from "./tokenRotationGuard.js";
+import { CONNECTION_STATUS } from "../../shared/constants/connectionStatus.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -21,7 +23,8 @@ import {
   formatProviderCredentials as _formatProviderCredentials,
   getAllAccessTokens as _getAllAccessTokens,
   refreshKiroToken as _refreshKiroToken,
-  getRefreshLeadMs as _getRefreshLeadMs
+  getRefreshLeadMs as _getRefreshLeadMs,
+  isUnrecoverableRefreshError
 } from "open-sse/services/tokenRefresh.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
@@ -107,6 +110,28 @@ function normalizeExpiresAt(expiresAt) {
  */
 function needsProjectId(provider) {
   return provider === "antigravity" || provider === "gemini-cli";
+}
+
+/**
+ * Avoid using a stale one-time refresh token when another process already
+ * refreshed and persisted a rotated token.
+ *
+ * This is not a full distributed lock, but it closes the common stale-request
+ * path in multi-instance deployments: request A loaded credentials, request B
+ * refreshed first, then request A reaches the refresh point with the old token.
+ */
+async function refreshFromDbIfRotated(provider, creds) {
+  const dbConn = creds.connectionId
+    ? await getProviderConnectionById(creds.connectionId)
+    : null;
+  const result = resolveRotatedDbCredentials(provider, creds, dbConn);
+  if (result.wasRotated) {
+    log.info("TOKEN_REFRESH", "Using newer refresh token from DB; skipping stale OAuth refresh", {
+      provider,
+      connectionId: creds.connectionId,
+    });
+  }
+  return result;
 }
 
 /**
@@ -199,10 +224,21 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  *
  * @param {string} provider
  * @param {object} credentials
+ * @param {object} [options]
+ * @param {(outcome: { didRefresh: boolean, needsRelogin: boolean, copilotRefreshed: boolean }) => void} [options.onOutcome]
+ *   Optional sink for the actual refresh outcome. Lets callers (e.g. the
+ *   background worker) report accurate metrics without re-reading the DB.
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials) {
+export async function checkAndRefreshToken(provider, credentials, options = {}) {
   let creds = { ...credentials };
+  let didRefresh = false;
+  let needsRelogin = false;
+  let copilotRefreshed = false;
+
+  // ── 0. Cross-process single-flight: pick up rotated refresh token ─────────
+  const rotated = await refreshFromDbIfRotated(provider, creds);
+  creds = rotated.creds;
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
   if (creds.expiresAt) {
@@ -220,6 +256,7 @@ export async function checkAndRefreshToken(provider, credentials) {
 
       const newCreds = await getAccessToken(provider, creds);
       if (newCreds?.accessToken) {
+        didRefresh = true;
         const mergedCreds = {
           ...newCreds,
           existingProviderSpecificData: creds.providerSpecificData,
@@ -242,6 +279,32 @@ export async function checkAndRefreshToken(provider, credentials) {
 
         // Non-blocking: refresh projectId with the new access token
         _refreshProjectId(provider, creds.connectionId, creds.accessToken);
+      } else if (isUnrecoverableRefreshError(newCreds)) {
+        // Refresh token revoked (Auth0 family revoke / expired / reused).
+        // Mark the connection so the dashboard can prompt a re-login. Auto
+        // refresh cannot recover this on its own.
+        needsRelogin = true;
+        const code = newCreds?.code || newCreds?.error || "unknown";
+        const reason = `Refresh token revoked (${code}); user must re-login`;
+        log.warn("TOKEN_REFRESH", reason, {
+          provider,
+          connectionId: creds.connectionId,
+        });
+        if (creds.connectionId) {
+          try {
+            await updateProviderConnection(creds.connectionId, {
+              testStatus: CONNECTION_STATUS.NEEDS_RELOGIN,
+              lastError: reason,
+              errorCode: 401,
+              lastErrorAt: new Date().toISOString(),
+            });
+          } catch (err) {
+            log.warn("TOKEN_REFRESH", "Failed to mark connection needs_relogin", {
+              connectionId: creds.connectionId,
+              error: err?.message ?? err,
+            });
+          }
+        }
       }
     }
   }
@@ -260,6 +323,7 @@ export async function checkAndRefreshToken(provider, credentials) {
 
       const copilotToken = await refreshCopilotToken(creds.accessToken);
       if (copilotToken) {
+        copilotRefreshed = true;
         const updatedSpecific = {
           ...creds.providerSpecificData,
           copilotToken:          copilotToken.token,
@@ -273,6 +337,14 @@ export async function checkAndRefreshToken(provider, credentials) {
         creds.providerSpecificData = updatedSpecific;
         creds.copilotToken = copilotToken.token;
       }
+    }
+  }
+
+  if (typeof options.onOutcome === "function") {
+    try {
+      options.onOutcome({ didRefresh, needsRelogin, copilotRefreshed });
+    } catch (err) {
+      log.warn("TOKEN_REFRESH", "onOutcome callback threw", { error: err?.message ?? err });
     }
   }
 

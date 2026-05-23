@@ -3,7 +3,7 @@ import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
-import { refreshWithRetry } from "../services/tokenRefresh.js";
+import { refreshWithRetry, isUnrecoverableRefreshError } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
@@ -221,6 +221,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
+        // Only escalate to needs_relogin when the upstream OAuth response
+        // explicitly told us the refresh token itself is bad (Auth0 family
+        // revoke, idle expiry, refresh-token reuse). Transient null results
+        // (network blip, 5xx) stay quiet so we don't false-flag good accounts.
+        if (onCredentialsRefreshed && isUnrecoverableRefreshError(newCredentials)) {
+          try {
+            await onCredentialsRefreshed({
+              error: newCredentials.error || "unrecoverable_refresh_error",
+              code: newCredentials.code || newCredentials.error,
+              providerStatus: providerResponse.status,
+            });
+          } catch (e) {
+            log?.warn?.("TOKEN", `onCredentialsRefreshed (unrecoverable) failed: ${e.message}`);
+          }
+        }
       }
     } catch (e) {
       log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh threw: ${e.message}`);

@@ -6,6 +6,42 @@ import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
+// Map upstream OAuth error responses to the structured shape that
+// `isUnrecoverableRefreshError` (services/tokenRefresh.js) understands. Used
+// by the per-provider refresh* helpers so the reactive 401/403 chat path can
+// distinguish a transient refresh failure (network/5xx) from a hard revoke
+// (Auth0 family revoke, idle expiry, refresh-token reuse).
+//
+// Returns:
+//   { error: "invalid_grant" | "refresh_token_reused" | ... }  for known revokes
+//   null                                                       for everything else
+//                                                              (caller treats as
+//                                                              transient -> retry)
+async function _maybeUnrecoverableRefresh(response) {
+  if (!response || response.status === undefined) return null;
+  if (response.status !== 400 && response.status !== 401) return null;
+  let text = "";
+  try { text = await response.text(); } catch { return null; }
+  let data = null;
+  try { data = JSON.parse(text); } catch {}
+  const code =
+    data?.error ||
+    (text.includes("refresh_token_reused") ? "refresh_token_reused" :
+     text.includes("refresh_token_expired") ? "refresh_token_expired" :
+     text.includes("invalid_grant") ? "invalid_grant" :
+     text.includes("invalid_request") ? "invalid_request" : null);
+  if (!code) return null;
+  if (
+    code === "invalid_grant" ||
+    code === "invalid_request" ||
+    code === "refresh_token_reused" ||
+    code === "refresh_token_expired"
+  ) {
+    return { error: code };
+  }
+  return null;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
@@ -185,7 +221,7 @@ export class DefaultExecutor extends BaseExecutor {
 
     try {
       const result = await refresher();
-      if (result) log?.info?.("TOKEN", `${this.provider} refreshed`);
+      if (result?.accessToken || result?.copilotToken) log?.info?.("TOKEN", `${this.provider} refreshed`);
       return result;
     } catch (error) {
       log?.error?.("TOKEN", `${this.provider} refresh error: ${error.message}`);
@@ -199,7 +235,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(body)
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || body.refresh_token, expiresIn: tokens.expires_in };
   }
@@ -210,7 +246,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
       body: new URLSearchParams(params)
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || params.refresh_token, expiresIn: tokens.expires_in };
   }
@@ -222,7 +258,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json", "Authorization": `Basic ${basicAuth}` },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: PROVIDERS.iflow.clientId, client_secret: PROVIDERS.iflow.clientSecret })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
@@ -233,7 +269,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: this.config.clientId, client_secret: this.config.clientSecret })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
@@ -244,7 +280,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "kiro-cli/1.0.0" },
       body: JSON.stringify({ refreshToken })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
   }
@@ -282,7 +318,7 @@ export class DefaultExecutor extends BaseExecutor {
       },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: "17e5f671-d194-4dfb-9706-5516cb48c098" })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return _maybeUnrecoverableRefresh(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }

@@ -18,6 +18,7 @@ import {
 } from "@/lib/tunnel/tunnelConfig";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
+import { startTokenRefreshWorker } from "@/sse/services/tokenRefreshWorker";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -90,6 +91,7 @@ export async function initializeApp() {
 
     startWatchdog();
     startNetworkMonitor();
+    startTokenRefreshWorker();
     autoStartMitm();
   } catch (error) {
     console.error("[InitApp] Error:", error);

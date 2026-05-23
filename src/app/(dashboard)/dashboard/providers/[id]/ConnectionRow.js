@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
+import { CONNECTION_STATUS, isConnectionErrorStatus } from "@/shared/constants/connectionStatus";
 import CooldownTimer from "./CooldownTimer";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
@@ -103,14 +104,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
+  const effectiveStatus = (connection.testStatus === CONNECTION_STATUS.UNAVAILABLE && !isCooldown)
+    ? CONNECTION_STATUS.ACTIVE  // Cooldown expired u2192 treat as active
     : connection.testStatus;
+
+  const needsRelogin = effectiveStatus === CONNECTION_STATUS.NEEDS_RELOGIN;
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
+    if (effectiveStatus === CONNECTION_STATUS.ACTIVE || effectiveStatus === CONNECTION_STATUS.SUCCESS) return "success";
+    if (isConnectionErrorStatus(effectiveStatus)) return "error";
     return "default";
   };
 
@@ -243,6 +246,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
           </button>
+          {needsRelogin && (
+            <button
+              onClick={onEdit}
+              title="Refresh token revoked. Click to re-login."
+              className="flex flex-col items-center rounded px-2 py-1 text-amber-500 hover:bg-amber-500/10"
+            >
+              <span className="material-symbols-outlined text-[18px]">login</span>
+              <span className="text-[10px] leading-tight">Re-login</span>
+            </button>
+          )}
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
             <span className="material-symbols-outlined text-[18px]">delete</span>
             <span className="text-[10px] leading-tight">Delete</span>

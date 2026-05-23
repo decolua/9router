@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, updateProviderConnection } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -19,6 +19,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { CONNECTION_STATUS } from "@/shared/constants/connectionStatus.js";
 
 /**
  * Handle chat completion request
@@ -217,11 +218,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
+        // Surface unrecoverable refresh errors as needs_relogin without
+        // overwriting existing token columns with undefined.
+        if (newCreds && newCreds.error) {
+          const code = newCreds.code || newCreds.error;
+          const reason = `Refresh failed (${code}); user must re-login`;
+          try {
+            await updateProviderConnection(credentials.connectionId, {
+              testStatus: CONNECTION_STATUS.NEEDS_RELOGIN,
+              lastError: reason,
+              errorCode: 401,
+              lastErrorAt: new Date().toISOString(),
+            });
+          } catch (err) {
+            log.warn("TOKEN", `Failed to mark connection needs_relogin: ${err?.message || err}`);
+          }
+          return;
+        }
+
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
           providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
+          testStatus: CONNECTION_STATUS.ACTIVE
         });
       },
       onRequestSuccess: async () => {

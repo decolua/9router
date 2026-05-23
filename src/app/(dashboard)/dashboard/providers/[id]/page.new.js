@@ -7,6 +7,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, Toggle, Select } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { CONNECTION_STATUS, isConnectionErrorStatus } from "@/shared/constants/connectionStatus";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -1168,14 +1169,14 @@ function ConnectionRow({ connection, isOAuth, isFirst, isLast, onMoveUp, onMoveD
   }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired → treat as active
+  const effectiveStatus = (connection.testStatus === CONNECTION_STATUS.UNAVAILABLE && !isCooldown)
+    ? CONNECTION_STATUS.ACTIVE  // Cooldown expired → treat as active
     : connection.testStatus;
 
   const getStatusVariant = () => {
     if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
+    if (effectiveStatus === CONNECTION_STATUS.ACTIVE || effectiveStatus === CONNECTION_STATUS.SUCCESS) return "success";
+    if (isConnectionErrorStatus(effectiveStatus)) return "error";
     return "default";
   };
 

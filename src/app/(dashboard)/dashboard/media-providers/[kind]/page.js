@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
+import { CONNECTION_STATUS, isConnectionErrorStatus } from "@/shared/constants/connectionStatus";
 
 // Kinds that support combos (currently disabled for image/tts — temporarily hidden).
 // webSearch/webFetch handled by /web page.
@@ -16,7 +17,9 @@ function getEffectiveStatus(conn) {
   const isCooldown = Object.entries(conn).some(
     ([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now()
   );
-  return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
+  return conn.testStatus === CONNECTION_STATUS.UNAVAILABLE && !isCooldown
+    ? CONNECTION_STATUS.ACTIVE
+    : conn.testStatus;
 }
 
 function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) {
@@ -24,8 +27,11 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
   const isNoAuth = !!providerInfo?.noAuth;
 
   const providerConns = connections.filter((c) => c.provider === provider.id);
-  const connected = providerConns.filter((c) => { const s = getEffectiveStatus(c); return s === "active" || s === "success"; }).length;
-  const error = providerConns.filter((c) => { const s = getEffectiveStatus(c); return s === "error" || s === "expired" || s === "unavailable"; }).length;
+  const connected = providerConns.filter((c) => {
+    const s = getEffectiveStatus(c);
+    return s === CONNECTION_STATUS.ACTIVE || s === CONNECTION_STATUS.SUCCESS;
+  }).length;
+  const error = providerConns.filter((c) => isConnectionErrorStatus(getEffectiveStatus(c))).length;
   const total = providerConns.length;
   const allDisabled = total > 0 && providerConns.every((c) => c.isActive === false);
 

@@ -346,6 +346,25 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
         status: response.status,
         error: errorText,
       });
+      // AWS SSO OIDC returns 400 InvalidGrantException when the refresh token
+      // is revoked or expired (90-day idle). Surface that as unrecoverable so
+      // checkAndRefreshToken can mark the connection needs_relogin.
+      if (response.status === 400 || response.status === 401) {
+        let code = null;
+        try {
+          const parsed = JSON.parse(errorText);
+          code = parsed?.error || parsed?.__type || parsed?.message || null;
+        } catch {}
+        const codeStr = String(code || "").toLowerCase();
+        if (
+          codeStr.includes("invalidgrant") ||
+          codeStr.includes("invalid_grant") ||
+          codeStr.includes("expired") ||
+          codeStr.includes("refresh") && codeStr.includes("invalid")
+        ) {
+          return { error: "invalid_grant", code: code || "InvalidGrantException" };
+        }
+      }
       return null;
     }
 
@@ -382,6 +401,20 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       status: response.status,
       error: errorText,
     });
+    // Kiro social refresh endpoint returns 401 'Bad credentials' once the
+    // refresh token is revoked / rotated out. Surface as unrecoverable so
+    // checkAndRefreshToken can persist needs_relogin.
+    if (response.status === 400 || response.status === 401) {
+      const lower = errorText.toLowerCase();
+      if (
+        lower.includes("bad credentials") ||
+        lower.includes("invalid_grant") ||
+        lower.includes("invalid refresh") ||
+        lower.includes("expired")
+      ) {
+        return { error: "invalid_grant", code: "bad_credentials" };
+      }
+    }
     return null;
   }
 
