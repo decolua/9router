@@ -14,9 +14,16 @@ import crypto from "crypto";
 
 import { qoderEncodeBody } from "../../src/lib/qoder/encoding.js";
 import { buildCosyHeaders } from "../../src/lib/qoder/cosy.js";
-import { initiateDeviceFlow, generatePkcePair, parseExpiry } from "../../src/lib/qoder/auth.js";
+import { QoderService } from "../../src/lib/oauth/services/qoder.js";
 import { QODER_CHAT_URL_ENCODED, QODER_MODEL_LIST_URL } from "../../src/lib/qoder/constants.js";
 import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qoder.js";
+
+// Convenience aliases — tests were originally written against module-level
+// helpers; the QoderService class wraps them so each test creates its own
+// instance to avoid hidden state.
+const generatePkcePair = () => new QoderService().generatePkcePair();
+const initiateDeviceFlow = () => new QoderService().initiateDeviceFlow();
+const parseExpiry = QoderService.parseExpiry;
 
 describe("qoderEncodeBody", () => {
   it("preserves base64 length (input length divisible by 3)", () => {

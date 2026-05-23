@@ -606,8 +606,8 @@ const PROVIDERS = {
     // locally, the user lands on qoder.com/device/selectAccounts in the
     // browser, and we poll openapi.qoder.sh until a `dt-...` token appears.
     requestDeviceCode: async (config) => {
-      const { initiateDeviceFlow } = await import("@/lib/qoder/auth");
-      const flow = initiateDeviceFlow();
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const flow = new QoderService().initiateDeviceFlow();
       // Match the device_code shape the rest of the OAuthModal expects
       // (device_code, user_code, verification_uri[_complete], interval).
       // The poll endpoint identifies us by nonce+verifier, not by a
@@ -627,7 +627,8 @@ const PROVIDERS = {
       };
     },
     pollToken: async (config, deviceCode, codeVerifier, extraData) => {
-      const { pollDeviceToken, fetchUserInfo } = await import("@/lib/qoder/auth");
+      const { QoderService } = await import("@/lib/oauth/services/qoder");
+      const svc = new QoderService();
       const nonce = deviceCode || extraData?._qoderNonce;
       const verifier = codeVerifier || extraData?._qoderVerifier;
       if (!nonce || !verifier) {
@@ -638,7 +639,7 @@ const PROVIDERS = {
       }
       let result;
       try {
-        result = await pollDeviceToken({ nonce, codeVerifier: verifier });
+        result = await svc.pollDeviceToken({ nonce, codeVerifier: verifier });
       } catch (err) {
         return {
           ok: false,
@@ -649,11 +650,12 @@ const PROVIDERS = {
         return { ok: false, data: { error: "authorization_pending" } };
       }
       // Best-effort profile lookup so we have a name/email to display.
-      const userInfo = await fetchUserInfo(result.accessToken);
-      // expireTime is a Unix-ms timestamp from parseExpiry, which already
-      // falls back to "now + 30 days" when the upstream omits expiry. Floor
-      // to a sane minimum (1 day) so a stale or skewed upstream timestamp
-      // doesn't truncate the stored token below something useful.
+      const userInfo = await svc.fetchUserInfo(result.accessToken);
+      // expireTime is a Unix-ms timestamp from QoderService.parseExpiry,
+      // which already falls back to "now + 30 days" when the upstream
+      // omits expiry. Floor to a sane minimum (1 day) so a stale or
+      // skewed upstream timestamp doesn't truncate the stored token below
+      // something useful.
       const minSeconds = 24 * 60 * 60;
       const remainingSeconds = Math.floor((result.expireTime - Date.now()) / 1000);
       const expiresIn = Math.max(minSeconds, remainingSeconds);
