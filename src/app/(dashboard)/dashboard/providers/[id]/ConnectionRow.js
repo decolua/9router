@@ -46,7 +46,7 @@ function formatRemainingExpiresAt(value) {
   return `${Math.max(1, totalMinutes)}m`;
 }
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, disablePriorityControls = false }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, manualRefreshStatus = null, disablePriorityControls = false, isSelected = false, onSelectChange = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -174,11 +174,38 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return null;
   };
 
+  const getManualRefreshVariant = () => {
+    if (!manualRefreshStatus) return "default";
+    if (manualRefreshStatus.state === "success") return "success";
+    if (manualRefreshStatus.state === "failed") return "error";
+    if (manualRefreshStatus.state === "refreshing") return "primary";
+    return "default";
+  };
+
+  const getManualRefreshLabel = () => {
+    if (!manualRefreshStatus) return null;
+    if (manualRefreshStatus.state === "refreshing") return "refreshing";
+    if (manualRefreshStatus.state === "success") return "refreshed";
+    if (manualRefreshStatus.state === "failed") return manualRefreshStatus.error ? `refresh failed: ${manualRefreshStatus.error}` : "refresh failed";
+    return null;
+  };
+
   return (
     <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
+          {isOAuthConnection && (
+            <label className="mb-1 flex items-center justify-center">
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={(e) => onSelectChange?.(e.target.checked)}
+                className="rounded border-border"
+                title="Enable auto refresh and include in manual refresh selection"
+              />
+            </label>
+          )}
           <button
             onClick={onMoveUp}
             disabled={disablePriorityControls || isFirst}
@@ -230,6 +257,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             {getOneByOneLabel() && (
               <Badge variant={getOneByOneVariant()} size="sm">
                 {getOneByOneLabel()}
+              </Badge>
+            )}
+            {getManualRefreshLabel() && (
+              <Badge variant={getManualRefreshVariant()} size="sm">
+                {getManualRefreshLabel()}
+              </Badge>
+            )}
+            {connection.providerSpecificData?.autoRefreshEnabled === true && (
+              <Badge variant="default" size="sm">
+                auto refresh
               </Badge>
             )}
           </div>
@@ -341,5 +378,11 @@ ConnectionRow.propTypes = {
     state: PropTypes.string,
     error: PropTypes.string,
   }),
+  manualRefreshStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
+  }),
   disablePriorityControls: PropTypes.bool,
+  isSelected: PropTypes.bool,
+  onSelectChange: PropTypes.func,
 };

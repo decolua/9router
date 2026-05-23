@@ -1,6 +1,6 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { getProviderConnectionById, updateProviderConnection } from "../../lib/localDb.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -174,7 +174,10 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
         ...newCredentials.providerSpecificData,
       };
     }
-    if (newCredentials.projectId)            updates.projectId = newCredentials.projectId;
+    if (newCredentials.projectId) updates.projectId = newCredentials.projectId;
+    if (newCredentials.testStatus !== undefined) updates.testStatus = newCredentials.testStatus;
+    if (newCredentials.lastError !== undefined) updates.lastError = newCredentials.lastError;
+    if (newCredentials.lastErrorAt !== undefined) updates.lastErrorAt = newCredentials.lastErrorAt;
 
     const result = await updateProviderConnection(connectionId, updates);
     log.info("TOKEN_REFRESH", "Credentials updated in localDb", {
@@ -302,4 +305,97 @@ export async function refreshGitHubAndCopilotTokens(credentials) {
       copilotTokenExpiresAt: copilotToken.expiresAt,
     },
   };
+}
+
+const codexConnectionRefreshLocks = new Map();
+
+export async function refreshCodexConnection(connection, options = {}) {
+  if (!connection || connection.provider !== "codex") {
+    return { ok: false, error: "Unsupported provider" };
+  }
+
+  if (!connection.id) {
+    return { ok: false, error: "Missing connection id" };
+  }
+
+  if (codexConnectionRefreshLocks.has(connection.id)) {
+    return codexConnectionRefreshLocks.get(connection.id);
+  }
+
+  const refreshPromise = (async () => {
+    const freshConnection = await getProviderConnectionById(connection.id);
+    if (!freshConnection) {
+      return { ok: false, error: "Connection not found" };
+    }
+
+    const result = await getAccessToken("codex", {
+      refreshToken: freshConnection.refreshToken,
+      providerSpecificData: freshConnection.providerSpecificData,
+    }, log);
+
+    if (!result?.accessToken) {
+      const errorMessage = isUnrecoverableRefreshError(result)
+        ? "Refresh token invalid or already used. Re-auth required."
+        : "Failed to refresh Codex token";
+      return { ok: false, error: errorMessage, unrecoverable: isUnrecoverableRefreshError(result) };
+    }
+
+    const mergedProviderSpecificData = {
+      ...(freshConnection.providerSpecificData || {}),
+      ...(result.providerSpecificData || {}),
+    };
+
+    await updateProviderCredentials(connection.id, {
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
+      expiresAt: result.expiresAt,
+      providerSpecificData: mergedProviderSpecificData,
+      existingProviderSpecificData: freshConnection.providerSpecificData,
+      testStatus: "active",
+      lastError: null,
+      lastErrorAt: null,
+    });
+
+    return {
+      ok: true,
+      connectionId: connection.id,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken || freshConnection.refreshToken,
+      expiresIn: result.expiresIn,
+      expiresAt: result.expiresAt || (result.expiresIn ? toExpiresAt(result.expiresIn) : null),
+      providerSpecificData: mergedProviderSpecificData,
+    };
+  })().finally(() => {
+    codexConnectionRefreshLocks.delete(connection.id);
+  });
+
+  codexConnectionRefreshLocks.set(connection.id, refreshPromise);
+  return refreshPromise;
+}
+
+export async function refreshSelectedCodexConnections(connections) {
+  const selected = Array.isArray(connections) ? connections.filter((connection) => connection?.provider === "codex") : [];
+  const results = [];
+
+  for (const connection of selected) {
+    try {
+      const result = await refreshCodexConnection(connection);
+      results.push({
+        connectionId: connection.id,
+        ok: !!result?.ok,
+        error: result?.error || null,
+        expiresAt: result?.expiresAt || null,
+      });
+    } catch (error) {
+      results.push({
+        connectionId: connection.id,
+        ok: false,
+        error: error.message,
+        expiresAt: null,
+      });
+    }
+  }
+
+  return results;
 }

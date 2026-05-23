@@ -116,6 +116,9 @@ export default function ProviderDetailPage() {
     useState(null);
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
+  const [manualRefreshResults, setManualRefreshResults] = useState({});
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [manualRefreshSummary, setManualRefreshSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -765,20 +768,99 @@ export default function ProviderDetailPage() {
     connections.length > 0 &&
     selectedConnectionIds.length === connections.length;
 
+  const persistAutoRefreshSelection = async (connectionId, enabled) => {
+    try {
+      const target = connections.find((conn) => conn.id === connectionId);
+      if (!target) return;
+
+      const providerSpecificData = {
+        ...(target.providerSpecificData || {}),
+        autoRefreshEnabled: enabled,
+      };
+
+      const res = await fetch(`/api/providers/${connectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerSpecificData }),
+      });
+
+      if (res.ok) {
+        setConnections((prev) =>
+          prev.map((conn) =>
+            conn.id === connectionId
+              ? { ...conn, providerSpecificData }
+              : conn,
+          ),
+        );
+      }
+    } catch (error) {
+      console.log("Error updating auto refresh flag:", error);
+    }
+  };
+
   const toggleSelectConnection = (connectionId) => {
-    setSelectedConnectionIds((prev) =>
-      prev.includes(connectionId)
-        ? prev.filter((id) => id !== connectionId)
-        : [...prev, connectionId],
-    );
+    setSelectedConnectionIds((prev) => {
+      const enabled = !prev.includes(connectionId);
+      void persistAutoRefreshSelection(connectionId, enabled);
+      return enabled
+        ? [...prev, connectionId]
+        : prev.filter((id) => id !== connectionId);
+    });
+  };
+
+  const handleManualRefreshSelected = async () => {
+    if (selectedConnectionIds.length === 0 || manualRefreshing) return;
+
+    setManualRefreshing(true);
+    setManualRefreshSummary(null);
+    try {
+      const res = await fetch("/api/providers/codex/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionIds: selectedConnectionIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to refresh selected Codex accounts");
+        return;
+      }
+
+      const nextResults = Object.fromEntries(
+        (data.results || []).map((result) => [
+          result.connectionId,
+          result.ok
+            ? { state: "success", error: null }
+            : { state: "failed", error: result.error || "failed" },
+        ]),
+      );
+      setManualRefreshResults(nextResults);
+      setManualRefreshSummary(data.summary || null);
+      await fetchConnections();
+    } catch (error) {
+      console.log("Error refreshing selected Codex accounts:", error);
+      alert("Failed to refresh selected Codex accounts");
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
+
+  const clearManualRefreshResults = () => {
+    setManualRefreshResults({});
+    setManualRefreshSummary(null);
   };
 
   const toggleSelectAllConnections = () => {
     if (allSelected) {
       setSelectedConnectionIds([]);
+      void Promise.all(
+        connections.map((conn) => persistAutoRefreshSelection(conn.id, false)),
+      );
       return;
     }
     setSelectedConnectionIds(connections.map((conn) => conn.id));
+    void Promise.all(
+      connections.map((conn) => persistAutoRefreshSelection(conn.id, true)),
+    );
   };
 
   const clearSelection = () => {
@@ -786,9 +868,15 @@ export default function ProviderDetailPage() {
     setBulkProxyPoolId("__none__");
   };
 
+  const selectedAutoRefreshCount = connections.filter(
+    (conn) => conn.providerSpecificData?.autoRefreshEnabled === true,
+  ).length;
+
   useEffect(() => {
-    setSelectedConnectionIds((prev) =>
-      prev.filter((id) => connections.some((conn) => conn.id === id)),
+    setSelectedConnectionIds(
+      connections
+        .filter((conn) => conn.providerSpecificData?.autoRefreshEnabled === true)
+        .map((conn) => conn.id),
     );
   }, [connections]);
 
@@ -890,6 +978,8 @@ export default function ProviderDetailPage() {
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
+                isSelected={isSelected(conn.id)}
+                onSelectChange={() => toggleSelectConnection(conn.id)}
                 isFirst={index === 0}
                 isLast={index === displayedConnections.length - 1}
                 onMoveUp={() =>
@@ -935,6 +1025,7 @@ export default function ProviderDetailPage() {
                 }}
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
+                manualRefreshStatus={manualRefreshResults[conn.id] || (manualRefreshing && isSelected(conn.id) ? { state: "refreshing" } : null)}
                 disablePriorityControls={isConnectionsSortActive}
               />
             </div>
@@ -1433,19 +1524,88 @@ export default function ProviderDetailPage() {
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               {connections.length > 0 && (
+                <>
+                  <label className="flex items-center gap-2 text-xs text-text-muted">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={toggleSelectAllConnections}
+                      className="rounded border-border"
+                    />
+                    Select all auto refresh ({selectedAutoRefreshCount}/{connections.length})
+                  </label>
+                  <Button
+                    size="sm"
+                    variant={manualRefreshing ? "secondary" : "ghost"}
+                    icon="refresh"
+                    onClick={handleManualRefreshSelected}
+                    disabled={manualRefreshing || selectedConnectionIds.length === 0}
+                  >
+                    {manualRefreshing
+                      ? "Refreshing selected..."
+                      : `Refresh selected now (${selectedConnectionIds.length})`}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={isConnectionsSortActive ? "secondary" : "ghost"}
+                    icon="schedule"
+                    onClick={handleToggleConnectionsSort}
+                  >
+                    {connectionsSortDirection === "asc"
+                      ? "Expire at ↑"
+                      : connectionsSortDirection === "desc"
+                        ? "Expire at ↓"
+                        : "Sort Expire at"}
+                  </Button>
+                </>
+              )}
+
+              {connections.length > 0 && (
                 <Button
                   size="sm"
-                  variant={isConnectionsSortActive ? "secondary" : "ghost"}
-                  icon="schedule"
-                  onClick={handleToggleConnectionsSort}
+                  variant="ghost"
+                  icon="clear_all"
+                  onClick={() => {
+                    clearSelection();
+                    clearManualRefreshResults();
+                  }}
+                  disabled={selectedConnectionIds.length === 0 && !manualRefreshSummary}
                 >
-                  {connectionsSortDirection === "asc"
-                    ? "Expire at ↑"
-                    : connectionsSortDirection === "desc"
-                      ? "Expire at ↓"
-                      : "Sort Expire at"}
+                  Clear
                 </Button>
               )}
+
+              {connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="sync"
+                  onClick={handleRunOneByOneTest}
+                  disabled={oneByOneRunning}
+                >
+                  {oneByOneRunning
+                    ? "Testing Connection One-by-One..."
+                    : "Test Connection One-by-One"}
+                </Button>
+              )}
+              {oneByOneRunning && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon="stop"
+                  onClick={handleStopOneByOneTest}
+                  disabled={oneByOneStopping}
+                >
+                  {oneByOneStopping ? "Stopping..." : "Stop"}
+                </Button>
+              )}
+
+              {manualRefreshSummary && (
+                <span className="text-xs text-text-muted">
+                  Refresh: {manualRefreshSummary.passed}/{manualRefreshSummary.total} success
+                </span>
+              )}
+
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button
                   size="sm"
@@ -1456,32 +1616,7 @@ export default function ProviderDetailPage() {
                   Apply Proxy
                 </Button>
               )}
-              {connections.length > 0 && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon="sync"
-                    onClick={handleRunOneByOneTest}
-                    disabled={oneByOneRunning}
-                  >
-                    {oneByOneRunning
-                      ? "Testing Connection One-by-One..."
-                      : "Test Connection One-by-One"}
-                  </Button>
-                  {oneByOneRunning && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon="stop"
-                      onClick={handleStopOneByOneTest}
-                      disabled={oneByOneStopping}
-                    >
-                      {oneByOneStopping ? "Stopping..." : "Stop"}
-                    </Button>
-                  )}
-                </>
-              )}
+
               {/* Thinking config */}
               {/* {thinkingConfig && (
                 <div className="flex items-center gap-2">
