@@ -68,12 +68,12 @@ export async function resolveConnectionProxyConfig(
 
       if (isValidPool) {
         /**
-         * Vercel relay proxies use base URL rewriting
+         * Vercel/Cloudflare relay proxies use base URL rewriting
          * instead of HTTP_PROXY environment variables.
          */
-        if (proxyPool.type === "vercel") {
+        if (proxyPool.type === "vercel" || proxyPool.type === "cloudflare") {
           return {
-            source: "vercel",
+            source: proxyPool.type,
 
             proxyPoolId,
             proxyPool,
@@ -84,7 +84,7 @@ export async function resolveConnectionProxyConfig(
 
             strictProxy: proxyPool.strictProxy === true,
 
-            vercelRelayUrl: proxyUrl,
+            vercelRelayUrl: proxyUrl, // Still mapped to vercelRelayUrl in the unified payload since they use the exact same header spec
           };
         }
 
