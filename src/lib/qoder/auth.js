@@ -63,6 +63,26 @@ export function initiateDeviceFlow() {
   };
 }
 
+// Timeout for OAuth helper calls. The OAuth modal polls every 2s for up to
+// 5 minutes; an individual request that stalls beyond this is treated as a
+// failed poll attempt and the next poll iteration retries.
+const FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Wrap fetch with an AbortController-based timeout. Without this, a stalled
+ * upstream socket hangs on Node's default keepalive timeout (minutes) and
+ * abandoned polls accumulate hung sockets.
+ */
+async function fetchWithTimeout(url, init = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Single poll attempt. Returns one of:
  *   { status: "pending" }       — keep polling
@@ -77,7 +97,7 @@ export async function pollDeviceToken({ nonce, codeVerifier }) {
   }
   const url = `${QODER_DEVICE_TOKEN_URL}?nonce=${encodeURIComponent(nonce)}&verifier=${encodeURIComponent(codeVerifier)}&challenge_method=S256`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "GET",
     headers: {
       Accept: "application/json",
@@ -132,7 +152,7 @@ export async function pollDeviceToken({ nonce, codeVerifier }) {
  */
 export async function fetchUserInfo(accessToken) {
   try {
-    const response = await fetch(QODER_USERINFO_URL, {
+    const response = await fetchWithTimeout(QODER_USERINFO_URL, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -154,18 +174,36 @@ export async function fetchUserInfo(accessToken) {
 
 /**
  * Convert the upstream's expiry hint into a Unix-millisecond timestamp.
- * Accepts RFC3339 strings, ms-epoch integer strings, or seconds-from-now
- * (`expires_in`). Falls back to "now + 30 days" when both are missing.
+ * Accepts:
+ *   - numeric (ms-epoch): returned as-is
+ *   - numeric string of ms-epoch: e.g. "1781594470000"
+ *   - RFC3339 string: e.g. "2026-06-16T07:15:04Z"
+ *   - seconds-from-now via expiresInSeconds (>= 0)
+ * Falls back to "now + 30 days" when both are missing.
+ *
+ * Order matters: try numeric (string or number) before Date.parse, since
+ * Date.parse accepts short numeric strings like "2026" as years and would
+ * otherwise return a misleading year-2026 timestamp instead of falling
+ * through to the integer branch.
  */
 function parseExpiry(expiresAt, expiresInSeconds) {
+  if (typeof expiresAt === "number" && Number.isFinite(expiresAt) && expiresAt > 0) {
+    return expiresAt;
+  }
   const trimmed = typeof expiresAt === "string" ? expiresAt.trim() : "";
   if (trimmed) {
+    // Pure numeric string → ms-epoch (don't let Date.parse swallow short
+    // numerics as years).
+    if (/^\d+$/.test(trimmed)) {
+      const ms = Number.parseInt(trimmed, 10);
+      if (Number.isFinite(ms) && ms > 0) return ms;
+    }
     const parsed = Date.parse(trimmed);
     if (!Number.isNaN(parsed)) return parsed;
-    const ms = Number.parseInt(trimmed, 10);
-    if (!Number.isNaN(ms) && ms > 0) return ms;
   }
-  if (typeof expiresInSeconds === "number" && expiresInSeconds > 0) {
+  // expiresInSeconds === 0 means "already expired"; honor that by returning
+  // the current time rather than fabricating a 30-day default.
+  if (typeof expiresInSeconds === "number" && Number.isFinite(expiresInSeconds) && expiresInSeconds >= 0) {
     return Date.now() + expiresInSeconds * 1000;
   }
   return Date.now() + 30 * 24 * 60 * 60 * 1000;

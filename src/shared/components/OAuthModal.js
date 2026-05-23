@@ -87,12 +87,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   }, [authData, onSuccess]);
 
   // Poll for device code token
-  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData) => {
+  const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs) => {
     pollingAbortRef.current = false;
     setPolling(true);
-    const maxAttempts = 60;
+    // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
+    // don't time out earlier than the device code itself. Default 120s
+    // matches the prior behavior for providers that don't surface a value.
+    const startedAt = Date.now();
+    const deadline = startedAt + (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : 120_000);
 
-    for (let i = 0; i < maxAttempts; i++) {
+    while (Date.now() < deadline) {
       // Check if polling should be aborted
       if (pollingAbortRef.current) {
         console.log("[OAuthModal] Polling aborted");
@@ -196,7 +200,17 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _qoderVerifier: data.codeVerifier,
             }
           : null;
-        startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);
+        startPolling(
+          data.device_code,
+          data.codeVerifier,
+          data.interval || 5,
+          extraData,
+          // Use the upstream's expires_in if present so we don't time out
+          // before the device code itself (qoder gives 300s).
+          Number.isFinite(data.expires_in) && data.expires_in > 0
+            ? data.expires_in * 1000
+            : undefined,
+        );
         return;
       }
 

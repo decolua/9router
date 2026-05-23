@@ -123,17 +123,17 @@ function truncate(s, n) {
 /**
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
-async function buildQoderRequestBody({ model, body, credentials, log }) {
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
   if (!QODER_MODEL_MAP[qoderKey]) {
     throw new Error(`Unsupported qoder model: "${qoderKey}" (received "${model}")`);
   }
 
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log });
+  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal });
   if (!modelConfig) {
     // Try a forced refresh once before giving up — the cache may simply
     // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log });
+    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal });
     const retried = refreshed?.rawConfigs.get(qoderKey);
     if (!retried) {
       throw new Error(
@@ -230,6 +230,54 @@ function wrapQoderSSE(response, model) {
   let buffer = "";
   let doneEmitted = false;
 
+  // Process one already-extracted SSE line (no trailing newline). Returns
+  // false when the line indicated end-of-stream so the caller can stop
+  // forwarding any remaining chunks after [DONE].
+  const processLine = (line, controller) => {
+    const trimmed = line.replace(/\r$/, "").trim();
+    if (!trimmed) return;
+    if (!trimmed.startsWith("data:")) return;
+    if (doneEmitted) return; // never forward chunks past stream end
+
+    const data = trimmed.slice(5).trimStart();
+    if (data === "[DONE]") {
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      doneEmitted = true;
+      return;
+    }
+
+    let envelope;
+    try { envelope = JSON.parse(data); } catch { return; }
+    const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
+    const inner = typeof envelope.body === "string" ? envelope.body : "";
+    if (statusVal !== 200) {
+      const msg = inner || `upstream status ${statusVal}`;
+      const errChunk = JSON.stringify({
+        id: `qoder-error-${Date.now()}`,
+        object: "chat.completion.chunk",
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
+      });
+      controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      doneEmitted = true;
+      return;
+    }
+    if (!inner) return;
+    if (inner === "[DONE]") {
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      doneEmitted = true;
+      return;
+    }
+    // Inner is an OpenAI-shaped chunk. Strip any embedded newlines so the
+    // SSE frame stays a single event (a literal "\n" inside `inner` would
+    // otherwise split the frame across multiple data: lines and downstream
+    // parsers would reassemble them as separate events).
+    const sanitized = inner.replace(/\r?\n/g, "");
+    controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
+  };
+
   const transform = new TransformStream({
     transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
@@ -237,54 +285,24 @@ function wrapQoderSSE(response, model) {
       while ((nl = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, nl);
         buffer = buffer.slice(nl + 1);
-        const trimmed = line.replace(/\r$/, "").trim();
-        if (!trimmed) continue;
-        if (!trimmed.startsWith("data:")) continue;
-
-        let data = trimmed.slice(5).trimStart();
-        if (data === "[DONE]") {
-          if (!doneEmitted) {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            doneEmitted = true;
-          }
-          continue;
-        }
-
-        let envelope;
-        try { envelope = JSON.parse(data); } catch { continue; }
-        const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
-        const inner = typeof envelope.body === "string" ? envelope.body : "";
-        if (statusVal !== 200) {
-          const msg = inner || `upstream status ${statusVal}`;
-          const errChunk = JSON.stringify({
-            id: `qoder-error-${Date.now()}`,
-            object: "chat.completion.chunk",
-            created: Math.floor(Date.now() / 1000),
-            model,
-            choices: [{ index: 0, delta: { content: `\n[qoder error ${statusVal}: ${truncate(msg, 200)}]` }, finish_reason: "stop" }],
-          });
-          controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
-          if (!doneEmitted) {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            doneEmitted = true;
-          }
-          continue;
-        }
-        if (!inner) continue;
-        if (inner === "[DONE]") {
-          if (!doneEmitted) {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            doneEmitted = true;
-          }
-          continue;
-        }
-        // Inner is already an OpenAI-shaped chunk; forward as-is.
-        controller.enqueue(encoder.encode(`data: ${inner}\n\n`));
+        processLine(line, controller);
       }
     },
     flush(controller) {
+      // Finalize the decoder so any pending multi-byte sequence is
+      // released into `buffer` instead of being silently dropped.
+      buffer += decoder.decode();
+      // Drain any trailing line that arrived without a terminating newline
+      // (e.g. upstream closed the socket immediately after the last write,
+      // or a CDN stripped the final CRLF). Without this, the chunk that
+      // carries finish_reason is silently lost.
+      if (buffer.length > 0) {
+        processLine(buffer, controller);
+        buffer = "";
+      }
       if (!doneEmitted) {
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        doneEmitted = true;
       }
     },
   });
@@ -329,11 +347,20 @@ export class QoderExecutor extends BaseExecutor {
       );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
+    if (!credentials?.accessToken) {
+      // Same shape as the userId guard — clean 401 so chatCore reports
+      // "reconnect" rather than bubbling cosy.js's synchronous throw as 500.
+      const fakeResp = new Response(
+        JSON.stringify({ error: { message: "qoder credential is missing accessToken; reconnect the account" } }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+      return { response: fakeResp, url, headers: {}, transformedBody: body };
+    }
 
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -346,17 +373,28 @@ export class QoderExecutor extends BaseExecutor {
     const encodedBodyStr = qoderEncodeBody(plainBody);
     const encodedBodyBuf = Buffer.from(encodedBodyStr, "latin1");
 
-    const cosyHeaders = buildCosyHeaders(
-      encodedBodyBuf,
-      url,
-      {
-        userId: psd.userId,
-        authToken: credentials.accessToken,
-        name: credentials.displayName || "",
-        email: credentials.email || "",
-        machineId: psd.machineId || "",
-      },
-    );
+    let cosyHeaders;
+    try {
+      cosyHeaders = buildCosyHeaders(
+        encodedBodyBuf,
+        url,
+        {
+          userId: psd.userId,
+          authToken: credentials.accessToken,
+          name: credentials.displayName || "",
+          email: credentials.email || "",
+          machineId: psd.machineId || "",
+        },
+      );
+    } catch (err) {
+      // cosy.js throws synchronously on missing userId/authToken — surface
+      // as 401 so chatCore prompts re-auth instead of returning a 500.
+      const fakeResp = new Response(
+        JSON.stringify({ error: { message: `qoder cosy signing failed: ${err.message}` } }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+      return { response: fakeResp, url, headers: {}, transformedBody: body };
+    }
 
     const modelSource = (payload.model_config && payload.model_config.source) || "system";
     const headers = {

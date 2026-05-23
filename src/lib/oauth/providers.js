@@ -672,8 +672,14 @@ const PROVIDERS = {
       };
     },
     mapTokens: (tokens) => {
-      const email = (tokens._qoderEmail || "").trim() || null;
+      const rawEmail = (tokens._qoderEmail || "").trim();
       const displayName = (tokens._qoderName || "").trim() || null;
+      const userId = tokens._qoderUserId || "";
+      // Dedup in createProviderConnection requires a non-empty email. When
+      // fetchUserInfo silently fails (returns ""), fall back to a stable
+      // synthetic identifier derived from userId so re-logins update the
+      // existing row instead of accumulating "Account N" duplicates.
+      const email = rawEmail || (userId ? `qoder-user-${userId}` : null);
       return {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || null,
@@ -682,7 +688,7 @@ const PROVIDERS = {
         displayName,
         providerSpecificData: {
           authMethod: "device",
-          userId: tokens._qoderUserId || "",
+          userId,
           machineId: tokens._qoderMachineId || "",
           organizationId: tokens._qoderOrganizationId || "",
         },
