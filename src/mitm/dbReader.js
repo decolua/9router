@@ -1,49 +1,22 @@
-// CJS reader for MITM standalone process. Reads SQLite mitmAlias scope.
-// Falls back to legacy db.json or db.json.migrated if SQLite unavailable.
+// CJS reader for MITM standalone process. Reads mitmAlias from JSON cache
+// at $DATA_DIR/mitm/aliases.json (synced by app from SQLite on startup + writes).
+// JSON-only: no SQLite native binding required in MITM bundle.
 const fs = require("fs");
 const path = require("path");
 const { DATA_DIR } = require("./paths");
 
-const DB_FILE = path.join(DATA_DIR, "db", "data.sqlite");
-const LEGACY_JSON = path.join(DATA_DIR, "db.json");
-const LEGACY_MIGRATED = path.join(DATA_DIR, "db.json.migrated");
+const CACHE_FILE = path.join(DATA_DIR, "mitm", "aliases.json");
 
-let sqliteDb = null;
-let sqliteFailed = false;
-
-function trySqlite() {
-  if (sqliteDb) return sqliteDb;
-  if (sqliteFailed) return null;
+function readCache() {
   try {
-    if (!fs.existsSync(DB_FILE)) return null;
-    const Database = require("better-sqlite3");
-    sqliteDb = new Database(DB_FILE, { readonly: true, fileMustExist: true });
-    return sqliteDb;
-  } catch {
-    sqliteFailed = true;
-    return null;
-  }
-}
-
-function readLegacyJson() {
-  for (const file of [LEGACY_JSON, LEGACY_MIGRATED]) {
-    if (!fs.existsSync(file)) continue;
-    try { return JSON.parse(fs.readFileSync(file, "utf-8")); } catch {}
-  }
-  return null;
+    if (!fs.existsSync(CACHE_FILE)) return null;
+    return JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
+  } catch { return null; }
 }
 
 function getMitmAlias(toolName) {
-  const db = trySqlite();
-  if (db) {
-    try {
-      const row = db.prepare(`SELECT value FROM kv WHERE scope = 'mitmAlias' AND key = ?`).get(toolName);
-      if (row) return JSON.parse(row.value);
-    } catch {}
-  }
-  // Fallback to legacy JSON
-  const legacy = readLegacyJson();
-  return legacy?.mitmAlias?.[toolName] || null;
+  const all = readCache();
+  return all?.[toolName] || null;
 }
 
 module.exports = { getMitmAlias };

@@ -1,12 +1,18 @@
 import { platform, arch } from "os";
 
 // === Gemini CLI ===
-export const GEMINI_CLI_VERSION = "0.31.0";
+export const GEMINI_CLI_VERSION = "0.34.0";
 export const GEMINI_CLI_API_CLIENT = "google-genai-sdk/1.41.0 gl-node/v22.19.0";
 
+// Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
+function geminiCLIArch() {
+  const a = arch();
+  if (a === "ia32") return "x86";
+  return a;
+}
+
 export function geminiCLIUserAgent(model = "unknown") {
-  const os = platform() === "win32" ? "windows" : platform();
-  return `GeminiCLI/${GEMINI_CLI_VERSION}/${model || "unknown"} (${os}; ${arch()})`;
+  return `GeminiCLI/${GEMINI_CLI_VERSION}/${model || "unknown"} (${platform()}; ${geminiCLIArch()}; terminal)`;
 }
 
 // === GitHub Copilot ===

@@ -85,12 +85,18 @@ export function convertKiroToOpenAI(chunk, state) {
     return openaiChunk;
   }
 
-  // Handle reasoning/thinking events
+  // Handle reasoning/thinking events.
+  // Kiro emits reasoningContentEvent when the request enabled thinking via
+  // the <thinking_mode>enabled</thinking_mode> system-prompt tag. We surface
+  // this as OpenAI delta.reasoning_content so downstream translators can map
+  // it to Claude thinking blocks / Anthropic reasoning / etc.
   if (eventType === "reasoningContentEvent" || data.reasoningContentEvent) {
-    const content = data.reasoningContentEvent?.content || data.content || "";
+    const reasoning = data.reasoningContentEvent || data;
+    const content = (typeof reasoning === "string")
+      ? reasoning
+      : (reasoning.text || reasoning.content || data.content || "");
     if (!content) return null;
 
-    // Convert to thinking block format (Claude-style)
     const openaiChunk = {
       id: state.responseId,
       object: "chat.completion.chunk",
@@ -100,7 +106,7 @@ export function convertKiroToOpenAI(chunk, state) {
         index: 0,
         delta: {
           ...(state.chunkIndex === 0 ? { role: "assistant" } : {}),
-          content: `<thinking>${content}</thinking>`
+          reasoning_content: content
         },
         finish_reason: null
       }]

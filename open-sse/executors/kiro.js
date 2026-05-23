@@ -87,6 +87,8 @@ export class KiroExecutor extends BaseExecutor {
       endDetected: false,
       finishEmitted: false,
       hasToolCalls: false,
+      hasReasoningContent: false,
+      reasoningChunkCount: 0,
       toolCallIndex: 0,
       seenToolIds: new Map()
     };
@@ -141,6 +143,41 @@ export class KiroExecutor extends BaseExecutor {
             };
             chunkIndex++;
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          }
+
+          // Handle reasoningContentEvent (Kiro thinking / reasoning)
+          // Kiro returns reasoning as a separate event when the request system
+          // prompt contains <thinking_mode>enabled</thinking_mode>. Surface it
+          // as OpenAI delta.reasoning_content so downstream translators can map
+          // it back to Claude thinking blocks / Anthropic reasoning, etc.
+          if (eventType === "reasoningContentEvent") {
+            const reasoning = event.payload?.reasoningContentEvent || event.payload || {};
+            const reasoningText = (typeof reasoning === "string")
+              ? reasoning
+              : (reasoning.text || reasoning.content || "");
+            if (reasoningText) {
+              state.hasReasoningContent = true;
+              state.totalContentLength += reasoningText.length;
+
+              const reasoningDelta = state.reasoningChunkCount === 0 && chunkIndex === 0
+                ? { role: "assistant", reasoning_content: reasoningText }
+                : { reasoning_content: reasoningText };
+
+              const chunk = {
+                id: responseId,
+                object: "chat.completion.chunk",
+                created,
+                model,
+                choices: [{
+                  index: 0,
+                  delta: reasoningDelta,
+                  finish_reason: null
+                }]
+              };
+              chunkIndex++;
+              state.reasoningChunkCount++;
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+            }
           }
 
           // Handle codeEvent

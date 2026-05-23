@@ -1,5 +1,5 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/providers.js";
+import { PROVIDERS, resolveXiaomiTokenplanBaseUrl } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../../src/shared/utils/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
@@ -39,6 +39,9 @@ export class DefaultExecutor extends BaseExecutor {
       case "gemini":
         return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
       default: {
+        if (this.provider === "xiaomi-tokenplan") {
+          return `${resolveXiaomiTokenplanBaseUrl(credentials)}/chat/completions`;
+        }
         const url = this.config.baseUrl;
         if (url?.includes("{accountId}")) {
           const accountId = credentials?.providerSpecificData?.accountId;
@@ -96,11 +99,9 @@ export class DefaultExecutor extends BaseExecutor {
       case "kimi":
       case "minimax":
       case "minimax-cn":
-        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-        break;
       case "kimi-coding":
-        headers["Authorization"] = `Bearer ${credentials.accessToken}`;
-        Object.assign(headers, buildKimiHeaders());
+        headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+        if (this.provider === "kimi-coding") Object.assign(headers, buildKimiHeaders());
         break;
       default:
         if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -124,6 +125,10 @@ export class DefaultExecutor extends BaseExecutor {
           }
         } else if (this.provider === "cline") {
           Object.assign(headers, buildClineHeaders(credentials.apiKey || credentials.accessToken));
+        } else if (this.config?.format === "claude") {
+          // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
+          headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
+          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }

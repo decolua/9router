@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
@@ -18,6 +19,11 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [selectedModels, setSelectedModels] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const selectedModelsRef = useRef([]);
+
+  useEffect(() => {
+    selectedModelsRef.current = selectedModels;
+  }, [selectedModels]);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -57,6 +63,21 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     }
   };
 
+  const saveModels = async (models) => {
+    try {
+      const keyToUse = (selectedApiKey && selectedApiKey.trim())
+        ? selectedApiKey
+        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+      await fetch("/api/cli-tools/copilot-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: getEffectiveBaseUrl(), apiKey: keyToUse, models }),
+      });
+    } catch (error) {
+      console.log("Error saving models:", error);
+    }
+  };
+
   const getConfigStatus = () => {
     if (!status) return null;
     if (!status.has9Router) return "not_configured";
@@ -72,7 +93,6 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   };
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
-  const hasCustomSelectedApiKey = selectedApiKey && !apiKeys.some((key) => key.key === selectedApiKey);
 
   const removeModel = (id) => setSelectedModels((prev) => prev.filter((m) => m !== id));
 
@@ -218,16 +238,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">API Key</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  {apiKeys.length > 0 || selectedApiKey ? (
-                    <select value={selectedApiKey} onChange={(e) => setSelectedApiKey(e.target.value)} className="w-full min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5">
-                      {hasCustomSelectedApiKey && <option value={selectedApiKey}>{selectedApiKey}</option>}
-                      {apiKeys.map((key) => <option key={key.id} value={key.key}>{key.key}</option>)}
-                    </select>
-                  ) : (
-                    <span className="min-w-0 rounded bg-surface/40 px-2 py-2 text-xs text-text-muted sm:py-1.5">
-                      {cloudEnabled ? "No API keys - Create one in Keys page" : "sk_9router (default)"}
-                    </span>
-                  )}
+                  <ApiKeySelect value={selectedApiKey} onChange={setSelectedApiKey} apiKeys={apiKeys} cloudEnabled={cloudEnabled} />
                 </div>
 
                 {/* Models */}
@@ -281,16 +292,23 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
 
       <ModelSelectModal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false);
+          saveModels(selectedModelsRef.current);
+        }}
         onSelect={(model) => {
           if (!selectedModels.includes(model.value)) {
             setSelectedModels([...selectedModels, model.value]);
           }
-          setModalOpen(false);
+        }}
+        onDeselect={(model) => {
+          setSelectedModels(selectedModels.filter(m => m !== model.value));
         }}
         selectedModel={null}
         activeProviders={activeProviders}
         modelAliases={modelAliases}
+        addedModelValues={selectedModels}
+        closeOnSelect={false}
         title="Add Model for GitHub Copilot"
       />
 

@@ -197,6 +197,7 @@ export async function spawnCloudflared(tunnelToken) {
   const child = spawn(binaryPath, ["tunnel", "run", "--dns-resolver-addrs", "1.1.1.1:53", "--token", tunnelToken], {
     detached: false,
     windowsHide: true,
+    cwd: os.tmpdir(),
     stdio: ["ignore", "pipe", "pipe"]
   });
 
@@ -288,9 +289,10 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
 
   const requestedProtocol = String(process.env.TUNNEL_TRANSPORT_PROTOCOL || process.env.CLOUDFLARED_PROTOCOL || DEFAULT_QUICK_TUNNEL_PROTOCOL).trim().toLowerCase();
   const tunnelProtocol = QUICK_TUNNEL_PROTOCOLS.has(requestedProtocol) ? requestedProtocol : DEFAULT_QUICK_TUNNEL_PROTOCOL;
-  const child = spawn(binaryPath, ["tunnel", "--url", `http://127.0.0.1:${localPort}`, "--config", configPath, "--no-autoupdate"], {
+  const child = spawn(binaryPath, ["tunnel", "--url", `http://127.0.0.1:${localPort}`, "--config", configPath, "--no-autoupdate", "--retries", "99"], {
     detached: false,
     windowsHide: true,
+    cwd: os.tmpdir(),
     env: {
       ...process.env,
       TUNNEL_TRANSPORT_PROTOCOL: tunnelProtocol,
@@ -303,6 +305,8 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
 
   return new Promise((resolve, reject) => {
     let resolved = false;
+    // Keep a small tail of raw cloudflared logs to surface real failure causes
+    let logTail = "";
 
     function getQuickTunnelUrlFromLog(message) {
       // cloudflared logs may contain "api.trycloudflare.com" as well,
@@ -324,13 +328,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       if (resolved) return;
       resolved = true;
       cleanup();
-      reject(new Error("Quick tunnel timed out"));
+      reject(new Error(`Quick tunnel timed out. Last log: ${logTail.slice(-800) || "(empty)"}`));
     }, 90000);
 
     let lastUrl = null;
 
     const handleLog = (data) => {
       const msg = data.toString();
+      logTail = (logTail + msg).slice(-4000);
       const tunnelUrl = getQuickTunnelUrlFromLog(msg);
       if (!tunnelUrl) return;
 
@@ -340,12 +345,14 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
         lastUrl = tunnelUrl;
         clearTimeout(timeout);
         cleanup();
+        console.log(`[Tunnel] cloudflared URL: ${tunnelUrl}`);
         resolve({ child, tunnelUrl });
         return;
       }
 
       // URL changed after initial connect — notify caller to re-register
       if (tunnelUrl !== lastUrl) {
+        console.log(`[Tunnel] cloudflared URL changed: ${tunnelUrl}`);
         lastUrl = tunnelUrl;
         if (onUrlUpdate) onUrlUpdate(tunnelUrl);
       }
@@ -365,17 +372,18 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     child.on("exit", (code, signal) => {
       cloudflaredProcess = null;
       clearPid();
+      console.log(`[Tunnel] cloudflared exit code=${code} signal=${signal}`);
       if (!resolved) {
         resolved = true;
         clearTimeout(timeout);
         cleanup();
-        // Provide more helpful error messages for common exit codes
+        const tail = logTail.slice(-600).trim() || "(empty)";
         if (code === 1) {
-          reject(new Error(`cloudflared exited with code ${code}. This often means: (1) the tunnel token is invalid or expired, (2) network connectivity issues, or (3) cloudflared cannot reach the local server.`));
+          reject(new Error(`cloudflared quick tunnel exited (code 1). Common causes: (1) outbound port 7844 (TCP/UDP) blocked, (2) TryCloudflare service issue, (3) cannot reach 127.0.0.1:${localPort}, (4) protocol (http2/quic) blocked by network. Last log: ${tail}`));
         } else if (code === 2) {
-          reject(new Error(`cloudflared exited with code ${code}. Check that arguments are correct.`));
+          reject(new Error(`cloudflared exited (code 2). Bad arguments. Last log: ${tail}`));
         } else {
-          reject(new Error(`cloudflared exited with code ${code}`));
+          reject(new Error(`cloudflared exited (code ${code}). Last log: ${tail}`));
         }
         return;
       }

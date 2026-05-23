@@ -12,7 +12,7 @@
   "Logout": "Déconnexion",
   "Login": "Connexion",
   "Providers": "Fournisseurs",
-  "Usage": "Utilisation",
+  "Usage": "Statistiques",
   "API Key": "Clé API",
   "Connected": "Connecté",
   "Disconnected": "Déconnecté",
@@ -91,9 +91,7 @@
   "Dark": "Sombre",
   "Auto": "Automatique",
   "Endpoint": "Point final",
-  "Providers": "Fournisseurs",
   "Combos": "Combinaisons",
-  "Usage": "Statistiques",
   "Quota Tracker": "Suivi des quotas",
   "MITM": "MITM",
   "CLI Tools": "Outils CLI",
@@ -150,7 +148,6 @@
   "No Proxy": "Pas de proxy",
   "Comma-separated hostnames/domains to bypass the proxy.": "Noms d'hôtes/domaines séparés par des virgules pour contourner le proxy.",
   "Test proxy URL": "Tester l'URL du proxy",
-  "Apply": "Appliquer",
   "Proxy settings applied": "Paramètres de proxy appliqués",
   "Proxy enabled": "Proxy activé",
   "Proxy disabled": "Proxy désactivé",
@@ -178,7 +175,6 @@
   "Use Antigravity IDE & GitHub Copilot → with ANY provider/model from 9Router": "Utilisez Antigravity IDE et GitHub Copilot → avec N'IMPORTE QUEL fournisseur/modèle de 9Router",
   "How it works:": "Comment ça marche :",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Demande Antigravity/Copilot IDE → Redirection DNS vers localhost:443 → Le proxy MITM intercepte → 9Router → réponse à Antigravity/Copilot",
-  "API Key": "Clé API",
   "No API keys — create one in Keys page": "Aucune clé API — créez-en une dans la page Clés",
   "sk_9router (default)": "sk_9router (par défaut)",
   "Server started": "Serveur démarré",
@@ -192,5 +188,7 @@
   "Sudo Password Required": "Mot de passe Sudo requis",
   "Enter your sudo password to start/stop MITM server": "Entrez votre mot de passe sudo pour démarrer/arrêter le serveur MITM",
   "Sudo Password": "Mot de passe sudo",
-  "Confirm": "Confirmer"
+  "Click to add, click again to remove. Changes are saved automatically.": "Cliquez pour ajouter, cliquez à nouveau pour supprimer. Les modifications sont enregistrées automatiquement.",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Avis de risque : Ce fournisseur utilise une session d'abonnement/OAuth non officiellement autorisée pour une utilisation proxy/routeur. Le compte peut être restreint ou banni. Utilisez à vos propres risques.",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM intercepte le trafic HTTPS des outils IDE (Antigravity, GitHub Copilot, Kiro) via une CA locale pour rediriger les requêtes vers vos fournisseurs. Peut violer les CGU → risque de bannissement de compte. Utilisez à vos propres risques."
 }

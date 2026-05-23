@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
-import { SignJWT } from "jose";
 import { cookies } from "next/headers";
+import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { isOidcConfigured } from "@/lib/auth/oidc";
+import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 
-const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
-);
+const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -17,6 +17,15 @@ function isTunnelRequest(request, settings) {
 
 export async function POST(request) {
   try {
+    const ip = getClientIp(request);
+    const lock = checkLock(ip);
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${lock.retryAfter}s. ${RESET_HINT}`, retryAfter: lock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfter) } }
+      );
+    }
+
     const { password } = await request.json();
     const settings = await getSettings();
 
@@ -28,6 +37,10 @@ export async function POST(request) {
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
+    if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
+      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+    }
+
     let isValid = false;
     if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
@@ -38,28 +51,25 @@ export async function POST(request) {
     }
 
     if (isValid) {
-      const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
-      const forwardedProto = request.headers.get("x-forwarded-proto");
-      const isHttpsRequest = forwardedProto === "https";
-      const useSecureCookie = forceSecureCookie || isHttpsRequest;
-
-      const token = await new SignJWT({ authenticated: true })
-        .setProtectedHeader({ alg: "HS256" })
-        .setExpirationTime("24h")
-        .sign(SECRET);
-
+      recordSuccess(ip);
       const cookieStore = await cookies();
-      cookieStore.set("auth_token", token, {
-        httpOnly: true,
-        secure: useSecureCookie,
-        sameSite: "lax",
-        path: "/",
-      });
+      await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    const { remainingBeforeLock } = recordFail(ip);
+    const postLock = checkLock(ip);
+    if (postLock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${postLock.retryAfter}s. ${RESET_HINT}`, retryAfter: postLock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(postLock.retryAfter) } }
+      );
+    }
+    return NextResponse.json(
+      { error: `Invalid password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
+      { status: 401 }
+    );
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

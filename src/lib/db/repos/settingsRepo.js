@@ -1,7 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MITM_ROUTER_BASE = "http://127.0.0.1:20128";
+const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
@@ -17,6 +17,12 @@ const DEFAULT_SETTINGS = {
   comboStrategies: {},
   requireLogin: true,
   tunnelDashboardAccess: true,
+  authMode: "password",
+  oidcIssuerUrl: "",
+  oidcClientId: "",
+  oidcClientSecret: "",
+  oidcScopes: "openid profile email",
+  oidcLoginLabel: "Sign in with OIDC",
   enableObservability: true,
   observabilityMaxRecords: 1000,
   observabilityBatchSize: 20,

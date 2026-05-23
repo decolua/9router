@@ -14,6 +14,30 @@ const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
 // Track per-adapter so reusing same adapter skips re-run, but new adapter (after reset) re-runs.
 const _migratedAdapters = new WeakSet();
 
+// Thrown when row-count assertion fails. Outer transaction rolls back,
+// legacy db.json kept intact, marker not written → next boot retries.
+export class MigrationAborted extends Error {
+  constructor(message, droppedRows) {
+    super(message);
+    this.name = "MigrationAborted";
+    this.droppedRows = droppedRows;
+  }
+}
+
+// Insert rows one-by-one, collect failures, then assert COUNT(*) matches input length.
+function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta) {
+  const dropped = [];
+  for (const row of rows) {
+    try { insertFn(row); }
+    catch (err) { dropped.push({ ...rowMeta(row), reason: err.message }); }
+  }
+  const inserted = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
+  if (inserted !== rows.length) {
+    console.warn(`[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}. Dropped:`, dropped);
+    throw new MigrationAborted(`${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}`, dropped);
+  }
+}
+
 function readJsonSafe(file) {
   if (!fs.existsSync(file)) return null;
   try { return JSON.parse(fs.readFileSync(file, "utf-8")); } catch { return null; }
@@ -91,39 +115,45 @@ function importLegacyMain(adapter, data) {
   if (data.settings) {
     adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
   }
-  for (const c of data.providerConnections || []) {
+
+  importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
     const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
     adapter.run(
       `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const n of data.providerNodes || []) {
+  }, (c) => ({ id: c.id ?? null, provider: c.provider ?? null, name: c.name ?? null }));
+
+  importWithAssertion(adapter, "providerNodes", data.providerNodes || [], (n) => {
     const { id, type, name, createdAt, updatedAt, ...rest } = n;
     adapter.run(
       `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const p of data.proxyPools || []) {
+  }, (n) => ({ id: n.id ?? null, type: n.type ?? null, name: n.name ?? null }));
+
+  importWithAssertion(adapter, "proxyPools", data.proxyPools || [], (p) => {
     const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
     adapter.run(
       `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const k of data.apiKeys || []) {
+  }, (p) => ({ id: p.id ?? null }));
+
+  importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
       `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
     );
-  }
-  for (const c of data.combos || []) {
+  }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
+
+  importWithAssertion(adapter, "combos", data.combos || [], (c) => {
     adapter.run(
       `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
-  }
+  }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
+
   for (const [alias, model] of Object.entries(data.modelAliases || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
   }
@@ -210,14 +240,22 @@ export async function runMigrationOnce(adapter) {
     const backupDir = makeBackupDir("migrate-from-json");
     for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);
 
-    adapter.transaction(() => {
-      importLegacyMain(adapter, legacyMain);
-      importLegacyUsage(adapter, legacyUsage);
-      importLegacyDisabled(adapter, legacyDisabled);
-      importLegacyDetails(adapter, legacyDetails);
-      setMetaSync(adapter, "appVersion", getAppVersion());
-      setMetaSync(adapter, "migratedAt", new Date().toISOString());
-    });
+    try {
+      adapter.transaction(() => {
+        importLegacyMain(adapter, legacyMain);
+        importLegacyUsage(adapter, legacyUsage);
+        importLegacyDisabled(adapter, legacyDisabled);
+        importLegacyDetails(adapter, legacyDetails);
+        setMetaSync(adapter, "appVersion", getAppVersion());
+        setMetaSync(adapter, "migratedAt", new Date().toISOString());
+      });
+    } catch (err) {
+      if (err instanceof MigrationAborted) {
+        console.error(`[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`);
+        return;
+      }
+      throw err;
+    }
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();

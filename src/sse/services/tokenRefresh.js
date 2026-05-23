@@ -93,6 +93,13 @@ function toExpiresAt(expiresIn) {
   return new Date(Date.now() + expiresIn * 1000).toISOString();
 }
 
+function normalizeExpiresAt(expiresAt) {
+  if (!expiresAt) return null;
+  const date = new Date(expiresAt);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toISOString();
+}
+
 /**
  * Providers that carry a real Google project ID.
  * @param {string} provider
@@ -154,6 +161,12 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     if (newCredentials.expiresIn) {
       updates.expiresAt = toExpiresAt(newCredentials.expiresIn);
       updates.expiresIn = newCredentials.expiresIn;
+    } else if (newCredentials.expiresAt) {
+      const expiresAt = normalizeExpiresAt(newCredentials.expiresAt);
+      if (expiresAt) {
+        updates.expiresAt = expiresAt;
+        updates.expiresIn = Math.max(1, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+      }
     }
     if (newCredentials.providerSpecificData) {
       updates.providerSpecificData = {
@@ -224,7 +237,7 @@ export async function checkAndRefreshToken(provider, credentials) {
             : creds.providerSpecificData,
           expiresAt:    newCreds.expiresIn
             ? toExpiresAt(newCreds.expiresIn)
-            : creds.expiresAt,
+            : normalizeExpiresAt(newCreds.expiresAt) || creds.expiresAt,
         };
 
         // Non-blocking: refresh projectId with the new access token
