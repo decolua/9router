@@ -19,6 +19,8 @@ test("instrumentation.js exports register function", async () => {
   assert.ok(src.includes("export async function register()"), "must export register()");
   assert.ok(src.includes('process.env.NEXT_RUNTIME !== "nodejs"'), "must guard non-nodejs runtime");
   assert.ok(src.includes("initializeApp"), "must call initializeApp");
+  assert.ok(src.includes("__9routerBootstrapInvoked"), "must have singleton guard");
+  assert.ok(src.includes('[bootstrap]'), "must have observability logs");
 });
 
 test("instrumentation.js skips non-nodejs runtime", async () => {
