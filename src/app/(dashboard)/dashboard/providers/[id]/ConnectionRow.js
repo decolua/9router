@@ -30,8 +30,23 @@ function formatVietnameseExpiresAt(value) {
   return `${byType.hour}:${byType.minute}:${byType.second} ${byType.day}-${byType.month}-${byType.year}`;
 }
 
+function formatRemainingExpiresAt(value) {
+  const timestamp = parseValidExpiresAt(value);
+  if (!timestamp) return null;
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null }) {
+  const diffMs = timestamp - Date.now();
+  if (diffMs <= 0) return "0m";
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const totalHours = Math.floor(diffMs / 3600000);
+  const totalDays = Math.floor(diffMs / 86400000);
+
+  if (totalDays >= 1) return `${totalDays}d`;
+  if (totalHours >= 1) return `${totalHours}h`;
+  return `${Math.max(1, totalMinutes)}m`;
+}
+
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, disablePriorityControls = false }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -101,6 +116,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
     : (connection.name || connection.email || connection.displayName || "API Key");
   const formattedExpiresAt = formatVietnameseExpiresAt(connection.expiresAt);
+  const remainingExpiresAt = formatRemainingExpiresAt(connection.expiresAt);
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -165,15 +181,15 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         <div className="flex shrink-0 flex-col">
           <button
             onClick={onMoveUp}
-            disabled={isFirst}
-            className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            disabled={disablePriorityControls || isFirst}
+            className={`p-0.5 rounded ${disablePriorityControls || isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
             <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
           </button>
           <button
             onClick={onMoveDown}
-            disabled={isLast}
-            className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
+            disabled={disablePriorityControls || isLast}
+            className={`p-0.5 rounded ${disablePriorityControls || isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
             <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
           </button>
@@ -186,6 +202,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           {formattedExpiresAt && (
             <div className="mt-1 text-xs text-text-muted">
               Expire at: {formattedExpiresAt}
+              {remainingExpiresAt ? ` (${remainingExpiresAt})` : ""}
             </div>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
@@ -324,4 +341,5 @@ ConnectionRow.propTypes = {
     state: PropTypes.string,
     error: PropTypes.string,
   }),
+  disablePriorityControls: PropTypes.bool,
 };

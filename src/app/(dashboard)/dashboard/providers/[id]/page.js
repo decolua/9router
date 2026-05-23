@@ -19,6 +19,28 @@ import AddCustomModelModal from "./AddCustomModelModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
+function parseValidExpiresAt(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function sortConnectionsByExpiresAt(connections, direction) {
+  if (!direction) return connections;
+
+  return [...connections].sort((a, b) => {
+    const expiresAtA = parseValidExpiresAt(a.expiresAt);
+    const expiresAtB = parseValidExpiresAt(b.expiresAt);
+    const hasExpiryA = expiresAtA !== null;
+    const hasExpiryB = expiresAtB !== null;
+
+    if (hasExpiryA !== hasExpiryB) return hasExpiryA ? -1 : 1;
+    if (!hasExpiryA && !hasExpiryB) return 0;
+
+    return direction === "asc" ? expiresAtA - expiresAtB : expiresAtB - expiresAtA;
+  });
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -51,6 +73,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [connectionsSortDirection, setConnectionsSortDirection] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
@@ -276,6 +299,17 @@ export default function ProviderDetailPage() {
       setLoading(false);
     }
   }, [providerId, isCompatible]);
+
+  const displayedConnections = sortConnectionsByExpiresAt(connections, connectionsSortDirection);
+  const isConnectionsSortActive = connectionsSortDirection !== null;
+
+  const handleToggleConnectionsSort = () => {
+    setConnectionsSortDirection((current) => {
+      if (current === null) return "asc";
+      if (current === "asc") return "desc";
+      return null;
+    });
+  };
 
   const handleUpdateNode = async (formData) => {
     try {
@@ -714,47 +748,51 @@ export default function ProviderDetailPage() {
 
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
-          <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex-1 min-w-0">
-              <ConnectionRow
-                connection={conn}
-                proxyPools={proxyPools}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
-                onMoveUp={() => handleSwapPriority(index, index - 1)}
-                onMoveDown={() => handleSwapPriority(index, index + 1)}
-                onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
-                onUpdateProxy={async (proxyPoolId) => {
-                  try {
-                    const res = await fetch(`/api/providers/${conn.id}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
-                    });
-                    if (res.ok) {
-                      setConnections(prev => prev.map(c =>
-                        c.id === conn.id
-                          ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
-                          : c
-                      ));
+      {displayedConnections
+        .map((conn, index) => {
+          const originalIndex = connections.findIndex((item) => item.id === conn.id);
+          return (
+            <div key={conn.id} className="flex min-w-0 items-stretch">
+              <div className="flex-1 min-w-0">
+                <ConnectionRow
+                  connection={conn}
+                  proxyPools={proxyPools}
+                  isOAuth={isOAuth}
+                  isFirst={index === 0}
+                  isLast={index === displayedConnections.length - 1}
+                  onMoveUp={() => handleSwapPriority(originalIndex, originalIndex - 1)}
+                  onMoveDown={() => handleSwapPriority(originalIndex, originalIndex + 1)}
+                  onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                  onUpdateProxy={async (proxyPoolId) => {
+                    try {
+                      const res = await fetch(`/api/providers/${conn.id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ proxyPoolId: proxyPoolId || null }),
+                      });
+                      if (res.ok) {
+                        setConnections(prev => prev.map(c =>
+                          c.id === conn.id
+                            ? { ...c, providerSpecificData: { ...c.providerSpecificData, proxyPoolId: proxyPoolId || null } }
+                            : c
+                        ));
+                      }
+                    } catch (error) {
+                      console.log("Error updating proxy:", error);
                     }
-                  } catch (error) {
-                    console.log("Error updating proxy:", error);
-                  }
-                }}
-                onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-                oneByOneStatus={oneByOneResults[conn.id] || null}
-              />
+                  }}
+                  onEdit={() => {
+                    setSelectedConnection(conn);
+                    setShowEditModal(true);
+                  }}
+                  onDelete={() => handleDelete(conn.id)}
+                  oneByOneStatus={oneByOneResults[conn.id] || null}
+                  disablePriorityControls={isConnectionsSortActive}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
     </div>
   );
 
@@ -1158,6 +1196,20 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+              {connections.length > 0 && (
+                <Button
+                  size="sm"
+                  variant={isConnectionsSortActive ? "secondary" : "ghost"}
+                  icon="schedule"
+                  onClick={handleToggleConnectionsSort}
+                >
+                  {connectionsSortDirection === "asc"
+                    ? "Expire at ↑"
+                    : connectionsSortDirection === "desc"
+                      ? "Expire at ↓"
+                      : "Sort Expire at"}
+                </Button>
+              )}
               {connections.length > 0 && proxyPools.length > 0 && (
                 <Button
                   size="sm"
