@@ -79,3 +79,5 @@ plans/
 CLAUDE.md
 .repomixignore
 .codegraph/
+.agent/
+.agents/
