@@ -1568,60 +1568,80 @@ export default function ProviderDetailPage() {
         <NoAuthProxyCard providerId={providerId} />
       ) : (
         <Card>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Connections</h2>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              {connections.length > 0 && providerId === "codex" && (
-                <>
-                  <label className="flex items-center gap-2 text-xs text-text-muted">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAllConnections}
-                      className="rounded border-border"
-                    />
-                    Select all ({selectionSummary})
-                  </label>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    icon="toggle_on"
-                    onClick={() => setSelectedConnectionsAutoRefresh(true)}
-                    disabled={selectedConnectionIds.length === 0}
-                  >
-                    Bật auto refresh
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon="toggle_off"
-                    onClick={() => setSelectedConnectionsAutoRefresh(false)}
-                    disabled={selectedConnectionIds.length === 0}
-                  >
-                    Tắt auto refresh
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant={manualRefreshing ? "secondary" : "ghost"}
-                    icon="refresh"
-                    onClick={handleManualRefreshSelected}
-                    disabled={
-                      manualRefreshing || selectedConnectionIds.length === 0
-                    }
-                  >
-                    {manualRefreshing
-                      ? "Refreshing selected..."
-                      : `Refresh selected now (${selectedConnectionIds.length})`}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon="content_copy"
-                    onClick={copySelectedEmails}
-                    disabled={selectedConnectionIds.length === 0}
-                  >
-                    Copy email ({selectedEmailSummary})
-                  </Button>
+          <div className="mb-4 flex flex-col gap-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <h2 className="text-lg font-semibold">Connections</h2>
+              <div className="flex min-w-0 flex-1 flex-col gap-3 lg:items-end">
+                {connections.length > 0 && providerId === "codex" && (
+                  <div className="flex w-full flex-wrap items-center gap-2 lg:justify-end">
+                    <label className="flex items-center gap-2 text-xs text-text-muted">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        onChange={toggleSelectAllConnections}
+                        className="rounded border-border"
+                      />
+                      Select all ({selectionSummary})
+                    </label>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon="toggle_on"
+                      onClick={() => setSelectedConnectionsAutoRefresh(true)}
+                      disabled={selectedConnectionIds.length === 0}
+                    >
+                      Bật auto refresh
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="toggle_off"
+                      onClick={() => setSelectedConnectionsAutoRefresh(false)}
+                      disabled={selectedConnectionIds.length === 0}
+                    >
+                      Tắt auto refresh
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant={manualRefreshing ? "secondary" : "ghost"}
+                      icon="refresh"
+                      onClick={handleManualRefreshSelected}
+                      disabled={
+                        manualRefreshing || selectedConnectionIds.length === 0
+                      }
+                    >
+                      {manualRefreshing
+                        ? "Refreshing selected..."
+                        : `Refresh selected now (${selectedConnectionIds.length})`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="content_copy"
+                      onClick={copySelectedEmails}
+                      disabled={selectedConnectionIds.length === 0}
+                    >
+                      Copy email ({selectedEmailSummary})
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="clear_all"
+                      onClick={() => {
+                        clearSelection();
+                        clearManualRefreshResults();
+                      }}
+                      disabled={
+                        selectedConnectionIds.length === 0 &&
+                        !manualRefreshSummary
+                      }
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                )}
+
+                <div className="flex w-full flex-wrap items-center gap-2 lg:justify-end">
                   <Button
                     size="sm"
                     variant={isConnectionsSortActive ? "secondary" : "ghost"}
@@ -1634,116 +1654,86 @@ export default function ProviderDetailPage() {
                         ? "Expire at ↓"
                         : "Sort Expire at"}
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon="clear_all"
-                    onClick={() => {
-                      clearSelection();
-                      clearManualRefreshResults();
-                    }}
-                    disabled={
-                      selectedConnectionIds.length === 0 &&
-                      !manualRefreshSummary
-                    }
-                  >
-                    Clear
-                  </Button>
-                  <span className="text-xs text-text-muted">
-                    {autoRefreshSummary}
-                  </span>
-                  {selectedConnections.length > 0 && (
-                    <span className="text-xs text-text-muted">
-                      {selectedAutoRefreshSummary}
-                    </span>
+
+                  {connections.length > 0 && providerId === "codex" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon="sync"
+                      onClick={handleRunOneByOneTest}
+                      disabled={oneByOneRunning}
+                    >
+                      {oneByOneRunning
+                        ? "Testing Connection One-by-One..."
+                        : "Test Connection One-by-One"}
+                    </Button>
                   )}
-                </>
-              )}
+                  {providerId === "codex" && oneByOneRunning && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="stop"
+                      onClick={handleStopOneByOneTest}
+                      disabled={oneByOneStopping}
+                    >
+                      {oneByOneStopping ? "Stopping..." : "Stop"}
+                    </Button>
+                  )}
 
-              {connections.length > 0 && providerId === "codex" && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="sync"
-                  onClick={handleRunOneByOneTest}
-                  disabled={oneByOneRunning}
-                >
-                  {oneByOneRunning
-                    ? "Testing Connection One-by-One..."
-                    : "Test Connection One-by-One"}
-                </Button>
-              )}
-              {providerId === "codex" && oneByOneRunning && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="stop"
-                  onClick={handleStopOneByOneTest}
-                  disabled={oneByOneStopping}
-                >
-                  {oneByOneStopping ? "Stopping..." : "Stop"}
-                </Button>
-              )}
+                  {connections.length > 0 && proxyPools.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon="lan"
+                      onClick={() => setShowBulkProxyModal(true)}
+                    >
+                      Apply Proxy (all)
+                    </Button>
+                  )}
 
-              {providerId === "codex" && manualRefreshSummary && (
-                <span className="text-xs text-text-muted">
-                  Refresh: {manualRefreshSummary.passed}/
-                  {manualRefreshSummary.total} success
-                </span>
-              )}
-
-              {connections.length > 0 && proxyPools.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon="lan"
-                  onClick={() => setShowBulkProxyModal(true)}
-                >
-                  Apply Proxy (all)
-                </Button>
-              )}
-
-              {/* Thinking config */}
-              {/* {thinkingConfig && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thinking</span>
-                  <select
-                    value={thinkingMode}
-                    onChange={(e) => handleThinkingModeChange(e.target.value)}
-                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  >
-                    {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-              )} */}
-              {/* Round Robin toggle */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-text-muted font-medium">
-                  Round Robin
-                </span>
-                <Toggle
-                  checked={providerStrategy === "round-robin"}
-                  onChange={handleRoundRobinToggle}
-                />
-                {providerStrategy === "round-robin" && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-text-muted">Sticky:</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={providerStickyLimit}
-                      onChange={(e) => handleStickyLimitChange(e.target.value)}
-                      placeholder="1"
-                      className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-text-muted font-medium">
+                      Round Robin
+                    </span>
+                    <Toggle
+                      checked={providerStrategy === "round-robin"}
+                      onChange={handleRoundRobinToggle}
                     />
+                    {providerStrategy === "round-robin" && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-text-muted">Sticky:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={providerStickyLimit}
+                          onChange={(e) => handleStickyLimitChange(e.target.value)}
+                          placeholder="1"
+                          className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {providerId === "codex" && (
+                  <div className="flex w-full flex-wrap items-center gap-3 text-xs text-text-muted lg:justify-end">
+                    <span>{autoRefreshSummary}</span>
+                    {selectedConnections.length > 0 && (
+                      <span>{selectedAutoRefreshSummary}</span>
+                    )}
+                    {manualRefreshSummary && (
+                      <span>
+                        Refresh: {manualRefreshSummary.passed}/
+                        {manualRefreshSummary.total} success
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           </div>
 
+          {/* Thinking config intentionally omitted here */}
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
