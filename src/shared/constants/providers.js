@@ -268,6 +268,7 @@ export const USAGE_SUPPORTED_PROVIDERS = [
   "claude",
   "antigravity",
   "kiro",
+  "qoder",
   "github",
   "codex",
   "kimi-coding",
