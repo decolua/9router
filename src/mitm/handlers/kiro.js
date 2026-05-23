@@ -1,11 +1,13 @@
 const { err } = require("../logger");
+const { IS_DEV } = require("../config");
 const { fetchRouter } = require("./base");
 const fs = require("fs");
 const path = require("path");
 
-// Debug trace log — written to data/logs/mitm/kiro-debug.log
+// Debug trace log — written to data/logs/mitm/kiro-debug.log (dev only)
 const DEBUG_LOG = path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log");
 function dbg(msg) {
+  if (!IS_DEV) return;
   try {
     fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
   } catch {}

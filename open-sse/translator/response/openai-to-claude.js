@@ -4,6 +4,23 @@ import { FORMATS } from "../formats.js";
 // Prefix for Claude OAuth tool names (must match request translator)
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
+// Strip optional empty-string tool arguments that some providers emit.
+// Claude Code's Read tool rejects pages: "" but accepts pages being absent.
+function sanitizeToolArguments(toolName, argsJson) {
+  try {
+    const args = JSON.parse(argsJson);
+    if (typeof args === "object" && args !== null) {
+      if (toolName === "Read" && args.pages === "") {
+        delete args.pages;
+      }
+      return JSON.stringify(args);
+    }
+  } catch {
+    // Not valid JSON yet (streaming chunk) — return as-is
+  }
+  return argsJson;
+}
+
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -170,10 +187,11 @@ export function openaiToClaudeResponse(chunk, state) {
       if (tc.function?.arguments) {
         const toolInfo = state.toolCalls.get(idx);
         if (toolInfo) {
+          const sanitized = sanitizeToolArguments(toolInfo.name, tc.function.arguments);
           results.push({
             type: "content_block_delta",
             index: toolInfo.blockIndex,
-            delta: { type: "input_json_delta", partial_json: tc.function.arguments }
+            delta: { type: "input_json_delta", partial_json: sanitized }
           });
         }
       }

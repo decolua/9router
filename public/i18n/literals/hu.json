@@ -188,5 +188,7 @@
   "Sudo Password Required": "Sudo jelszó szükséges",
   "Enter your sudo password to start/stop MITM server": "Adja meg sudo jelszavát a MITM szerver indításához/leállításához",
   "Sudo Password": "Sudo jelszó",
-  "Click to add, click again to remove. Changes are saved automatically.": "Kattintson a hozzáadáshoz, kattintson újra az eltávolításhoz. A változtatások automatikusan mentésre kerülnek."
+  "Click to add, click again to remove. Changes are saved automatically.": "Kattintson a hozzáadáshoz, kattintson újra az eltávolításhoz. A változtatások automatikusan mentésre kerülnek.",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Kockázati figyelmeztetés: Ez a szolgáltató olyan előfizetést/OAuth munkamenetet használ, amely hivatalosan nincs proxy/router használatra engedélyezve. A fiók korlátozható vagy letiltható. Saját felelősségre használja.",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ A MITM elfogja az IDE eszközök (Antigravity, GitHub Copilot, Kiro) HTTPS forgalmát helyi CA-n keresztül, hogy átirányítsa a kéréseket a szolgáltatóidhoz. Megsértheti a ToS-t → fiók letiltási kockázat. Saját felelősségre használja."
 }

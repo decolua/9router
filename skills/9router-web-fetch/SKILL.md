@@ -23,19 +23,45 @@ IDs end in `/fetch` (e.g. `firecrawl/fetch`, `jina/fetch`). `fetch-combo` chains
 
 | Field | Required | Notes |
 |---|---|---|
-| `model` (or `provider`) | yes | from `/v1/models/web` (`firecrawl/fetch` or `firecrawl`) |
+| `model` (or `provider`) | yes | from `/v1/models/web` (e.g. `firecrawl` or `jina-reader`) |
 | `url` | yes | URL to extract |
 | `format` | no | `markdown` (default) / `text` / `html` |
 | `max_characters` | no | truncate output |
 
 ## Examples
 
+### Jina Reader
 ```bash
 curl -X POST $NINEROUTER_URL/v1/web/fetch \
   -H "Authorization: Bearer $NINEROUTER_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"jina/fetch","url":"https://9router.com","format":"markdown"}'
+  -d '{"model":"jina-reader","url":"https://9router.com","format":"markdown"}'
 ```
+
+### Exa
+```bash
+curl -X POST $NINEROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"exa","url":"https://example.com","format":"markdown","max_characters":0}'
+```
+
+### Firecrawl
+```bash
+curl -X POST $NINEROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"firecrawl","url":"https://example.com","format":"markdown","max_characters":0}'
+```
+
+### Tavily
+```bash
+curl -X POST $NINEROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"tavily","url":"https://example.com","format":"markdown","max_characters":0}'
+```
+
 
 JS:
 

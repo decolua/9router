@@ -188,5 +188,7 @@
   "Sudo Password Required": "Kata Sandi Sudo Diperlukan",
   "Enter your sudo password to start/stop MITM server": "Masukkan kata sandi sudo Anda untuk memulai/menghentikan server MITM",
   "Sudo Password": "Kata Sandi Sudo",
-  "Click to add, click again to remove. Changes are saved automatically.": "Klik untuk menambah, klik lagi untuk menghapus. Perubahan disimpan secara otomatis."
+  "Click to add, click again to remove. Changes are saved automatically.": "Klik untuk menambah, klik lagi untuk menghapus. Perubahan disimpan secara otomatis.",
+  "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Pemberitahuan Risiko: Penyedia ini menggunakan sesi langganan/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router. Akun mungkin dibatasi atau diblokir. Gunakan dengan risiko Anda sendiri.",
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM mencegat lalu lintas HTTPS alat IDE (Antigravity, GitHub Copilot, Kiro) melalui CA lokal untuk mengalihkan permintaan ke penyedia Anda. Mungkin melanggar ToS → risiko ban akun. Gunakan dengan risiko Anda sendiri."
 }

@@ -37,7 +37,7 @@ export default function Pagination({
   return (
     <div
       className={cn(
-        "flex flex-col sm:flex-row items-center justify-between gap-4 py-4",
+        "flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2",
         className
       )}
     >
@@ -50,7 +50,7 @@ export default function Pagination({
         </div>
       )}
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
         {/* Page size selector */}
         {onPageSizeChange && (
           <div className="flex items-center gap-2">
@@ -92,12 +92,12 @@ export default function Pagination({
                   variant="ghost"
                   size="sm"
                   onClick={() => onPageChange(1)}
-                  className="w-9 px-0"
+                  className="w-9 px-0 hidden sm:inline-flex"
                 >
                   1
                 </Button>
                 {pageNumbers[0] > 2 && (
-                  <span className="text-text-muted px-1">...</span>
+                  <span className="text-text-muted px-1 hidden sm:inline">...</span>
                 )}
               </>
             )}
@@ -108,7 +108,10 @@ export default function Pagination({
                 variant={currentPage === page ? "primary" : "ghost"}
                 size="sm"
                 onClick={() => onPageChange(page)}
-                className="w-9 px-0"
+                className={cn(
+                  "w-9 px-0",
+                  currentPage === page ? "inline-flex" : "hidden sm:inline-flex"
+                )}
               >
                 {page}
               </Button>
@@ -117,13 +120,13 @@ export default function Pagination({
             {pageNumbers[pageNumbers.length - 1] < totalPages && (
               <>
                 {pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
-                  <span className="text-text-muted px-1">...</span>
+                  <span className="text-text-muted px-1 hidden sm:inline">...</span>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => onPageChange(totalPages)}
-                  className="w-9 px-0"
+                  className="w-9 px-0 hidden sm:inline-flex"
                 >
                   {totalPages}
                 </Button>

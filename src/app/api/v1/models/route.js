@@ -7,6 +7,21 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { resolveKiroModels } from "open-sse/services/kiroModels.js";
+
+// Per-provider live model resolvers. Each receives a connection record and
+// returns { models: [{ id, name? }, ...] } | null on failure.
+// Adding a provider here makes /v1/models prefer the live catalog for it.
+const LIVE_MODEL_RESOLVERS = {
+  kiro: async (conn) => {
+    const result = await resolveKiroModels({
+      accessToken: conn.accessToken,
+      refreshToken: conn.refreshToken,
+      providerSpecificData: conn.providerSpecificData || {}
+    }, { log: console });
+    return result?.models?.length ? { models: result.models } : null;
+  }
+};
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -252,6 +267,21 @@ export async function buildModelsList(kindFilter) {
 
       if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
         rawModelIds = await fetchCompatibleModelIds(conn);
+      }
+
+      // Config-driven live catalog override (e.g. Kiro returns dynamic
+      // -thinking/-agentic variants per account). On failure, fall back to
+      // whatever rawModelIds already holds.
+      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      if (liveResolver && !hasExplicitEnabledModels) {
+        try {
+          const live = await liveResolver(conn);
+          if (live?.models?.length) {
+            rawModelIds = live.models.map((m) => m.id);
+          }
+        } catch (err) {
+          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+        }
       }
 
       const modelIds = rawModelIds
