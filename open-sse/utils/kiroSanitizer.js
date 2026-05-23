@@ -23,16 +23,20 @@ function stripKeys(obj) {
 }
 
 export function sanitizeKiroTools(tools) {
-  if (!tools || !Array.isArray(tools)) return tools;
+  if (!tools || !Array.isArray(tools)) return { tools, nameMap: new Map() };
 
-  return tools.map(tool => {
+  const nameMap = new Map();
+
+  const sanitized = tools.map(tool => {
     const spec = tool.toolSpecification;
     if (!spec) return tool;
 
-    let name = spec.name;
+    const originalName = spec.name;
+    let name = originalName;
     if (name && name.length > 64) {
       const hash = createHash("sha256").update(name).digest("hex").slice(0, 7);
       name = name.slice(0, 56) + "_" + hash;
+      nameMap.set(name, originalName);
     }
 
     const schema = spec.inputSchema?.json;
@@ -57,4 +61,6 @@ export function sanitizeKiroTools(tools) {
       toolSpecification: { ...spec, name }
     };
   });
+
+  return { tools: sanitized, nameMap };
 }
