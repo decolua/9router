@@ -771,7 +771,7 @@ export default function ProviderDetailPage() {
   const persistAutoRefreshSelection = async (connectionId, enabled) => {
     try {
       const target = connections.find((conn) => conn.id === connectionId);
-      if (!target) return;
+      if (!target) return false;
 
       const providerSpecificData = {
         ...(target.providerSpecificData || {}),
@@ -784,83 +784,81 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ providerSpecificData }),
       });
 
-      if (res.ok) {
-        setConnections((prev) =>
-          prev.map((conn) =>
-            conn.id === connectionId
-              ? { ...conn, providerSpecificData }
-              : conn,
-          ),
-        );
-      }
+      if (!res.ok) return false;
+
+      setConnections((prev) =>
+        prev.map((conn) =>
+          conn.id === connectionId ? { ...conn, providerSpecificData } : conn,
+        ),
+      );
+      return true;
     } catch (error) {
       console.log("Error updating auto refresh flag:", error);
+      return false;
+    }
+  };
+
+  const setSelectedConnectionsAutoRefresh = async (enabled) => {
+    if (selectedConnectionIds.length === 0) return;
+    let failed = 0;
+
+    for (const connectionId of selectedConnectionIds) {
+      const ok = await persistAutoRefreshSelection(connectionId, enabled);
+      if (!ok) failed += 1;
+    }
+
+    if (failed > 0) {
+      alert(`Updated with ${failed} failed request(s).`);
+    }
+  };
+
+  const copySelectedEmails = async () => {
+    const emails = selectedConnections
+      .map((conn) => conn.email || conn.name)
+      .filter((value) => typeof value === "string" && value.includes("@"));
+
+    if (emails.length === 0) {
+      alert("No selected emails to copy.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(emails.join("\n"));
+    } catch (error) {
+      console.log("Error copying selected emails:", error);
+      alert("Failed to copy selected emails.");
     }
   };
 
   const toggleSelectConnection = (connectionId) => {
-    setSelectedConnectionIds((prev) => {
-      const enabled = !prev.includes(connectionId);
-      void persistAutoRefreshSelection(connectionId, enabled);
-      return enabled
-        ? [...prev, connectionId]
-        : prev.filter((id) => id !== connectionId);
-    });
+    setSelectedConnectionIds((prev) =>
+      prev.includes(connectionId)
+        ? prev.filter((id) => id !== connectionId)
+        : [...prev, connectionId],
+    );
   };
 
-  const handleManualRefreshSelected = async () => {
-    if (selectedConnectionIds.length === 0 || manualRefreshing) return;
+  const selectedAutoRefreshCount = selectedConnections.filter(
+    (conn) => conn.providerSpecificData?.autoRefreshEnabled === true,
+  ).length;
 
-    setManualRefreshing(true);
-    setManualRefreshSummary(null);
-    try {
-      const res = await fetch("/api/providers/codex/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectionIds: selectedConnectionIds }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || "Failed to refresh selected Codex accounts");
-        return;
-      }
+  const selectedEmailCount = selectedConnections.filter(
+    (conn) =>
+      typeof (conn.email || conn.name) === "string" &&
+      (conn.email || conn.name).includes("@"),
+  ).length;
 
-      const nextResults = Object.fromEntries(
-        (data.results || []).map((result) => [
-          result.connectionId,
-          result.ok
-            ? { state: "success", error: null }
-            : { state: "failed", error: result.error || "failed" },
-        ]),
-      );
-      setManualRefreshResults(nextResults);
-      setManualRefreshSummary(data.summary || null);
-      await fetchConnections();
-    } catch (error) {
-      console.log("Error refreshing selected Codex accounts:", error);
-      alert("Failed to refresh selected Codex accounts");
-    } finally {
-      setManualRefreshing(false);
-    }
-  };
-
-  const clearManualRefreshResults = () => {
-    setManualRefreshResults({});
-    setManualRefreshSummary(null);
-  };
+  const selectedAutoRefreshSummary =
+    selectedConnections.length === 0
+      ? ""
+      : `${selectedAutoRefreshCount}/${selectedConnections.length} selected enabled`;
 
   const toggleSelectAllConnections = () => {
     if (allSelected) {
       setSelectedConnectionIds([]);
-      void Promise.all(
-        connections.map((conn) => persistAutoRefreshSelection(conn.id, false)),
-      );
       return;
     }
     setSelectedConnectionIds(connections.map((conn) => conn.id));
-    void Promise.all(
-      connections.map((conn) => persistAutoRefreshSelection(conn.id, true)),
-    );
   };
 
   const clearSelection = () => {
@@ -868,17 +866,21 @@ export default function ProviderDetailPage() {
     setBulkProxyPoolId("__none__");
   };
 
-  const selectedAutoRefreshCount = connections.filter(
+  useEffect(() => {
+    setSelectedConnectionIds((prev) =>
+      prev.filter((id) => connections.some((conn) => conn.id === id)),
+    );
+  }, [connections]);
+
+  const autoRefreshEnabledCount = connections.filter(
     (conn) => conn.providerSpecificData?.autoRefreshEnabled === true,
   ).length;
 
-  useEffect(() => {
-    setSelectedConnectionIds(
-      connections
-        .filter((conn) => conn.providerSpecificData?.autoRefreshEnabled === true)
-        .map((conn) => conn.id),
-    );
-  }, [connections]);
+  const selectionSummary = `${selectedConnectionIds.length}/${connections.length} selected`;
+
+  const autoRefreshSummary = `${autoRefreshEnabledCount}/${connections.length} auto refresh enabled`;
+
+  const selectedEmailSummary = `${selectedEmailCount} email${selectedEmailCount === 1 ? "" : "s"}`;
 
   const selectedProxySummary = (() => {
     if (selectedConnections.length === 0) return "";
@@ -965,6 +967,47 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) =>
     selectedConnectionIds.includes(connectionId);
 
+  const handleManualRefreshSelected = async () => {
+    if (selectedConnectionIds.length === 0 || manualRefreshing) return;
+
+    setManualRefreshing(true);
+    setManualRefreshSummary(null);
+    try {
+      const res = await fetch("/api/providers/codex/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionIds: selectedConnectionIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to refresh selected Codex accounts");
+        return;
+      }
+
+      const nextResults = Object.fromEntries(
+        (data.results || []).map((result) => [
+          result.connectionId,
+          result.ok
+            ? { state: "success", error: null }
+            : { state: "failed", error: result.error || "failed" },
+        ]),
+      );
+      setManualRefreshResults(nextResults);
+      setManualRefreshSummary(data.summary || null);
+      await fetchConnections();
+    } catch (error) {
+      console.log("Error refreshing selected Codex accounts:", error);
+      alert("Failed to refresh selected Codex accounts");
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
+
+  const clearManualRefreshResults = () => {
+    setManualRefreshResults({});
+    setManualRefreshSummary(null);
+  };
+
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {displayedConnections.map((conn, index) => {
@@ -1025,7 +1068,12 @@ export default function ProviderDetailPage() {
                 }}
                 onDelete={() => handleDelete(conn.id)}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
-                manualRefreshStatus={manualRefreshResults[conn.id] || (manualRefreshing && isSelected(conn.id) ? { state: "refreshing" } : null)}
+                manualRefreshStatus={
+                  manualRefreshResults[conn.id] ||
+                  (manualRefreshing && isSelected(conn.id)
+                    ? { state: "refreshing" }
+                    : null)
+                }
                 disablePriorityControls={isConnectionsSortActive}
               />
             </div>
@@ -1523,7 +1571,7 @@ export default function ProviderDetailPage() {
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Connections</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              {connections.length > 0 && (
+              {connections.length > 0 && providerId === "codex" && (
                 <>
                   <label className="flex items-center gap-2 text-xs text-text-muted">
                     <input
@@ -1532,18 +1580,47 @@ export default function ProviderDetailPage() {
                       onChange={toggleSelectAllConnections}
                       className="rounded border-border"
                     />
-                    Select all auto refresh ({selectedAutoRefreshCount}/{connections.length})
+                    Select all ({selectionSummary})
                   </label>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="toggle_on"
+                    onClick={() => setSelectedConnectionsAutoRefresh(true)}
+                    disabled={selectedConnectionIds.length === 0}
+                  >
+                    Bật auto refresh
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="toggle_off"
+                    onClick={() => setSelectedConnectionsAutoRefresh(false)}
+                    disabled={selectedConnectionIds.length === 0}
+                  >
+                    Tắt auto refresh
+                  </Button>
                   <Button
                     size="sm"
                     variant={manualRefreshing ? "secondary" : "ghost"}
                     icon="refresh"
                     onClick={handleManualRefreshSelected}
-                    disabled={manualRefreshing || selectedConnectionIds.length === 0}
+                    disabled={
+                      manualRefreshing || selectedConnectionIds.length === 0
+                    }
                   >
                     {manualRefreshing
                       ? "Refreshing selected..."
                       : `Refresh selected now (${selectedConnectionIds.length})`}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="content_copy"
+                    onClick={copySelectedEmails}
+                    disabled={selectedConnectionIds.length === 0}
+                  >
+                    Copy email ({selectedEmailSummary})
                   </Button>
                   <Button
                     size="sm"
@@ -1557,25 +1634,33 @@ export default function ProviderDetailPage() {
                         ? "Expire at ↓"
                         : "Sort Expire at"}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon="clear_all"
+                    onClick={() => {
+                      clearSelection();
+                      clearManualRefreshResults();
+                    }}
+                    disabled={
+                      selectedConnectionIds.length === 0 &&
+                      !manualRefreshSummary
+                    }
+                  >
+                    Clear
+                  </Button>
+                  <span className="text-xs text-text-muted">
+                    {autoRefreshSummary}
+                  </span>
+                  {selectedConnections.length > 0 && (
+                    <span className="text-xs text-text-muted">
+                      {selectedAutoRefreshSummary}
+                    </span>
+                  )}
                 </>
               )}
 
-              {connections.length > 0 && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon="clear_all"
-                  onClick={() => {
-                    clearSelection();
-                    clearManualRefreshResults();
-                  }}
-                  disabled={selectedConnectionIds.length === 0 && !manualRefreshSummary}
-                >
-                  Clear
-                </Button>
-              )}
-
-              {connections.length > 0 && (
+              {connections.length > 0 && providerId === "codex" && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -1588,7 +1673,7 @@ export default function ProviderDetailPage() {
                     : "Test Connection One-by-One"}
                 </Button>
               )}
-              {oneByOneRunning && (
+              {providerId === "codex" && oneByOneRunning && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1600,9 +1685,10 @@ export default function ProviderDetailPage() {
                 </Button>
               )}
 
-              {manualRefreshSummary && (
+              {providerId === "codex" && manualRefreshSummary && (
                 <span className="text-xs text-text-muted">
-                  Refresh: {manualRefreshSummary.passed}/{manualRefreshSummary.total} success
+                  Refresh: {manualRefreshSummary.passed}/
+                  {manualRefreshSummary.total} success
                 </span>
               )}
 
@@ -1613,7 +1699,7 @@ export default function ProviderDetailPage() {
                   icon="lan"
                   onClick={() => setShowBulkProxyModal(true)}
                 >
-                  Apply Proxy
+                  Apply Proxy (all)
                 </Button>
               )}
 

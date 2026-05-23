@@ -202,7 +202,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 checked={isSelected}
                 onChange={(e) => onSelectChange?.(e.target.checked)}
                 className="rounded border-border"
-                title="Enable auto refresh and include in manual refresh selection"
+                title="Select this account for batch actions"
               />
             </label>
           )}
