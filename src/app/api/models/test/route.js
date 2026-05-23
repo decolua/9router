@@ -57,9 +57,9 @@ export async function POST(request) {
       headers,
       body: JSON.stringify({
         model,
-        max_tokens: 1,
+        max_tokens: 10,
         stream: false,
-        messages: [{ role: "user", content: "hi" }],
+        messages: [{ role: "user", content: "ping" }],
       }),
       signal: AbortSignal.timeout(15000),
     });
@@ -68,7 +68,9 @@ export async function POST(request) {
     const rawText = await res.text().catch(() => "");
     let parsed = null;
     try {
-      parsed = rawText ? JSON.parse(rawText) : null;
+      // Strip SSE markers (data: [DONE]) if present
+      const cleanText = rawText.replace(/\ndata: \[DONE\]\s*$/, "").trim();
+      parsed = cleanText ? JSON.parse(cleanText) : null;
     } catch {}
 
     if (!res.ok) {
@@ -113,8 +115,16 @@ export async function POST(request) {
       });
     }
 
-    return NextResponse.json({ ok: true, latencyMs, error: null, status: res.status });
+    return NextResponse.json({
+      ok: true,
+      latencyMs,
+      error: null,
+      status: res.status,
+    });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err.message },
+      { status: 500 },
+    );
   }
 }
