@@ -1,5 +1,6 @@
 import { getProviderConnections } from "@/lib/localDb.js";
 import { getExecutor, refreshTokenByProvider } from "open-sse/index.js";
+import { updateProviderCredentials } from "@/sse/services/tokenRefresh.js";
 
 export async function POST(request) {
   try {
@@ -33,6 +34,11 @@ export async function POST(request) {
     if (response.status === 401 || response.status === 403) {
       const newCredentials = await refreshTokenByProvider(provider, credentials);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
+        await updateProviderCredentials(connection.id, {
+          accessToken: newCredentials.accessToken,
+          refreshToken: newCredentials.refreshToken,
+          providerSpecificData: newCredentials.providerSpecificData,
+        });
         Object.assign(credentials, newCredentials);
         ({ response } = await executor.execute({ model, body, stream, credentials }));
       }
