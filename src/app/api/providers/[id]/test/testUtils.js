@@ -89,6 +89,15 @@ const OAUTH_TEST_CONFIG = {
   },
   qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
+  qoder: {
+    // Test by hitting Qoder's userinfo endpoint with the device token.
+    url: "https://openapi.qoder.sh/api/v1/userinfo",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    checkExpiry: true,
+    refreshable: false,
+  },
   "kimi-coding": { checkExpiry: true, refreshable: false },
   cursor: { tokenExists: true },
   kilocode: {

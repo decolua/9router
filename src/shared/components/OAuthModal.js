@@ -153,7 +153,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy", "freebuff"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy", "freebuff", "qoder"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -178,7 +178,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
 
-        // Pass extraData for Kiro (contains _clientId, _clientSecret)
+        // Pass extraData for Kiro (contains _clientId, _clientSecret) and
+        // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
+        // can persist the machine id alongside the token).
         const extraData = provider === "kiro"
           ? {
               _clientId: data._clientId,
@@ -186,6 +188,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _region: data._region,
               _authMethod: data._authMethod,
               _startUrl: data._startUrl,
+            }
+          : provider === "qoder"
+          ? {
+              _qoderNonce: data._qoderNonce,
+              _qoderMachineId: data._qoderMachineId,
+              _qoderVerifier: data.codeVerifier,
             }
           : null;
         startPolling(data.device_code, data.codeVerifier, data.interval || 5, extraData);

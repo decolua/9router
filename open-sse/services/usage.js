@@ -77,6 +77,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
       return await getCodexUsage(accessToken, proxyOptions);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
+    case "qoder":
+      return await getQoderUsage(accessToken, proxyOptions);
     case "qwen":
       return await getQwenUsage(accessToken, providerSpecificData);
     case "iflow":
@@ -1148,4 +1150,52 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+async function getQoderUsage(accessToken, proxyOptions = null) {
+  if (!accessToken) {
+    return { message: "Qoder usage unavailable: no access token" };
+  }
+  try {
+    const response = await proxyAwareFetch(
+      "https://openapi.qoder.sh/api/v2/quota/usage",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+        },
+      },
+      proxyOptions,
+    );
+    if (!response.ok) {
+      return { message: `Qoder connected. Usage fetch returned ${response.status}.` };
+    }
+    const body = await response.json().catch(() => null);
+    if (!body) {
+      return { message: "Qoder connected. Usage response was not JSON." };
+    }
+    const userQuota = body.userQuota || {};
+    const orgQuota = body.orgResourcePackage || {};
+    const quotas = {
+      user: {
+        total: Number(userQuota.total) || 0,
+        used: Number(userQuota.used) || 0,
+        remaining: Number(userQuota.remaining) || 0,
+        unit: userQuota.unit || "credits",
+      },
+      organization: {
+        total: Number(orgQuota.total) || 0,
+        used: Number(orgQuota.used) || 0,
+        remaining: Number(orgQuota.remaining) || 0,
+        unit: orgQuota.unit || "credits",
+      },
+      totalUsagePercentage: Number(body.totalUsagePercentage) || 0,
+      isQuotaExceeded: !!body.isQuotaExceeded,
+      expiresAt: Number(body.expiresAt) || null,
+    };
+    return { quotas };
+  } catch (error) {
+    return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
 }

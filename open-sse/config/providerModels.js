@@ -150,6 +150,21 @@ export const PROVIDER_MODELS = {
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
   ],
+  qd: [  // Qoder AI - tier + frontier models (server-published catalog)
+    // Tier models — pick a quality/cost tradeoff
+    { id: "auto", name: "Qoder Auto" },
+    { id: "ultimate", name: "Qoder Ultimate" },
+    { id: "performance", name: "Qoder Performance" },
+    { id: "efficient", name: "Qoder Efficient" },
+    { id: "lite", name: "Qoder Lite" },
+    // Frontier models — pin a specific backing model
+    { id: "qmodel", name: "Qwen 3.6 Plus (Qoder)" },
+    { id: "dmodel", name: "DeepSeek V4 Pro (Qoder)" },
+    { id: "dfmodel", name: "DeepSeek V4 Flash (Qoder)" },
+    { id: "gm51model", name: "GLM 5.1 (Qoder)" },
+    { id: "kmodel", name: "Kimi K2.6 (Qoder)" },
+    { id: "mmodel", name: "MiniMax M2.7 (Qoder)" },
+  ],
   cu: [  // Cursor IDE
     { id: "default", name: "Auto (Server Picks)" },
     { id: "claude-4.5-opus-high-thinking", name: "Claude 4.5 Opus High Thinking" },
@@ -877,6 +892,7 @@ const OAUTH_ALIASES = {
   kilocode: "kc",
   cline: "cl",
   opencode: "oc",
+  qoder: "qd",
   vertex: "vertex",
   "vertex-partner": "vertex-partner",
 };
