@@ -130,7 +130,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (targetFormat === FORMATS.KIRO) {
     const kiroTools = translatedBody?.conversationState?.currentMessage?.userInputMessage?.userInputMessageContext?.tools;
     if (kiroTools) {
-      translatedBody.conversationState.currentMessage.userInputMessage.userInputMessageContext.tools = sanitizeKiroTools(kiroTools);
+      const { tools: sanitized, nameMap } = sanitizeKiroTools(kiroTools);
+      translatedBody.conversationState.currentMessage.userInputMessage.userInputMessageContext.tools = sanitized;
+      if (nameMap.size > 0) {
+        if (!toolNameMap) toolNameMap = new Map();
+        nameMap.forEach((original, truncated) => toolNameMap.set(truncated, original));
+      }
     }
   }
 
