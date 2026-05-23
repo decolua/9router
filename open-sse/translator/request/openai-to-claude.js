@@ -259,10 +259,6 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         } else if (part.type === "tool_use") {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: "tool_use", id: part.id, name: part.name, input: part.input });
-        } else if (part.type === "thinking") {
-          // Include thinking block but strip cache_control (not allowed on thinking blocks)
-          const { cache_control, ...thinkingBlock } = part;
-          blocks.push(thinkingBlock);
         }
       }
     } else if (msg.content) {

@@ -6,13 +6,74 @@ import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
+function sanitizeAnthropicToolId(id) {
+  if (typeof id !== "string") return id;
+  return id.replace(/[^a-zA-Z0-9_-]/g, "") || "tool_call";
+}
+
+function sanitizeAnthropicMessages(body) {
+  if (!Array.isArray(body?.messages)) return body;
+
+  let changed = false;
+  const messages = body.messages.map(message => {
+    if (!Array.isArray(message?.content)) return message;
+
+    const content = [];
+    for (const block of message.content) {
+      if (!block || typeof block !== "object") {
+        content.push(block);
+        continue;
+      }
+      // Thinking signatures are tied to the exact Anthropic response that
+      // produced them. 9Router can receive synthetic or cross-provider
+      // thinking blocks during resume/model switches; forwarding those blocks
+      // causes Anthropic to reject the request with invalid/empty thinking.
+      if (block.type === "thinking" || block.type === "redacted_thinking") {
+        changed = true;
+        continue;
+      }
+      if (block.type === "tool_use" && typeof block.id === "string") {
+        const id = sanitizeAnthropicToolId(block.id);
+        content.push(id === block.id ? block : { ...block, id });
+        changed ||= id !== block.id;
+        continue;
+      }
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+        const tool_use_id = sanitizeAnthropicToolId(block.tool_use_id);
+        content.push(tool_use_id === block.tool_use_id ? block : { ...block, tool_use_id });
+        changed ||= tool_use_id !== block.tool_use_id;
+        continue;
+      }
+      content.push(block);
+    }
+
+    if (content.length !== message.content.length) changed = true;
+    return content.length === message.content.length && content.every((block, i) => block === message.content[i])
+      ? message
+      : { ...message, content };
+  }).filter(message => {
+    if (Array.isArray(message?.content)) {
+      const keep = message.content.length > 0;
+      changed ||= !keep;
+      return keep;
+    }
+    return true;
+  });
+
+  return changed ? { ...body, messages } : body;
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
   transformRequest(model, body) {
-    return injectReasoningContent({ provider: this.provider, model, body });
+    const transformed = injectReasoningContent({ provider: this.provider, model, body });
+    if (this.provider === "claude" || this.provider?.startsWith?.("anthropic-compatible-")) {
+      return sanitizeAnthropicMessages(transformed);
+    }
+    return transformed;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
