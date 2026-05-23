@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { CONNECTION_STATUS } from "@/shared/constants/connectionStatus.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -60,10 +61,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out model-locked, excluded, and needs_relogin connections
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      // needs_relogin means refresh token is permanently invalid — skip until
+      // user re-authenticates via dashboard. Don't waste upstream calls.
+      if (c.testStatus === CONNECTION_STATUS.NEEDS_RELOGIN) return false;
       return true;
     });
 
@@ -216,9 +220,14 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
+  // Preserve needs_relogin — it's a permanent state that only clears on
+  // re-authentication. Don't downgrade it to transient "unavailable".
+  const currentConn = connections.find(c => c.id === connectionId);
+  const preserveStatus = currentConn?.testStatus === CONNECTION_STATUS.NEEDS_RELOGIN;
+
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
-    testStatus: "unavailable",
+    ...(preserveStatus ? {} : { testStatus: CONNECTION_STATUS.UNAVAILABLE }),
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
