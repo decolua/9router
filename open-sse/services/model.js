@@ -248,6 +248,8 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 function inferProviderFromModelName(modelName) {
   if (!modelName) return "openai";
   const m = modelName.toLowerCase();
+  // #1398: Codex CLI sends this bare virtual model for auto-review; keep it on OAuth Codex.
+  if (m === "codex-auto-review") return "codex";
   if (m.startsWith("claude-")) return "anthropic";
   if (m.startsWith("gemini-")) return "gemini";
   if (m.startsWith("gpt-")) return "openai";
