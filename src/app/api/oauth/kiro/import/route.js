@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
-import { createProviderConnection, getProviderConnections } from "@/models";
+import { createProviderConnection } from "@/models";
 
 /**
  * POST /api/oauth/kiro/import
- * Import and validate refresh token from Kiro IDE.
- *
- * Rejects duplicate imports of the same Kiro identity (matched by
- * `profileArn`). Importing the same account twice causes Kiro upstream
- * to return 429 "Due to suspicious activity" because round-robin routing
- * sends concurrent requests from one identity.
+ * Import and validate refresh token from Kiro IDE
  */
 export async function POST(request) {
   try {
@@ -29,31 +24,6 @@ export async function POST(request) {
 
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
-
-    // Guard: reject duplicate profileArn. Same Kiro identity imported twice
-    // triggers upstream 429 "suspicious activity" when both connections are
-    // routed in parallel.
-    if (tokenData.profileArn) {
-      try {
-        const existing = await getProviderConnections({ provider: "kiro" });
-        const duplicate = (existing || []).find(
-          (c) => c?.providerSpecificData?.profileArn === tokenData.profileArn
-        );
-        if (duplicate) {
-          return NextResponse.json(
-            {
-              error: "This Kiro account is already imported (same profileArn). Importing the same account twice causes upstream rate-limit errors.",
-              existingConnectionId: duplicate.id,
-              existingEmail: duplicate.email || null,
-            },
-            { status: 409 }
-          );
-        }
-      } catch (lookupErr) {
-        // Lookup failure should not block import — log and continue.
-        console.log("Kiro import duplicate-check failed:", lookupErr?.message || lookupErr);
-      }
-    }
 
     // Save to database
     const connection = await createProviderConnection({
