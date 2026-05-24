@@ -285,7 +285,10 @@ export default function ConnectionRow({
               <input
                 type="checkbox"
                 checked={isSelected}
-                onChange={(e) => onSelectChange?.(e.target.checked)}
+                onClick={(e) => {
+                  onSelectChange?.(e.target.checked, e.shiftKey);
+                }}
+                onChange={() => {}}
                 className="rounded border-border"
                 title="Select this account for batch actions"
               />

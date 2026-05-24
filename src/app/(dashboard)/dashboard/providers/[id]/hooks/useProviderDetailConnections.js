@@ -47,6 +47,7 @@ export function useProviderDetailConnections({
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [manualRefreshSummary, setManualRefreshSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const lastClickedIndexRef = useRef(null);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -369,12 +370,39 @@ export function useProviderDetailConnections({
     }
   };
 
-  const toggleSelectConnection = (connectionId) => {
-    setSelectedConnectionIds((prev) =>
-      prev.includes(connectionId)
-        ? prev.filter((id) => id !== connectionId)
-        : [...prev, connectionId],
+  const toggleSelectConnection = (connectionId, isShift = false) => {
+    const currentIndex = displayedConnections.findIndex(
+      (conn) => conn.id === connectionId,
     );
+
+    if (currentIndex === -1) return;
+
+    setSelectedConnectionIds((prev) => {
+      const isCurrentlySelected = prev.includes(connectionId);
+      const shouldSelect = !isCurrentlySelected;
+
+      if (isShift && lastClickedIndexRef.current !== null) {
+        const start = Math.min(lastClickedIndexRef.current, currentIndex);
+        const end = Math.max(lastClickedIndexRef.current, currentIndex);
+        const targetIds = displayedConnections.slice(start, end + 1).map((c) => c.id);
+
+        let nextSelectedIds;
+        if (shouldSelect) {
+          const newIds = targetIds.filter((id) => !prev.includes(id));
+          nextSelectedIds = [...prev, ...newIds];
+        } else {
+          nextSelectedIds = prev.filter((id) => !targetIds.includes(id));
+        }
+
+        lastClickedIndexRef.current = currentIndex;
+        return nextSelectedIds;
+      } else {
+        lastClickedIndexRef.current = currentIndex;
+        return shouldSelect
+          ? [...prev, connectionId]
+          : prev.filter((id) => id !== connectionId);
+      }
+    });
   };
 
   const selectedAutoRefreshSummary =
