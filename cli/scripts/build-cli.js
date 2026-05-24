@@ -159,26 +159,49 @@ console.log("✅ Copied standalone build\n");
 // Windows EBUSY during global CLI updates. node:sqlite (Node ≥22.5) is also
 // available as a no-install middle tier.
 console.log("3️⃣ b Configuring SQLite drivers...");
-function ensureModuleInBundle(pkg) {
-  const dest = path.join(cliAppDir, "node_modules", pkg);
-  if (fs.existsSync(dest)) {
-    console.log(`✅ ${pkg} already bundled`);
-    return;
-  }
+function findLocalModule(pkg) {
   const candidates = [
     path.join(appDir, "node_modules", pkg),
     path.join(rootDir, "node_modules", pkg),
   ];
-  const src = candidates.find((p) => fs.existsSync(p));
+  return candidates.find((p) => fs.existsSync(p));
+}
+
+function ensureModuleInBundle(pkg) {
+  const dest = path.join(cliAppDir, "node_modules", pkg);
+  if (fs.existsSync(dest)) {
+    console.log(`✅ ${pkg} already bundled`);
+    return dest;
+  }
+  const src = findLocalModule(pkg);
   if (!src) {
     console.warn(`⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`);
-    return;
+    return null;
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   copyRecursive(src, dest);
   console.log(`✅ Bundled ${pkg}`);
+  return dest;
+}
+
+function ensureBundledModuleFile(pkg, relativeFile) {
+  const destFile = path.join(cliAppDir, "node_modules", pkg, relativeFile);
+  if (fs.existsSync(destFile)) return;
+
+  const srcModule = findLocalModule(pkg);
+  const srcFile = srcModule ? path.join(srcModule, relativeFile) : null;
+  if (!srcFile || !fs.existsSync(srcFile)) {
+    console.warn(`⚠️  ${pkg}/${relativeFile} not found locally — sql.js fallback may be unavailable`);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(destFile), { recursive: true });
+  fs.copyFileSync(srcFile, destFile);
+  console.log(`✅ Bundled ${pkg}/${relativeFile}`);
 }
 ensureModuleInBundle("sql.js");
+// #1390: Next traces sql-wasm.js but can omit the runtime WASM asset.
+ensureBundledModuleFile("sql.js", path.join("dist", "sql-wasm.wasm"));
 const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
 if (fs.existsSync(betterDir)) {
   fs.rmSync(betterDir, { recursive: true, force: true });
