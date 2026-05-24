@@ -5,6 +5,7 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { splitInlineThinking, flushPendingThinking } from "./kiroThinking.js";
+import { logger as rootLogger } from "@/lib/logger";
 
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
@@ -594,7 +595,10 @@ function parseEventFrame(data) {
         payload = JSON.parse(payloadStr);
       } catch (parseError) {
         // Log parse error for debugging
-        console.warn(`[Kiro] Failed to parse payload: ${parseError.message} | payload: ${payloadStr.substring(0, 100)}`);
+        rootLogger.warn(
+          { tag: "KIRO", err: parseError.message, payloadPreview: payloadStr.substring(0, 100) },
+          "Kiro: Failed to parse payload"
+        );
         payload = { raw: payloadStr };
       }
     }

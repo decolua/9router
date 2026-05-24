@@ -48,7 +48,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
-      console.log("Injecting provider-level thinking config override: on");
+      log?.debug?.("THINKING", "Injecting provider-level thinking config override: on");
       body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
     } else if (mode === "off" && !body.thinking) {
       body = { ...body, thinking: { type: "disabled" } };
@@ -118,7 +118,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
-  if (rtkLine) console.log(rtkLine);
+  if (rtkLine) log?.debug?.("RTK", rtkLine);
 
   // Caveman: inject terse-style system prompt
   if (cavemanEnabled && cavemanLevel) {

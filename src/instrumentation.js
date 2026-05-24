@@ -19,13 +19,16 @@ export async function register() {
   }
   globalThis.__9routerBootstrapInvoked = true;
 
-  console.log("[bootstrap] instrumentation.register() invoked");
+  // Init logger early so all subsequent code uses structured logging.
+  const { createLogger } = await import("@/lib/logger");
+  const log = createLogger("bootstrap");
+  log.info("instrumentation.register() invoked");
   try {
     const mod = await import("./shared/services/initializeApp.js");
     await mod.default();
-    console.log("[bootstrap] initializeApp completed");
+    log.info("initializeApp completed");
   } catch (err) {
-    console.warn("[bootstrap] initializeApp failed:", err?.message || err);
+    log.warn({ err: err?.message || String(err) }, "initializeApp failed");
     // Allow a retry on next server start by clearing the guard.
     globalThis.__9routerBootstrapInvoked = false;
   }
