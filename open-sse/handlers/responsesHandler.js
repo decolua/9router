@@ -80,7 +80,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
 
   // Case 2: Client wants streaming, got SSE - transform it
   if (clientRequestedStreaming && contentType.includes("text/event-stream")) {
-    const transformStream = createResponsesApiTransformStream(null);
+    const transformStream = createResponsesApiTransformStream(null, body);
     const transformedBody = response.body.pipeThrough(transformStream);
 
     return {

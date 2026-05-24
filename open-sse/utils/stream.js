@@ -1,5 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { getResponsesCustomToolNames } from "../translator/helpers/responsesCustomTools.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
@@ -54,7 +55,9 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const state = mode === STREAM_MODE.TRANSLATE
+    ? { ...initState(sourceFormat), provider, toolNameMap, model, customToolNames: getResponsesCustomToolNames(body) }
+    : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
