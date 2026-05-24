@@ -5,6 +5,8 @@
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 
+const EMPTY_TOOL_STREAM_STATUS = 502;
+
 /**
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
@@ -93,6 +95,108 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+function requestHasTools(body) {
+  return Array.isArray(body?.tools) && body.tools.length > 0;
+}
+
+function isInspectableSseResponse(response) {
+  const contentType = response?.headers?.get?.("content-type") || "";
+  return response?.ok && response?.body && typeof response.clone === "function" && contentType.includes("text/event-stream");
+}
+
+function parseSsePayloads(text) {
+  const messages = String(text || "").split(/\r?\n\r?\n/);
+  const payloads = [];
+
+  for (const msg of messages) {
+    if (!msg.trim()) continue;
+    const eventMatch = msg.match(/^event:\s*(.+)$/m);
+    const dataMatch = msg.match(/^data:\s*(.+)$/m);
+    if (!dataMatch) continue;
+
+    const data = dataMatch[1].trim();
+    if (!data || data === "[DONE]") continue;
+
+    try {
+      payloads.push({ event: eventMatch?.[1]?.trim() || "", data: JSON.parse(data) });
+    } catch {
+      payloads.push({ event: eventMatch?.[1]?.trim() || "", malformed: true });
+    }
+  }
+
+  return payloads;
+}
+
+function payloadHasVisibleOutput({ event, data }) {
+  if (!data || typeof data !== "object") return false;
+
+  const choice = data.choices?.[0];
+  const delta = choice?.delta;
+  if (delta?.content || delta?.reasoning_content) return true;
+  if (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) return true;
+  if (choice?.message?.content) return true;
+  if (Array.isArray(choice?.message?.tool_calls) && choice.message.tool_calls.length > 0) return true;
+
+  if (data.type === "content_block_start" && data.content_block?.type === "tool_use") return true;
+  if (data.type === "content_block_delta" && (data.delta?.text || data.delta?.partial_json || data.delta?.thinking)) return true;
+  if (event === "response.output_text.delta" && data.delta) return true;
+  if (event === "response.reasoning_summary_text.delta" && data.delta) return true;
+  if (event === "response.output_item.added" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) return true;
+  if ((event === "response.function_call_arguments.delta" || event === "response.custom_tool_call_input.delta") && data.delta) return true;
+
+  return false;
+}
+
+async function inspectToolStreamForFallback(response) {
+  if (!isInspectableSseResponse(response)) return null;
+
+  const clone = response.clone();
+  const reader = clone.body?.getReader?.();
+  if (!reader) return null;
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let sawMalformedPayload = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() || "";
+
+      for (const payload of parseSsePayloads(parts.join("\n\n"))) {
+        if (payload.malformed) sawMalformedPayload = true;
+        if (payloadHasVisibleOutput(payload)) {
+          reader.cancel().catch(() => { });
+          return null;
+        }
+      }
+    }
+  } catch (error) {
+    return { shouldFallback: false, reason: `stream inspection failed: ${error.message || String(error)}` };
+  }
+
+  const remaining = buffer + decoder.decode();
+  const payloads = parseSsePayloads(remaining);
+  const hasVisibleOutput = payloads.some(payloadHasVisibleOutput);
+  const hasMalformedPayload = sawMalformedPayload || payloads.some(p => p.malformed);
+
+  // #1382: Some OpenAI-compatible backends return HTTP 200 SSE streams for
+  // tool-heavy Claude requests but emit no client-visible text/tool calls. Treat
+  // those as transient upstream failures so combos can try the next model.
+  if (!hasVisibleOutput) {
+    return {
+      shouldFallback: true,
+      reason: hasMalformedPayload ? "malformed tool stream with no visible output" : "empty tool stream with no visible output"
+    };
+  }
+
+  return null;
+}
+
 /**
  * Handle combo chat with fallback
  * @param {Object} options
@@ -122,6 +226,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
+        if (requestHasTools(body)) {
+          const streamIssue = await inspectToolStreamForFallback(result);
+          if (streamIssue?.shouldFallback) {
+            lastError = streamIssue.reason;
+            if (!lastStatus) lastStatus = EMPTY_TOOL_STREAM_STATUS;
+            log.warn("COMBO", `Model ${modelStr} returned empty tool stream, trying next`, { status: EMPTY_TOOL_STREAM_STATUS });
+            continue;
+          }
+        }
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
