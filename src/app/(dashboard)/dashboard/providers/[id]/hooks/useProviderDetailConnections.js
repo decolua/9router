@@ -434,7 +434,6 @@ export function useProviderDetailConnections({
   const selectedEmailSummary = getSelectedEmailSummary(selectedConnections);
 
   const openBulkProxyModal = () => {
-    if (selectedConnections.length === 0) return;
     setShowBulkProxyModal(true);
   };
 
