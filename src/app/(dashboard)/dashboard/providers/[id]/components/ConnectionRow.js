@@ -43,8 +43,14 @@ function formatRemainingExpiresAt(value) {
   const totalHours = Math.floor(diffMs / 3600000);
   const totalDays = Math.floor(diffMs / 86400000);
 
-  if (totalDays >= 1) return `${totalDays}d`;
-  if (totalHours >= 1) return `${totalHours}h`;
+  if (totalDays >= 1) {
+    const remainingHours = Math.floor((diffMs % 86400000) / 3600000);
+    return remainingHours > 0 ? `${totalDays}d${remainingHours}h` : `${totalDays}d`;
+  }
+  if (totalHours >= 1) {
+    const remainingMinutes = Math.floor((diffMs % 3600000) / 60000);
+    return remainingMinutes > 0 ? `${totalHours}h${remainingMinutes}m` : `${totalHours}h`;
+  }
   return `${Math.max(1, totalMinutes)}m`;
 }
 
