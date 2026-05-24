@@ -46,6 +46,27 @@ export function shouldAttemptRefresh(connection, now = Date.now()) {
 }
 
 /**
+ * Detect session-only accounts (no refresh token) whose access token has
+ * already expired. These need user action (re-import) rather than automatic
+ * refresh, so the worker should mark them `needs_relogin`.
+ *
+ * @param {{ refreshToken?: string, expiresAt?: string|number,
+ *           isActive?: boolean, testStatus?: string }} connection
+ * @param {number} [now]
+ * @returns {boolean}
+ */
+export function isExpiredSessionOnly(connection, now = Date.now()) {
+  if (!connection) return false;
+  if (connection.isActive === false) return false;
+  if (connection.testStatus === CONNECTION_STATUS.NEEDS_RELOGIN) return false;
+  if (connection.refreshToken) return false; // has refresh path — not session-only
+  if (!connection.expiresAt) return false;   // unknown TTL — can't determine
+  const expiresAt = new Date(connection.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt)) return false;
+  return expiresAt <= now;
+}
+
+/**
  * Filter the candidate set the worker should attempt this tick.
  *
  * Pure wrapper around `shouldAttemptRefresh` so tests can assert the worker

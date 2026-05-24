@@ -11,9 +11,10 @@
 // It reuses `checkAndRefreshToken` so DB persistence, projectId backfill, and
 // in-flight dedup behave identically to the request hot-path.
 
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import { CONNECTION_STATUS } from "@/shared/constants/connectionStatus.js";
 import { checkAndRefreshToken } from "./tokenRefresh.js";
-import { shouldAttemptRefresh, shouldRefreshNow } from "./tokenRefreshWindow.js";
+import { isExpiredSessionOnly, shouldAttemptRefresh, shouldRefreshNow } from "./tokenRefreshWindow.js";
 import * as log from "../utils/logger.js";
 
 // Survive Next.js hot reload — store handle on globalThis like initializeApp.js
@@ -34,7 +35,7 @@ const TICK_INTERVAL_MS = Number(process.env.TOKEN_REFRESH_WORKER_TICK_MS) || 60_
 // Skip the worker entirely (e.g. CI, local dev where you don't want OAuth).
 const DISABLED = process.env.TOKEN_REFRESH_WORKER_DISABLED === "1";
 
-export { shouldAttemptRefresh, shouldRefreshNow } from "./tokenRefreshWindow.js";
+export { isExpiredSessionOnly, shouldAttemptRefresh, shouldRefreshNow } from "./tokenRefreshWindow.js";
 
 async function tick() {
   if (g.ticking) return; // serialize ticks
@@ -45,6 +46,21 @@ async function tick() {
     if (!connections.length) return;
 
     for (const conn of connections) {
+      if (isExpiredSessionOnly(conn)) {
+        await updateProviderConnection(conn.id, {
+          testStatus: CONNECTION_STATUS.NEEDS_RELOGIN,
+          lastError: "Session expired; re-import from chatgpt.com/api/auth/session",
+          errorCode: 401,
+          lastErrorAt: new Date().toISOString(),
+        });
+        g.failed += 1;
+        log.warn(
+          "TOKEN_REFRESH_WORKER",
+          `Expired session-only account for ${conn.provider} (${conn.id?.slice(0, 8)}); user must re-import session`
+        );
+        continue;
+      }
+
       if (!shouldAttemptRefresh(conn)) continue;
 
       try {

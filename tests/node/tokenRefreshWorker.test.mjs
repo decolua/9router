@@ -10,6 +10,7 @@ import {
   shouldAttemptRefresh,
   shouldRefreshNow,
   selectConnectionsForRefresh,
+  isExpiredSessionOnly,
 } from "../../src/sse/services/tokenRefreshWindow.js";
 
 const NOW = Date.UTC(2026, 0, 1, 12, 0, 0); // fixed clock
@@ -150,4 +151,75 @@ test("selectConnectionsForRefresh: tolerates non-array / empty input", () => {
   assert.deepEqual(selectConnectionsForRefresh(null, NOW), []);
   assert.deepEqual(selectConnectionsForRefresh(undefined, NOW), []);
   assert.deepEqual(selectConnectionsForRefresh([], NOW), []);
+});
+
+// ---------------------------------------------------------------------------
+// isExpiredSessionOnly — detect session-imported accounts (no refresh token)
+// whose JWT has expired. Worker uses this to mark needs_relogin.
+// ---------------------------------------------------------------------------
+
+test("isExpiredSessionOnly: expired session with no refreshToken", () => {
+  const conn = {
+    refreshToken: null,
+    expiresAt: new Date(NOW - 60_000).toISOString(),
+    isActive: true,
+    testStatus: "active",
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), true);
+});
+
+test("isExpiredSessionOnly: future expiry returns false", () => {
+  const conn = {
+    refreshToken: null,
+    expiresAt: new Date(NOW + 60_000).toISOString(),
+    isActive: true,
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
+});
+
+test("isExpiredSessionOnly: connection with refreshToken returns false", () => {
+  const conn = {
+    refreshToken: "rt",
+    expiresAt: new Date(NOW - 60_000).toISOString(),
+    isActive: true,
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
+});
+
+test("isExpiredSessionOnly: missing expiresAt returns false", () => {
+  const conn = { refreshToken: null, isActive: true };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
+});
+
+test("isExpiredSessionOnly: already needs_relogin returns false", () => {
+  const conn = {
+    refreshToken: null,
+    expiresAt: new Date(NOW - 60_000).toISOString(),
+    isActive: true,
+    testStatus: "needs_relogin",
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
+});
+
+test("isExpiredSessionOnly: disabled connection returns false", () => {
+  const conn = {
+    refreshToken: null,
+    expiresAt: new Date(NOW - 60_000).toISOString(),
+    isActive: false,
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
+});
+
+test("isExpiredSessionOnly: null/undefined connection returns false", () => {
+  assert.equal(isExpiredSessionOnly(null, NOW), false);
+  assert.equal(isExpiredSessionOnly(undefined, NOW), false);
+});
+
+test("isExpiredSessionOnly: unparseable expiresAt returns false", () => {
+  const conn = {
+    refreshToken: null,
+    expiresAt: "not-a-date",
+    isActive: true,
+  };
+  assert.equal(isExpiredSessionOnly(conn, NOW), false);
 });
