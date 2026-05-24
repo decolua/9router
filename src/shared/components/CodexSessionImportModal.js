@@ -21,7 +21,7 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
 
     const trimmed = sessionText.trim();
     if (!trimmed) {
-      setError("Vui lòng dán session JSON");
+      setError("Silakan paste session JSON");
       return;
     }
 
@@ -29,7 +29,7 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
     try {
       parsed = JSON.parse(trimmed);
     } catch {
-      setError("JSON không hợp lệ. Hãy dán đúng nội dung từ chatgpt.com/api/auth/session");
+      setError("JSON tidak valid. Paste konten dari chatgpt.com/api/auth/session");
       return;
     }
 
@@ -37,7 +37,7 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
     const sessions = Array.isArray(parsed) ? parsed : [parsed];
     const hasToken = sessions.some((s) => s.accessToken || s.access_token);
     if (!hasToken) {
-      setError("Không tìm thấy accessToken trong JSON. Hãy kiểm tra lại.");
+      setError("accessToken tidak ditemukan di JSON. Periksa kembali.");
       return;
     }
 
@@ -73,21 +73,21 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
   };
 
   return (
-    <Modal isOpen={isOpen} title="Import Codex từ ChatGPT Session" onClose={handleClose} size="lg">
+    <Modal isOpen={isOpen} title="Import Codex dari ChatGPT Session" onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Instructions */}
         <div className="text-sm text-gray-600 dark:text-gray-400 space-y-2">
-          <p>Import tài khoản Codex bằng cách dán session từ ChatGPT (không cần xác minh số điện thoại).</p>
+          <p>Import akun Codex dengan paste session dari ChatGPT (tanpa verifikasi nomor telepon).</p>
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-            <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">Cách lấy session:</p>
+            <p className="font-medium text-blue-800 dark:text-blue-200 mb-1">Cara mendapatkan session:</p>
             <ol className="list-decimal list-inside space-y-1 text-blue-700 dark:text-blue-300 text-xs">
-              <li>Đăng nhập ChatGPT trên trình duyệt</li>
-              <li>Mở tab mới, truy cập: <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">chatgpt.com/api/auth/session</code></li>
-              <li>Copy toàn bộ JSON và dán vào ô bên dưới</li>
+              <li>Login ChatGPT di browser</li>
+              <li>Buka tab baru, akses: <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">chatgpt.com/api/auth/session</code></li>
+              <li>Copy seluruh JSON dan paste di kolom bawah</li>
             </ol>
           </div>
           <p className="text-xs text-amber-600 dark:text-amber-400">
-            ⚠ Hỗ trợ dán nhiều session cùng lúc dưới dạng mảng [&#123;…&#125;, &#123;…&#125;]
+            ⚠ Mendukung paste banyak session sekaligus dalam format array [&#123;…&#125;, &#123;…&#125;]
           </p>
         </div>
 
@@ -111,10 +111,10 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
         {results && (
           <div className={`text-sm rounded-lg p-3 border ${results.success ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300" : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-300"}`}>
             <p className="font-medium mb-1">
-              {results.success ? "✓ Import thành công!" : "Import có lỗi"}
+              {results.success ? "✓ Import berhasil!" : "Import gagal"}
             </p>
             {results.imported > 0 && (
-              <p>Đã import: {results.imported} tài khoản</p>
+              <p>Berhasil import: {results.imported} akun</p>
             )}
             {results.connections?.map((c, i) => (
               <p key={i} className="text-xs mt-1">
@@ -132,11 +132,11 @@ export default function CodexSessionImportModal({ isOpen, onSuccess, onClose }) 
         {/* Actions */}
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={handleClose} disabled={importing}>
-            {results?.success ? "Đóng" : "Hủy"}
+            {results?.success ? "Tutup" : "Batal"}
           </Button>
           {!results?.success && (
             <Button onClick={handleImport} disabled={importing || !sessionText.trim()}>
-              {importing ? "Đang import..." : "Import"}
+              {importing ? "Mengimport..." : "Import"}
             </Button>
           )}
         </div>
