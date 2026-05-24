@@ -157,7 +157,7 @@ export class KiroService {
       };
     }
 
-    // Social auth refresh (Google/GitHub)
+    // Imported token refresh
     const response = await fetch(`${KIRO_AUTH_SERVICE}/refreshToken`, {
       method: "POST",
       headers: {

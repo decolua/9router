@@ -310,7 +310,7 @@ export async function refreshCodexToken(refreshToken, log) {
 
 /**
  * Specialized refresh for Kiro (AWS CodeWhisperer) tokens
- * Supports both AWS SSO OIDC (Builder ID/IDC) and Social Auth (Google/GitHub)
+ * Supports AWS SSO OIDC (Builder ID/IDC) and imported tokens (Kiro desktop refresh endpoint)
  */
 export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
   const authMethod = providerSpecificData?.authMethod;
@@ -382,7 +382,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     };
   }
 
-  // Social Auth (Google/GitHub) - use Kiro's refresh endpoint
+  // Imported token refresh - use Kiro's desktop refresh endpoint
   const response = await proxyAwareFetch(PROVIDERS.kiro.tokenUrl, {
     method: "POST",
     headers: {
@@ -397,11 +397,11 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   if (!response.ok) {
     const errorText = await response.text();
-    log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro social token", {
+    log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro imported token", {
       status: response.status,
       error: errorText,
     });
-    // Kiro social refresh endpoint returns 401 'Bad credentials' once the
+    // Kiro refresh endpoint returns 401 'Bad credentials' once the
     // refresh token is revoked / rotated out. Surface as unrecoverable so
     // checkAndRefreshToken can persist needs_relogin.
     if (response.status === 400 || response.status === 401) {
@@ -420,7 +420,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   const tokens = await response.json();
 
-  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro social token", {
+  log?.info?.("TOKEN_REFRESH", "Successfully refreshed Kiro imported token", {
     hasNewAccessToken: !!tokens.accessToken,
     expiresIn: tokens.expiresIn,
   });

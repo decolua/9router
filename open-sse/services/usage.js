@@ -828,7 +828,7 @@ async function getKiroUsage(accessToken, providerSpecificData, proxyOptions = nu
     };
   }
 
-  // Social auth (Google/GitHub) - these use a different token format that may not work with AWS CodeWhisperer quota APIs
+  // Imported social tokens use a different format that may not work with AWS CodeWhisperer quota APIs
   if (sawAuthError && (authMethod === "google" || authMethod === "github")) {
     return {
       message: "Kiro quota API authentication expired. Chat may still work.",

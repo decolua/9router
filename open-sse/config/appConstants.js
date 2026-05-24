@@ -166,7 +166,7 @@ export const REFRESH_LEAD_MS = {
   gemini:       10 * 60 * 1000,          // 10 minutes (Google access tokens 1h)
   "gemini-cli": 10 * 60 * 1000,          // 10 minutes (Google access tokens 1h)
   github:       10 * 60 * 1000,          // 10 minutes (Copilot internal token 30m)
-  kiro:         30 * 60 * 1000,          // 30 minutes (AWS SSO 8h, social 1h; AWS clock-skew strict)
+  kiro:         30 * 60 * 1000,          // 30 minutes (AWS SSO 8h, imported 1h; AWS clock-skew strict)
   xai:          10 * 60 * 1000,          // 10 minutes
 };
 
