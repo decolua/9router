@@ -7,31 +7,40 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
  * Without this, import-session would happily save invalid/expired tokens
  * with testStatus="active" and the user only finds out when chat fails.
  *
- * Returns { valid, status, error?, planType?, accountId? }.
+ * We use the Codex responses endpoint (POST) because /backend-api/me is
+ * blocked by Cloudflare from server IPs. The responses endpoint with an
+ * empty body returns 401 for invalid tokens and 400 for valid tokens
+ * (auth passed but request body invalid).
+ *
+ * Returns { valid, status, error? }.
  */
 async function validateSessionToken(accessToken) {
   try {
-    const res = await fetch("https://chatgpt.com/backend-api/me", {
-      method: "GET",
+    const res = await fetch("https://chatgpt.com/backend-api/codex/responses", {
+      method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "User-Agent": "codex-cli/1.0.18",
+        "Content-Type": "application/json",
+        "User-Agent": "codex-cli/1.0.18 (macOS; arm64)",
+        "Originator": "codex-cli",
       },
-      signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) {
+    // 401 = token invalid/expired/revoked
+    if (res.status === 401) {
       const body = await res.text().catch(() => "");
-      return { valid: false, status: res.status, error: body.slice(0, 200) };
+      return { valid: false, status: 401, error: body.slice(0, 200) };
     }
-    const data = await res.json().catch(() => ({}));
-    return {
-      valid: true,
-      status: res.status,
-      planType: data?.chatgpt_plan_type || null,
-      accountId: data?.chatgpt_account_id || null,
-    };
+    // 403 = Cloudflare/geo block (can't validate, allow through)
+    if (res.status === 403) {
+      return { valid: true, status: 403, error: "Cannot validate (blocked); allowing import" };
+    }
+    // Any other status (400, 200, 429, etc.) means auth passed
+    return { valid: true, status: res.status };
   } catch (err) {
-    return { valid: false, status: 0, error: err?.message || String(err) };
+    // Network error — allow import (don't block on transient failures)
+    return { valid: true, status: 0, error: `Network: ${err?.message || err}` };
   }
 }
 
