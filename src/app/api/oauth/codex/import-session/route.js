@@ -3,6 +3,39 @@ import { createProviderConnection } from "@/models";
 import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
 /**
+ * Validate that an access token actually works against ChatGPT backend.
+ * Without this, import-session would happily save invalid/expired tokens
+ * with testStatus="active" and the user only finds out when chat fails.
+ *
+ * Returns { valid, status, error?, planType?, accountId? }.
+ */
+async function validateSessionToken(accessToken) {
+  try {
+    const res = await fetch("https://chatgpt.com/backend-api/me", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": "codex-cli/1.0.18",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return { valid: false, status: res.status, error: body.slice(0, 200) };
+    }
+    const data = await res.json().catch(() => ({}));
+    return {
+      valid: true,
+      status: res.status,
+      planType: data?.chatgpt_plan_type || null,
+      accountId: data?.chatgpt_account_id || null,
+    };
+  } catch (err) {
+    return { valid: false, status: 0, error: err?.message || String(err) };
+  }
+}
+
+/**
  * Decode JWT payload without verification (we only need claims).
  */
 function decodeJwtPayload(jwt) {
@@ -91,6 +124,37 @@ export async function POST(request) {
         expiresAt = new Date(session.expires).toISOString();
       }
 
+      // Reject tokens whose JWT has already expired before doing any
+      // network calls — cheap fast path.
+      if (info?.exp && info.exp * 1000 <= Date.now()) {
+        errors.push({
+          index: i,
+          email,
+          error: "Token JWT already expired (exp in past); paste a fresh session",
+        });
+        continue;
+      }
+
+      // Network validation: hit /backend-api/me with the bearer token.
+      // Without this, invalid tokens get saved as testStatus=active and the
+      // user only finds out when chat requests start failing.
+      const validation = await validateSessionToken(accessToken);
+      if (!validation.valid) {
+        errors.push({
+          index: i,
+          email,
+          error: `Token validation failed: HTTP ${validation.status}${
+            validation.error ? " \u2014 " + validation.error : ""
+          }`,
+        });
+        continue;
+      }
+
+      // Prefer plan/account from the live /me response over JWT claims (more
+      // accurate for upgraded accounts).
+      const planType = validation.planType || info?.chatgptPlanType || null;
+      const accountId = validation.accountId || info?.chatgptAccountId || null;
+
       try {
         // Create provider connection — uses upsert by email for OAuth type
         const connection = await createProviderConnection({
@@ -102,8 +166,8 @@ export async function POST(request) {
           email,
           displayName,
           providerSpecificData: {
-            chatgptAccountId: info?.chatgptAccountId || null,
-            chatgptPlanType: info?.chatgptPlanType || null,
+            chatgptAccountId: accountId,
+            chatgptPlanType: planType,
             importMethod: "session",
           },
           testStatus: "active",
@@ -113,7 +177,7 @@ export async function POST(request) {
           index: i,
           connectionId: connection.id,
           email: connection.email || email,
-          plan: info?.chatgptPlanType || null,
+          plan: planType,
         });
       } catch (err) {
         errors.push({ index: i, email, error: err.message });
