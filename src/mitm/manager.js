@@ -640,6 +640,16 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     serverProcess.stdout.on("data", (data) => {
       // server.js already formats its own logs — print as-is
       process.stdout.write(data);
+      // Forward MITM lines to the web UI console log buffer (global state set by consoleLogBuffer.js)
+      const bufState = global._consoleLogBufferState;
+      if (bufState?.emitter) {
+        const lines = data.toString().split("\n").filter((l) => l.trim());
+        for (const line of lines) {
+          bufState.logs.push(line);
+          if (bufState.logs.length > 2000) bufState.logs = bufState.logs.slice(-2000);
+          bufState.emitter.emit("line", line);
+        }
+      }
     });
     serverProcess.stderr.on("data", (data) => {
       const msg = data.toString().trim();

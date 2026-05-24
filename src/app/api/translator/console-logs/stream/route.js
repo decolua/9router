@@ -74,6 +74,8 @@ export async function GET(request) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
+      // Disable nginx proxy buffering so chunks reach the browser immediately
+      "X-Accel-Buffering": "no",
     },
   });
 }

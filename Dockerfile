@@ -44,6 +44,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
+COPY start.js ./
 # Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
 # Ensure `next` is available at runtime in case tracing did not include it.
@@ -64,4 +65,4 @@ RUN printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\n
 EXPOSE 20128
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["node", "server.js"]
+CMD ["node", "start.js"]
