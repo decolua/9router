@@ -82,3 +82,5 @@ CLAUDE.md
 .agent/
 .agents/
 GEMINI.md
+*.log
+.playwright-mcp/
