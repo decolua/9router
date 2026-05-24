@@ -515,12 +515,14 @@ export function useProviderDetailConnections({
       );
       setManualRefreshResults(nextResults);
       setManualRefreshSummary(data.summary || null);
-      await fetchConnections();
     } catch (error) {
       console.log("Error refreshing selected Codex accounts:", error);
       alert("Failed to refresh selected Codex accounts");
     } finally {
       setManualRefreshing(false);
+      fetchConnections().catch((err) =>
+        console.log("Error fetching connections after refresh:", err),
+      );
     }
   };
 
