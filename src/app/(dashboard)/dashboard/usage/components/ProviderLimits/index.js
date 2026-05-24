@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
-import { parseQuotaData, calculatePercentage } from "./utils";
+import { parseQuotaData, calculatePercentage, aggregateQuotas } from "./utils";
 import Card from "@/shared/components/Card";
 import { EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
@@ -1009,141 +1009,131 @@ export default function ProviderLimits() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {sortedConnections.map((conn) => {
-          const quota = quotaData[conn.id];
-          const isLoading = loading[conn.id];
-          const error = errors[conn.id];
-
-          // Use table layout for all providers
-          const isInactive = conn.isActive === false;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id;
+      <div className="flex flex-col gap-6">
+        {Object.entries(
+          sortedConnections.reduce((acc, conn) => {
+            if (!acc[conn.provider]) acc[conn.provider] = [];
+            acc[conn.provider].push(conn);
+            return acc;
+          }, {})
+        ).map(([providerName, providerConnections]) => {
+          const aggregatedQuotas = aggregateQuotas(providerConnections, quotaData);
+          const anyLoading = providerConnections.some(c => loading[c.id]);
+          const allInactive = providerConnections.every(c => c.isActive === false);
 
           return (
-            <Card
-              key={conn.id}
-              padding="none"
-              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
-            >
-              <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
-                      <ProviderIcon
-                        src={`/providers/${conn.provider}.png`}
-                        alt={conn.provider}
-                        size={32}
-                        className="object-contain"
-                        fallbackText={
-                          conn.provider?.slice(0, 2).toUpperCase() || "PR"
-                        }
-                      />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
-                      </h3>
-                      {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">
-                          {getConnectionLabel(conn)}
-                        </p>
-                      ) : null}
-                    </div>
+            <Card key={providerName} padding="none" className={`overflow-hidden ${allInactive ? "opacity-60" : ""}`}>
+              {/* Provider Header & Aggregate Stats */}
+              <div className="bg-black/[0.02] dark:bg-white/[0.02] border-b border-black/10 dark:border-white/10 px-4 py-3 flex flex-col gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 shrink-0 rounded-lg flex items-center justify-center overflow-hidden bg-white dark:bg-black/20 shadow-sm border border-black/5 dark:border-white/5">
+                    <ProviderIcon
+                      src={`/providers/${providerName}.png`}
+                      alt={providerName}
+                      size={40}
+                      className="object-contain"
+                      fallbackText={providerName.slice(0, 2).toUpperCase()}
+                    />
                   </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => refreshProvider(conn.id, conn.provider)}
-                      disabled={isLoading || rowBusy}
-                      aria-label="Refresh quota"
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
-                      title="Refresh quota"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
-                      >
-                        refresh
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedConnection(conn);
-                        setShowEditModal(true);
-                      }}
-                      disabled={rowBusy}
-                      aria-label="Edit connection"
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
-                      title="Edit connection"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">
-                        edit
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteConnection(conn.id)}
-                      disabled={rowBusy}
-                      aria-label="Delete connection"
-                      className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
-                      title="Delete connection"
-                    >
-                      <span
-                        className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
-                      >
-                        delete
-                      </span>
-                    </button>
-                    <div
-                      className="inline-flex items-center pl-0.5"
-                      title={
-                        (conn.isActive ?? true)
-                          ? "Disable connection"
-                          : "Enable connection"
-                      }
-                    >
-                      <Toggle
-                        size="sm"
-                        checked={conn.isActive ?? true}
-                        disabled={rowBusy}
-                        onChange={(nextActive) =>
-                          handleToggleConnectionActive(conn.id, nextActive)
-                        }
-                      />
-                    </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-text-primary capitalize">{providerName}</h2>
+                    <p className="text-xs text-text-muted">{providerConnections.length} account{providerConnections.length > 1 ? 's' : ''}</p>
                   </div>
                 </div>
+                
+                {aggregatedQuotas.length > 0 && (
+                  <div className="pt-2 border-t border-black/5 dark:border-white/5">
+                    <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">Aggregate Usage</p>
+                    <QuotaTable quotas={aggregatedQuotas} compact sortMode="default" showSortLabel={false} />
+                  </div>
+                )}
               </div>
 
-              <div className="px-2 py-1.5">
-                {isLoading ? (
-                  <div className="text-center py-5 text-text-muted">
-                    <span className="material-symbols-outlined text-[28px] animate-spin">
-                      progress_activity
-                    </span>
-                  </div>
-                ) : error ? (
-                  <div className="text-center py-5">
-                    <span className="material-symbols-outlined text-[28px] text-red-500">
-                      error
-                    </span>
-                    <p className="mt-1.5 text-xs text-text-muted">{error}</p>
-                  </div>
-                ) : quota?.message ? (
-                  <div className="text-center py-5">
-                    <p className="text-xs text-text-muted">{quota.message}</p>
-                  </div>
-                ) : (
-                  <QuotaTable
-                    quotas={quota?.quotas}
-                    compact
-                    sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                  />
-                )}
+              {/* Individual Connections List */}
+              <div className="divide-y divide-black/5 dark:divide-white/5">
+                {providerConnections.map((conn) => {
+                  const quota = quotaData[conn.id];
+                  const isLoading = loading[conn.id];
+                  const error = errors[conn.id];
+                  const isInactive = conn.isActive === false;
+                  const rowBusy = deletingId === conn.id || togglingId === conn.id;
+
+                  return (
+                    <div key={conn.id} className={`p-4 transition-colors hover:bg-black/[0.01] dark:hover:bg-white/[0.01] ${isInactive ? "opacity-60 grayscale" : ""}`}>
+                      <div className="flex items-center justify-between gap-4 mb-3">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-sm font-medium text-text-primary truncate">
+                            {getConnectionLabel(conn) || "Unnamed Account"}
+                          </h3>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => refreshProvider(conn.id, conn.provider)}
+                            disabled={isLoading || rowBusy}
+                            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                            title="Refresh quota"
+                          >
+                            <span className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}>refresh</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedConnection(conn);
+                              setShowEditModal(true);
+                            }}
+                            disabled={rowBusy}
+                            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
+                            title="Edit connection"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteConnection(conn.id)}
+                            disabled={rowBusy}
+                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
+                            title="Delete connection"
+                          >
+                            <span className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}>delete</span>
+                          </button>
+                          <div className="inline-flex items-center pl-1" title={conn.isActive !== false ? "Disable connection" : "Enable connection"}>
+                            <Toggle
+                              size="sm"
+                              checked={conn.isActive !== false}
+                              disabled={rowBusy}
+                              onChange={(nextActive) => handleToggleConnectionActive(conn.id, nextActive)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pl-0">
+                        {isLoading ? (
+                          <div className="text-center py-2 text-text-muted flex items-center justify-center gap-2">
+                            <span className="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                            <span className="text-xs">Loading...</span>
+                          </div>
+                        ) : error ? (
+                          <div className="flex items-center gap-2 py-2 text-red-500">
+                            <span className="material-symbols-outlined text-[18px]">error</span>
+                            <p className="text-xs">{error}</p>
+                          </div>
+                        ) : quota?.message ? (
+                          <p className="text-xs text-text-muted py-2">{quota.message}</p>
+                        ) : (
+                          <QuotaTable
+                            quotas={quota?.quotas}
+                            compact
+                            sortMode="default"
+                            showSortLabel={conn.provider === "codex" && quotaSortMode !== "default"}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           );

@@ -280,3 +280,58 @@ export function parseQuotaData(provider, data) {
 
   return normalizedQuotas;
 }
+
+/**
+ * Aggregate quotas from multiple connections for a single provider
+ * @param {Array<Object>} connections - Array of connection objects for the same provider
+ * @param {Object} quotaData - The global quotaData state
+ * @returns {Array<Object>} Array of aggregated normalized quota objects
+ */
+export function aggregateQuotas(connections, quotaData) {
+  const aggregated = {};
+
+  for (const conn of connections) {
+    const connQuota = quotaData[conn.id];
+    if (!connQuota || !connQuota.quotas) continue;
+
+    for (const q of connQuota.quotas) {
+      const key = q.modelKey || q.name;
+      if (!aggregated[key]) {
+        aggregated[key] = {
+          name: q.name,
+          modelKey: q.modelKey,
+          used: 0,
+          total: 0,
+          resetAt: null,
+          remaining: 0,
+        };
+      }
+
+      aggregated[key].used += (q.used || 0);
+      aggregated[key].total += (q.total || 0);
+      
+      if (q.remaining !== undefined) {
+        aggregated[key].remaining += q.remaining;
+      }
+
+      // Track earliest reset time
+      if (q.resetAt) {
+        const currentReset = aggregated[key].resetAt ? new Date(aggregated[key].resetAt) : null;
+        const newReset = new Date(q.resetAt);
+        if (!currentReset || newReset < currentReset) {
+          aggregated[key].resetAt = q.resetAt;
+        }
+      }
+    }
+  }
+
+  // Calculate percentages for aggregated quotas
+  const result = Object.values(aggregated).map(q => {
+    if (q.total > 0) {
+      q.remainingPercentage = Math.round(((q.total - q.used) / q.total) * 100);
+    }
+    return q;
+  });
+
+  return result;
+}
