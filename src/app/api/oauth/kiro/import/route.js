@@ -31,9 +31,16 @@ export async function POST(request) {
     const tokenFingerprint = crypto.createHash("sha256").update(trimmed).digest("hex").slice(0, 16);
     try {
       const existing = await getProviderConnections({ provider: "kiro" });
-      const duplicate = (existing || []).find(
-        (c) => c?.providerSpecificData?.tokenFingerprint === tokenFingerprint
-      );
+      const duplicate = (existing || []).find((c) => {
+        // Check stored fingerprint first (new imports have it)
+        if (c?.providerSpecificData?.tokenFingerprint === tokenFingerprint) return true;
+        // Fallback for pre-migration connections: compute from stored refreshToken
+        if (c?.refreshToken) {
+          const existingFp = crypto.createHash("sha256").update(c.refreshToken).digest("hex").slice(0, 16);
+          return existingFp === tokenFingerprint;
+        }
+        return false;
+      });
       if (duplicate) {
         return NextResponse.json(
           {
