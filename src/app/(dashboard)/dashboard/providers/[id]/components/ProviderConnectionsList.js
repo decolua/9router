@@ -27,6 +27,7 @@ export default function ProviderConnectionsList({
           <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="min-w-0 flex-1">
               <ConnectionRow
+                index={index}
                 connection={conn}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
