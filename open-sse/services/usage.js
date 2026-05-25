@@ -74,7 +74,7 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "claude":
       return await getClaudeUsage(accessToken, proxyOptions);
     case "codex":
-      return await getCodexUsage(accessToken, proxyOptions);
+      return await getCodexUsage(accessToken, providerSpecificData, proxyOptions);
     case "kiro":
       return await getKiroUsage(accessToken, providerSpecificData, proxyOptions);
     case "qoder":
@@ -629,13 +629,28 @@ function getCodexRateLimitBody(snapshot) {
     : snapshot;
 }
 
+function parseCodexResetTime(window) {
+  const absoluteReset = window?.reset_at ?? window?.resets_at ?? window?.resetAt ?? null;
+  const parsedAbsolute = parseResetTime(absoluteReset);
+  if (parsedAbsolute) return parsedAbsolute;
+
+  const relativeSeconds = toFiniteNumber(
+    window?.reset_after_seconds ?? window?.resets_in_seconds ?? window?.resetAfterSeconds,
+    null
+  );
+  if (typeof relativeSeconds === "number" && relativeSeconds > 0) {
+    return new Date(Date.now() + relativeSeconds * 1000).toISOString();
+  }
+  return null;
+}
+
 function formatCodexWindow(window) {
   const used = Math.max(0, Math.min(100, toFiniteNumber(window?.used_percent ?? window?.percent_used, 0)));
   return {
     used,
     total: 100,
     remaining: Math.max(0, 100 - used),
-    resetAt: parseResetTime(window?.reset_at ?? window?.resets_at ?? window?.resetAt ?? null),
+    resetAt: parseCodexResetTime(window),
     unlimited: false,
   };
 }
@@ -677,14 +692,21 @@ function getCodexReviewRateLimit(data) {
   }) || null;
 }
 
-async function getCodexUsage(accessToken, proxyOptions = null) {
+async function getCodexUsage(accessToken, providerSpecificData = {}, proxyOptions = null) {
   try {
+    const headers = {
+      "Authorization": `Bearer ${accessToken}`,
+      "Accept": "application/json",
+    };
+    const accountId = providerSpecificData?.chatgptAccountId || providerSpecificData?.accountId;
+    if (accountId) {
+      // #1407: /wham/usage can be account-scoped for ChatGPT Plus/Pro users.
+      headers["ChatGPT-Account-Id"] = accountId;
+    }
+
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
+      headers,
     }, proxyOptions);
 
     if (!response.ok) {
@@ -700,10 +722,13 @@ async function getCodexUsage(accessToken, proxyOptions = null) {
     appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
 
     return {
-      plan: data.plan_type || data.summary?.plan || "unknown",
+      plan: data.plan_type || data.summary?.plan || providerSpecificData?.chatgptPlanType || "unknown",
       limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
       reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
       quotas,
+      ...(Object.keys(quotas).length === 0
+        ? { message: "Codex connected. Usage API returned no quota windows." }
+        : {}),
     };
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
