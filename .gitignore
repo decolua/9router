@@ -80,3 +80,4 @@ gitbook/README.md
 .dolt/
 *.db
 .beads-credential-key
+.beads/issues.jsonl
