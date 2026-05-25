@@ -51,7 +51,8 @@ export async function validateProvidersOnStartup() {
     );
 
     for (const r of batchResults) {
-      results.push(r.status === "fulfilled" ? r.value : { valid: false, skipped: false, error: String(r.reason) });
+      const conn = batch[batchResults.indexOf(r)];
+      results.push(r.status === "fulfilled" ? r.value : { id: conn?.id, provider: conn?.provider, name: conn?.name, valid: false, skipped: false, error: String(r.reason) });
     }
   }
 

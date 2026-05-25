@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import { probeProviderConnection } from "../providerProbe";
 
 // Mock the providers constants
@@ -14,7 +14,11 @@ vi.mock("@/shared/constants/providers.js", () => ({
 }));
 
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+vi.stubGlobal("fetch", mockFetch);
+
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -28,7 +32,7 @@ describe("probeProviderConnection", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("skips oauth connection with no access token", async () => {
+  it("marks oauth connection with no access token as invalid (not skipped)", async () => {
     const result = await probeProviderConnection({
       provider: "claude-code",
       authType: "oauth",
@@ -67,7 +71,7 @@ describe("probeProviderConnection", () => {
   });
 
   it("returns invalid when fetch returns 401", async () => {
-    mockFetch.mockResolvedValueOnce({ status: 401 });
+    mockFetch.mockResolvedValueOnce({ status: 401, ok: false });
     const result = await probeProviderConnection({
       provider: "openai",
       authType: "apikey",
@@ -79,7 +83,7 @@ describe("probeProviderConnection", () => {
   });
 
   it("returns valid when fetch returns 200", async () => {
-    mockFetch.mockResolvedValueOnce({ status: 200 });
+    mockFetch.mockResolvedValueOnce({ status: 200, ok: true });
     const result = await probeProviderConnection({
       provider: "openai",
       authType: "apikey",
@@ -88,6 +92,17 @@ describe("probeProviderConnection", () => {
     expect(result.valid).toBe(true);
     expect(result.statusCode).toBe(200);
     expect(result.error).toBeNull();
+  });
+
+  it("returns invalid when fetch returns 500", async () => {
+    mockFetch.mockResolvedValueOnce({ status: 500, ok: false });
+    const result = await probeProviderConnection({
+      provider: "openai",
+      authType: "apikey",
+      apiKey: "sk-test",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.statusCode).toBe(500);
   });
 
   it("returns invalid with error=timeout on AbortError", async () => {

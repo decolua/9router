@@ -95,7 +95,7 @@ export async function probeProviderConnection(connection, timeoutMs = 5000) {
     const validStatuses = probe.validStatus ?? null;
     const valid = validStatuses
       ? validStatuses.includes(res.status)
-      : res.status !== 401 && res.status !== 403;
+      : res.ok;
 
     return {
       valid,
