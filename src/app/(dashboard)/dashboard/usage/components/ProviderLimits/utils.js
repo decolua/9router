@@ -92,6 +92,26 @@ export function getRemainingPercentage(quota) {
   return calculatePercentage(quota?.used, quota?.total);
 }
 
+export function getBestQuotaRemaining(quotas = []) {
+  const remainingValues = quotas
+    .map((quota) => getRemainingPercentage(quota))
+    .filter((remaining) => Number.isFinite(remaining));
+
+  if (remainingValues.length === 0) return Number.POSITIVE_INFINITY;
+  return Math.max(...remainingValues);
+}
+
+export function isQuotaCollectionDepleted(quotas = [], threshold = 5) {
+  const remainingValues = quotas
+    .filter((quota) => quota?.total && quota.total > 0)
+    .map((quota) => getRemainingPercentage(quota))
+    .filter((remaining) => Number.isFinite(remaining));
+
+  // #1328: accounts can expose multiple pools (e.g. credit + credit_freetrial).
+  // Treat the account as empty only when every usable pool is depleted.
+  return remainingValues.length > 0 && remainingValues.every((remaining) => remaining <= threshold);
+}
+
 /**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
