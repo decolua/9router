@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
+import { formatModelTestNetworkError, runModelTest } from "@/shared/utils/modelTestClient";
 
 export default function AddCustomModelModal({ isOpen, providerAlias, providerDisplayAlias, onSave, onClose }) {
   const [modelId, setModelId] = useState("");
@@ -27,17 +28,12 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     setTestStatus("testing");
     setTestError("");
     try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
-      });
-      const data = await res.json();
+      const data = await runModelTest({ model: `${providerAlias}/${cleanId}` });
       setTestStatus(data.ok ? "ok" : "error");
       setTestError(data.error || "");
     } catch (err) {
       setTestStatus("error");
-      setTestError(err.message);
+      setTestError(formatModelTestNetworkError(err));
     }
   };
 

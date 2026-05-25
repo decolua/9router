@@ -6,6 +6,7 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { formatModelTestNetworkError, runModelTest } from "@/shared/utils/modelTestClient";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
@@ -187,17 +188,12 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${modelId}`, kind: kindFilter }),
-      });
-      const data = await res.json();
+      const data = await runModelTest({ model: `${providerAlias}/${modelId}`, kind: kindFilter });
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
       setTestError(data.ok ? "" : (data.error || "Model not reachable"));
-    } catch {
+    } catch (error) {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
-      setTestError("Network error");
+      setTestError(formatModelTestNetworkError(error));
     } finally { setTestingModelId(null); }
   };
 
