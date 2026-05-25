@@ -11,20 +11,40 @@ let cachedConfig = null;
 let cachedConfigTs = 0;
 
 async function getObservabilityConfig() {
-  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+  if (cachedConfig && Date.now() - cachedConfigTs < CONFIG_CACHE_TTL_MS)
+    return cachedConfig;
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability === "boolean"
-      ? settings.enableObservability
-      : envEnabled;
+    const enabled =
+      typeof settings.enableObservability === "boolean"
+        ? settings.enableObservability
+        : envEnabled;
     cachedConfig = {
       enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      maxRecords:
+        settings.observabilityMaxRecords ||
+        parseInt(
+          process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS),
+          10,
+        ),
+      batchSize:
+        settings.observabilityBatchSize ||
+        parseInt(
+          process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE),
+          10,
+        ),
+      flushIntervalMs:
+        settings.observabilityFlushIntervalMs ||
+        parseInt(
+          process.env.OBSERVABILITY_FLUSH_INTERVAL_MS ||
+            String(DEFAULT_FLUSH_INTERVAL_MS),
+          10,
+        ),
+      maxJsonSize:
+        (settings.observabilityMaxJsonSize ||
+          parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
     };
   } catch {
     cachedConfig = {
@@ -45,10 +65,17 @@ let isFlushing = false;
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
-  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token", "api-key"];
+  const sensitiveKeys = [
+    "authorization",
+    "x-api-key",
+    "cookie",
+    "token",
+    "api-key",
+  ];
   const sanitized = { ...headers };
   for (const key of Object.keys(sanitized)) {
-    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
+    if (sensitiveKeys.some((s) => key.toLowerCase().includes(s)))
+      delete sanitized[key];
   }
   return sanitized;
 }
@@ -63,7 +90,11 @@ function generateDetailId(model) {
 function truncateField(obj, maxSize) {
   const str = JSON.stringify(obj || {});
   if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+    return {
+      _truncated: true,
+      _originalSize: str.length,
+      _preview: str.substring(0, 200),
+    };
   }
   return obj || {};
 }
@@ -78,7 +109,7 @@ async function flushToDatabase() {
 
     while (writeBuffer.length > 0) {
       const items = writeBuffer.splice(0, writeBuffer.length);
-      
+
       if (worker) {
         // Offload to background Worker Thread
         worker.postMessage({
@@ -86,45 +117,68 @@ async function flushToDatabase() {
           payload: {
             items,
             maxRecords: config.maxRecords,
-            maxJsonSize: config.maxJsonSize
-          }
+            maxJsonSize: config.maxJsonSize,
+          },
         });
       } else {
-        // Fallback to synchronous thread-blocking write if Worker fails to initialize
-        const db = await getAdapter();
-        db.transaction(() => {
-          for (const item of items) {
-            if (!item.id) item.id = generateDetailId(item.model);
-            if (!item.timestamp) item.timestamp = new Date().toISOString();
-            if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+        // Defer sync write to next event loop tick to avoid blocking active streams
+        const _items = items;
+        const _config = config;
+        setImmediate(async () => {
+          try {
+            const db = await getAdapter();
+            db.transaction(() => {
+              for (const item of _items) {
+                if (!item.id) item.id = generateDetailId(item.model);
+                if (!item.timestamp) item.timestamp = new Date().toISOString();
+                if (item.request?.headers)
+                  item.request.headers = sanitizeHeaders(item.request.headers);
 
-            const record = {
-              id: item.id,
-              provider: item.provider || null,
-              model: item.model || null,
-              connectionId: item.connectionId || null,
-              timestamp: item.timestamp,
-              status: item.status || null,
-              latency: item.latency || {},
-              tokens: item.tokens || {},
-              request: truncateField(item.request, config.maxJsonSize),
-              providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-              providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-              response: truncateField(item.response, config.maxJsonSize),
-            };
+                const record = {
+                  id: item.id,
+                  provider: item.provider || null,
+                  model: item.model || null,
+                  connectionId: item.connectionId || null,
+                  timestamp: item.timestamp,
+                  status: item.status || null,
+                  latency: item.latency || {},
+                  tokens: item.tokens || {},
+                  request: truncateField(item.request, _config.maxJsonSize),
+                  providerRequest: truncateField(
+                    item.providerRequest,
+                    _config.maxJsonSize,
+                  ),
+                  providerResponse: truncateField(
+                    item.providerResponse,
+                    _config.maxJsonSize,
+                  ),
+                  response: truncateField(item.response, _config.maxJsonSize),
+                };
 
-            db.run(
-              `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-              [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-            );
-          }
+                db.run(
+                  `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+                  [
+                    record.id,
+                    record.timestamp,
+                    record.provider,
+                    record.model,
+                    record.connectionId,
+                    record.status,
+                    stringifyJson(record),
+                  ],
+                );
+              }
 
-          const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-          if (cnt && cnt.c > config.maxRecords) {
-            db.run(
-              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-              [cnt.c - config.maxRecords]
-            );
+              const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+              if (cnt && cnt.c > _config.maxRecords) {
+                db.run(
+                  `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+                  [cnt.c - _config.maxRecords],
+                );
+              }
+            });
+          } catch (e) {
+            console.error("[requestDetailsRepo] Deferred write failed:", e);
           }
         });
       }
@@ -145,8 +199,13 @@ export async function saveRequestDetail(detail) {
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
   if (writeBuffer.length >= config.batchSize) {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    flushToDatabase().catch((e) =>
+      console.error("[requestDetailsRepo] flush err:", e),
+    );
   } else if (!flushTimer) {
     flushTimer = setTimeout(() => {
       flushTimer = null;
@@ -160,15 +219,36 @@ export async function getRequestDetails(filter = {}) {
   const conds = [];
   const params = [];
 
-  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
-  if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
-  if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
-  if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
-  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  if (filter.provider) {
+    conds.push("provider = ?");
+    params.push(filter.provider);
+  }
+  if (filter.model) {
+    conds.push("model = ?");
+    params.push(filter.model);
+  }
+  if (filter.connectionId) {
+    conds.push("connectionId = ?");
+    params.push(filter.connectionId);
+  }
+  if (filter.status) {
+    conds.push("status = ?");
+    params.push(filter.status);
+  }
+  if (filter.startDate) {
+    conds.push("timestamp >= ?");
+    params.push(new Date(filter.startDate).toISOString());
+  }
+  if (filter.endDate) {
+    conds.push("timestamp <= ?");
+    params.push(new Date(filter.endDate).toISOString());
+  }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
+  const cntRow = db.get(
+    `SELECT COUNT(*) as c FROM requestDetails ${where}`,
+    params,
+  );
   const totalItems = cntRow ? cntRow.c : 0;
 
   const page = filter.page || 1;
@@ -178,13 +258,20 @@ export async function getRequestDetails(filter = {}) {
 
   const rows = db.all(
     `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
-    [...params, pageSize, offset]
+    [...params, pageSize, offset],
   );
   const details = rows.map((r) => parseJson(r.data, {}));
 
   return {
     details,
-    pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 },
+    pagination: {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
   };
 }
 
@@ -195,7 +282,10 @@ export async function getRequestDetailById(id) {
 }
 
 const _shutdownHandler = async () => {
-  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
   if (writeBuffer.length > 0) await flushToDatabase();
 };
 
