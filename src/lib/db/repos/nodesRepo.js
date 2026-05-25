@@ -90,6 +90,17 @@ export async function deleteProviderNode(id) {
     if (!row) return;
     removed = rowToNode(row);
     db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
+
+    // #1409: imported compatible-provider aliases store values as
+    // `${providerNodeId}/${model}`. Remove them with the node so stale aliases
+    // cannot block re-import after a provider is recreated with the same prefix.
+    const rows = db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`);
+    for (const alias of rows) {
+      const model = parseJson(alias.value, null);
+      if (typeof model === "string" && model.startsWith(`${id}/`)) {
+        db.run(`DELETE FROM kv WHERE scope = 'modelAliases' AND key = ?`, [alias.key]);
+      }
+    }
   });
   return removed;
 }

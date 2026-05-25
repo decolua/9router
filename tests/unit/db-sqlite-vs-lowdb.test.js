@@ -18,6 +18,9 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  // Release SQLite file handles before removing the temp DATA_DIR on Windows.
+  try { global._dbAdapter?.instance?.close?.(); } catch {}
+  delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -102,7 +105,7 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("providerNodes: CRUD", async () => {
-    const n = await sqliteDb.createProviderNode({ type: "openai", name: "Test", baseUrl: "https://api.test", apiType: "openai" });
+    const n = await sqliteDb.createProviderNode({ id: "provider-alias-cleanup", type: "openai", name: "Test", baseUrl: "https://api.test", apiType: "openai" });
     expect(n.id).toBeDefined();
     expect(n.baseUrl).toBe("https://api.test");
 
@@ -113,8 +116,15 @@ describe("DB SQLite layer — public API parity", () => {
     const updated = await sqliteDb.getProviderNodeById(n.id);
     expect(updated.name).toBe("Test2");
 
+    await sqliteDb.setModelAlias("deleted-provider-model", `${n.id}/imported-model`);
+    await sqliteDb.setModelAlias("neighbor-provider-model", `${n.id}-neighbor/imported-model`);
+
     await sqliteDb.deleteProviderNode(n.id);
     expect(await sqliteDb.getProviderNodeById(n.id)).toBeNull();
+
+    const aliasesAfterDelete = await sqliteDb.getModelAliases();
+    expect(aliasesAfterDelete["deleted-provider-model"]).toBeUndefined();
+    expect(aliasesAfterDelete["neighbor-provider-model"]).toBe(`${n.id}-neighbor/imported-model`);
   });
 
   it("proxyPools: CRUD with sort by updatedAt desc", async () => {
