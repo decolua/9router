@@ -110,7 +110,7 @@ export class DefaultExecutor extends BaseExecutor {
           } else if (credentials.accessToken) {
             headers["Authorization"] = `Bearer ${credentials.accessToken}`;
           }
-          if (!headers["anthropic-version"]) {
+          if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) {
             headers["anthropic-version"] = "2023-06-01";
           }
         } else if (this.provider === "gitlab") {
@@ -128,7 +128,7 @@ export class DefaultExecutor extends BaseExecutor {
         } else if (this.config?.format === "claude") {
           // Generic claude-format provider (e.g. agentrouter): x-api-key + anthropic-version
           headers["x-api-key"] = credentials.apiKey || credentials.accessToken;
-          if (!headers["anthropic-version"]) headers["anthropic-version"] = "2023-06-01";
+          if (!headers["anthropic-version"] && !headers["Anthropic-Version"]) headers["anthropic-version"] = "2023-06-01";
         } else {
           headers["Authorization"] = `Bearer ${credentials.apiKey || credentials.accessToken}`;
         }
