@@ -83,3 +83,26 @@ export function getAdapterSync() {
   if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;
 }
+
+let workerInstance = null;
+
+export async function getObservabilityWorker() {
+  if (workerInstance) return workerInstance;
+  
+  try {
+    const { Worker } = await import("worker_threads");
+    const path = await import("path");
+    const workerPath = path.join(process.cwd(), "src/lib/db/observabilityWorker.js");
+    
+    workerInstance = new Worker(workerPath);
+    
+    workerInstance.on("error", (err) => {
+      console.error("[ObservabilityWorker] Worker thread error:", err);
+    });
+  } catch (err) {
+    console.error("[ObservabilityWorker] Failed to initialize worker thread:", err.message);
+  }
+  
+  return workerInstance;
+}
+

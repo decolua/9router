@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { getAdapter } from "../driver.js";
+import { getAdapter, getObservabilityWorker } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 
@@ -242,42 +242,49 @@ export async function getActiveRequests() {
 
 export async function saveRequestUsage(entry) {
   try {
-    const db = await getAdapter();
-
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
     entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
 
-    const tokens = entry.tokens || {};
-    const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-    const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
+    const worker = await getObservabilityWorker();
+    if (worker) {
+      // Offload to background Worker Thread
+      worker.postMessage({
+        type: "write_usage",
+        payload: { entry }
+      });
+    } else {
+      // Fallback to synchronous thread-blocking write if Worker fails to initialize
+      const db = await getAdapter();
+      const tokens = entry.tokens || {};
+      const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
+      const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
-    // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
-    // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
-    db.transaction(() => {
-      db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
-        ]
-      );
+      db.transaction(() => {
+        db.run(
+          `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entry.timestamp, entry.provider || null, entry.model || null,
+            entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+            promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+            stringifyJson(tokens), stringifyJson({}),
+          ]
+        );
 
-      const dateKey = getLocalDateKey(entry.timestamp);
-      const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
-      const day = row ? parseJson(row.data, {}) : {
-        requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
-        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
-      };
-      aggregateEntryToDay(day, entry);
-      db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
+        const dateKey = getLocalDateKey(entry.timestamp);
+        const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
+        const day = row ? parseJson(row.data, {}) : {
+          requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
+          byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+        };
+        aggregateEntryToDay(day, entry);
+        db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
 
-      // Atomic counter increment in same transaction
-      const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
-      const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
-      db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
-    });
+        // Atomic counter increment in same transaction
+        const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
+        const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
+        db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+      });
+    }
 
     pushToRing(entry);
     statsEmitter.emit("update");

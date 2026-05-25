@@ -80,39 +80,47 @@ export class KiroExecutor extends BaseExecutor {
    */
   transformEventStreamToSSE(response, model) {
     let buffer = new Uint8Array(0);
+    let readOffset = 0;
     let chunkIndex = 0;
     const responseId = `chatcmpl-${Date.now()}`;
     const created = Math.floor(Date.now() / 1000);
     const state = {
       endDetected: false,
       finishEmitted: false,
+      doneEmitted: false,
       hasToolCalls: false,
       hasReasoningContent: false,
       reasoningChunkCount: 0,
       toolCallIndex: 0,
-      seenToolIds: new Map()
+      seenToolIds: new Map(),
+      totalContentLength: 0,
+      contextUsagePercentage: 0
     };
 
     const transformStream = new TransformStream({
       async transform(chunk, controller) {
-        // Append to buffer
-        const newBuffer = new Uint8Array(buffer.length + chunk.length);
-        newBuffer.set(buffer);
-        newBuffer.set(chunk, buffer.length);
+        // Tối ưu hóa: Dọn dẹp buffer đã đọc và ghép nối chunk mới
+        const remainingLength = buffer.length - readOffset;
+        const newBuffer = new Uint8Array(remainingLength + chunk.length);
+        if (remainingLength > 0) {
+          newBuffer.set(buffer.subarray(readOffset));
+        }
+        newBuffer.set(chunk, remainingLength);
         buffer = newBuffer;
+        readOffset = 0;
 
         // Parse events from buffer
         let iterations = 0;
         const maxIterations = 1000;
-        while (buffer.length >= 16 && iterations < maxIterations) {
+        while (buffer.length - readOffset >= 16 && iterations < maxIterations) {
           iterations++;
-          const view = new DataView(buffer.buffer, buffer.byteOffset);
+          const view = new DataView(buffer.buffer, buffer.byteOffset + readOffset);
           const totalLength = view.getUint32(0, false);
 
-          if (totalLength < 16 || totalLength > buffer.length || buffer.length < totalLength) break;
+          if (totalLength < 16 || totalLength > (buffer.length - readOffset)) break;
 
-          const eventData = buffer.slice(0, totalLength);
-          buffer = buffer.slice(totalLength);
+          const eventData = buffer.subarray(readOffset, readOffset + totalLength);
+          readOffset += totalLength;
 
           const event = parseEventFrame(eventData);
           if (!event) continue;
@@ -279,7 +287,25 @@ export class KiroExecutor extends BaseExecutor {
           }
 
           // Handle messageStopEvent
-          if (eventType === "messageStopEvent") {
+          if (eventType === "messageStopEvent" && !state.finishEmitted) {
+            state.finishEmitted = true;
+
+            if (!state.usage) {
+              const estimatedOutputTokens = state.totalContentLength > 0 
+                ? Math.max(1, Math.floor(state.totalContentLength / 4))
+                : 0;
+
+              const estimatedInputTokens = state.contextUsagePercentage > 0
+                ? Math.floor(state.contextUsagePercentage * 200000 / 100)
+                : 0;
+
+              state.usage = {
+                prompt_tokens: estimatedInputTokens,
+                completion_tokens: estimatedOutputTokens,
+                total_tokens: estimatedInputTokens + estimatedOutputTokens
+              };
+            }
+
             const chunk = {
               id: responseId,
               object: "chat.completion.chunk",
@@ -291,8 +317,17 @@ export class KiroExecutor extends BaseExecutor {
                 finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
               }]
             };
-            state.finishEmitted = true;
+
+            if (state.usage) {
+              chunk.usage = state.usage;
+            }
+
             controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+
+            if (!state.doneEmitted) {
+              controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+              state.doneEmitted = true;
+            }
           }
 
           // Handle contextUsageEvent to extract contextUsagePercentage
@@ -390,11 +425,17 @@ export class KiroExecutor extends BaseExecutor {
               finish_reason: state.hasToolCalls ? "tool_calls" : "stop"
             }]
           };
+          if (state.usage) {
+            finishChunk.usage = state.usage;
+          }
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finishChunk)}\n\n`));
         }
 
         // Send final done message
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        if (!state.doneEmitted) {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          state.doneEmitted = true;
+        }
       }
     });
 

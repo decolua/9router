@@ -1,4 +1,6 @@
 import { Readable } from "stream";
+import https from "https";
+import dns from "dns";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 const originalFetch = globalThis.fetch;
@@ -6,6 +8,27 @@ const proxyDispatchers = new Map();
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
+
+const bypassKeepAliveAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 100,
+  maxFreeSockets: 10,
+  timeout: 30000,
+  lookup: (hostname, options, callback) => {
+    resolveRealIP(hostname)
+      .then((ip) => {
+        if (ip) {
+          callback(null, ip, 4);
+        } else {
+          dns.lookup(hostname, options, callback);
+        }
+      })
+      .catch((err) => {
+        callback(err);
+      });
+  }
+});
 const MITM_BYPASS_HOSTS = [
   "cloudcode-pa.googleapis.com",
   "daily-cloudcode-pa.googleapis.com",
@@ -144,57 +167,58 @@ async function getDispatcher(proxyUrl) {
  */
 async function createBypassRequest(parsedUrl, realIP, options) {
   const httpsModule = await import("https");
-  const netModule = await import("net");
-  // CJS modules expose exports via .default in ESM dynamic import context
   const https = httpsModule.default ?? httpsModule;
-  const net = netModule.default ?? netModule;
 
   return new Promise((resolve, reject) => {
-    const socket = new net.Socket();
+    const reqOptions = {
+      hostname: parsedUrl.hostname,
+      port: HTTPS_PORT,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: options.method || "POST",
+      headers: {
+        ...options.headers,
+        Host: parsedUrl.hostname,
+      },
+      agent: bypassKeepAliveAgent,
+      servername: parsedUrl.hostname,
+      signal: options.signal
+    };
 
-    socket.connect(HTTPS_PORT, realIP, () => {
-      const reqOptions = {
-        socket,
-        // SNI + cert hostname are validated against the hostname the caller
-        // asked for, not the IP we connected to. This keeps the DNS-bypass
-        // (avoiding /etc/hosts MITM) while still rejecting on-path attackers
-        // that present a different cert. The MITM_BYPASS_HOSTS targets are
-        // all public-CA-issued (Google / GitHub / AWS / Cursor) so default
-        // verification works without any extra trust store.
-        servername: parsedUrl.hostname,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method || "POST",
-        headers: {
-          ...options.headers,
-          Host: parsedUrl.hostname,
+    const req = https.request(reqOptions, (res) => {
+      const response = {
+        ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers: new Map(Object.entries(res.headers)),
+        body: Readable.toWeb(res),
+        text: async () => {
+          const chunks = [];
+          for await (const chunk of res) chunks.push(chunk);
+          return Buffer.concat(chunks).toString();
         },
+        json: async () => JSON.parse(await response.text()),
       };
-
-      const req = https.request(reqOptions, (res) => {
-        const response = {
-          ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
-          text: async () => {
-            const chunks = [];
-            for await (const chunk of res) chunks.push(chunk);
-            return Buffer.concat(chunks).toString();
-          },
-          json: async () => JSON.parse(await response.text()),
-        };
-        resolve(response);
-      });
-
-      req.on("error", reject);
-      if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
-      }
-      req.end();
+      resolve(response);
     });
 
-    socket.on("error", reject);
+    req.on("error", reject);
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        req.destroy();
+        reject(new DOMException("The user aborted a request.", "AbortError"));
+      } else {
+        options.signal.addEventListener("abort", () => {
+          req.destroy();
+          reject(new DOMException("The user aborted a request.", "AbortError"));
+        });
+      }
+    }
+
+    if (options.body) {
+      req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+    }
+    req.end();
   });
 }
 
