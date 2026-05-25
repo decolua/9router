@@ -72,3 +72,11 @@ ecosystem.config.*
 scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
+
+# AgentOps session artifacts (auto-added by ao init)
+.agents/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
