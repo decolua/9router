@@ -1,4 +1,9 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import {
+  HTTP_STATUS,
+  RETRY_CONFIG,
+  DEFAULT_RETRY_CONFIG,
+  resolveRetryEntry,
+} from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
@@ -16,7 +21,9 @@ export class BaseExecutor {
   }
 
   getBaseUrls() {
-    return this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : []);
+    return (
+      this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : [])
+    );
   }
 
   getFallbackCount() {
@@ -25,13 +32,19 @@ export class BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.openai.com/v1";
+      const baseUrl =
+        credentials?.providerSpecificData?.baseUrl ||
+        "https://api.openai.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
-      const path = this.provider.includes("responses") ? "/responses" : "/chat/completions";
+      const path = this.provider.includes("responses")
+        ? "/responses"
+        : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "https://api.anthropic.com/v1";
+      const baseUrl =
+        credentials?.providerSpecificData?.baseUrl ||
+        "https://api.anthropic.com/v1";
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
@@ -42,7 +55,7 @@ export class BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const headers = {
       "Content-Type": "application/json",
-      ...this.config.headers
+      ...this.config.headers,
     };
 
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -77,7 +90,10 @@ export class BaseExecutor {
   }
 
   shouldRetry(status, urlIndex) {
-    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
+    return (
+      status === HTTP_STATUS.RATE_LIMITED &&
+      urlIndex + 1 < this.getFallbackCount()
+    );
   }
 
   // Override in subclass for provider-specific refresh
@@ -92,10 +108,21 @@ export class BaseExecutor {
   }
 
   parseError(response, bodyText) {
-    return { status: response.status, message: bodyText || `HTTP ${response.status}` };
+    return {
+      status: response.status,
+      message: bodyText || `HTTP ${response.status}`,
+    };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({
+    model,
+    body,
+    stream,
+    credentials,
+    signal,
+    log,
+    proxyOptions = null,
+  }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -107,32 +134,66 @@ export class BaseExecutor {
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     const tryRetry = async (urlIndex, statusKey, reason) => {
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
-      if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
+      if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts)
+        return false;
       retryAttemptsByUrl[urlIndex]++;
-      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      log?.debug?.(
+        "RETRY",
+        `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
       return true;
     };
 
+    // Calculate connection timeout (custom from credentials or universal default of 15s)
+    const providerSpecific = credentials?.providerSpecificData || {};
+    let timeoutMs = providerSpecific.connectionTimeoutMs;
+    if (typeof timeoutMs !== "number" || isNaN(timeoutMs) || timeoutMs <= 0) {
+      timeoutMs = 15000; // Universal default of 15 seconds
+    }
+
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
-      const transformedBody = this.transformRequest(model, body, stream, credentials);
+      const transformedBody = this.transformRequest(
+        model,
+        body,
+        stream,
+        credentials,
+      );
       const headers = this.buildHeaders(credentials, stream);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      try {
-        const response = await proxyAwareFetch(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(transformedBody),
-          signal
-        }, proxyOptions);
+      // Construct a combined AbortSignal combining the client's signal and the connection timeout
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
+      const combinedSignal = signal
+        ? AbortSignal.any([signal, timeoutSignal])
+        : timeoutSignal;
 
-        if (await tryRetry(urlIndex, response.status, `status ${response.status}`)) { urlIndex--; continue; }
+      try {
+        const response = await proxyAwareFetch(
+          url,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(transformedBody),
+            signal: combinedSignal,
+          },
+          proxyOptions,
+        );
+
+        if (
+          await tryRetry(urlIndex, response.status, `status ${response.status}`)
+        ) {
+          urlIndex--;
+          continue;
+        }
 
         if (this.shouldRetry(response.status, urlIndex)) {
-          log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
+          log?.debug?.(
+            "RETRY",
+            `${response.status} on ${url}, trying fallback ${urlIndex + 1}`,
+          );
           lastStatus = response.status;
           continue;
         }
@@ -140,20 +201,51 @@ export class BaseExecutor {
         return { response, url, headers, transformedBody };
       } catch (error) {
         lastError = error;
+
+        // Detect if this is a connection timeout error
+        const isTimeout =
+          error.name === "TimeoutError" ||
+          (error.name === "AbortError" &&
+            combinedSignal.aborted &&
+            combinedSignal.reason?.name === "TimeoutError");
+        if (isTimeout) {
+          const timeoutError = new Error(
+            `Connection to provider ${this.provider} timed out after ${timeoutMs}ms`,
+          );
+          timeoutError.name = "TimeoutError";
+          timeoutError.status = 504;
+          throw timeoutError;
+        }
+
         if (error.name === "AbortError") throw error;
 
         // Map network/fetch exceptions to 502 retry config
-        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
+        if (
+          await tryRetry(
+            urlIndex,
+            HTTP_STATUS.BAD_GATEWAY,
+            `network "${error.message}"`,
+          )
+        ) {
+          urlIndex--;
+          continue;
+        }
 
         if (urlIndex + 1 < fallbackCount) {
-          log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
+          log?.debug?.(
+            "RETRY",
+            `Error on ${url}, trying fallback ${urlIndex + 1}`,
+          );
           continue;
         }
         throw error;
       }
     }
 
-    throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);
+    throw (
+      lastError ||
+      new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`)
+    );
   }
 }
 
