@@ -3,7 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, onSpeedTest, isSpeedTesting, speedTestData }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -16,6 +16,35 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
     ? "#ef4444"
     : undefined;
 
+  const getSpeedStyle = () => {
+    if (!speedTestData) return null;
+    const { latencyMs, tps } = speedTestData;
+    // Poor (Red) - Latency > 15s or TPS < 5
+    if (latencyMs > 15000 || tps < 5) {
+      return {
+        bg: "bg-red-500/10 dark:bg-red-500/15 border border-red-500/20",
+        text: "text-red-500 dark:text-red-400",
+        glow: "shadow-[0_0_8px_rgba(239,68,68,0.35)]"
+      };
+    }
+    // Moderate (Yellow/Orange) - Latency > 10s or TPS < 10
+    if (latencyMs > 10000 || tps < 10) {
+      return {
+        bg: "bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20",
+        text: "text-amber-600 dark:text-amber-400",
+        glow: "shadow-[0_0_8px_rgba(245,158,11,0.3)]"
+      };
+    }
+    // Excellent (Green) - Latency <= 10s and TPS >= 10
+    return {
+      bg: "bg-green-500/10 dark:bg-green-500/15 border border-green-500/20",
+      text: "text-green-600 dark:text-green-400",
+      glow: "shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+    };
+  };
+
+  const speedStyle = getSpeedStyle();
+
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <span
@@ -27,7 +56,15 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
         <div className="flex items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+            {speedTestData && speedStyle && (
+              <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold transition-all duration-300 ${speedStyle.bg} ${speedStyle.text} ${speedStyle.glow}`}>
+                <span className="material-symbols-outlined text-[10px] animate-pulse">bolt</span>
+                {speedTestData.latencyMs}ms · {speedTestData.tps} TPS
+              </span>
+            )}
+          </div>
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
@@ -57,6 +94,22 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
               </span>
             </div>
           )}
+          {onSpeedTest && (
+            <div className="relative group/btn">
+              <button
+                onClick={onSpeedTest}
+                disabled={isSpeedTesting}
+                className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm" style={isSpeedTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                  {isSpeedTesting ? "progress_activity" : "speed"}
+                </span>
+              </button>
+              <span className="pointer-events-none absolute top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
+                {isSpeedTesting ? "Measuring speed..." : "Check Latency & TPS"}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       <button
@@ -70,7 +123,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias, connections, isAnthropic, onSpeedTest, speedTestingModelId, modelSpeedResults }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -226,6 +279,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onTest={connections.length > 0 ? () => handleTestModel(modelId) : undefined}
               testStatus={modelTestResults[modelId]}
               isTesting={testingModelId === modelId}
+              onSpeedTest={onSpeedTest ? () => onSpeedTest(modelId) : undefined}
+              isSpeedTesting={speedTestingModelId === modelId}
+              speedTestData={modelSpeedResults?.[modelId]}
             />
           ))}
         </div>
@@ -247,4 +303,7 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  onSpeedTest: PropTypes.func,
+  speedTestingModelId: PropTypes.string,
+  modelSpeedResults: PropTypes.object,
 };
