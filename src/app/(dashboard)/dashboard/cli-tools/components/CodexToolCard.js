@@ -58,7 +58,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       if (modelMatch) setSelectedModel(modelMatch[1]);
 
       // Parse subagent settings
-      const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
+      const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\][\s\S]*?^model\s*=\s*"([^"]+)"/m);
       if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
     }
   }, [codexStatus]);
@@ -174,6 +174,7 @@ base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
 [agents.subagent]
+description = "Fast subagent for codebase exploration"
 model = "${effectiveSubagentModel}"
 `;
 
