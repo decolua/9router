@@ -12,7 +12,33 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    return injectReasoningContent({ provider: this.provider, model, body });
+    let transformedBody = { ...body };
+
+    // Handle json_schema response_format fallback for OpenAI-compatible providers
+    // (Models that don't natively support Structured Output will fail if passed json_schema)
+    if (transformedBody.response_format?.type === "json_schema" && transformedBody.response_format.json_schema?.schema) {
+      const schemaJson = JSON.stringify(transformedBody.response_format.json_schema.schema, null, 2);
+      const schemaPrompt = `You must respond with valid JSON that strictly follows this JSON schema:\n\`\`\`json\n${schemaJson}\n\`\`\`\nRespond ONLY with the JSON object, no other text.`;
+
+      transformedBody.messages = Array.isArray(transformedBody.messages)
+        ? [...transformedBody.messages.map(m => ({ ...m }))]
+        : [];
+
+      const systemMessage = transformedBody.messages.find(m => m.role === "system");
+      if (systemMessage) {
+        if (typeof systemMessage.content === "string") {
+          systemMessage.content += `\n\n${schemaPrompt}`;
+        } else if (Array.isArray(systemMessage.content)) {
+          systemMessage.content.push({ type: "text", text: `\n\n${schemaPrompt}` });
+        }
+      } else {
+        transformedBody.messages.unshift({ role: "system", content: schemaPrompt });
+      }
+
+      transformedBody.response_format = { type: "json_object" };
+    }
+
+    return injectReasoningContent({ provider: this.provider, model, body: transformedBody });
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
