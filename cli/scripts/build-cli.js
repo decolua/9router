@@ -41,7 +41,7 @@ function copyRecursive(src, dest) {
     console.warn(`Warning: Source ${src} does not exist`);
     return;
   }
-  
+
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
@@ -73,11 +73,11 @@ function copyRecursive(src, dest) {
         } else {
           fs.copyFileSync(real, destPath);
         }
-      } catch {}
+      } catch { }
     } else {
       try {
         fs.copyFileSync(srcPath, destPath);
-      } catch {}
+      } catch { }
     }
   }
 }
@@ -137,12 +137,29 @@ console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
 const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
-if (!fs.existsSync(standaloneApp)) {
+// Resolve the actual standalone app directory.
+// Next.js may output server.js directly in standaloneRoot, or nest it under
+// a subdirectory named after the project (e.g. "app/", "9router/", etc.).
+function resolveStandaloneApp(root) {
+  // Case 1: server.js at root level (most common with workspace tracing)
+  if (fs.existsSync(path.join(root, "server.js"))) return root;
+  // Case 2: nested under a single subdirectory (Next.js names it after the
+  //         project folder when outputFileTracingRoot is a parent directory)
+  try {
+    const entries = fs.readdirSync(root, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const candidate = path.join(root, entry.name);
+      if (fs.existsSync(path.join(candidate, "server.js"))) return candidate;
+    }
+  } catch (e) { }
+  return null;
+}
+
+const standaloneApp = resolveStandaloneApp(standaloneRootToUse);
+if (!standaloneApp) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("Expected server.js at root or in a subdirectory of .next/standalone/");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);
