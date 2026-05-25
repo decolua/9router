@@ -23,14 +23,34 @@ function generateSessionId() {
   return `sess_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function extractContentText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(c => c?.text || c?.output || "").filter(Boolean).join("\n");
+  }
+  return "";
+}
+
 // Extract text content from an input item
 function extractItemText(item) {
   if (!item) return "";
-  if (typeof item.content === "string") return item.content;
-  if (Array.isArray(item.content)) {
-    return item.content.map(c => c.text || c.output || "").filter(Boolean).join("");
-  }
-  return "";
+  return extractContentText(item.content).replace(/\n/g, "");
+}
+
+function moveSystemInputToInstructions(body) {
+  if (!Array.isArray(body.input)) return;
+
+  const systemTexts = [];
+  body.input = body.input.filter((item) => {
+    if (item?.role !== "system" && item?.role !== "developer") return true;
+    const text = extractContentText(item.content).trim();
+    if (text) systemTexts.push(text);
+    return false;
+  });
+
+  if (systemTexts.length === 0) return;
+  const existing = typeof body.instructions === "string" ? body.instructions.trim() : "";
+  body.instructions = [existing, ...systemTexts].filter(Boolean).join("\n\n");
 }
 
 // Resolve session_id from first assistant message + machineId to avoid cross-user collision
@@ -160,6 +180,9 @@ export class CodexExecutor extends BaseExecutor {
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;
 
+    // Codex rejects system/developer roles inside input[]; send them as instructions instead.
+    moveSystemInputToInstructions(body);
+
     // Ensure input is present and non-empty (Codex API rejects empty input)
     if (!body.input || (Array.isArray(body.input) && body.input.length === 0)) {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
@@ -223,6 +246,11 @@ export class CodexExecutor extends BaseExecutor {
     delete body.metadata; // Cursor sends this but Codex doesn't support it
     delete body.stream_options; // Cursor sends this but Codex doesn't support it
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
+    delete body.background; // n8n Responses API sends background:false by default
+    delete body.parallel_tool_calls; // n8n/OpenAI clients send this but Codex doesn't support it
+    delete body.max_completion_tokens;
+    delete body.max_output_tokens;
+    delete body.truncation;
 
     return body;
   }
