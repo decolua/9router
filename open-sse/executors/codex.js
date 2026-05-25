@@ -10,6 +10,10 @@ import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 hour
 const assistantSessionMap = new Map();
+const configuredInitialResponseTimeoutMs = Number(process.env.CODEX_INITIAL_RESPONSE_TIMEOUT_MS);
+const CODEX_INITIAL_RESPONSE_TIMEOUT_MS = Number.isFinite(configuredInitialResponseTimeoutMs) && configuredInitialResponseTimeoutMs >= 0
+  ? configuredInitialResponseTimeoutMs
+  : 7 * 1000;
 
 // Cache machine ID at module level (resolved once)
 let cachedMachineId = null;
@@ -119,7 +123,40 @@ export class CodexExecutor extends BaseExecutor {
   async execute(args) {
     // Fetch remote images before the synchronous transform/execute pipeline
     await this.prefetchImages(args.body);
-    return super.execute(args);
+
+    if (CODEX_INITIAL_RESPONSE_TIMEOUT_MS === 0) {
+      return super.execute(args);
+    }
+
+    const upstreamController = new AbortController();
+    let initialResponseTimedOut = false;
+    const abortFromClient = () => upstreamController.abort(args.signal?.reason);
+
+    if (args.signal?.aborted) {
+      abortFromClient();
+    } else {
+      args.signal?.addEventListener("abort", abortFromClient, { once: true });
+    }
+
+    const timeout = setTimeout(() => {
+      initialResponseTimedOut = true;
+      upstreamController.abort();
+    }, CODEX_INITIAL_RESPONSE_TIMEOUT_MS);
+
+    try {
+      return await super.execute({ ...args, signal: upstreamController.signal });
+    } catch (error) {
+      if (initialResponseTimedOut) {
+        const timeoutError = new Error(`Codex initial response timeout after ${CODEX_INITIAL_RESPONSE_TIMEOUT_MS}ms`);
+        timeoutError.name = "UpstreamResponseTimeoutError";
+        timeoutError.status = 504;
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      args.signal?.removeEventListener("abort", abortFromClient);
+    }
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise

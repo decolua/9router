@@ -1102,6 +1102,7 @@ docker pull decolua/9router:latest   # update to latest
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
 | `NODE_ENV` | runtime default | Set `production` for deploy |
+| `CODEX_INITIAL_RESPONSE_TIMEOUT_MS` | `7000` | Abort a Codex request that has not returned an initial upstream response within this time; set `0` to disable |
 | `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
 | `CLOUD_URL` | `https://9router.com` | Server-side cloud sync endpoint base URL |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
