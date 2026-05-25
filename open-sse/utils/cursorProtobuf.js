@@ -475,7 +475,7 @@ function getToolSchema(tool) {
   return tool?.function?.parameters || tool?.input_schema || {};
 }
 
-function buildComposerToolInstruction(tools) {
+function buildComposerToolInstruction(tools, isComposer = false) {
   if (!tools?.length) return "";
 
   const toolLines = tools
@@ -491,17 +491,27 @@ function buildComposerToolInstruction(tools) {
 
   if (!toolLines) return "";
 
+  const header = "The following custom tools are available. Use them to complete the task. Do not use or mention unavailable tools such as ask_question unless they are listed here.";
+
+  if (isComposer) {
+    return [
+      header,
+      "Available tools, one JSON object per line:",
+      toolLines,
+      "When calling tools, output only Cursor Composer's DeepSeek tool-call sentinel format:",
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>",
+      "TOOL_NAME",
+      "<｜tool▁sep｜>ARGUMENT_NAME",
+      "ARGUMENT_VALUE",
+      "<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+      "For multiple arguments, repeat <｜tool▁sep｜>ARGUMENT_NAME followed by ARGUMENT_VALUE. Do not wrap the arguments in JSON unless the schema asks for a JSON string value."
+    ].join("\n");
+  }
+
   return [
-    "OpenAI custom tools are available for this request. Use only these tools; do not use or mention unavailable tools such as ask_question unless they are listed here.",
+    header,
     "Available tools, one JSON object per line:",
     toolLines,
-    "When calling tools, output only Cursor Composer's DeepSeek tool-call sentinel format:",
-    "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>",
-    "TOOL_NAME",
-    "<｜tool▁sep｜>ARGUMENT_NAME",
-    "ARGUMENT_VALUE",
-    "<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
-    "For multiple arguments, repeat <｜tool▁sep｜>ARGUMENT_NAME followed by ARGUMENT_VALUE. Do not wrap the arguments in JSON unless the schema asks for a JSON string value."
   ].join("\n");
 }
 
@@ -571,9 +581,12 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
     normalizedMessages.push(msg);
   }
 
-  // Composer reads visible conversation better than FIELD.INSTRUCTION alone.
-  if (isComposerModelName(modelName) && hasTools) {
-    const visibleToolInstruction = buildComposerToolInstruction(tools);
+  // Visible tool instruction helps all Cursor-routed models (Composer and
+  // non-Composer alike) recognize available custom tools. Without it, models
+  // default to ask mode regardless of protobuf-level tool advertisement.
+  // Composer models additionally receive DeepSeek sentinel format guidance.
+  if (hasTools) {
+    const visibleToolInstruction = buildComposerToolInstruction(tools, isComposerModelName(modelName));
     if (visibleToolInstruction) {
       normalizedMessages.unshift({
         role: "user",

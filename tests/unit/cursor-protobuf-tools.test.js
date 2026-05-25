@@ -63,11 +63,43 @@ describe("Cursor protobuf tool advertisement", () => {
     const messages = request.get(FIELD.MESSAGES) || [];
     const firstMsg = decodeMessage(messages[0].value);
     const firstContent = new TextDecoder().decode(firstMsg.get(1)[0].value);
-    expect(firstContent).toContain("OpenAI custom tools are available");
+    expect(firstContent).toContain("The following custom tools are available");
     expect(firstContent).toContain("search_files");
+    // Composer models get DeepSeek sentinel format guidance
     expect(firstContent).toContain("｜tool▁calls▁begin｜");
-    expect(firstContent).toContain("do not use or mention unavailable tools such as ask_question");
+    expect(firstContent).toContain("Do not use or mention unavailable tools");
 
+    expect(request.has(FIELD.MCP_TOOLS)).toBe(true);
+    expect(request.has(FIELD.SUPPORTED_TOOLS)).toBe(true);
+    expect(firstVarint(request.get(FIELD.SUPPORTED_TOOLS)[0].value)).toBe(19);
+
+    const lastMessage = decodeMessage(messages[messages.length - 1].value);
+    expect(lastMessage.has(FIELD.MSG_SUPPORTED_TOOLS)).toBe(true);
+    expect(firstVarint(lastMessage.get(FIELD.MSG_SUPPORTED_TOOLS)[0].value)).toBe(19);
+  });
+
+  it("advertises tools for non-Composer Cursor models without DeepSeek sentinel format", () => {
+    const body = generateCursorBody(
+      [{ role: "user", content: "Use search_files" }],
+      "cu/claude-sonnet-4-6",
+      [buildTool()],
+      null,
+      false
+    );
+
+    const request = decodeCursorRequest(body);
+
+    const messages = request.get(FIELD.MESSAGES) || [];
+    const firstMsg = decodeMessage(messages[0].value);
+    const firstContent = new TextDecoder().decode(firstMsg.get(1)[0].value);
+    expect(firstContent).toContain("The following custom tools are available");
+    expect(firstContent).toContain("search_files");
+    // Non-Composer models must NOT get DeepSeek sentinel format
+    expect(firstContent).not.toContain("｜tool▁calls▁begin｜");
+    expect(firstContent).not.toContain("｜tool▁sep｜");
+    expect(firstContent).toContain("Do not use or mention unavailable tools");
+
+    // Tool advertisement should still work (enum 19, MCP_TOOLS)
     expect(request.has(FIELD.MCP_TOOLS)).toBe(true);
     expect(request.has(FIELD.SUPPORTED_TOOLS)).toBe(true);
     expect(firstVarint(request.get(FIELD.SUPPORTED_TOOLS)[0].value)).toBe(19);
