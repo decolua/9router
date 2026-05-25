@@ -164,11 +164,30 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Construct a combined AbortSignal combining the client's signal and the connection timeout
-      const timeoutSignal = AbortSignal.timeout(timeoutMs);
-      const combinedSignal = signal
-        ? AbortSignal.any([signal, timeoutSignal])
-        : timeoutSignal;
+      // Create a dedicated AbortController for this fetch request
+      const fetchController = new AbortController();
+      const { signal: fetchSignal } = fetchController;
+
+      // Forward client abort to fetch signal
+      let clientSignalListener = null;
+      if (signal) {
+        if (signal.aborted) {
+          fetchController.abort(signal.reason);
+        } else {
+          clientSignalListener = () => {
+            fetchController.abort(signal.reason);
+          };
+          signal.addEventListener("abort", clientSignalListener);
+        }
+      }
+
+      // Start connection timeout timer (only covers the initial connection phase)
+      let timedOut = false;
+      const timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        const err = new DOMException("Connection timed out", "TimeoutError");
+        fetchController.abort(err);
+      }, timeoutMs);
 
       try {
         const response = await proxyAwareFetch(
@@ -177,19 +196,28 @@ export class BaseExecutor {
             method: "POST",
             headers,
             body: JSON.stringify(transformedBody),
-            signal: combinedSignal,
+            signal: fetchSignal,
           },
           proxyOptions,
         );
 
+        // Connection successful! Clear the timeout timer immediately to let the stream run indefinitely
+        clearTimeout(timeoutTimer);
+
         if (
           await tryRetry(urlIndex, response.status, `status ${response.status}`)
         ) {
+          if (clientSignalListener && signal) {
+            signal.removeEventListener("abort", clientSignalListener);
+          }
           urlIndex--;
           continue;
         }
 
         if (this.shouldRetry(response.status, urlIndex)) {
+          if (clientSignalListener && signal) {
+            signal.removeEventListener("abort", clientSignalListener);
+          }
           log?.debug?.(
             "RETRY",
             `${response.status} on ${url}, trying fallback ${urlIndex + 1}`,
@@ -200,14 +228,18 @@ export class BaseExecutor {
 
         return { response, url, headers, transformedBody };
       } catch (error) {
+        clearTimeout(timeoutTimer);
+        if (clientSignalListener && signal) {
+          signal.removeEventListener("abort", clientSignalListener);
+        }
+
         lastError = error;
 
         // Detect if this is a connection timeout error
         const isTimeout =
+          timedOut ||
           error.name === "TimeoutError" ||
-          (error.name === "AbortError" &&
-            combinedSignal.aborted &&
-            combinedSignal.reason?.name === "TimeoutError");
+          error.status === 504;
         if (isTimeout) {
           const timeoutError = new Error(
             `Connection to provider ${this.provider} timed out after ${timeoutMs}ms`,

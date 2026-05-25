@@ -14,22 +14,26 @@ const buildDistDir = path.join(appDir, buildDistDirName);
 
 // Exclude patterns for files/folders we don't want to copy
 const EXCLUDE_PATTERNS = [
-  "@img",           // Sharp image processing (not needed with unoptimized images)
-  "sharp",          // Sharp core lib (not needed with unoptimized images)
-  "detect-libc",    // Sharp dependency
-  "logs",           // Runtime logs
-  ".env",           // Environment files
+  "@img", // Sharp image processing (not needed with unoptimized images)
+  "sharp", // Sharp core lib (not needed with unoptimized images)
+  "detect-libc", // Sharp dependency
+  "logs", // Runtime logs
+  ".env", // Environment files
   ".env.local",
   ".env.*.local",
-  "*.log",          // Log files
-  "tmp",            // Temp files
-  ".DS_Store",      // macOS files
+  "*.log", // Log files
+  "tmp", // Temp files
+  ".DS_Store", // macOS files
 ];
 
 function shouldExclude(name) {
-  return EXCLUDE_PATTERNS.some(pattern => {
+  return EXCLUDE_PATTERNS.some((pattern) => {
     if (pattern.includes("*")) {
-      const regex = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+      const regex = new RegExp(
+        "^" +
+          pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") +
+          "$",
+      );
       return regex.test(name);
     }
     return name === pattern;
@@ -41,7 +45,7 @@ function copyRecursive(src, dest) {
     console.warn(`Warning: Source ${src} does not exist`);
     return;
   }
-  
+
   if (!fs.existsSync(dest)) {
     fs.mkdirSync(dest, { recursive: true });
   }
@@ -85,12 +89,16 @@ function copyRecursive(src, dest) {
 console.log("📦 Building 9Router CLI package with Next.js...\n");
 
 fs.mkdirSync(buildHomeDir, { recursive: true });
-fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });
+fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), {
+  recursive: true,
+});
 fs.mkdirSync(path.join(buildHomeDir, "AppData", "Local"), { recursive: true });
 
 // Step 0: Sync version from app/cli/package.json to app/package.json
 console.log("0️⃣  Syncing version to app/package.json...");
-const cliPkg = JSON.parse(fs.readFileSync(path.join(cliDir, "package.json"), "utf8"));
+const cliPkg = JSON.parse(
+  fs.readFileSync(path.join(cliDir, "package.json"), "utf8"),
+);
 const appPkgPath = path.join(appDir, "package.json");
 const appPkg = JSON.parse(fs.readFileSync(appPkgPath, "utf8"));
 if (appPkg.version !== cliPkg.version) {
@@ -115,7 +123,7 @@ try {
       LOCALAPPDATA: path.join(buildHomeDir, "AppData", "Local"),
       NEXT_DIST_DIR: buildDistDirName,
       NEXT_TRACING_ROOT_MODE: "workspace",
-    }
+    },
   });
   console.log("✅ Next.js build completed\n");
 } catch (error) {
@@ -136,7 +144,9 @@ console.log("✅ Cleaned\n");
 console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
-const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
+const standaloneRootToUse = fs.existsSync(standaloneRootResolved)
+  ? standaloneRootResolved
+  : standaloneRoot;
 let standaloneApp = null;
 if (fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
   standaloneApp = standaloneRootToUse;
@@ -144,10 +154,13 @@ if (fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
   standaloneApp = path.join(standaloneRootToUse, "app");
 } else if (fs.existsSync(standaloneRootToUse)) {
   // Look for any subdirectory that contains server.js (e.g. "9router")
-  const subdirs = fs.readdirSync(standaloneRootToUse, { withFileTypes: true })
+  const subdirs = fs
+    .readdirSync(standaloneRootToUse, { withFileTypes: true })
     .filter((dirent) => dirent.isDirectory())
     .map((dirent) => path.join(standaloneRootToUse, dirent.name));
-  const found = subdirs.find((dir) => fs.existsSync(path.join(dir, "server.js")));
+  const found = subdirs.find((dir) =>
+    fs.existsSync(path.join(dir, "server.js")),
+  );
   if (found) {
     standaloneApp = found;
   }
@@ -155,14 +168,19 @@ if (fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
 
 if (!standaloneApp || !fs.existsSync(standaloneApp)) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected server.js to exist directly, under standalone/app/, or inside a standalone/<project>/ subdirectory");
+  console.error(
+    "Expected server.js to exist directly, under standalone/app/, or inside a standalone/<project>/ subdirectory",
+  );
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);
 
 // Older nested-app layout stores traced node_modules at standalone root.
 const standaloneNodeModules = path.join(standaloneRootToUse, "node_modules");
-if (standaloneApp !== standaloneRootToUse && fs.existsSync(standaloneNodeModules)) {
+if (
+  standaloneApp !== standaloneRootToUse &&
+  fs.existsSync(standaloneNodeModules)
+) {
   copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
 }
 console.log("✅ Copied standalone build\n");
@@ -184,7 +202,9 @@ function ensureModuleInBundle(pkg) {
   ];
   const src = candidates.find((p) => fs.existsSync(p));
   if (!src) {
-    console.warn(`⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`);
+    console.warn(
+      `⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`,
+    );
     return;
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
@@ -205,7 +225,10 @@ const staticSrc = path.join(appDir, ".next", "static");
 const staticSrcResolved = path.join(buildDistDir, "static");
 const staticDest = path.join(cliAppDir, buildDistDirName, "static");
 if (fs.existsSync(staticSrcResolved) || fs.existsSync(staticSrc)) {
-  copyRecursive(fs.existsSync(staticSrcResolved) ? staticSrcResolved : staticSrc, staticDest);
+  copyRecursive(
+    fs.existsSync(staticSrcResolved) ? staticSrcResolved : staticSrc,
+    staticDest,
+  );
   console.log("✅ Copied static files\n");
 } else {
   console.log("⏭️  No static files found\n");
@@ -225,10 +248,24 @@ if (fs.existsSync(publicSrc)) {
 // Step 6: Copy vendor-chunks (required for production)
 console.log("6️⃣  Copying vendor-chunks...");
 const vendorChunksSrc = path.join(appDir, ".next", "server", "vendor-chunks");
-const vendorChunksSrcResolved = path.join(buildDistDir, "server", "vendor-chunks");
-const vendorChunksDest = path.join(cliAppDir, buildDistDirName, "server", "vendor-chunks");
+const vendorChunksSrcResolved = path.join(
+  buildDistDir,
+  "server",
+  "vendor-chunks",
+);
+const vendorChunksDest = path.join(
+  cliAppDir,
+  buildDistDirName,
+  "server",
+  "vendor-chunks",
+);
 if (fs.existsSync(vendorChunksSrcResolved) || fs.existsSync(vendorChunksSrc)) {
-  copyRecursive(fs.existsSync(vendorChunksSrcResolved) ? vendorChunksSrcResolved : vendorChunksSrc, vendorChunksDest);
+  copyRecursive(
+    fs.existsSync(vendorChunksSrcResolved)
+      ? vendorChunksSrcResolved
+      : vendorChunksSrc,
+    vendorChunksDest,
+  );
   console.log("✅ Copied vendor-chunks\n");
 } else {
   console.log("⏭️  No vendor-chunks found\n");
@@ -254,6 +291,17 @@ if (fs.existsSync(updaterSrc)) {
   console.log("✅ Copied updater files\n");
 } else {
   console.log("⏭️  No updater files found\n");
+}
+
+// Step 7c: Copy observabilityWorker and DB files (dynamic Worker thread dependencies)
+console.log("7️⃣ c Copying observabilityWorker and DB files...");
+const dbSrc = path.join(appDir, "src", "lib", "db");
+const dbDest = path.join(cliAppDir, "src", "lib", "db");
+if (fs.existsSync(dbSrc)) {
+  copyRecursive(dbSrc, dbDest);
+  console.log("✅ Copied DB and worker files\n");
+} else {
+  console.log("⏭️  No DB files found\n");
 }
 
 // Step 8: Build MITM server (config driven - see app/cli/scripts/buildMitm.js)
