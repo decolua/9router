@@ -25,6 +25,80 @@ function rotateModelsFromIndex(models, currentIndex) {
   return rotatedModels;
 }
 
+function normalizeCombosData(combosData) {
+  return Array.isArray(combosData) ? combosData : (combosData?.combos || []);
+}
+
+function buildComboMap(combosData) {
+  const comboMap = new Map();
+  for (const combo of normalizeCombosData(combosData)) {
+    if (combo?.name) comboMap.set(combo.name, combo);
+  }
+  return comboMap;
+}
+
+export function findComboCycle(combosData, startName = null) {
+  const comboMap = buildComboMap(combosData);
+  const visited = new Set();
+
+  const visit = (name, path) => {
+    const existingIndex = path.indexOf(name);
+    if (existingIndex !== -1) return [...path.slice(existingIndex), name];
+    if (visited.has(name)) return null;
+
+    const combo = comboMap.get(name);
+    if (!combo) return null;
+
+    const nextPath = [...path, name];
+    for (const model of Array.isArray(combo.models) ? combo.models : []) {
+      if (!comboMap.has(model)) continue;
+      const cycle = visit(model, nextPath);
+      if (cycle) return cycle;
+    }
+
+    visited.add(name);
+    return null;
+  };
+
+  if (startName) return visit(startName, []);
+
+  for (const name of comboMap.keys()) {
+    const cycle = visit(name, []);
+    if (cycle) return cycle;
+  }
+  return null;
+}
+
+export function validateComboAcyclic({ name, models = [], combosData = [], currentId = null } = {}) {
+  const comboName = typeof name === "string" ? name.trim() : "";
+  if (!comboName) return { valid: false, error: "Combo name is required" };
+
+  // #1235: validate the full combo graph before saving so a combo cannot
+  // directly or indirectly route back into itself at request time.
+  const candidate = {
+    id: currentId || "__pending_combo__",
+    name: comboName,
+    models: Array.isArray(models) ? models : [],
+  };
+  const nextCombos = normalizeCombosData(combosData)
+    .filter((combo) => {
+      if (!combo) return false;
+      if (currentId && combo.id === currentId) return false;
+      return combo.name !== comboName;
+    })
+    .concat(candidate);
+
+  const cycle = findComboCycle(nextCombos, comboName);
+  if (cycle) {
+    return {
+      valid: false,
+      error: `Combo circular dependency detected: ${cycle.join(" -> ")}`,
+    };
+  }
+
+  return { valid: true, error: null };
+}
+
 /**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
@@ -84,7 +158,7 @@ export function getComboModelsFromData(modelStr, combosData) {
   if (modelStr.includes("/")) return null;
   
   // Handle both array and object formats
-  const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
+  const combos = normalizeCombosData(combosData);
   
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
