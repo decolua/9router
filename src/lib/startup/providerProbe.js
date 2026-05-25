@@ -1,7 +1,8 @@
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 
-// Known provider probe endpoints (apiKey providers only)
-const PROBE_ENDPOINTS = {
+// Known provider probe endpoints (apiKey providers only).
+// ADD NEW LLM PROVIDERS HERE — both startup probe and validate/route.js pick them up automatically.
+export const PROBE_ENDPOINTS = {
   openai: { url: "https://api.openai.com/v1/models", authHeader: "bearer" },
   anthropic: { url: "https://api.anthropic.com/v1/models", authHeader: "x-api-key" },
   gemini: { url: "https://generativelanguage.googleapis.com/v1/models", authHeader: "key-param" },
@@ -21,6 +22,9 @@ const PROBE_ENDPOINTS = {
   chutes: { url: "https://llm.chutes.ai/v1/models", authHeader: "bearer" },
   "vercel-ai-gateway": { url: "https://ai-gateway.vercel.sh/v1/models", authHeader: "bearer" },
   assemblyai: { url: "https://api.assemblyai.com/v1/account", authHeader: "bearer" },
+  nebius: { url: "https://api.studio.nebius.ai/v1/models", authHeader: "bearer" },
+  nanobanana: { url: "https://api.nanobananaapi.ai/v1/models", authHeader: "bearer" },
+  "xiaomi-mimo": { url: "https://api.xiaomimimo.com/v1/models", authHeader: "bearer" },
 };
 
 // Token expiry buffer: treat tokens expiring within 5 min as invalid
@@ -111,7 +115,7 @@ export async function probeProviderConnection(connection, timeoutMs = 5000) {
   }
 }
 
-function buildHeaders(authHeader, apiKey) {
+export function buildHeaders(authHeader, apiKey) {
   switch (authHeader) {
     case "bearer":
       return { Authorization: `Bearer ${apiKey}` };
