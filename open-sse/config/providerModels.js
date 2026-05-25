@@ -39,6 +39,11 @@ export const PROVIDER_MODELS = {
   ],
   cx: withCodexReviewModels([  // OpenAI Codex
     { id: "gpt-5.5", name: "GPT 5.5" },
+    { id: "gpt-5.5-xhigh", name: "GPT 5.5 (xHigh)" },
+    { id: "gpt-5.5-high", name: "GPT 5.5 (High)" },
+    { id: "gpt-5.5-medium", name: "GPT 5.5 (Medium)" },
+    { id: "gpt-5.5-low", name: "GPT 5.5 (Low)" },
+    { id: "gpt-5.5-none", name: "GPT 5.5 (None)" },
     { id: "gpt-5.4", name: "GPT 5.4" },
     { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
     // GPT 5.3 Codex - all thinking levels
