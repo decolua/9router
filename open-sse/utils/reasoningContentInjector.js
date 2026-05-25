@@ -15,6 +15,11 @@ const MODEL_RULES = [
   { match: m => m?.startsWith?.("deepseek-"), scope: "all" }
 ];
 
+const REASONING_REPLAY_RULES = [
+  { provider: "deepseek" },
+  { match: m => m?.startsWith?.("deepseek-") }
+];
+
 const DEEPSEEK_V4_PRO = "deepseek-v4-pro";
 const DEEPSEEK_V4_PRO_ALIASES = {
   [`${DEEPSEEK_V4_PRO}-max`]: {
@@ -74,4 +79,16 @@ export function injectReasoningContent({ provider, model, body }) {
   const rule = providerRule || modelRule;
   const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
   return applyRule(nextBody, rule);
+}
+
+export function needsReasoningContentReplay({ provider, model }) {
+  return REASONING_REPLAY_RULES.some(rule =>
+    (rule.provider && rule.provider === provider) || rule.match?.(model)
+  );
+}
+
+export function shouldPreserveReasoningContent({ provider, model, message }) {
+  return needsReasoningContentReplay({ provider, model })
+    && Array.isArray(message?.tool_calls)
+    && message.tool_calls.length > 0;
 }
