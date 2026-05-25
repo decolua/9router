@@ -4,6 +4,21 @@ import { probeProviderConnection } from "./providerProbe";
 const CONCURRENCY = 5;
 const PROBE_TIMEOUT_MS = 5000;
 
+// Map probe results to the string enum that page.js (getConnectionErrorTag) consumes.
+// Matches existing conventions: "AUTH" for 401/403, "429" for rate limit, "5XX" for server error,
+// "TIMEOUT" for abort, "NET" for network failure, numeric string for other 4xx, null on success.
+export function normalizeErrorCode(probe) {
+  if (!probe || probe.valid) return null;
+  if (probe.error === "timeout") return "TIMEOUT";
+  const code = probe.statusCode;
+  if (code === 401 || code === 403) return "AUTH";
+  if (code === 429) return "429";
+  if (typeof code === "number" && code >= 500 && code < 600) return "5XX";
+  if (typeof code === "number" && code >= 400 && code < 500) return String(code);
+  if (probe.error && !code) return "NET";
+  return null;
+}
+
 /**
  * Validate all active provider connections at server startup.
  * Non-blocking — results are written to DB; startup proceeds regardless.
@@ -36,7 +51,7 @@ export async function validateProvidersOnStartup() {
               lastTested: new Date().toISOString(),
               lastError: probe.error ?? null,
               lastErrorAt: probe.valid ? null : new Date().toISOString(),
-              errorCode: probe.statusCode ?? null,
+              errorCode: normalizeErrorCode(probe),
             });
           } catch (dbErr) {
             console.warn(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { validateProvidersOnStartup } from "../providerStartupValidator";
+import { validateProvidersOnStartup, normalizeErrorCode } from "../providerStartupValidator";
 
 // Mock dependencies
 vi.mock("@/lib/db/repos/connectionsRepo", () => ({
@@ -55,6 +55,7 @@ describe("validateProvidersOnStartup", () => {
     expect(updateProviderConnection).toHaveBeenCalledWith("c2", expect.objectContaining({
       testStatus: "failed",
       lastError: "HTTP 401",
+      errorCode: "AUTH",
     }));
     expect(result.failed).toBe(1);
   });
@@ -115,5 +116,51 @@ describe("validateProvidersOnStartup", () => {
     expect(probeProviderConnection).toHaveBeenCalledTimes(12);
     expect(result.total).toBe(12);
     expect(result.valid).toBe(12);
+  });
+});
+
+describe("normalizeErrorCode", () => {
+  it("returns null for a valid probe", () => {
+    expect(normalizeErrorCode({ valid: true })).toBeNull();
+  });
+
+  it("returns null for null/empty input", () => {
+    expect(normalizeErrorCode(null)).toBeNull();
+    expect(normalizeErrorCode(undefined)).toBeNull();
+  });
+
+  it("maps 401 to AUTH", () => {
+    expect(normalizeErrorCode({ valid: false, statusCode: 401 })).toBe("AUTH");
+  });
+
+  it("maps 403 to AUTH", () => {
+    expect(normalizeErrorCode({ valid: false, statusCode: 403 })).toBe("AUTH");
+  });
+
+  it("maps 429 to 429", () => {
+    expect(normalizeErrorCode({ valid: false, statusCode: 429 })).toBe("429");
+  });
+
+  it("maps 5xx codes to 5XX", () => {
+    expect(normalizeErrorCode({ valid: false, statusCode: 500 })).toBe("5XX");
+    expect(normalizeErrorCode({ valid: false, statusCode: 503 })).toBe("5XX");
+    expect(normalizeErrorCode({ valid: false, statusCode: 599 })).toBe("5XX");
+  });
+
+  it("maps other 4xx codes to a numeric string", () => {
+    expect(normalizeErrorCode({ valid: false, statusCode: 400 })).toBe("400");
+    expect(normalizeErrorCode({ valid: false, statusCode: 404 })).toBe("404");
+  });
+
+  it("maps timeout to TIMEOUT", () => {
+    expect(normalizeErrorCode({ valid: false, error: "timeout" })).toBe("TIMEOUT");
+  });
+
+  it("maps network error (no statusCode) to NET", () => {
+    expect(normalizeErrorCode({ valid: false, error: "ENOTFOUND" })).toBe("NET");
+  });
+
+  it("returns null when no usable signal is present", () => {
+    expect(normalizeErrorCode({ valid: false })).toBeNull();
   });
 });
