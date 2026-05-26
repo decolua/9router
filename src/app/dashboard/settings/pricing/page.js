@@ -11,11 +11,7 @@ export default function PricingSettingsPage() {
   const [currentPricing, setCurrentPricing] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadPricing();
-  }, []);
-
-  const loadPricing = async () => {
+  async function loadPricing() {
     setLoading(true);
     try {
       const response = await fetch("/api/pricing");

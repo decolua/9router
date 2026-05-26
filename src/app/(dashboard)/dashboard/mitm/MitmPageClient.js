@@ -25,13 +25,6 @@ export default function MitmPageClient() {
     hasCachedPassword: false,
   });
 
-  useEffect(() => {
-    fetchConnections();
-    fetchApiKeys();
-    fetchAliases();
-    fetchCloudSettings();
-  }, []);
-
   const fetchConnections = async () => {
     try {
       const res = await fetch("/api/providers");
@@ -79,6 +72,17 @@ export default function MitmPageClient() {
       /* ignore */
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchConnections();
+      void fetchApiKeys();
+      void fetchAliases();
+      void fetchCloudSettings();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const getActiveProviders = () =>
     connections.filter((c) => c.isActive !== false);

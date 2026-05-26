@@ -315,7 +315,7 @@ export async function markAccountUnavailable(
   );
 
   if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+    console.error(`\x1b[31m❌ ${provider} [${status}]: ${reason}\x1b[0m`);
   }
 
   return { shouldFallback: true, cooldownMs };

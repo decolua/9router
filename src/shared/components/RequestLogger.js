@@ -8,20 +8,6 @@ export default function RequestLogger() {
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
-
-  useEffect(() => {
-    let interval;
-    if (autoRefresh) {
-      interval = setInterval(() => {
-        fetchLogs(false);
-      }, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [autoRefresh]);
-
   const fetchLogs = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
@@ -36,6 +22,24 @@ export default function RequestLogger() {
       if (showLoading) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchLogs();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    let interval;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        void fetchLogs(false);
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [autoRefresh]);
 
   return (
     <div className="flex flex-col gap-4">
