@@ -34,9 +34,13 @@ export default function ProfilePage() {
     type: "",
     message: "",
   });
-  const [oidcRedirectUri, setOidcRedirectUri] = useState(
-    "/api/auth/oidc/callback",
-  );
+  const [oidcRedirectUri] = useState(() => {
+    if (typeof window === "undefined") {
+      return "/api/auth/oidc/callback";
+    }
+
+    return `${window.location.origin}/api/auth/oidc/callback`;
+  });
   const [oidcExpanded, setOidcExpanded] = useState(false);
   const importFileRef = useRef(null);
   const [proxyForm, setProxyForm] = useState({
@@ -74,12 +78,6 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOidcRedirectUri(`${window.location.origin}/api/auth/oidc/callback`);
-    }
   }, []);
 
   const updateOutboundProxy = async (e) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   Button,
@@ -27,33 +27,34 @@ export default function AntigravityToolCard({
   const [startingStep, setStartingStep] = useState(null); // "cert" | "server" | "dns" | null
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [sudoPassword, setSudoPassword] = useState("");
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
   const [message, setMessage] = useState(null);
   const [modelMappings, setModelMappings] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [currentEditingAlias, setCurrentEditingAlias] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
+  const initialStatusRef = useRef(initialStatus || null);
 
   useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
+    if (initialStatusRef.current !== initialStatus && initialStatus) {
+      initialStatusRef.current = initialStatus;
+      setStatus(initialStatus);
+    }
+  }, [initialStatus]);
+
+  useEffect(() => {
+    if (!selectedApiKey && apiKeys?.length > 0) {
       setSelectedApiKey(apiKeys[0].key);
     }
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !status) {
-      fetchStatus();
-      loadSavedMappings();
-      fetchModelAliases();
-    }
-    if (isExpanded) {
-      loadSavedMappings();
-      fetchModelAliases();
-    }
+    if (!isExpanded) return;
+    void fetchStatus();
+    void loadSavedMappings();
+    void fetchModelAliases();
   }, [isExpanded]);
 
   const loadSavedMappings = async () => {

@@ -32,9 +32,22 @@ export default function OpenClawToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
-  const [agentModels, setAgentModels] = useState({}); // { [agentId]: modelId }
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const provider = initialStatus?.settings?.models?.providers?.["9router"];
+    const primaryModel = initialStatus?.settings?.agents?.defaults?.model?.primary;
+    return provider && primaryModel ? primaryModel.replace("9router/", "") : "";
+  });
+  const [agentModels, setAgentModels] = useState(() => {
+    const agentList = initialStatus?.agents || [];
+    const initAgentModels = {};
+    agentList.forEach((agent) => {
+      if (agent.currentModel) initAgentModels[agent.id] = agent.currentModel;
+    });
+    return initAgentModels;
+  }); // { [agentId]: modelId }
   const [agentModalFor, setAgentModalFor] = useState(null); // agentId opening modal
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
@@ -57,24 +70,6 @@ export default function OpenClawToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setOpenclawStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !openclawStatus) {
-      checkOpenclawStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
   const fetchModelAliases = async () => {
     try {
       const res = await fetch("/api/models/alias");
@@ -85,31 +80,6 @@ export default function OpenClawToolCard({
     }
   };
 
-  useEffect(() => {
-    if (openclawStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const provider = openclawStatus.settings?.models?.providers?.["9router"];
-      if (provider) {
-        const primaryModel =
-          openclawStatus.settings?.agents?.defaults?.model?.primary;
-        if (primaryModel)
-          setSelectedModel(primaryModel.replace("9router/", ""));
-        if (
-          provider.apiKey &&
-          apiKeys?.some((k) => k.key === provider.apiKey)
-        ) {
-          setSelectedApiKey(provider.apiKey);
-        }
-      }
-      // Init per-agent models from enriched agents list
-      const agentList = openclawStatus.agents || [];
-      const initAgentModels = {};
-      agentList.forEach((agent) => {
-        if (agent.currentModel) initAgentModels[agent.id] = agent.currentModel;
-      });
-      setAgentModels(initAgentModels);
-    }
-  }, [openclawStatus, apiKeys]);
 
   const checkOpenclawStatus = async () => {
     setCheckingOpenclaw(true);
@@ -123,6 +93,19 @@ export default function OpenClawToolCard({
       setCheckingOpenclaw(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!openclawStatus) {
+        void checkOpenclawStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isExpanded, openclawStatus]);
 
   const normalizeLocalhost = (url) =>
     url.replace("://localhost", "://127.0.0.1");

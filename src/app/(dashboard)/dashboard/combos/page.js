@@ -530,7 +530,13 @@ function ComboFormModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchModalData();
+    if (!isOpen) return undefined;
+
+    const timeoutId = setTimeout(() => {
+      fetchModalData();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
   }, [isOpen]);
 
   const validateName = (value) => {

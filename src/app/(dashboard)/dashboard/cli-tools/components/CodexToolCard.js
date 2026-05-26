@@ -32,32 +32,26 @@ export default function CodexToolCard({
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
-  const [subagentModel, setSubagentModel] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    if (!initialStatus?.config) return "";
+    const modelMatch = initialStatus.config.match(/^model\s*=\s*"([^"]+)"/m);
+    return modelMatch ? modelMatch[1] : "";
+  });
+  const [subagentModel, setSubagentModel] = useState(() => {
+    if (!initialStatus?.config) return "";
+    const subagentModelMatch = initialStatus.config.match(
+      /\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m,
+    );
+    return subagentModelMatch ? subagentModelMatch[1] : "";
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [subagentModalOpen, setSubagentModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setCodexStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !codexStatus) {
-      checkCodexStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
 
   const fetchModelAliases = async () => {
     try {
@@ -69,19 +63,6 @@ export default function CodexToolCard({
     }
   };
 
-  // Parse model and subagent settings from config content
-  useEffect(() => {
-    if (codexStatus?.config) {
-      const modelMatch = codexStatus.config.match(/^model\s*=\s*"([^"]+)"/m);
-      if (modelMatch) setSelectedModel(modelMatch[1]);
-
-      // Parse subagent settings
-      const subagentModelMatch = codexStatus.config.match(
-        /\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m,
-      );
-      if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
-    }
-  }, [codexStatus]);
 
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
@@ -115,6 +96,19 @@ export default function CodexToolCard({
       setCheckingCodex(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!codexStatus) {
+        void checkCodexStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [codexStatus, isExpanded]);
 
   const handleApplySettings = async () => {
     setApplying(true);

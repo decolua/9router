@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
@@ -71,6 +71,13 @@ const buildOptions = ({
   return opts;
 };
 
+const getInitialMode = ({ options, value }) => {
+  const normalizedValue = (value || "").trim();
+  const matchedOption = options.find((option) => option.url === normalizedValue);
+  if (matchedOption) return matchedOption.value;
+  return options.find((option) => option.value !== CUSTOM_VALUE)?.value || CUSTOM_VALUE;
+};
+
 export default function BaseUrlSelect({
   value,
   onChange,
@@ -83,15 +90,7 @@ export default function BaseUrlSelect({
   cloudUrl = "",
   withV1 = true,
 }) {
-  const [savedPresets, setSavedPresets] = useState([]);
-  const [mode, setMode] = useState("");
-  const [customInput, setCustomInput] = useState("");
-  const initializedRef = useRef(false);
-
-  useEffect(() => {
-    setSavedPresets(readSavedPresets());
-  }, []);
-
+  const [savedPresets, setSavedPresets] = useState(() => readSavedPresets());
   const options = useMemo(
     () =>
       buildOptions({
@@ -117,20 +116,34 @@ export default function BaseUrlSelect({
       withV1,
     ],
   );
+  const [mode, setMode] = useState(() => getInitialMode({ options, value }));
+  const [customInput, setCustomInput] = useState(() => {
+    const initialMode = getInitialMode({ options, value });
+    return initialMode === CUSTOM_VALUE ? value || "" : "";
+  });
+  const initializedRef = useRef(false);
 
-  // Always default to first option (127.0.0.1) on mount, ignore persisted value
-  useEffect(() => {
-    if (initializedRef.current) return;
-    if (options.length === 0) return;
+  const selectedOption = options.find((option) => option.value === mode);
+  const fallbackOption =
+    options.find((option) => option.value !== CUSTOM_VALUE) || options[0] || null;
+  const effectiveMode = selectedOption ? mode : fallbackOption?.value || CUSTOM_VALUE;
+  const isSaved = effectiveMode.startsWith("saved:");
+  const isCustom = effectiveMode === CUSTOM_VALUE;
+  const canSave = isCustom && (customInput || "").trim().length > 0;
+
+  if (!initializedRef.current && fallbackOption) {
     initializedRef.current = true;
-    const first = options.find((o) => o.value !== CUSTOM_VALUE);
-    if (first) {
-      setMode(first.value);
-      onChange(first.url);
-    } else {
+    const normalizedValue = (value || "").trim();
+    if (!normalizedValue) {
+      if (fallbackOption.value !== CUSTOM_VALUE) {
+        setMode(fallbackOption.value);
+        queueMicrotask(() => onChange(fallbackOption.url));
+      }
+    } else if (!selectedOption && effectiveMode === CUSTOM_VALUE) {
       setMode(CUSTOM_VALUE);
+      setCustomInput(normalizedValue);
     }
-  }, [options, onChange]);
+  }
 
   const handleSelect = (e) => {
     const next = e.target.value;
@@ -153,7 +166,8 @@ export default function BaseUrlSelect({
     }
     setMode(next);
     if (next === CUSTOM_VALUE) {
-      setCustomInput("");
+      setCustomInput(value || "");
+      if (value) return;
       onChange("");
       return;
     }
@@ -168,8 +182,8 @@ export default function BaseUrlSelect({
   };
 
   const handleDeleteSaved = () => {
-    if (!mode.startsWith("saved:")) return;
-    const name = mode.slice(6);
+    if (!effectiveMode.startsWith("saved:")) return;
+    const name = effectiveMode.slice(6);
     const updated = savedPresets.filter((p) => p.name !== name);
     setSavedPresets(updated);
     writeSavedPresets(updated);
@@ -178,15 +192,11 @@ export default function BaseUrlSelect({
     onChange("");
   };
 
-  const isSaved = mode.startsWith("saved:");
-  const isCustom = mode === CUSTOM_VALUE;
-  const canSave = isCustom && (customInput || "").trim().length > 0;
-
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2">
         <select
-          value={mode}
+          value={effectiveMode}
           onChange={handleSelect}
           className="flex-1 min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
         >

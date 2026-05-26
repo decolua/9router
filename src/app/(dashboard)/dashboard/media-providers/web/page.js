@@ -248,9 +248,12 @@ export default function WebProvidersPage() {
     }
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    fetchAll();
+    const timeoutId = setTimeout(() => {
+      fetchAll();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
   }, []);
 
   const searchProviders = getProvidersByKind("webSearch");

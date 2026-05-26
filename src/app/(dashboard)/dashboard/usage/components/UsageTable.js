@@ -108,17 +108,19 @@ export default function UsageTable({
   renderSummaryCells,
   emptyMessage,
 }) {
-  const [expanded, setExpanded] = useState(new Set());
+  const [expanded, setExpanded] = useState(() => {
+    if (typeof window === "undefined") {
+      return new Set();
+    }
 
-  // Load expanded state from localStorage
-  useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) setExpanded(new Set(JSON.parse(saved)));
+      return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch (e) {
       console.error(`Failed to load ${storageKey}:`, e);
+      return new Set();
     }
-  }, [storageKey]);
+  });
 
   // Save expanded state to localStorage
   useEffect(() => {
