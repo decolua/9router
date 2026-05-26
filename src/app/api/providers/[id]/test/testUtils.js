@@ -17,6 +17,26 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
+const CONNECTION_TEST_TIMEOUT_MS = 30000;
+
+function getTimeoutError() {
+  return `Test timed out after ${CONNECTION_TEST_TIMEOUT_MS / 1000}s`;
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONNECTION_TEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(getTimeoutError());
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -81,7 +101,7 @@ const OAUTH_TEST_CONFIG = {
 };
 
 async function probeClineAccessToken(accessToken) {
-  const res = await fetch("https://api.cline.bot/api/v1/users/me", {
+  const res = await fetchWithTimeout("https://api.cline.bot/api/v1/users/me", {
     method: "GET",
     headers: buildClineHeaders(accessToken, {
       Accept: "application/json",
@@ -99,7 +119,7 @@ async function refreshOAuthToken(connection) {
   try {
     if (provider === "gemini-cli" || provider === "antigravity") {
       const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
-      const response = await fetch("https://oauth2.googleapis.com/token", {
+      const response = await fetchWithTimeout("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -115,7 +135,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "codex") {
-      const response = await fetch(CODEX_CONFIG.tokenUrl, {
+      const response = await fetchWithTimeout(CODEX_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -130,7 +150,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "claude") {
-      const response = await fetch(CLAUDE_CONFIG.tokenUrl, {
+      const response = await fetchWithTimeout(CLAUDE_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({
@@ -151,7 +171,7 @@ async function refreshOAuthToken(connection) {
       const region = psd.region || connection.region;
       if (clientId && clientSecret) {
         const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
-        const response = await fetch(endpoint, {
+        const response = await fetchWithTimeout(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, clientSecret, refreshToken, grantType: "refresh_token" }),
@@ -160,7 +180,7 @@ async function refreshOAuthToken(connection) {
         const data = await response.json();
         return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
       }
-      const response = await fetch(KIRO_CONFIG.socialRefreshUrl, {
+      const response = await fetchWithTimeout(KIRO_CONFIG.socialRefreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", "User-Agent": "kiro-cli/1.0.0" },
         body: JSON.stringify({ refreshToken }),
@@ -171,7 +191,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "qwen") {
-      const response = await fetch(QWEN_CONFIG.tokenUrl, {
+      const response = await fetchWithTimeout(QWEN_CONFIG.tokenUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
         body: new URLSearchParams({
@@ -186,7 +206,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "cline") {
-      const response = await fetch(CLINE_CONFIG.refreshUrl, {
+      const response = await fetchWithTimeout(CLINE_CONFIG.refreshUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
@@ -315,25 +335,37 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
   }
 }
 
+async function withTimeout(promise) {
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(getTimeoutError())), CONNECTION_TEST_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timer]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
-  // Vercel relay: forward via relay URL
   if (effectiveProxy?.vercelRelayUrl) {
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-    return proxyAwareFetch(url, options, {
+    return withTimeout(proxyAwareFetch(url, options, {
       vercelRelayUrl: effectiveProxy.vercelRelayUrl,
-    });
+    }));
   }
 
   if (!effectiveProxy?.connectionProxyEnabled || !effectiveProxy?.connectionProxyUrl) {
-    return fetch(url, options);
+    return fetchWithTimeout(url, options);
   }
 
   const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-  return proxyAwareFetch(url, options, {
+  return withTimeout(proxyAwareFetch(url, options, {
     connectionProxyEnabled: true,
     connectionProxyUrl: effectiveProxy.connectionProxyUrl,
     connectionNoProxy: effectiveProxy.connectionNoProxy || "",
-  });
+  }));
 }
 
 async function testApiKeyConnection(connection, effectiveProxy = null) {
@@ -531,12 +563,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama": {
-        const res = await fetch("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
+        const res = await fetchWithTimeout("https://ollama.com/api/tags", { headers: { Authorization: `Bearer ${connection.apiKey}` } });
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "ollama-local": {
         const host = resolveOllamaLocalHost(connection);
-        const res = await fetch(`${host}/api/tags`);
+        const res = await fetchWithTimeout(`${host}/api/tags`);
         return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
       }
       case "deepgram": {
