@@ -144,11 +144,19 @@ export default function RequestDetailsTab() {
   }, [pagination.page, pagination.pageSize, filters]);
 
   useEffect(() => {
-    fetchProviders();
+    const timer = setTimeout(() => {
+      void fetchProviders();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetchProviders]);
 
   useEffect(() => {
-    fetchDetails();
+    const timer = setTimeout(() => {
+      void fetchDetails();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [fetchDetails]);
 
   const handleViewDetail = (detail) => {
