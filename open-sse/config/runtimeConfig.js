@@ -66,6 +66,7 @@ export const DEFAULT_RETRY_CONFIG = {
   502: { attempts: 3, delayMs: 3000 },
   503: { attempts: 3, delayMs: 2000 },
   504: { attempts: 2, delayMs: 3000 },
+  529: { attempts: 3, delayMs: 2500 },
 };
 
 // Normalize a retry entry to { attempts, delayMs }

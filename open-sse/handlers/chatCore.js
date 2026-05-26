@@ -64,6 +64,7 @@ export async function handleChatCore({
   rtkEnabled,
   cavemanEnabled,
   cavemanLevel,
+  midStreamResumeEnabled,
   sourceFormatOverride,
   providerThinking,
 }) {
@@ -451,6 +452,7 @@ export async function handleChatCore({
     apiKey,
     clientRawRequest,
     onRequestSuccess,
+    midStreamResumeEnabled,
   };
   const appendLog = (extra) =>
     appendRequestLog({ model, provider, connectionId, ...extra }).catch(
@@ -502,6 +504,7 @@ export async function handleChatCore({
     toolNameMap,
     streamController,
     onStreamComplete,
+    credentials,
   });
 }
 

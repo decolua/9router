@@ -41,6 +41,10 @@ const DEFAULT_SETTINGS = {
   rtkEnabled: true,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  autoRetryOverloaded: true,
+  maxRetryAttempts: 3,
+  retryDelayMs: 2000,
+  midStreamResumeEnabled: true,
 };
 
 async function readRaw() {

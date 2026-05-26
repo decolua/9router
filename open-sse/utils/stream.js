@@ -58,6 +58,7 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
+    streamStateTracker = null,
   } = options;
 
   let buffer = "";
@@ -78,6 +79,14 @@ export function createSSEStream(options = {}) {
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
+
+  const updateTracker = () => {
+    if (streamStateTracker) {
+      streamStateTracker.accumulatedContent = accumulatedContent;
+      streamStateTracker.accumulatedThinking = accumulatedThinking;
+      streamStateTracker.totalContentLength = totalContentLength;
+    }
+  };
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -306,6 +315,7 @@ export function createSSEStream(options = {}) {
           }
         }
       }
+      updateTracker();
     },
 
     flush(controller) {
@@ -486,6 +496,7 @@ export function createSSETransformStreamWithLogger(
   body = null,
   onStreamComplete = null,
   apiKey = null,
+  streamStateTracker = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
@@ -499,6 +510,7 @@ export function createSSETransformStreamWithLogger(
     body,
     onStreamComplete,
     apiKey,
+    streamStateTracker,
   });
 }
 
@@ -510,6 +522,7 @@ export function createPassthroughStreamWithLogger(
   body = null,
   onStreamComplete = null,
   apiKey = null,
+  streamStateTracker = null,
 ) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
@@ -520,5 +533,6 @@ export function createPassthroughStreamWithLogger(
     body,
     onStreamComplete,
     apiKey,
+    streamStateTracker,
   });
 }

@@ -94,9 +94,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController) {
-  const reader = transformStream.readable.getReader();
-  const writer = transformStream.writable.getWriter();
+export function createDisconnectAwareStream(transformStream, streamController, streamStateTracker = null, resumeCtx = null) {
+  let reader = transformStream.readable.getReader();
+  let writer = transformStream.writable ? transformStream.writable.getWriter() : { abort: () => Promise.resolve() };
+  let resumeAttempts = 0;
+  const maxResumeAttempts = 2;
 
   return new ReadableStream({
     async pull(controller) {
@@ -116,13 +118,116 @@ export function createDisconnectAwareStream(transformStream, streamController) {
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
-        streamController.handleError(error);
-        reader.cancel().catch(() => {});
-        writer.abort().catch(() => {});
-
-        // Treat network resets / socket hang up / abort as graceful close
+        const textBuffer = streamStateTracker;
+        const hasGeneratedText = textBuffer && (textBuffer.accumulatedContent || textBuffer.accumulatedThinking);
+        
         const msg = error?.message || "";
         const code = error?.code || error?.cause?.code || "";
+        const isNetworkOrOverloadError =
+          error.name === "AbortError" ||
+          msg.includes("aborted") ||
+          msg.includes("socket hang up") ||
+          msg.includes("ECONNRESET") ||
+          msg.includes("ETIMEDOUT") ||
+          msg.includes("EPIPE") ||
+          msg.includes("overloaded") ||
+          msg.includes("overload") ||
+          msg.includes("busy") ||
+          code === "ECONNRESET" ||
+          code === "ETIMEDOUT" ||
+          code === "EPIPE" ||
+          code === "UND_ERR_SOCKET";
+
+        if (wasConnected && isNetworkOrOverloadError && hasGeneratedText && resumeAttempts < maxResumeAttempts && resumeCtx) {
+          resumeAttempts++;
+          console.log(`[RESUME] Mid-stream connection lost (${error.message}). Attempting transparent resume ${resumeAttempts}/${maxResumeAttempts}...`);
+          
+          try {
+            // Dynamic import to prevent circular dependencies
+            const { executeResumeRequest } = await import("./streamResumer.js");
+            
+            const newResponse = await executeResumeRequest({
+              originalBody: resumeCtx.body,
+              textBuffer,
+              provider: resumeCtx.provider,
+              model: resumeCtx.model,
+              credentials: resumeCtx.credentials,
+              sourceFormat: resumeCtx.sourceFormat,
+              targetFormat: resumeCtx.targetFormat,
+              userAgent: resumeCtx.userAgent,
+              apiKey: resumeCtx.apiKey,
+              connectionId: resumeCtx.connectionId,
+              toolNameMap: resumeCtx.toolNameMap,
+              reqLogger: resumeCtx.reqLogger,
+              clientRawRequest: resumeCtx.clientRawRequest
+            });
+
+            if (newResponse) {
+              console.log("[RESUME] Resume request successful! Piping new stream chunks...");
+              
+              await reader.cancel().catch(() => {});
+              if (writer && typeof writer.abort === "function") {
+                await writer.abort().catch(() => {});
+              }
+
+              const { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } = await import("./stream.js");
+              const { needsTranslation } = await import("../translator/index.js");
+              
+              let newTransformStream;
+              if (needsTranslation(resumeCtx.targetFormat, resumeCtx.sourceFormat)) {
+                newTransformStream = createSSETransformStreamWithLogger(
+                  resumeCtx.targetFormat,
+                  resumeCtx.sourceFormat,
+                  resumeCtx.provider,
+                  resumeCtx.reqLogger,
+                  resumeCtx.toolNameMap,
+                  resumeCtx.model,
+                  resumeCtx.connectionId,
+                  resumeCtx.body,
+                  null, // no need to re-trigger onStreamComplete
+                  resumeCtx.apiKey,
+                  textBuffer
+                );
+              } else {
+                newTransformStream = createPassthroughStreamWithLogger(
+                  resumeCtx.provider,
+                  resumeCtx.reqLogger,
+                  resumeCtx.model,
+                  resumeCtx.connectionId,
+                  resumeCtx.body,
+                  null,
+                  resumeCtx.apiKey,
+                  textBuffer
+                );
+              }
+
+              const upstreamTap = new TransformStream({
+                transform(chunk, controller) {
+                  controller.enqueue(chunk);
+                }
+              });
+
+              const newTransformedBody = newResponse.body
+                .pipeThrough(upstreamTap)
+                .pipeThrough(newTransformStream);
+
+              reader = newTransformedBody.getReader();
+              writer = { abort: () => Promise.resolve() };
+
+              // Read next chunks from the resumed stream!
+              return this.pull(controller);
+            }
+          } catch (resumeErr) {
+            console.error("[RESUME] Resume attempt failed:", resumeErr.message);
+          }
+        }
+
+        streamController.handleError(error);
+        reader.cancel().catch(() => {});
+        if (writer && typeof writer.abort === "function") {
+          writer.abort().catch(() => {});
+        }
+
         const isNetworkClose =
           error.name === "AbortError" ||
           msg.includes("aborted") ||
@@ -152,7 +257,9 @@ export function createDisconnectAwareStream(transformStream, streamController) {
     cancel(reason) {
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
-      writer.abort();
+      if (writer && typeof writer.abort === "function") {
+        writer.abort();
+      }
     }
   });
 }
@@ -172,8 +279,10 @@ export function createDisconnectAwareStream(transformStream, streamController) {
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {object} streamStateTracker - Stream state tracker to extract generated text
+ * @param {object} resumeCtx - Context to resume the stream if connection breaks
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, streamStateTracker = null, resumeCtx = null) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -232,7 +341,9 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    wrappedController
+    wrappedController,
+    streamStateTracker,
+    resumeCtx
   );
 }
 

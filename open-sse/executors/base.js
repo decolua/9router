@@ -22,6 +22,24 @@ export class BaseExecutor {
     return this.provider;
   }
 
+  isOverloadedError(status, message) {
+    const msg = (message || "").toLowerCase();
+    const overloadedKeywords = [
+      "overloaded",
+      "try again later",
+      "capacity",
+      "high traffic",
+      "temporarily unavailable",
+      "server is busy",
+      "overload"
+    ];
+    if (status === 529 || status === 503) return true;
+    if (status === 429 && overloadedKeywords.some(keyword => msg.includes(keyword))) {
+      return true;
+    }
+    return false;
+  }
+
   getBaseUrls() {
     return (
       this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : [])
@@ -232,6 +250,29 @@ export class BaseExecutor {
 
         if (clientSignalListener && signal) {
           signal.removeEventListener("abort", clientSignalListener);
+        }
+
+        if (!response.ok) {
+          let bodyText = "";
+          try {
+            const cloned = response.clone();
+            bodyText = await cloned.text();
+          } catch (e) {}
+
+          if (this.isOverloadedError(response.status, bodyText)) {
+            const attempts = 3;
+            const delayMs = 2000;
+            if (retryAttemptsByUrl[urlIndex] < attempts) {
+              retryAttemptsByUrl[urlIndex]++;
+              log?.debug?.(
+                "RETRY",
+                `Overloaded status ${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s. Error details: ${bodyText.slice(0, 100)}`
+              );
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+              urlIndex--;
+              continue;
+            }
+          }
         }
 
         retryAttemptsByUrl[urlIndex] = 0;

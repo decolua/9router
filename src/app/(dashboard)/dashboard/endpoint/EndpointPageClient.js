@@ -69,6 +69,10 @@ export default function APIPageClient({ machineId }) {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [autoRetryOverloaded, setAutoRetryOverloaded] = useState(true);
+  const [maxRetryAttempts, setMaxRetryAttempts] = useState(3);
+  const [retryDelayMs, setRetryDelayMs] = useState(2000);
+  const [midStreamResumeEnabled, setMidStreamResumeEnabled] = useState(true);
 
   // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -240,6 +244,10 @@ export default function APIPageClient({ machineId }) {
         setRtkEnabledState(data.rtkEnabled !== false);
         setCavemanEnabled(!!data.cavemanEnabled);
         setCavemanLevel(data.cavemanLevel || "full");
+        setAutoRetryOverloaded(data.autoRetryOverloaded !== false);
+        setMaxRetryAttempts(data.maxRetryAttempts ?? 3);
+        setRetryDelayMs(data.retryDelayMs ?? 2000);
+        setMidStreamResumeEnabled(data.midStreamResumeEnabled !== false);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -299,6 +307,60 @@ export default function APIPageClient({ machineId }) {
       if (res.ok) setRtkEnabledState(value);
     } catch (error) {
       console.log("Error updating rtkEnabled:", error);
+    }
+  };
+
+  const handleAutoRetryOverloaded = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoRetryOverloaded: value }),
+      });
+      if (res.ok) setAutoRetryOverloaded(value);
+    } catch (error) {
+      console.log("Error updating autoRetryOverloaded:", error);
+    }
+  };
+
+  const handleMaxRetryAttempts = async (value) => {
+    const val = parseInt(value, 10) || 1;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxRetryAttempts: val }),
+      });
+      if (res.ok) setMaxRetryAttempts(val);
+    } catch (error) {
+      console.log("Error updating maxRetryAttempts:", error);
+    }
+  };
+
+  const handleRetryDelayMs = async (value) => {
+    const val = parseInt(value, 10) || 1000;
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retryDelayMs: val }),
+      });
+      if (res.ok) setRetryDelayMs(val);
+    } catch (error) {
+      console.log("Error updating retryDelayMs:", error);
+    }
+  };
+
+  const handleMidStreamResumeEnabled = async (value) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ midStreamResumeEnabled: value }),
+      });
+      if (res.ok) setMidStreamResumeEnabled(value);
+    } catch (error) {
+      console.log("Error updating midStreamResumeEnabled:", error);
     }
   };
 
@@ -1090,6 +1152,73 @@ export default function APIPageClient({ machineId }) {
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
             />
           </div>
+        </div>
+      </Card>
+
+      {/* Stream Stability & Auto Retry */}
+      <Card id="stream-stability">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">sync_saved_locally</span>
+            Stream Stability & Auto Retry
+          </h2>
+        </div>
+        
+        {/* Toggle 1: Auto Retry */}
+        <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Auto-Retry Overloaded Errors</p>
+            <p className="text-sm text-text-muted">
+              Automatically retry initial requests when providers return "overloaded" (503/529) or busy 429 status codes.
+            </p>
+          </div>
+          <Toggle
+            checked={autoRetryOverloaded}
+            onChange={() => handleAutoRetryOverloaded(!autoRetryOverloaded)}
+          />
+        </div>
+
+        {/* Inputs for Max Attempts & Delay */}
+        {autoRetryOverloaded && (
+          <div className="flex items-center gap-6 pt-4 pb-4 border-b border-border flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-text-muted">Max Attempts:</span>
+              <Input
+                type="number"
+                min="1"
+                max="10"
+                value={maxRetryAttempts}
+                onChange={(e) => handleMaxRetryAttempts(e.target.value)}
+                className="w-20 text-center"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-text-muted">Delay (ms):</span>
+              <Input
+                type="number"
+                min="500"
+                max="10000"
+                step="500"
+                value={retryDelayMs}
+                onChange={(e) => handleRetryDelayMs(e.target.value)}
+                className="w-28 text-center"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Toggle 2: Mid-stream Resume */}
+        <div className="flex items-center justify-between pt-4 gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Mid-stream Transparent Resuming</p>
+            <p className="text-sm text-text-muted">
+              If the stream disconnects unexpectedly mid-generation, 9Router will seamlessly request the provider to write the remaining response from where it left off.
+            </p>
+          </div>
+          <Toggle
+            checked={midStreamResumeEnabled}
+            onChange={() => handleMidStreamResumeEnabled(!midStreamResumeEnabled)}
+          />
         </div>
       </Card>
 
