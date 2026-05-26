@@ -1,3 +1,11 @@
+# v0.4.63 (2026-05-26)
+
+## Fixes
+- proxyFetch: restore missing `Readable` import causing runtime `ReferenceError` in DNS-bypass fetch path
+
+## Improvements
+- Lower stream stall timeout from 60s → 35s for faster hang detection
+
 # v0.4.62 (2026-05-26)
 
 ## Fixes
