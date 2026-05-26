@@ -222,6 +222,7 @@ export function initState(sourceFormat) {
       seq: 0,
       responseId: `resp_${Date.now()}`,
       created: Math.floor(Date.now() / 1000),
+      model: null,
       started: false,
       msgTextBuf: {},
       msgItemAdded: {},
@@ -236,6 +237,7 @@ export function initState(sourceFormat) {
       funcArgsBuf: {},
       funcNames: {},
       funcCallIds: {},
+      funcNamespaces: {},
       funcArgsDone: {},
       funcItemDone: {},
       completedSent: false

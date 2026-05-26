@@ -4,7 +4,7 @@ import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 
 export default function ThemeToggle({ className, variant = "default" }) {
-  const { isDark, toggleTheme } = useTheme();
+  const { toggleTheme } = useTheme();
 
   const variants = {
     default: cn(
@@ -26,16 +26,26 @@ export default function ThemeToggle({ className, variant = "default" }) {
     <button
       onClick={toggleTheme}
       className={cn(variants[variant], className)}
-      aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
-      title={`Switch to ${isDark ? "light" : "dark"} mode`}
     >
       <span
         className={cn(
-          "material-symbols-outlined text-[22px]",
+          "ti-icon-light material-symbols-outlined text-[22px]",
           variant === "card" && "transition-transform duration-300 group-hover:rotate-12"
         )}
+        aria-label="Switch to dark mode"
+        title="Switch to dark mode"
       >
-        {isDark ? "light_mode" : "dark_mode"}
+        dark_mode
+      </span>
+      <span
+        className={cn(
+          "ti-icon-dark material-symbols-outlined text-[22px]",
+          variant === "card" && "transition-transform duration-300 group-hover:rotate-12"
+        )}
+        aria-label="Switch to light mode"
+        title="Switch to light mode"
+      >
+        light_mode
       </span>
     </button>
   );

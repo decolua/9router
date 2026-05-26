@@ -1,6 +1,9 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import fs from "node:fs";
+import path from "node:path";
+import { makeBackupDir } from "./backup.js";
 
 // Settings
 export {
@@ -99,6 +102,16 @@ export async function importDb(payload) {
   }
   const db = await getAdapter();
 
+  // Pre-import backup: save current state before wiping
+  try {
+    const currentData = await exportDb();
+    const backupDir = makeBackupDir("pre-import");
+    fs.writeFileSync(path.join(backupDir, "db.json"), JSON.stringify(currentData, null, 2));
+    console.log("[DB] Pre-import backup saved to", backupDir);
+  } catch (err) {
+    console.error("[DB] Pre-import backup failed:", err.message);
+  }
+
   db.transaction(() => {
     // Wipe all tables (keep _meta)
     db.run(`DELETE FROM settings`);
@@ -163,6 +176,152 @@ export async function importDb(payload) {
   });
 
   return await exportDb();
+}
+
+
+
+/**
+ * Export only provider-related configuration (no usage/history data).
+ * Returns a JSON-serializable object suitable for backup/migration.
+ */
+export async function exportProviderConfig() {
+  const db = await getAdapter();
+
+  const out = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      provider: r.provider,
+      authType: r.authType,
+      name: r.name,
+      email: r.email,
+      priority: r.priority,
+      isActive: r.isActive === 1,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      isActive: r.isActive === 1,
+      testStatus: r.testStatus,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
+    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    modelAliases: {},
+    customModels: [],
+    mitmAlias: {},
+    disabledModels: {},
+  };
+
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) {
+    out.modelAliases[r.key] = parseJson(r.value);
+  }
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) {
+    out.customModels.push(parseJson(r.value));
+  }
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) {
+    out.mitmAlias[r.key] = parseJson(r.value);
+  }
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) {
+    out.disabledModels[r.key] = parseJson(r.value);
+  }
+
+  return out;
+}
+
+/**
+ * Import provider-related configuration from a previously exported payload.
+ * Replaces all provider data (connections, nodes, pools, aliases).
+ * Usage/history data is preserved untouched.
+ * Returns the new state after import.
+ */
+export async function importProviderConfig(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("Invalid provider config payload");
+  }
+  const db = await getAdapter();
+
+  // Pre-import backup: save current provider config before wiping
+  try {
+    const currentConfig = await exportProviderConfig();
+    const backupDir = makeBackupDir("pre-import");
+    fs.writeFileSync(path.join(backupDir, "provider-config.json"), JSON.stringify(currentConfig, null, 2));
+    console.log("[DB] Pre-import provider config backup saved to", backupDir);
+  } catch (err) {
+    console.error("[DB] Pre-import provider config backup failed:", err.message);
+  }
+
+  db.transaction(() => {
+    // Wipe only provider-related tables + kv scopes
+    db.run(`DELETE FROM providerConnections`);
+    db.run(`DELETE FROM providerNodes`);
+    db.run(`DELETE FROM proxyPools`);
+    db.run(`DELETE FROM apiKeys`);
+    db.run(`DELETE FROM combos`);
+    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'disabledModels')`);
+
+    for (const c of payload.providerConnections || []) {
+      const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+      db.run(
+        `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const n of payload.providerNodes || []) {
+      const { id, type, name, createdAt, updatedAt, ...rest } = n;
+      db.run(
+        `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const p of payload.proxyPools || []) {
+      const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
+      db.run(
+        `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const k of payload.apiKeys || []) {
+      db.run(
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+      );
+    }
+    for (const c of payload.combos || []) {
+      db.run(
+        `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const [alias, model] of Object.entries(payload.modelAliases || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
+    }
+    for (const m of payload.customModels || []) {
+      const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
+    }
+    for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
+    }
+    for (const [providerAlias, ids] of Object.entries(payload.disabledModels || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [providerAlias, stringifyJson(Array.isArray(ids) ? ids : [])]);
+    }
+  });
+
+  return await exportProviderConfig();
 }
 
 // Eager init helper (optional)

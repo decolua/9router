@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -53,7 +53,7 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
-function MenuItem({ icon, label, onClick, trailing, danger }) {
+function MenuItem({ icon, iconDark, label, onClick, trailing, danger }) {
   return (
     <button
       onClick={onClick}
@@ -63,9 +63,14 @@ function MenuItem({ icon, label, onClick, trailing, danger }) {
           : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
       }`}
     >
-      <span className={`material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>
-        {icon}
-      </span>
+      {iconDark ? (
+        <>
+          <span className={`mi-icon mi-icon-light material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>{icon}</span>
+          <span className={`mi-icon mi-icon-dark material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>{iconDark}</span>
+        </>
+      ) : (
+        <span className={`material-symbols-outlined text-[20px] ${danger ? "" : "text-text-muted"}`}>{icon}</span>
+      )}
       <span className="flex-1 text-left">{label}</span>
       {trailing && <span className="text-base">{trailing}</span>}
     </button>
@@ -85,11 +90,11 @@ export default function HeaderMenu({ onLogout }) {
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [remoteOpen, setRemoteOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const [locale, setLocale] = useState("en");
+  const [locale, setLocale] = useState(() => getLocaleFromCookie());
   const { toggleTheme, isDark } = useTheme();
   const menuRef = useRef(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setLocale(getLocaleFromCookie());
   }, [langOpen]);
 
@@ -132,7 +137,8 @@ export default function HeaderMenu({ onLogout }) {
               onClick={() => { close(); setLangOpen(true); }}
             />
             <MenuItem
-              icon={isDark ? "light_mode" : "dark_mode"}
+              icon="dark_mode"
+              iconDark="light_mode"
               label="Theme"
               onClick={() => { toggleTheme(); close(); }}
             />

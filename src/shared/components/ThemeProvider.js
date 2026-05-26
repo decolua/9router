@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import useThemeStore from "@/store/themeStore";
 
 export function ThemeProvider({ children }) {
   const { initTheme } = useThemeStore();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     initTheme();
   }, [initTheme]);
 
   return <>{children}</>;
 }
-

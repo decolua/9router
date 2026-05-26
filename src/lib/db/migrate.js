@@ -103,7 +103,12 @@ function syncSchemaFromTables(adapter) {
 
     // Indexes (idempotent)
     for (const idx of def.indexes || []) {
-      try { adapter.exec(idx); } catch {}
+      try {
+        adapter.exec(idx);
+      } catch (e) {
+        // CREATE INDEX IF NOT EXISTS should never fail unless SQL is malformed
+        console.warn(`[DB][sync] index failed: ${e.message}`);
+      }
     }
   }
 }
@@ -271,7 +276,7 @@ export async function runMigrationOnce(adapter) {
   // 4. App version bump → backup data.sqlite (safety net before user-side upgrade)
   const oldVer = getMetaSync(adapter, "appVersion", null);
   const newVer = getAppVersion();
-  if (oldVer && oldVer !== newVer) {
+  if (!oldVer || oldVer !== newVer) {
     const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
     try { backupFile(DATA_FILE, backupDir); } catch {}
     setMetaSync(adapter, "appVersion", newVer);

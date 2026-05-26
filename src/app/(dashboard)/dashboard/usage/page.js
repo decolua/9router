@@ -1,9 +1,12 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
 import RequestDetailsTab from "./components/RequestDetailsTab";
+import ApiKeyUsageTable from "./components/ApiKeyUsageTable";
+
+const VALID_TABS = ["overview", "logs", "details", "api-keys"];
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -28,12 +31,16 @@ function UsageContent() {
   const [period, setPeriod] = useState("today");
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
-    ? tabFromUrl
-    : "overview";
+  const urlTab = tabFromUrl && VALID_TABS.includes(tabFromUrl) ? tabFromUrl : "overview";
+  const [activeTab, setActiveTab] = useState(urlTab);
+
+  useEffect(() => {
+    setActiveTab(urlTab);
+  }, [urlTab]);
 
   const handleTabChange = (value) => {
     if (value === activeTab) return;
+    setActiveTab(value);
     const params = new URLSearchParams(searchParams);
     params.set("tab", value);
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
@@ -47,12 +54,13 @@ function UsageContent() {
           options={[
             { value: "overview", label: "Overview" },
             { value: "details", label: "Details" },
+            { value: "api-keys", label: "API Keys" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
-        {activeTab === "overview" && (
+        {(activeTab === "overview" || activeTab === "api-keys") && (
           <SegmentedControl
             options={PERIODS}
             value={period}
@@ -63,13 +71,21 @@ function UsageContent() {
         )}
       </div>
 
-      {activeTab === "overview" && (
+      {/* Use CSS visibility to preserve component state across tab switches */}
+      <div style={{ display: activeTab === "overview" ? undefined : "none" }}>
         <Suspense fallback={<CardSkeleton />}>
           <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
         </Suspense>
-      )}
-      {activeTab === "logs" && <RequestLogger />}
-      {activeTab === "details" && <RequestDetailsTab />}
+      </div>
+      <div style={{ display: activeTab === "logs" ? undefined : "none" }}>
+        <RequestLogger />
+      </div>
+      <div style={{ display: activeTab === "details" ? undefined : "none" }}>
+        <RequestDetailsTab />
+      </div>
+      <div style={{ display: activeTab === "api-keys" ? undefined : "none" }}>
+        <ApiKeyUsageTable period={period} />
+      </div>
     </div>
   );
 }

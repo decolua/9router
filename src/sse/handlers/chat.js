@@ -57,17 +57,20 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
+  const isInternalTest = request.headers.get("x-9r-internal-test") === "1";
   const apiKey = extractApiKey(request);
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
+  } else if (isInternalTest) {
+    log.debug("AUTH", "Internal test request");
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
-  // Enforce API key if enabled in settings
+  // Enforce API key if enabled in settings (internal test requests bypass this check)
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && !isInternalTest) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");

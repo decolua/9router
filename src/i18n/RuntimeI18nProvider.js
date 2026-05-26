@@ -8,13 +8,14 @@ export function RuntimeI18nProvider({ children }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    initRuntimeI18n();
+    initRuntimeI18n().then(() => {
+      document.documentElement.classList.remove("i18n-loading");
+    });
   }, []);
 
   // Re-process DOM when route changes
   useEffect(() => {
     if (pathname) {
-      // Double RAF to ensure React has committed changes to DOM
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           reloadTranslations();

@@ -32,11 +32,16 @@ export default function RootLayout({ children }) {
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){document.documentElement.classList.add('fonts-loaded')})}else{document.documentElement.classList.add('fonts-loaded')}`,
+            __html: "(function(){try{var t=localStorage.getItem('theme');if(t){var p=JSON.parse(t);var s=p&&p.state?p.state.theme:p.theme||p;var d=s==='dark'||(s==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.classList.toggle('dark',d)}}catch(e){}try{var c=document.cookie.split(';');var l='en';for(var i=0;i<c.length;i++){var p=c[i].trim();if(p.indexOf('locale=')===0){l=decodeURIComponent(p.substring(7));break}}if(l!=='en'){document.documentElement.classList.add('i18n-loading')}}catch(e){}})()",
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "setTimeout(function(){document.documentElement.classList.add('fonts-loaded')},3000);if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){document.documentElement.classList.add('fonts-loaded')})}else{document.documentElement.classList.add('fonts-loaded')}",
           }}
         />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
         <ThemeProvider>
           <RuntimeI18nProvider>
             {children}

@@ -137,12 +137,22 @@ console.log("3️⃣  Copying Next.js standalone build to app/cli/app...");
 const standaloneRoot = path.join(appDir, ".next", "standalone");
 const standaloneRootResolved = path.join(buildDistDir, "standalone");
 const standaloneRootToUse = fs.existsSync(standaloneRootResolved) ? standaloneRootResolved : standaloneRoot;
-const standaloneApp = fs.existsSync(path.join(standaloneRootToUse, "server.js"))
-  ? standaloneRootToUse
-  : path.join(standaloneRootToUse, "app");
-if (!fs.existsSync(standaloneApp)) {
+let standaloneApp;
+if (fs.existsSync(path.join(standaloneRootToUse, "server.js"))) {
+  standaloneApp = standaloneRootToUse;
+} else if (fs.existsSync(path.join(standaloneRootToUse, "app", "server.js"))) {
+  standaloneApp = path.join(standaloneRootToUse, "app");
+} else {
+  // Next.js ≥15 may nest under project-name directory (e.g. standalone/9router/server.js)
+  const entries = fs.readdirSync(standaloneRootToUse).filter(e => {
+    const p = path.join(standaloneRootToUse, e);
+    return fs.statSync(p).isDirectory() && fs.existsSync(path.join(p, "server.js"));
+  });
+  standaloneApp = entries.length > 0 ? path.join(standaloneRootToUse, entries[0]) : null;
+}
+if (!standaloneApp || !fs.existsSync(standaloneApp)) {
   console.error("❌ Next.js standalone build not found under .next/standalone");
-  console.error("Expected either .next/standalone/server.js or .next/standalone/app/");
+  console.error("Expected server.js at standalone root, standalone/app/, or standalone/<project>/");
   process.exit(1);
 }
 copyRecursive(standaloneApp, cliAppDir);

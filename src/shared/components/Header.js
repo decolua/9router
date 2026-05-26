@@ -132,7 +132,7 @@ const getPageInfo = (pathname) => {
       icon: "extension",
       breadcrumbs: [],
     };
-  if (pathname.includes("/endpoint"))
+  if (pathname.includes("/endpoint") || pathname === "/dashboard")
     return {
       title: "Endpoint",
       description: "API endpoint configuration",
@@ -160,13 +160,6 @@ const getPageInfo = (pathname) => {
       icon: "monitor",
       breadcrumbs: [],
     };
-  if (pathname === "/dashboard")
-    return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
-      icon: "api",
-      breadcrumbs: [],
-    };
   return { title: "", description: "", breadcrumbs: [] };
 };
 
@@ -181,6 +174,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
   const { title, description, icon, breadcrumbs } = pageInfo;
 
+  
   useEffect(() => {
     let cancelled = false;
 

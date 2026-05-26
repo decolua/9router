@@ -13,17 +13,18 @@ export async function POST(request) {
 
     const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
 
-    // Get an active internal API key for auth (if requireApiKey is enabled)
-    let apiKey = null;
+    // Internal self-call — use CLI token to bypass dashboardGuard
+    const headers = { "Content-Type": "application/json" };
+    headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+
+    // Pass an active API key so chat handler's requireApiKey check passes
+    // (but mark as internal test so it doesn't get recorded as user usage)
     try {
       const keys = await getApiKeys();
-      apiKey = keys.find((k) => k.isActive !== false)?.key || null;
+      const activeKey = keys.find((k) => k.isActive !== false)?.key || null;
+      if (activeKey) headers["Authorization"] = `Bearer ${activeKey}`;
     } catch {}
-
-    const headers = { "Content-Type": "application/json" };
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    // Bypass dashboardGuard for internal self-call via CLI token (machineId-based)
-    headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+    headers["x-9r-internal-test"] = "1";
 
     const start = Date.now();
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -100,12 +100,21 @@ export default function RequestDetailsTab() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
+  const [apiKeys, setApiKeys] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    apiKey: "",
     startDate: "",
     endDate: ""
   });
+  const [appliedFilters, setAppliedFilters] = useState({
+    provider: "",
+    apiKey: "",
+    startDate: "",
+    endDate: ""
+  });
+  const debounceRef = useRef(null);
 
   const fetchProviders = useCallback(async () => {
     try {
@@ -120,6 +129,16 @@ export default function RequestDetailsTab() {
     }
   }, []);
 
+  const fetchApiKeys = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/api-keys");
+      const data = await res.json();
+      setApiKeys(data.apiKeys || []);
+    } catch (error) {
+      console.error("Failed to fetch API keys:", error);
+    }
+  }, []);
+
   const fetchDetails = useCallback(async () => {
     setLoading(true);
     try {
@@ -127,9 +146,10 @@ export default function RequestDetailsTab() {
         page: pagination.page.toString(),
         pageSize: pagination.pageSize.toString()
       });
-      if (filters.provider) params.append("provider", filters.provider);
-      if (filters.startDate) params.append("startDate", filters.startDate);
-      if (filters.endDate) params.append("endDate", filters.endDate);
+      if (appliedFilters.provider) params.append("provider", appliedFilters.provider);
+      if (appliedFilters.apiKey) params.append("apiKey", appliedFilters.apiKey);
+      if (appliedFilters.startDate) params.append("startDate", appliedFilters.startDate);
+      if (appliedFilters.endDate) params.append("endDate", appliedFilters.endDate);
 
       const res = await fetch(`/api/usage/request-details?${params}`);
       const data = await res.json();
@@ -141,11 +161,21 @@ export default function RequestDetailsTab() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize, filters]);
+  }, [pagination.page, pagination.pageSize, appliedFilters]);
 
   useEffect(() => {
     fetchProviders();
-  }, [fetchProviders]);
+    fetchApiKeys();
+  }, [fetchProviders, fetchApiKeys]);
+
+  // Debounce filter changes: apply after 300ms of inactivity
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setAppliedFilters(filters);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [filters]);
 
   useEffect(() => {
     fetchDetails();
@@ -165,13 +195,13 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", apiKey: "", startDate: "", endDate: "" });
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Card padding="md">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
             <select
@@ -222,12 +252,34 @@ export default function RequestDetailsTab() {
             />
           </div>
           
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor="apikey-filter" className="text-sm font-medium text-text-main">API Key</label>
+            <select
+              id="apikey-filter"
+              value={filters.apiKey}
+              onChange={(e) => setFilters({ ...filters, apiKey: e.target.value })}
+              className={cn(
+                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "w-full min-w-0 cursor-pointer"
+              )}
+              style={{ colorScheme: 'auto' }}
+            >
+              <option value="">All Keys</option>
+              {apiKeys.map((ak) => (
+                <option key={ak.key} value={ak.key}>
+                  {ak.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
           <div className="flex min-w-0 flex-col gap-2 sm:col-span-2 lg:col-span-1">
             <span className="hidden text-sm font-medium text-text-main opacity-0 lg:block" aria-hidden="true">Clear</span>
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
+              disabled={!filters.provider && !filters.apiKey && !filters.startDate && !filters.endDate}
               className="w-full"
             >
               Clear Filters
@@ -244,6 +296,7 @@ export default function RequestDetailsTab() {
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
+                <th className="text-left p-4 text-sm font-semibold text-text-main">API Key</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
@@ -253,7 +306,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="8" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -262,7 +315,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="8" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -280,8 +333,11 @@ export default function RequestDetailsTab() {
                     </td>
                     <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
                        <span className="font-medium">
-                         {getProviderName(detail.provider, providerNameCache)}
+                         {getProviderName(detail.provider, providerNameCache)}{detail.connectionName ? ` · ${detail.connectionName}` : ""}
                        </span>
+                     </td>
+                    <td className="max-w-[120px] truncate p-4 text-sm text-text-muted font-mono">
+                       {detail.apiKeyName || (detail.apiKey ? `${detail.apiKey.slice(0, 8)}...` : "Local")}
                      </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {getInputTokens(detail.tokens).toLocaleString()}
@@ -343,11 +399,17 @@ export default function RequestDetailsTab() {
               </div>
               <div>
                  <span className="text-text-muted">Provider:</span>{" "}
-                 <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
+                 <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}{selectedDetail.connectionName ? ` · ${selectedDetail.connectionName}` : ""}</span>
                </div>
               <div>
                 <span className="text-text-muted">Model:</span>{" "}
                 <span className="text-text-main font-mono">{selectedDetail.model}</span>
+              </div>
+              <div>
+                <span className="text-text-muted">API Key:</span>{" "}
+                <span className="text-text-main font-mono">
+                  {selectedDetail.apiKeyName || (selectedDetail.apiKey ? `${selectedDetail.apiKey.slice(0, 12)}...` : "Local (No Key)")}
+                </span>
               </div>
               <div>
                 <span className="text-text-muted">Status:</span>{" "}
@@ -380,30 +442,41 @@ export default function RequestDetailsTab() {
             
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4" data-i18n-skip>
+                  {selectedDetail.request?._truncated
+                    ? selectedDetail.request._preview || <>[<span>Truncated — original size</span>: {(selectedDetail.request._originalSize / 1024).toFixed(1)}KB]</>
+                    : JSON.stringify(selectedDetail.request, null, 2)}
                 </pre>
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
                 <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4" data-i18n-skip>
+                    {selectedDetail.providerRequest?._truncated
+                      ? selectedDetail.providerRequest._preview || <>[<span>Truncated — original size</span>: {(selectedDetail.providerRequest._originalSize / 1024).toFixed(1)}KB]</>
+                      : typeof selectedDetail.providerRequest === 'object'
+                        ? JSON.stringify(selectedDetail.providerRequest, null, 2)
+                        : String(selectedDetail.providerRequest)}
                   </pre>
                 </CollapsibleSection>
               )}
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
-                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4" data-i18n-skip>
+                    {selectedDetail.providerResponse?._truncated
+                      ? selectedDetail.providerResponse._preview || <>[<span>Truncated — original size</span>: {(selectedDetail.providerResponse._originalSize / 1024).toFixed(1)}KB]</>
+                      : typeof selectedDetail.providerResponse === 'object'
+                        ? Object.keys(selectedDetail.providerResponse).length === 0
+                          ? "[Empty response object]"
+                          : JSON.stringify(selectedDetail.providerResponse, null, 2)
+                        : ['[Streaming - raw response not captured]', '[Empty streaming response]'].includes(selectedDetail.providerResponse)
+                          ? "[Streaming response not captured — see section 4 for final content]"
+                          : String(selectedDetail.providerResponse)}
                   </pre>
                 </CollapsibleSection>
               )}
-              
+
               <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
                 {selectedDetail.response?.thinking && (
                   <div className="mb-4">
@@ -411,17 +484,25 @@ export default function RequestDetailsTab() {
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
                       Thinking Process
                     </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4" data-i18n-skip>
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>
                 )}
-                
+
                 <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
                   Content
                 </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4" data-i18n-skip>
+                  {selectedDetail.response?._truncated
+                    ? selectedDetail.response._preview || <>[<span>Truncated — original size</span>: {(selectedDetail.response._originalSize / 1024).toFixed(1)}KB]</>
+                    : selectedDetail.response?.content && !['[Streaming in progress...]', '[Empty streaming response]'].includes(selectedDetail.response.content)
+                      ? selectedDetail.response.content
+                      : selectedDetail.providerResponse && typeof selectedDetail.providerResponse === 'string' && !['[Streaming - raw response not captured]', '[Empty streaming response]'].includes(selectedDetail.providerResponse)
+                        ? selectedDetail.providerResponse
+                        : selectedDetail.response?.thinking
+                          ? "[See Thinking Process above]"
+                          : "[No content]"}
                 </pre>
               </CollapsibleSection>
             </div>

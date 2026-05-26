@@ -15,17 +15,18 @@ const MODEL_RULES = [
   { match: m => m?.startsWith?.("deepseek-"), scope: "all" }
 ];
 
-const DEEPSEEK_V4_PRO = "deepseek-v4-pro";
-const DEEPSEEK_V4_PRO_ALIASES = {
-  [`${DEEPSEEK_V4_PRO}-max`]: {
-    thinkingType: "enabled",
-    reasoningEffort: "max"
-  },
-  [`${DEEPSEEK_V4_PRO}-none`]: {
-    thinkingType: "disabled",
-    reasoningEffort: null
-  }
+// Suffix → thinking config mapping for DeepSeek models.
+// When a model like "deepseek-r1-max" is specified, the suffix (-max) is stripped
+// from the upstream model name and used to configure thinking mode + effort.
+const DEEPSEEK_SUFFIX_CONFIG = {
+  none:  { thinkingType: "disabled", reasoningEffort: null },
+  low:   { thinkingType: "enabled",  reasoningEffort: "low" },
+  medium:{ thinkingType: "enabled",  reasoningEffort: "medium" },
+  high:  { thinkingType: "enabled",  reasoningEffort: "high" },
+  max:   { thinkingType: "enabled",  reasoningEffort: "max" },
 };
+
+const DEEPSEEK_SUFFIX_PATTERN = /^(deepseek-.+?)-?(none|low|medium|high|max)$/;
 
 function shouldInject(message, scope) {
   if (message?.role !== "assistant") return false;
@@ -43,24 +44,36 @@ function applyRule(body, rule) {
   return { ...body, messages };
 }
 
-function applyDeepSeekV4ProAlias({ provider, model, body }) {
-  const alias = DEEPSEEK_V4_PRO_ALIASES[model];
-  if (provider !== "deepseek" || !alias || !body) return body;
+/**
+ * Parse and apply DeepSeek model suffix for thinking control.
+ * Supports any model matching /deepseek-.+/ with suffix: none/low/medium/high/max.
+ * Example: "deepseek-r1-max" → upstream model "deepseek-r1" + thinking enabled + effort=max.
+ */
+function applyDeepSeekModelSuffix({ provider, model, body }) {
+  if (provider !== "deepseek" || !body) return body;
 
-  const nextBody = {
-    ...body,
-    model: DEEPSEEK_V4_PRO,
-    extra_body: {
+  const match = model?.match?.(DEEPSEEK_SUFFIX_PATTERN);
+  if (!match) return body;
+
+  const baseModel = match[1];
+  const suffix = match[2];
+  const config = DEEPSEEK_SUFFIX_CONFIG[suffix];
+  if (!config) return body;
+
+  const nextBody = { ...body, model: baseModel };
+
+  if (config.thinkingType) {
+    nextBody.extra_body = {
       ...(body.extra_body || {}),
       thinking: {
         ...(body.extra_body?.thinking || {}),
-        type: alias.thinkingType
+        type: config.thinkingType
       }
-    }
-  };
+    };
+  }
 
-  if (alias.reasoningEffort) {
-    nextBody.reasoning_effort = alias.reasoningEffort;
+  if (config.reasoningEffort) {
+    nextBody.reasoning_effort = config.reasoningEffort;
   } else {
     delete nextBody.reasoning_effort;
   }
@@ -72,6 +85,11 @@ export function injectReasoningContent({ provider, model, body }) {
   const providerRule = PROVIDER_RULES[provider];
   const modelRule = MODEL_RULES.find(r => r.match(model));
   const rule = providerRule || modelRule;
-  const nextBody = applyDeepSeekV4ProAlias({ provider, model, body });
+  const nextBody = applyDeepSeekModelSuffix({ provider, model, body });
+  // If thinking is explicitly disabled (body.thinking.type=disabled),
+  // skip reasoning_content injection to avoid upstream confusion
+  const thinkingDisabled = nextBody?.thinking?.type === "disabled" ||
+    nextBody?.extra_body?.thinking?.type === "disabled";
+  if (thinkingDisabled) return nextBody;
   return applyRule(nextBody, rule);
 }

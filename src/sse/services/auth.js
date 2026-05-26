@@ -5,6 +5,10 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
+// Circuit breaker constants
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const CIRCUIT_BREAKER_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
@@ -52,7 +56,32 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    // Fetch all connections (including circuit-breaker-disabled) to allow auto-re-enable
+    const allConnections = await getProviderConnections({ provider: providerId });
+    const now = Date.now();
+
+    // Auto-re-enable circuit-breaker-disabled connections whose cooldown has expired
+    for (const c of allConnections) {
+      if (c.isActive === false && c.autoDisabledReason === "circuit_breaker" && c.autoDisabledAt) {
+        const disabledAt = new Date(c.autoDisabledAt).getTime();
+        if (now - disabledAt >= CIRCUIT_BREAKER_COOLDOWN_MS) {
+          log.info("AUTH", `${c.id?.slice(0, 8)} circuit breaker cooldown expired, re-enabling`);
+          await updateProviderConnection(c.id, {
+            isActive: true,
+            autoDisabledAt: null,
+            autoDisabledReason: null,
+            consecutiveErrorCount: 0,
+          });
+          c.isActive = true;
+          c.autoDisabledAt = null;
+          c.autoDisabledReason = null;
+          c.consecutiveErrorCount = 0;
+        }
+      }
+    }
+
+    // Now filter to active connections only
+    const connections = allConnections.filter(c => c.isActive !== false);
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -216,18 +245,30 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(model, cooldownMs);
 
-  await updateProviderConnection(connectionId, {
+  const consecutiveErrorCount = (conn?.consecutiveErrorCount || 0) + 1;
+  const circuitBreakerTripped = consecutiveErrorCount >= CIRCUIT_BREAKER_THRESHOLD;
+
+  const updateObj = {
     ...lockUpdate,
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel
-  });
+    backoffLevel: newBackoffLevel ?? backoffLevel,
+    consecutiveErrorCount,
+  };
+
+  if (circuitBreakerTripped) {
+    updateObj.isActive = false;
+    updateObj.autoDisabledAt = new Date().toISOString();
+    updateObj.autoDisabledReason = "circuit_breaker";
+  }
+
+  await updateProviderConnection(connectionId, updateObj);
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}] (consecutiveErrors: ${consecutiveErrorCount}${circuitBreakerTripped ? " — CIRCUIT BREAKER TRIPPED" : ""})`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
@@ -274,7 +315,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
+    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0, consecutiveErrorCount: 0 });
   }
 
   await updateProviderConnection(connectionId, clearObj);

@@ -2,8 +2,12 @@ import https from "https";
 import pkg from "../../../../package.json" with { type: "json" };
 
 const NPM_PACKAGE_NAME = "9router";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// Fetch latest version from npm registry
+let cachedResult = null;
+let cachedAt = 0;
+let fetchPromise = null;
+
 function fetchLatestVersion() {
   return new Promise((resolve) => {
     const req = https.get(
@@ -37,9 +41,26 @@ function compareVersions(a, b) {
 }
 
 export async function GET() {
-  const latestVersion = await fetchLatestVersion();
+  const now = Date.now();
+
+  // Return cached result if still fresh
+  if (cachedResult && (now - cachedAt) < CACHE_TTL_MS) {
+    return Response.json(cachedResult);
+  }
+
+  // Deduplicate concurrent requests
+  if (!fetchPromise) {
+    fetchPromise = fetchLatestVersion().finally(() => {
+      fetchPromise = null;
+    });
+  }
+
+  const latestVersion = await fetchPromise;
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  cachedResult = { currentVersion, latestVersion, hasUpdate };
+  cachedAt = now;
+
+  return Response.json(cachedResult);
 }

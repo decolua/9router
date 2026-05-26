@@ -6,6 +6,9 @@ const fs = require("fs");
 const https = require("https");
 const os = require("os");
 
+// Fix shell-init getcwd error when launched from a deleted directory
+try { process.chdir(process.env.HOME || os.homedir()); } catch { try { process.chdir("/"); } catch {} }
+
 // Native spinner - no external dependency
 function createSpinner(text) {
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

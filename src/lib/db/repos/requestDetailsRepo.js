@@ -85,6 +85,7 @@ async function flushToDatabase() {
           if (!item.timestamp) item.timestamp = new Date().toISOString();
           if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
+          const apiKey = item.apiKey || null;
           const record = {
             id: item.id,
             provider: item.provider || null,
@@ -101,8 +102,8 @@ async function flushToDatabase() {
           };
 
           db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, apiKey, status, data) VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, apiKey = excluded.apiKey, status = excluded.status, data = excluded.data`,
+            [record.id, record.timestamp, record.provider, record.model, record.connectionId, apiKey, record.status, stringifyJson(record)]
           );
         }
 
@@ -149,6 +150,7 @@ export async function getRequestDetails(filter = {}) {
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
+  if (filter.apiKey) { conds.push("apiKey = ?"); params.push(filter.apiKey); }
   if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
@@ -163,10 +165,28 @@ export async function getRequestDetails(filter = {}) {
   const offset = (page - 1) * pageSize;
 
   const rows = db.all(
-    `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+    `SELECT data, apiKey FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, offset]
   );
-  const details = rows.map((r) => parseJson(r.data, {}));
+  const details = rows.map((r) => {
+    const d = parseJson(r.data, {});
+    if (r.apiKey && !d.apiKey) d.apiKey = r.apiKey;
+    return d;
+  });
+
+  // Enrich with apiKey name and connection name
+  const keyRows = db.all(`SELECT key, name FROM apiKeys`);
+  const keyNameMap = {};
+  for (const kr of keyRows) keyNameMap[kr.key] = kr.name;
+
+  const connRows = db.all(`SELECT id, name FROM providerConnections`);
+  const connNameMap = {};
+  for (const cr of connRows) connNameMap[cr.id] = cr.name;
+
+  for (const d of details) {
+    if (d.apiKey && keyNameMap[d.apiKey]) d.apiKeyName = keyNameMap[d.apiKey];
+    if (d.connectionId && connNameMap[d.connectionId]) d.connectionName = connNameMap[d.connectionId];
+  }
 
   return {
     details,
@@ -174,10 +194,19 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
+export async function getDistinctProviders() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider`);
+  return rows.map(r => r.provider);
+}
+
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
-  return row ? parseJson(row.data, null) : null;
+  const row = db.get(`SELECT data, apiKey FROM requestDetails WHERE id = ?`, [id]);
+  if (!row) return null;
+  const d = parseJson(row.data, null);
+  if (d && row.apiKey && !d.apiKey) d.apiKey = row.apiKey;
+  return d;
 }
 
 const _shutdownHandler = async () => {

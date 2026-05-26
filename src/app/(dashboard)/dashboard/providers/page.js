@@ -105,6 +105,9 @@ export default function ProvidersPage() {
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importFile, setImportFile] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
@@ -160,6 +163,60 @@ export default function ProvidersPage() {
     };
     fetchData();
   }, []);
+
+  const handleExport = async () => {
+    try {
+      const res = await fetch("/api/providers/export");
+      const data = await res.json();
+      if (!res.ok) { notify.error(data.error || "Export failed"); return; }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `9router-providers-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      notify.success("Provider config exported");
+    } catch (error) {
+      notify.error("Export failed");
+    }
+  };
+
+  const handleImport = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const res = await fetch("/api/providers/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        notify.success("Provider config imported successfully");
+        setShowImportModal(false);
+        // Refresh page data
+        const [connectionsRes, nodesRes] = await Promise.all([
+          fetch("/api/providers"),
+          fetch("/api/provider-nodes"),
+        ]);
+        const connectionsData = await connectionsRes.json();
+        const nodesData = await nodesRes.json();
+        if (connectionsRes.ok) setConnections(connectionsData.connections || []);
+        if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+      } else {
+        notify.error(data.error || "Import failed");
+      }
+    } catch (error) {
+      notify.error("Import failed: " + (error.message || "Invalid file"));
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const getProviderStats = (providerId, authType) => {
     const providerConnections = connections.filter(
@@ -317,6 +374,35 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {/* Export / Import toolbar */}
+      <div className="flex items-center justify-between gap-2 sm:justify-end">
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[14px]">download</span>
+          Export Config
+        </button>
+        <label className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-primary/40 transition-colors cursor-pointer">
+          <span className="material-symbols-outlined text-[14px]">upload</span>
+          Import Config
+          <input
+            type="file"
+            accept=".json"
+            className="hidden"
+            disabled={importing}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setImportFile(file);
+                setShowImportModal(true);
+              }
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
@@ -588,6 +674,27 @@ export default function ProvidersPage() {
           </div>
         </div>
       )}
+
+      {showImportModal && (
+        <Modal isOpen={showImportModal} onClose={() => { setShowImportModal(false); setImportFile(null); }} title="Import Provider Config" size="sm">
+          <div className="flex flex-col gap-4">
+            <p className="text-text-muted text-sm">
+              This will replace all existing provider connections, nodes, proxy pools, and model settings with the imported configuration. This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <Button variant="ghost" onClick={() => setShowImportModal(false)} disabled={importing}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={async () => {
+                if (importFile) await handleImport(importFile);
+              }} loading={importing}>
+                {importing ? "Importing..." : "Import & Replace"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
     </div>
   );
 }
@@ -1218,7 +1325,8 @@ AddAnthropicCompatibleModal.propTypes = {
   onCreated: PropTypes.func.isRequired,
 };
 
-function ProviderTestResultsView({ results }) {
+function ProviderTestResultsView
+({ results }) {
   if (results.error && !results.results) {
     return (
       <div className="text-center py-6">
