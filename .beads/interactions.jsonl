@@ -1,0 +1,8 @@
+{"id":"int-27020a20","kind":"field_change","created_at":"2026-05-25T12:14:21.2050157Z","actor":"TwistKS","issue_id":"bd_9r-hkb","extra":{"field":"status","new_value":"closed","old_value":"open"}}
+{"id":"int-67be212a","kind":"field_change","created_at":"2026-05-25T12:14:46.6577605Z","actor":"TwistKS","issue_id":"bd_9r-4r4.1","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-7b03346a","kind":"field_change","created_at":"2026-05-25T12:17:46.1609688Z","actor":"TwistKS","issue_id":"bd_9r-4r4.1","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
+{"id":"int-36fa1fb3","kind":"field_change","created_at":"2026-05-25T12:18:05.706999Z","actor":"TwistKS","issue_id":"bd_9r-4r4.2","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-005d521f","kind":"field_change","created_at":"2026-05-25T12:20:48.4405394Z","actor":"TwistKS","issue_id":"bd_9r-4r4.2","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
+{"id":"int-86244cdf","kind":"field_change","created_at":"2026-05-25T12:21:19.8565614Z","actor":"TwistKS","issue_id":"bd_9r-4r4.3","extra":{"field":"status","new_value":"in_progress","old_value":"open"}}
+{"id":"int-3cc70218","kind":"field_change","created_at":"2026-05-25T12:25:37.0178135Z","actor":"TwistKS","issue_id":"bd_9r-4r4.3","extra":{"field":"status","new_value":"closed","old_value":"in_progress"}}
+{"id":"int-83b2c81b","kind":"field_change","created_at":"2026-05-25T12:25:37.9357223Z","actor":"TwistKS","issue_id":"bd_9r-4r4","extra":{"field":"status","new_value":"closed","old_value":"open"}}
