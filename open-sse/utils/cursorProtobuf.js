@@ -4,6 +4,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
+import { Buffer } from "node:buffer";
 import zlib from "zlib";
 
 const DEBUG = process.env.CURSOR_PROTOBUF_DEBUG === "1";

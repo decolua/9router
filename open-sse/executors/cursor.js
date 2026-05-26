@@ -1,4 +1,5 @@
 import { BaseExecutor } from "./base.js";
+import { Buffer } from "node:buffer";
 import { PROVIDERS } from "../config/providers.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
