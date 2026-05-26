@@ -294,6 +294,7 @@ export default function ProviderTopology({
   // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
   const [tick, setTick] = useState(0);
+  const [activeSet, setActiveSet] = useState(new Set());
 
   useEffect(() => {
     const seen = firstSeenRef.current;
@@ -307,19 +308,22 @@ export default function ProviderTopology({
   }, [rawActiveSet]);
 
   useEffect(() => {
-    if (rawActiveSet.size === 0) return;
+    if (rawActiveSet.size === 0) {
+      setActiveSet(new Set());
+      return;
+    }
     const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
     return () => clearInterval(id);
   }, [rawActiveSet]);
 
-  const activeSet = useMemo(() => {
+  useEffect(() => {
     const now = Date.now();
     const filtered = new Set();
     for (const p of rawActiveSet) {
       const ts = firstSeenRef.current[p];
       if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
     }
-    return filtered;
+    setActiveSet(filtered);
   }, [rawActiveSet, tick]);
 
   const { nodes, edges } = useMemo(
@@ -343,7 +347,7 @@ export default function ProviderTopology({
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
     setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
+  }, [fitOpts]);
 
   // Re-fit on container resize
   useEffect(() => {

@@ -13,54 +13,54 @@ const LOG_LEVEL_COLORS = {
 };
 
 function colorLine(line) {
-  let color = "text-green-400"; // default fallback
+  let color = "#4ade80"; // default fallback (green-400)
 
   if (
     line.includes("❌") ||
     line.includes("[ERROR]") ||
     line.includes("ERROR")
   ) {
-    color = "text-red-400";
+    color = "#f87171"; // red
   } else if (
     line.includes("⚠️") ||
     line.includes("[WARN]") ||
     line.includes("WARN")
   ) {
-    color = "text-yellow-400";
+    color = "#fbbf24"; // yellow
   } else if (
     line.includes("📥") ||
     line.includes("[REQUEST]") ||
     line.includes("[ProxyFetch]")
   ) {
-    color = "text-cyan-400";
+    color = "#22d3ee"; // cyan
   } else if (
     line.includes("🔍") ||
     line.includes("[AUTH]") ||
     line.includes("[ROUTING]")
   ) {
-    color = "text-sky-400";
+    color = "#38bdf8"; // sky blue
   } else if (line.includes("🌊") || line.includes("[STREAM]")) {
-    color = "text-fuchsia-400";
+    color = "#e879f9"; // fuchsia
   } else if (
     line.includes("📊") ||
     line.includes("📈") ||
     line.includes("[USAGE]") ||
     line.includes("[STREAM USAGE]")
   ) {
-    color = "text-pink-400";
+    color = "#f472b6"; // pink
   } else if (line.includes("[PENDING]")) {
-    color = "text-indigo-400";
+    color = "#818cf8"; // indigo
   } else if (
     line.includes("ℹ️") ||
     line.includes("[INFO]") ||
     line.includes("[COMBO]")
   ) {
-    color = "text-green-400";
+    color = "#4ade80"; // green
   } else if (line.includes("[DB]") || line.includes("[InitApp]")) {
-    color = "text-slate-400";
+    color = "#94a3b8"; // slate
   }
 
-  return <span className={color}>{line}</span>;
+  return <span style={{ color }}>{line}</span>;
 }
 
 export default function ConsoleLogClient() {
