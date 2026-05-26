@@ -122,6 +122,7 @@ export function createDisconnectAwareStream(
     : { abort: () => Promise.resolve() };
   let resumeAttempts = 0;
   const maxResumeAttempts = 2;
+  let chunksReceived = 0;
 
   return new ReadableStream({
     async pull(controller) {
@@ -134,10 +135,14 @@ export function createDisconnectAwareStream(
         const { done, value } = await reader.read();
 
         if (done) {
+          if (chunksReceived === 0) {
+            throw new Error("API returned an empty response (HTTP 200)");
+          }
           streamController.handleComplete();
           controller.close();
           return;
         }
+        chunksReceived++;
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
@@ -145,6 +150,8 @@ export function createDisconnectAwareStream(
         const hasGeneratedText =
           textBuffer &&
           (textBuffer.accumulatedContent || textBuffer.accumulatedThinking);
+        const isEarlyStreamError = chunksReceived === 0;
+        const canResume = hasGeneratedText || isEarlyStreamError;
 
         const msg = error?.message || "";
         const code = error?.code || error?.cause?.code || "";
@@ -158,6 +165,7 @@ export function createDisconnectAwareStream(
           msg.includes("overloaded") ||
           msg.includes("overload") ||
           msg.includes("busy") ||
+          msg.includes("empty response") ||
           code === "ECONNRESET" ||
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
@@ -166,11 +174,20 @@ export function createDisconnectAwareStream(
         if (
           wasConnected &&
           isNetworkOrOverloadError &&
-          hasGeneratedText &&
+          canResume &&
           resumeAttempts < maxResumeAttempts &&
           resumeCtx
         ) {
           resumeAttempts++;
+
+          // Apply backoff strategy: 1st retry = immediate, 2nd retry = 1.5s delay
+          if (resumeAttempts === 2) {
+            console.log(
+              `[RESUME] Applying backoff delay of 1.5s before attempt 2...`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+          }
+
           console.log(
             `[RESUME] Mid-stream connection lost (${error.message}). Attempting transparent resume ${resumeAttempts}/${maxResumeAttempts}...`,
           );
@@ -200,6 +217,7 @@ export function createDisconnectAwareStream(
                 "[RESUME] Resume request successful! Piping new stream chunks...",
               );
 
+              chunksReceived = 0;
               await reader.cancel().catch(() => {});
               if (writer && typeof writer.abort === "function") {
                 await writer.abort().catch(() => {});

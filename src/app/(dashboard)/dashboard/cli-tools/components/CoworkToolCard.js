@@ -43,13 +43,30 @@ export default function CoworkToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModels, setSelectedModels] = useState([]);
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModels, setSelectedModels] = useState(
+    () => initialStatus?.cowork?.models || [],
+  );
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [customBaseUrl, setCustomBaseUrl] = useState("");
-  const [plugins, setPlugins] = useState([]);
-  const [localPlugins, setLocalPlugins] = useState([]);
-  const [customPlugins, setCustomPlugins] = useState([]);
+  const [customBaseUrl, setCustomBaseUrl] = useState(() =>
+    initialStatus?.cowork?.baseUrl ? stripV1(initialStatus.cowork.baseUrl) : "",
+  );
+  const [plugins, setPlugins] = useState(() =>
+    Array.isArray(initialStatus?.cowork?.plugins) &&
+    initialStatus.cowork.plugins.length > 0
+      ? initialStatus.cowork.plugins
+      : Array.isArray(initialStatus?.defaultPlugins)
+        ? initialStatus.defaultPlugins
+        : [],
+  );
+  const [localPlugins, setLocalPlugins] = useState(
+    () => initialStatus?.cowork?.localPlugins || [],
+  );
+  const [customPlugins, setCustomPlugins] = useState(
+    () => initialStatus?.cowork?.customPlugins || [],
+  );
   const [modelAliases, setModelAliases] = useState({});
   const [comboModalOpen, setComboModalOpen] = useState(false);
   const [modelSelectOpen, setModelSelectOpen] = useState(false);
@@ -63,19 +80,48 @@ export default function CoworkToolCard({
     args: "",
   });
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
+  const [prevApiKeys, setPrevApiKeys] = useState(apiKeys);
+  if (apiKeys !== prevApiKeys) {
+    setPrevApiKeys(apiKeys);
+    if (!selectedApiKey && apiKeys?.length > 0) {
       setSelectedApiKey(apiKeys[0].key);
     }
-  }, [apiKeys, selectedApiKey]);
+  }
 
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
+  const [prevInitialStatus, setPrevInitialStatus] = useState(initialStatus);
+  if (initialStatus !== prevInitialStatus) {
+    setPrevInitialStatus(initialStatus);
+    if (initialStatus) {
+      setStatus(initialStatus);
+      if (initialStatus.cowork?.models?.length) {
+        setSelectedModels(initialStatus.cowork.models);
+      }
+      if (initialStatus.cowork?.baseUrl) {
+        setCustomBaseUrl(stripV1(initialStatus.cowork.baseUrl));
+      }
+      if (
+        Array.isArray(initialStatus.cowork?.plugins) &&
+        initialStatus.cowork.plugins.length > 0
+      ) {
+        setPlugins(initialStatus.cowork.plugins);
+      } else if (Array.isArray(initialStatus.defaultPlugins)) {
+        setPlugins(initialStatus.defaultPlugins);
+      }
+      if (Array.isArray(initialStatus.cowork?.localPlugins)) {
+        setLocalPlugins(initialStatus.cowork.localPlugins);
+      }
+      if (
+        Array.isArray(initialStatus.cowork?.customPlugins) &&
+        initialStatus.cowork.customPlugins.length > 0
+      ) {
+        setCustomPlugins(initialStatus.cowork.customPlugins);
+      }
+    }
+  }
 
   useEffect(() => {
     if (isExpanded && !status) checkStatus();
-  }, [isExpanded]);
+  }, [isExpanded, status]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -87,45 +133,41 @@ export default function CoworkToolCard({
       .catch(() => {});
   }, [isExpanded]);
 
-  useEffect(() => {
-    if (status?.cowork?.models?.length) {
-      setSelectedModels(status.cowork.models);
-    }
-    if (status?.cowork?.baseUrl && !customBaseUrl) {
-      setCustomBaseUrl(stripV1(status.cowork.baseUrl));
-    }
-    // Initialize plugins: from current config, fallback to defaultPlugins
-    if (
-      Array.isArray(status?.cowork?.plugins) &&
-      status.cowork.plugins.length > 0
-    ) {
-      setPlugins(status.cowork.plugins);
-    } else if (plugins.length === 0 && Array.isArray(status?.defaultPlugins)) {
-      setPlugins(status.defaultPlugins);
-    }
-    if (Array.isArray(status?.cowork?.localPlugins)) {
-      setLocalPlugins(status.cowork.localPlugins);
-    }
-    if (
-      Array.isArray(status?.cowork?.customPlugins) &&
-      status.cowork.customPlugins.length > 0
-    ) {
-      setCustomPlugins(status.cowork.customPlugins);
-    }
-  }, [status]);
-
-  const checkStatus = async () => {
+  async function checkStatus() {
     setChecking(true);
     try {
       const res = await fetch(ENDPOINT);
       const data = await res.json();
       setStatus(data);
+      if (data?.cowork?.models?.length) {
+        setSelectedModels(data.cowork.models);
+      }
+      if (data?.cowork?.baseUrl) {
+        setCustomBaseUrl(stripV1(data.cowork.baseUrl));
+      }
+      if (
+        Array.isArray(data?.cowork?.plugins) &&
+        data.cowork.plugins.length > 0
+      ) {
+        setPlugins(data.cowork.plugins);
+      } else if (Array.isArray(data?.defaultPlugins)) {
+        setPlugins(data.defaultPlugins);
+      }
+      if (Array.isArray(data?.cowork?.localPlugins)) {
+        setLocalPlugins(data.cowork.localPlugins);
+      }
+      if (
+        Array.isArray(data?.cowork?.customPlugins) &&
+        data.cowork.customPlugins.length > 0
+      ) {
+        setCustomPlugins(data.cowork.customPlugins);
+      }
     } catch (error) {
       setStatus({ installed: false, error: error.message });
     } finally {
       setChecking(false);
     }
-  };
+  }
 
   const getEffectiveBaseUrl = () => ensureV1(customBaseUrl);
 

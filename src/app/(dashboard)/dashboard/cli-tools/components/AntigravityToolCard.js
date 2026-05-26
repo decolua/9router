@@ -37,6 +37,14 @@ export default function AntigravityToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const initialStatusRef = useRef(initialStatus || null);
 
+  const [prevApiKeys, setPrevApiKeys] = useState(apiKeys);
+  if (apiKeys !== prevApiKeys) {
+    setPrevApiKeys(apiKeys);
+    if (!selectedApiKey && apiKeys?.length > 0) {
+      setSelectedApiKey(apiKeys[0].key);
+    }
+  }
+
   useEffect(() => {
     if (initialStatusRef.current !== initialStatus && initialStatus) {
       initialStatusRef.current = initialStatus;
@@ -45,19 +53,13 @@ export default function AntigravityToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (!selectedApiKey && apiKeys?.length > 0) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
     if (!isExpanded) return;
     void fetchStatus();
     void loadSavedMappings();
     void fetchModelAliases();
   }, [isExpanded]);
 
-  const loadSavedMappings = async () => {
+  async function loadSavedMappings() {
     try {
       const res = await fetch(
         "/api/cli-tools/antigravity-mitm/alias?tool=antigravity",
@@ -73,9 +75,9 @@ export default function AntigravityToolCard({
     } catch (error) {
       console.log("Error loading saved mappings:", error);
     }
-  };
+  }
 
-  const fetchModelAliases = async () => {
+  async function fetchModelAliases() {
     try {
       const res = await fetch("/api/models/alias");
       const data = await res.json();
@@ -83,9 +85,9 @@ export default function AntigravityToolCard({
     } catch (error) {
       console.log("Error fetching model aliases:", error);
     }
-  };
+  }
 
-  const fetchStatus = async () => {
+  async function fetchStatus() {
     try {
       const res = await fetch("/api/cli-tools/antigravity-mitm");
       if (res.ok) {
@@ -96,7 +98,7 @@ export default function AntigravityToolCard({
       console.log("Error fetching status:", error);
       setStatus({ running: false });
     }
-  };
+  }
 
   // MITM elevation is decided by the server OS, not by this browser's OS.
   const serverIsWindows = status?.isWin === true;

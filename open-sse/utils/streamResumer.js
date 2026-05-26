@@ -25,10 +25,12 @@ export function reconstructBodyForResume(
   const accumulated = textBuffer.accumulatedContent || "";
   const thinking = textBuffer.accumulatedThinking || "";
 
-  if (!accumulated && !thinking) return null;
-
   // Clone original body to avoid side effects
   const newBody = JSON.parse(JSON.stringify(originalBody));
+
+  if (!accumulated && !thinking) {
+    return newBody;
+  }
 
   // We append the already-generated text to messages list.
   // Format check: Claude (messages format) vs OpenAI (messages format) vs Gemini (contents format)
