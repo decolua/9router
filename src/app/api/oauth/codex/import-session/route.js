@@ -4,17 +4,19 @@ import { extractCodexAccountInfo } from "@/lib/oauth/providers";
 
 /**
  * Validate that an access token actually works against ChatGPT backend.
- * Without this, import-session would happily save invalid/expired tokens
- * with testStatus="active" and the user only finds out when chat fails.
  *
- * We use the Codex responses endpoint (POST) because /backend-api/me is
- * blocked by Cloudflare from server IPs. The responses endpoint with an
- * empty body returns 401 for invalid tokens and 400 for valid tokens
- * (auth passed but request body invalid).
+ * Strategy: if the JWT can be decoded and is not expired, trust it.
+ * Network validation from datacenter IPs is unreliable — ChatGPT returns
+ * 401 for blocked IPs (not just invalid tokens), making it impossible to
+ * distinguish "token revoked" from "IP blocked".
+ *
+ * We still attempt network validation as a best-effort check, but only
+ * reject on 401 when the JWT itself is not trustworthy (malformed or
+ * expired — caller checks expiry separately).
  *
  * Returns { valid, status, error? }.
  */
-async function validateSessionToken(accessToken) {
+async function validateSessionToken(accessToken, jwtValid = false) {
   try {
     const res = await fetch("https://chatgpt.com/backend-api/codex/responses", {
       method: "POST",
@@ -27,8 +29,13 @@ async function validateSessionToken(accessToken) {
       body: JSON.stringify({}),
       signal: AbortSignal.timeout(15_000),
     });
-    // 401 = token invalid/expired/revoked
+    // 401 — could be invalid token OR datacenter IP blocked.
+    // If JWT is valid (decodable + not expired), allow through since we
+    // can't distinguish revocation from IP blocking from server IP.
     if (res.status === 401) {
+      if (jwtValid) {
+        return { valid: true, status: 401, error: "Cannot validate from server IP (401); JWT valid, allowing import" };
+      }
       const body = await res.text().catch(() => "");
       return { valid: false, status: 401, error: body.slice(0, 200) };
     }
@@ -144,10 +151,11 @@ export async function POST(request) {
         continue;
       }
 
-      // Network validation: hit /backend-api/me with the bearer token.
-      // Without this, invalid tokens get saved as testStatus=active and the
-      // user only finds out when chat requests start failing.
-      const validation = await validateSessionToken(accessToken);
+      // Network validation: best-effort check against ChatGPT backend.
+      // Pass jwtValid=true when JWT is decodable + not expired so that
+      // 401 from datacenter IP blocking doesn't reject valid tokens.
+      const jwtValid = !!(info && info.exp && info.exp * 1000 > Date.now());
+      const validation = await validateSessionToken(accessToken, jwtValid);
       if (!validation.valid) {
         errors.push({
           index: i,
@@ -159,8 +167,8 @@ export async function POST(request) {
         continue;
       }
 
-      // Prefer plan/account from the live /me response over JWT claims (more
-      // accurate for upgraded accounts).
+      // Prefer plan/account from validation when available (live data is
+      // more accurate for upgraded accounts), otherwise fall back to JWT.
       const planType = validation.planType || info?.chatgptPlanType || null;
       const accountId = validation.accountId || info?.chatgptAccountId || null;
 

@@ -17,6 +17,30 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
+/**
+ * Decode JWT payload without verification (claims only).
+ * Used to validate codex/openai tokens when network probe is unreliable
+ * (datacenter IP blocking returns 401 even for valid tokens).
+ */
+function decodeJwtPayloadSafe(jwt) {
+  try {
+    if (!jwt || typeof jwt !== "string") return null;
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padding = (4 - (base64.length % 4)) % 4;
+    return JSON.parse(Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function isJwtStillValid(accessToken) {
+  const payload = decodeJwtPayloadSafe(accessToken);
+  if (!payload || !payload.exp) return false;
+  return payload.exp * 1000 > Date.now();
+}
+
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -31,6 +55,10 @@ const OAUTH_TEST_CONFIG = {
     // 400 (bad request) means auth succeeded; only 401/403 means token is bad
     acceptStatuses: [400],
     refreshable: true,
+    // ChatGPT backend returns 401/403 for datacenter IPs even with valid tokens.
+    // When the JWT itself is decodable and not expired, fall back to trusting
+    // the JWT claims rather than marking the connection as error.
+    jwtIpBlockFallback: true,
   },
   "gemini-cli": {
     url: "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
@@ -303,8 +331,26 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
         const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
         if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        // If even after refresh the endpoint returns 401/403, but the new JWT
+        // is decodable + not expired, treat as IP-block (refresh proves the
+        // refresh_token is good; the 401 is likely datacenter IP filtering).
+        if (config.jwtIpBlockFallback && (retryRes.status === 401 || retryRes.status === 403) && isJwtStillValid(tokens.accessToken)) {
+          return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        }
+      }
+      // No refresh token, refresh failed, or refresh produced an unusable result:
+      // last-resort JWT fallback for providers where the test endpoint blocks
+      // datacenter IPs (codex). Only when the original access token is still a
+      // valid, non-expired JWT.
+      if (config.jwtIpBlockFallback && isJwtStillValid(accessToken)) {
+        return { valid: true, error: null, refreshed: false, newTokens: null };
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
+    }
+
+    if ((res.status === 401 || res.status === 403) && config.jwtIpBlockFallback && isJwtStillValid(accessToken)) {
+      // No refresh token available, but JWT is still valid — assume IP block.
+      return { valid: true, error: null, refreshed, newTokens };
     }
 
     if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
