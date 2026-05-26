@@ -1,8 +1,16 @@
 import { Readable } from "stream";
+import { Agent } from "undici";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+
+const directAgent = new Agent({
+  connect: {
+    autoSelectFamily: true,
+    autoSelectFamilyAttemptTimeout: 1000,
+  },
+});
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
@@ -133,7 +141,13 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    proxyDispatchers.set(normalized, new ProxyAgent({
+      uri: normalized,
+      connect: {
+        autoSelectFamily: true,
+        autoSelectFamilyAttemptTimeout: 1000,
+      },
+    }));
   }
 
   return proxyDispatchers.get(normalized);
@@ -210,7 +224,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders, dispatcher: directAgent });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -251,11 +265,11 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
-      return originalFetch(url, options);
+      return originalFetch(url, { ...options, dispatcher: directAgent });
     }
   }
 
-  return originalFetch(url, options);
+  return originalFetch(url, { ...options, dispatcher: directAgent });
 }
 
 /**
