@@ -142,6 +142,25 @@ export function createDisconnectAwareStream(
           controller.close();
           return;
         }
+
+        if (value && chunksReceived === 0) {
+          try {
+            const decoder = new TextDecoder("utf-8");
+            const chunkText = decoder.decode(value, { stream: true });
+            const hasOverload = chunkText.includes("overloaded") || chunkText.includes("overload");
+            const hasError = chunkText.includes("Error") || chunkText.includes("error") || chunkText.includes("●") || chunkText.includes("[Error]");
+            const hasTryAgain = chunkText.includes("try again later") || chunkText.includes("Please try again") || chunkText.includes("try again");
+
+            if (hasOverload || (hasTryAgain && hasError)) {
+              throw new Error("Upstream error: Our servers are currently overloaded");
+            }
+          } catch (e) {
+            if (e.message?.startsWith("Upstream error:")) {
+              throw e;
+            }
+          }
+        }
+
         chunksReceived++;
         controller.enqueue(value);
       } catch (error) {
