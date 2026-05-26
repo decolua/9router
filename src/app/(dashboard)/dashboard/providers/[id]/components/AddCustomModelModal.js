@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Modal } from "@/shared/components";
 
-export default function AddCustomModelModal({
-  isOpen,
+function AddCustomModelModalContent({
   providerAlias,
   providerDisplayAlias,
   onSave,
@@ -15,15 +14,6 @@ export default function AddCustomModelModal({
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
-
-  // Reset state when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setModelId("");
-      setTestStatus(null);
-      setTestError("");
-    }
-  }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
   const stripAlias = (id) => {
@@ -67,7 +57,6 @@ export default function AddCustomModelModal({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Add Custom Model">
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-sm font-medium mb-1.5 block">Model ID</label>
@@ -135,6 +124,32 @@ export default function AddCustomModelModal({
           </Button>
         </div>
       </div>
+  );
+}
+
+AddCustomModelModalContent.propTypes = {
+  providerAlias: PropTypes.string.isRequired,
+  providerDisplayAlias: PropTypes.string.isRequired,
+  onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
+
+export default function AddCustomModelModal({
+  isOpen,
+  providerAlias,
+  providerDisplayAlias,
+  onSave,
+  onClose,
+}) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Add Custom Model">
+      <AddCustomModelModalContent
+        key={isOpen ? "open" : "closed"}
+        providerAlias={providerAlias}
+        providerDisplayAlias={providerDisplayAlias}
+        onSave={onSave}
+        onClose={onClose}
+      />
     </Modal>
   );
 }

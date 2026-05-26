@@ -1,42 +1,36 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 
-export default function EditCompatibleNodeModal({
-  isOpen,
+function createInitialFormData(node, isAnthropic) {
+  return {
+    name: node?.name || "",
+    prefix: node?.prefix || "",
+    apiType: node?.apiType || "chat",
+    baseUrl:
+      node?.baseUrl ||
+      (isAnthropic
+        ? "https://api.anthropic.com/v1"
+        : "https://api.openai.com/v1"),
+  };
+}
+
+function EditCompatibleNodeModalContent({
   node,
   onSave,
   onClose,
   isAnthropic,
 }) {
-  const [formData, setFormData] = useState({
-    name: "",
-    prefix: "",
-    apiType: "chat",
-    baseUrl: "https://api.openai.com/v1",
-  });
+  const [formData, setFormData] = useState(() =>
+    createInitialFormData(node, isAnthropic),
+  );
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
-
-  useEffect(() => {
-    if (node) {
-      setFormData({
-        name: node.name || "",
-        prefix: node.prefix || "",
-        apiType: node.apiType || "chat",
-        baseUrl:
-          node.baseUrl ||
-          (isAnthropic
-            ? "https://api.anthropic.com/v1"
-            : "https://api.openai.com/v1"),
-      });
-    }
-  }, [node, isAnthropic]);
 
   const apiTypeOptions = [
     { value: "chat", label: "Chat Completions" },
@@ -91,11 +85,6 @@ export default function EditCompatibleNodeModal({
   if (!node) return null;
 
   return (
-    <Modal
-      isOpen={isOpen}
-      title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`}
-      onClose={onClose}
-    >
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -182,6 +171,46 @@ export default function EditCompatibleNodeModal({
           </Button>
         </div>
       </div>
+  );
+}
+
+EditCompatibleNodeModalContent.propTypes = {
+  node: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+    prefix: PropTypes.string,
+    apiType: PropTypes.string,
+    baseUrl: PropTypes.string,
+  }),
+  onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+  isAnthropic: PropTypes.bool,
+};
+
+export default function EditCompatibleNodeModal({
+  isOpen,
+  node,
+  onSave,
+  onClose,
+  isAnthropic,
+}) {
+  if (!node) return null;
+
+  const modalInstanceKey = `${isOpen ? "open" : "closed"}-${node.id}`;
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`}
+      onClose={onClose}
+    >
+      <EditCompatibleNodeModalContent
+        key={modalInstanceKey}
+        node={node}
+        onSave={onSave}
+        onClose={onClose}
+        isAnthropic={isAnthropic}
+      />
     </Modal>
   );
 }
