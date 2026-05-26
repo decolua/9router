@@ -5,19 +5,29 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 // xAI refresh — wraps the class method from src/lib/oauth/services/xai.js so
 // the token-refresh switches below can stay flat (one function per provider).
 let _xaiServiceSingleton = null;
-async function refreshXaiToken(refreshToken, log) {
+async function refreshXaiToken(refreshToken, log, providerSpecificData = {}) {
   if (!refreshToken) return null;
   try {
     if (!_xaiServiceSingleton) {
       const mod = await import("../../src/lib/oauth/services/xai.js");
       _xaiServiceSingleton = new mod.XaiService();
     }
-    const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken);
+    const tokenEndpoint = providerSpecificData.tokenEndpoint || "https://auth.x.ai/oauth2/token";
+    const tokens = await _xaiServiceSingleton.refreshAccessToken(refreshToken, tokenEndpoint);
+    const refreshedProviderSpecificData = {
+      ...providerSpecificData,
+      authKind: "oauth",
+      baseUrl: "https://api.x.ai/v1",
+      tokenEndpoint,
+      lastRefresh: new Date().toISOString(),
+    };
+    if (tokens.id_token) refreshedProviderSpecificData.idToken = tokens.id_token;
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || refreshToken,
       expiresIn: tokens.expires_in,
       idToken: tokens.id_token,
+      providerSpecificData: refreshedProviderSpecificData,
     };
   } catch (e) {
     log?.warn?.("TOKEN_REFRESH", `xai refresh failed: ${e?.message || e}`);
@@ -595,7 +605,7 @@ async function _getAccessTokenInternal(provider, credentials, log) {
       );
 
     case "xai":
-      return await refreshXaiToken(credentials.refreshToken, log);
+      return await refreshXaiToken(credentials.refreshToken, log, credentials.providerSpecificData);
 
     case "vertex":
     case "vertex-partner": {
@@ -642,7 +652,7 @@ export async function refreshTokenByProvider(provider, credentials, log) {
         log
       );
     case "xai":
-      return refreshXaiToken(credentials.refreshToken, log);
+      return refreshXaiToken(credentials.refreshToken, log, credentials.providerSpecificData);
     case "vertex":
     case "vertex-partner": {
       const saJson = parseVertexSaJson(credentials.apiKey);
@@ -683,10 +693,18 @@ export function formatProviderCredentials(provider, credentials, log) {
     case "iflow":
     case "openai":
     case "openrouter":
-    case "xai":
       return {
         apiKey: credentials.apiKey,
         accessToken: credentials.accessToken
+      };
+
+    case "xai":
+      return {
+        apiKey: credentials.apiKey,
+        accessToken: credentials.accessToken,
+        refreshToken: credentials.refreshToken,
+        expiresAt: credentials.expiresAt,
+        providerSpecificData: credentials.providerSpecificData
       };
 
     case "antigravity":

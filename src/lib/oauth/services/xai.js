@@ -52,46 +52,53 @@ export function validateOAuthEndpoint(rawUrl, field) {
 export async function discoverEndpoints() {
   if (cachedDiscovery) return cachedDiscovery;
 
-  try {
-    const res = await fetch(XAI_CONFIG.discoveryUrl, {
-      headers: { Accept: "application/json" },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      cachedDiscovery = {
-        authorizeUrl: validateOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
-        tokenUrl: validateOAuthEndpoint(data.token_endpoint, "token_endpoint"),
-      };
-      return cachedDiscovery;
-    }
-  } catch {
-    // fall through to static fallback
+  const res = await fetch(XAI_CONFIG.discoveryUrl, {
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`xai discovery failed with status ${res.status}: ${await res.text()}`);
   }
 
+  const data = await res.json();
   cachedDiscovery = {
-    authorizeUrl: XAI_CONFIG.authorizeUrl,
-    tokenUrl: XAI_CONFIG.tokenUrl,
+    authorizeUrl: validateOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
+    tokenUrl: validateOAuthEndpoint(data.token_endpoint, "token_endpoint"),
   };
   return cachedDiscovery;
+}
+
+export function validateTokenResponse(tokens, operation) {
+  if (!tokens?.access_token || typeof tokens.access_token !== "string" || tokens.access_token.trim() === "") {
+    throw new Error(`xAI token ${operation} missing access_token`);
+  }
+  return tokens;
 }
 
 /**
  * Decode the `email` claim from an id_token JWT. No signature verification —
  * mirrors CLIProxyAPI Go behavior. Returns undefined if not parseable.
  */
-export function decodeIdTokenEmail(idToken) {
-  if (!idToken || typeof idToken !== "string") return undefined;
+export function decodeIdTokenClaims(idToken) {
+  if (!idToken || typeof idToken !== "string") return {};
   const parts = idToken.split(".");
-  if (parts.length !== 3) return undefined;
+  if (parts.length !== 3) return {};
   try {
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const padding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
     const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8");
     const payload = JSON.parse(json);
-    return payload.email || payload.preferred_username || payload.sub || undefined;
+    return {
+      email: payload.email || payload.preferred_username || undefined,
+      subject: payload.sub || undefined,
+    };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+export function decodeIdTokenEmail(idToken) {
+  const { email, subject } = decodeIdTokenClaims(idToken);
+  return email || subject || undefined;
 }
 
 export class XaiService extends OAuthService {
@@ -146,15 +153,17 @@ export class XaiService extends OAuthService {
       const err = await res.text();
       throw new Error(`xAI token exchange failed: ${err}`);
     }
-    return await res.json();
+    return validateTokenResponse(await res.json(), "exchange response");
   }
 
   /**
    * Refresh an access token using a refresh_token.
    */
-  async refreshAccessToken(refreshToken) {
-    const { tokenUrl } = await discoverEndpoints();
-    const res = await fetch(tokenUrl, {
+  async refreshAccessToken(refreshToken, tokenUrl) {
+    const endpoint = tokenUrl
+      ? validateOAuthEndpoint(tokenUrl, "token_endpoint")
+      : (await discoverEndpoints()).tokenUrl;
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -170,7 +179,7 @@ export class XaiService extends OAuthService {
       const err = await res.text();
       throw new Error(`xAI token refresh failed: ${err}`);
     }
-    return await res.json();
+    return validateTokenResponse(await res.json(), "refresh response");
   }
 
   /**
@@ -188,48 +197,51 @@ export class XaiService extends OAuthService {
       const { port, close } = await startLocalServer((params) => {
         callbackParams = params;
       }, XAI_CONFIG.loopbackPort);
-      const redirectUri = `http://127.0.0.1:${port}${XAI_CONFIG.callbackPath}`;
-      spinner.succeed(`Local server started on port ${port}`);
+      try {
+        const redirectUri = `http://127.0.0.1:${port}${XAI_CONFIG.callbackPath}`;
+        spinner.succeed(`Local server started on port ${port}`);
 
-      const codeVerifier = generateCodeVerifier(XAI_PKCE_VERIFIER_BYTES);
-      const codeChallenge = generateCodeChallenge(codeVerifier);
-      const state = generateState();
-      const authUrl = this.buildXaiAuthUrl(redirectUri, state, codeChallenge, authorizeUrl);
+        const codeVerifier = generateCodeVerifier(XAI_PKCE_VERIFIER_BYTES);
+        const codeChallenge = generateCodeChallenge(codeVerifier);
+        const state = generateState();
+        const authUrl = this.buildXaiAuthUrl(redirectUri, state, codeChallenge, authorizeUrl);
 
-      console.log("\nOpening browser for xAI authentication...");
-      console.log(`If browser doesn't open, visit:\n${authUrl}\n`);
-      await open(authUrl);
+        console.log("\nOpening browser for xAI authentication...");
+        console.log(`If browser doesn't open, visit:\n${authUrl}\n`);
+        await open(authUrl);
 
-      spinner.start("Waiting for xAI authorization...");
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("Authentication timeout (5 minutes)")), 300000);
-        const iv = setInterval(() => {
-          if (callbackParams) {
-            clearInterval(iv);
-            clearTimeout(timeout);
-            resolve();
-          }
-        }, 100);
-      });
-      close();
+        spinner.start("Waiting for xAI authorization...");
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error("Authentication timeout (5 minutes)")), 300000);
+          const iv = setInterval(() => {
+            if (callbackParams) {
+              clearInterval(iv);
+              clearTimeout(timeout);
+              resolve();
+            }
+          }, 100);
+        });
 
-      if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
+        if (callbackParams.error) {
+          throw new Error(callbackParams.error_description || callbackParams.error);
+        }
+        if (!callbackParams.code) throw new Error("No authorization code received");
+        if (callbackParams.state !== state) throw new Error("Invalid state parameter");
+
+        spinner.start("Exchanging code for tokens...");
+        const tokens = await this.exchangeXaiCode({
+          tokenUrl,
+          code: callbackParams.code,
+          redirectUri,
+          codeVerifier,
+        });
+
+        const email = decodeIdTokenEmail(tokens.id_token);
+        spinner.succeed("xAI connected successfully!");
+        return { tokens, email };
+      } finally {
+        close();
       }
-      if (!callbackParams.code) throw new Error("No authorization code received");
-      if (callbackParams.state !== state) throw new Error("Invalid state parameter");
-
-      spinner.start("Exchanging code for tokens...");
-      const tokens = await this.exchangeXaiCode({
-        tokenUrl,
-        code: callbackParams.code,
-        redirectUri,
-        codeVerifier,
-      });
-
-      const email = decodeIdTokenEmail(tokens.id_token);
-      spinner.succeed("xAI connected successfully!");
-      return { tokens, email };
     } catch (error) {
       spinner.fail(`Failed: ${error.message}`);
       throw error;

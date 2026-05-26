@@ -194,7 +194,7 @@ export async function POST(request, { params }) {
         const info = extractCodexAccountInfo(code);
 
         // Also decode JWT directly for ChatGPT website tokens which use
-        // top-level account_id/plan_type instead of nested openai auth claims
+        // top-level account_id/plan_type instead of nested openai auth claims.
         let directPayload = {};
         try {
           const b64 = code.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");

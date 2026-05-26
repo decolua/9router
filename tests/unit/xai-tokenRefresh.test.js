@@ -11,14 +11,20 @@ describe("xai/token-refresh wrapper", () => {
     expect(typeof mod.formatProviderCredentials).toBe("function");
   });
 
-  it("formatProviderCredentials returns Bearer-shape for xai", async () => {
+  it("formatProviderCredentials preserves refresh metadata for xai", async () => {
     const mod = await import("../../open-sse/services/tokenRefresh.js");
     const out = mod.formatProviderCredentials(
       "xai",
-      { apiKey: "k", accessToken: "t", refreshToken: "r" },
+      { apiKey: "k", accessToken: "t", refreshToken: "r", expiresAt: "2030-01-01T00:00:00.000Z", providerSpecificData: { authKind: "oauth" } },
       null
     );
-    expect(out).toEqual({ apiKey: "k", accessToken: "t" });
+    expect(out).toEqual({
+      apiKey: "k",
+      accessToken: "t",
+      refreshToken: "r",
+      expiresAt: "2030-01-01T00:00:00.000Z",
+      providerSpecificData: { authKind: "oauth" },
+    });
   });
 
   it("refreshTokenByProvider returns null when refreshToken missing", async () => {
@@ -27,11 +33,14 @@ describe("xai/token-refresh wrapper", () => {
     expect(out).toBeNull();
   });
 
-  it("refreshTokenByProvider returns expiresIn for refreshed xai tokens", async () => {
+  it("refreshTokenByProvider returns expiry and metadata for refreshed xai tokens", async () => {
     vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-21T00:00:00.000Z"));
     vi.doMock("../../src/lib/oauth/services/xai.js", () => ({
       XaiService: class {
-        async refreshAccessToken(refreshToken) {
+        async refreshAccessToken(refreshToken, tokenEndpoint) {
+          expect(tokenEndpoint).toBe("https://auth.x.ai/oauth2/token-from-storage");
           return {
             access_token: "new-access",
             refresh_token: `${refreshToken}-rotated`,
@@ -45,7 +54,14 @@ describe("xai/token-refresh wrapper", () => {
     const mod = await import("../../open-sse/services/tokenRefresh.js");
     const out = await mod.refreshTokenByProvider(
       "xai",
-      { refreshToken: "old-refresh" },
+      {
+        refreshToken: "old-refresh",
+        providerSpecificData: {
+          redirectUri: "http://127.0.0.1:56121/callback",
+          tokenEndpoint: "https://auth.x.ai/oauth2/token-from-storage",
+          customField: "keep-me",
+        },
+      },
       null
     );
 
@@ -54,10 +70,20 @@ describe("xai/token-refresh wrapper", () => {
       refreshToken: "old-refresh-rotated",
       expiresIn: 900,
       idToken: "id-token",
+      providerSpecificData: {
+        redirectUri: "http://127.0.0.1:56121/callback",
+        tokenEndpoint: "https://auth.x.ai/oauth2/token-from-storage",
+        customField: "keep-me",
+        authKind: "oauth",
+        baseUrl: "https://api.x.ai/v1",
+        lastRefresh: "2026-05-21T00:00:00.000Z",
+        idToken: "id-token",
+      },
     });
     expect(out).not.toHaveProperty("expiresAt");
 
     vi.doUnmock("../../src/lib/oauth/services/xai.js");
+    vi.useRealTimers();
     vi.resetModules();
   });
 });
