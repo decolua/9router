@@ -69,7 +69,7 @@ describe("CursorExecutor Composer thinking-field responses", () => {
     expect(events.at(-1).usage.completion_tokens).toBeGreaterThan(0);
   });
 
-  it("does not treat thinking as visible output for non-Composer models", async () => {
+  it("returns empty-completion error for thinking-only on non-promoted models", async () => {
     const executor = new CursorExecutor();
     const buffer = cursorResponseFrame({
       thinking: "private reasoning</think>SHOULD_NOT_APPEAR",
@@ -80,7 +80,8 @@ describe("CursorExecutor Composer thinking-field responses", () => {
     });
     const payload = await response.json();
 
-    expect(payload.choices[0].message.content).toBeNull();
+    expect(response.status).toBe(502);
+    expect(payload.error?.code).toBe("empty_completion");
     expect(JSON.stringify(payload)).not.toContain("SHOULD_NOT_APPEAR");
   });
 });

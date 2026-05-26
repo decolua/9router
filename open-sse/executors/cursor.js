@@ -7,6 +7,12 @@ import {
   extractTextFromResponse
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
+import {
+  normalizeCursorModelId,
+  resolveCursorUpstreamModel,
+  shouldPromoteThinkingToContent,
+  visibleContentFromThinking
+} from "../utils/cursorModel.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -40,19 +46,6 @@ const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
 const debugLog = (...args) => {
   if (CURSOR_STREAM_DEBUG) console.log(...args);
 };
-
-function isComposerModel(model) {
-  const modelId = String(model || "").split("/").pop();
-  return /^composer(?:-|$)/i.test(modelId);
-}
-
-function visibleComposerContentFromThinking(thinking) {
-  if (!thinking) return "";
-  const endTag = "</think>";
-  const endIdx = thinking.lastIndexOf(endTag);
-  if (endIdx < 0) return "";
-  return thinking.slice(endIdx + endTag.length).trimStart();
-}
 
 function decompressPayload(payload, flags) {
   // Check if payload is JSON error (starts with {"error")
@@ -118,6 +111,24 @@ function createErrorResponse(jsonError) {
   });
 }
 
+function createEmptyCompletionError(model) {
+  return new Response(JSON.stringify({
+    error: {
+      message: `Cursor returned an empty completion for model ${model}`,
+      type: "api_error",
+      code: "empty_completion"
+    }
+  }), {
+    status: HTTP_STATUS.BAD_GATEWAY,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
+function visibleThinkingContent(model, totalThinking) {
+  if (!shouldPromoteThinkingToContent(model)) return "";
+  return visibleContentFromThinking(totalThinking);
+}
+
 export class CursorExecutor extends BaseExecutor {
   constructor() {
     super("cursor", PROVIDERS.cursor);
@@ -145,10 +156,19 @@ export class CursorExecutor extends BaseExecutor {
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
+    const modelId = normalizeCursorModelId(model);
+    const upstreamModel = resolveCursorUpstreamModel(model);
+    if (modelId === "default" || modelId === "auto") {
+      debugLog(`[CURSOR] Resolved ${modelId} → ${upstreamModel}`);
+    }
     // Detect Claude Code UA to force Agent mode (issue #643)
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
-    const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
-    return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
+    const forceAgentMode = ua.includes("claude-cli")
+      || ua.includes("claude-code")
+      || ua.includes("Claude Code")
+      || modelId === "default"
+      || modelId === "auto";
+    return generateCursorBody(messages, upstreamModel, tools, reasoningEffort, forceAgentMode);
   }
 
   async makeFetchRequest(url, headers, body, signal, proxyOptions = null) {
@@ -390,10 +410,8 @@ export class CursorExecutor extends BaseExecutor {
       if (result.thinking) totalThinking += result.thinking;
     }
 
-    const visibleComposerContent = isComposerModel(model)
-      ? visibleComposerContentFromThinking(totalThinking)
-      : "";
-    const finalContent = totalContent || visibleComposerContent;
+    const visibleThinking = visibleThinkingContent(model, totalThinking);
+    const finalContent = totalContent || visibleThinking;
 
     debugLog(
       `[CURSOR BUFFER] Parsed ${frameCount} frames, toolCallsMap size: ${toolCallsMap.size}, finalized toolCalls: ${toolCalls.length}`
@@ -417,6 +435,9 @@ export class CursorExecutor extends BaseExecutor {
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
+    if (!finalContent && toolCalls.length === 0) {
+      return createEmptyCompletionError(model);
+    }
 
     const message = {
       role: "assistant",
@@ -658,9 +679,9 @@ export class CursorExecutor extends BaseExecutor {
         );
       }
 
-      if (isComposerModel(model) && result.thinking) {
+      if (shouldPromoteThinkingToContent(model) && result.thinking) {
         totalThinking += result.thinking;
-        const visibleContent = visibleComposerContentFromThinking(totalThinking);
+        const visibleContent = visibleContentFromThinking(totalThinking);
         if (visibleContent.length > emittedComposerThinkingContentLength) {
           const deltaContent = visibleContent.slice(emittedComposerThinkingContentLength);
           emittedComposerThinkingContentLength = visibleContent.length;
@@ -737,6 +758,10 @@ export class CursorExecutor extends BaseExecutor {
           );
         }
       }
+    }
+
+    if (!totalContent && toolCalls.length === 0) {
+      return createEmptyCompletionError(model);
     }
 
     if (chunks.length === 0 && toolCalls.length === 0) {
