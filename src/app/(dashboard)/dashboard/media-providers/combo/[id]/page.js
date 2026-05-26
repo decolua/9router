@@ -68,6 +68,14 @@ function getListingHref(kind) {
   return `/dashboard/media-providers/${kind}`;
 }
 
+function getNowMs() {
+  return performance.now();
+}
+
+function getElapsedMs(startMs) {
+  return Math.round(getNowMs() - startMs);
+}
+
 export default function ComboDetailPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -130,9 +138,12 @@ export default function ComboDetailPage() {
     setLoading(false);
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
-    fetchAll();
+    const timer = setTimeout(() => {
+      void fetchAll();
+    }, 0);
+
+    return () => clearTimeout(timer);
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const validateName = (v) => {
@@ -234,7 +245,7 @@ export default function ComboDetailPage() {
         URL.revokeObjectURL(testResult.imageUrl);
       } catch {}
     }
-    const start = Date.now();
+    const start = getNowMs();
     try {
       const path = EXAMPLE_PATHS[combo.kind];
       const body = EXAMPLE_BODIES[combo.kind](combo.name);
@@ -245,7 +256,7 @@ export default function ComboDetailPage() {
         headers,
         body: JSON.stringify(body),
       });
-      const latencyMs = Date.now() - start;
+      const latencyMs = getElapsedMs(start);
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setTestError(d?.error?.message || d?.error || `HTTP ${res.status}`);

@@ -878,10 +878,6 @@ function AddOpenAICompatibleModal({ isOpen, onClose, onCreated }) {
     { value: "responses", label: "Responses API" },
   ];
 
-  useEffect(() => {
-    const defaultBaseUrl = "https://api.openai.com/v1";
-    setFormData((prev) => ({ ...prev, baseUrl: defaultBaseUrl }));
-  }, [formData.apiType]);
 
   const handleSubmit = async () => {
     if (
@@ -1055,7 +1051,7 @@ AddOpenAICompatibleModal.propTypes = {
   onCreated: PropTypes.func.isRequired,
 };
 
-function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
+function AddAnthropicCompatibleModalContent({ onClose, onCreated }) {
   const [formData, setFormData] = useState({
     name: "",
     prefix: "",
@@ -1066,14 +1062,6 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null); // { valid, error, method }
-
-  useEffect(() => {
-    if (isOpen) {
-      setValidationResult(null);
-      setCheckKey("");
-      setCheckModelId("");
-    }
-  }, [isOpen]);
 
   const handleSubmit = async () => {
     if (
@@ -1160,7 +1148,6 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
   };
 
   return (
-    <Modal isOpen={isOpen} title="Add Anthropic Compatible" onClose={onClose}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -1227,6 +1214,22 @@ function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
           </Button>
         </div>
       </div>
+  );
+}
+
+AddAnthropicCompatibleModalContent.propTypes = {
+  onClose: PropTypes.func.isRequired,
+  onCreated: PropTypes.func.isRequired,
+};
+
+function AddAnthropicCompatibleModal({ isOpen, onClose, onCreated }) {
+  return (
+    <Modal isOpen={isOpen} title="Add Anthropic Compatible" onClose={onClose}>
+      <AddAnthropicCompatibleModalContent
+        key={isOpen ? "open" : "closed"}
+        onClose={onClose}
+        onCreated={onCreated}
+      />
     </Modal>
   );
 }
