@@ -3,6 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { dbg, isDebugEnabled } from "./debugLog.js";
 
 export { COLORS, formatSSE };
 
@@ -58,11 +59,15 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+  let sseLineCount = 0;
+  let sseEmittedCount = 0;
+  const eventTypeCounts = {};
 
   return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) {
         ttftAt = Date.now();
+        dbg("SSE", `${provider}/${model} | first chunk received | size=${chunk?.byteLength || 0}B`);
       }
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
@@ -73,6 +78,14 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
+        if (isDebugEnabled && trimmed) {
+          sseLineCount++;
+          if (trimmed.startsWith("event:")) {
+            const evt = trimmed.slice(6).trim();
+            eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
+            if (eventTypeCounts[evt] <= 2) dbg("SSE", `recv event: ${evt} (#${eventTypeCounts[evt]})`);
+          }
+        }
 
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
@@ -248,12 +261,15 @@ export function createSSEStream(options = {}) {
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            sseEmittedCount++;
           }
         }
       }
     },
 
     flush(controller) {
+      const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
+      dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();

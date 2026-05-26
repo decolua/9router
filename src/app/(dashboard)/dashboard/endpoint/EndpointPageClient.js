@@ -21,8 +21,9 @@ const CLIENT_PING_FAST_MS = 10000;
 const CLIENT_PING_SLOW_MS = 60000;
 const CLIENT_PING_TIMEOUT_MS = 5000;
 
-// Browser-side health probe: must reach origin (not just CF edge).
-// CORS mode → res.ok=false for 5xx (Cloudflare Error 1033 when origin dead).
+// Browser-side health probe: must reach origin (not just CF/TS edge).
+// cors mode → res.ok=false for 5xx (e.g. Cloudflare 530 when origin dead).
+// /api/health route sets Access-Control-Allow-Origin: * → CORS works through tunnel.
 async function clientPingUrl(url) {
   if (!url) return false;
   try {

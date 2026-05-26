@@ -9,6 +9,7 @@ const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATT
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
+const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = IS_DEV;
@@ -129,16 +130,28 @@ function getMappedModel(tool, model) {
  */
 async function passthrough(req, res, bodyBuffer, onResponse) {
   const originalHost = (req.headers.host || TARGET_HOSTS[0]).split(":")[0];
-  const targetHost = HOST_REWRITE[originalHost] || originalHost;
+  // Only rewrite host for chat endpoints — daily-cloudcode-pa rejects auth/login requests
+  const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
+  const targetHost = isChatEndpoint ? (HOST_REWRITE[originalHost] || originalHost) : originalHost;
   const targetIP = await resolveTargetIP(targetHost);
   const dumper = ENABLE_FILE_LOG ? createResponseDumper(req, "passthrough") : null;
+
+  const tool = getToolForHost(req.headers.host);
+  const versionOverride = tool === "antigravity"
+    ? applyAntigravityIdeVersionOverride(bodyBuffer, req.headers)
+    : { bodyBuffer, headers: req.headers };
+  const bodyForForwarding = versionOverride.bodyBuffer;
+  const headersForForwarding = { ...versionOverride.headers, host: targetHost };
+  if (bodyForForwarding !== bodyBuffer) {
+    headersForForwarding["content-length"] = String(bodyForForwarding.length);
+  }
 
   const forwardReq = https.request({
     hostname: targetIP,
     port: 443,
     path: req.url,
     method: req.method,
-    headers: { ...req.headers, host: targetHost },
+    headers: headersForForwarding,
     servername: targetHost,
     rejectUnauthorized: false
   }, (forwardRes) => {
@@ -150,7 +163,6 @@ async function passthrough(req, res, bodyBuffer, onResponse) {
       return;
     }
 
-    // Tee: forward to client AND optionally buffer + dump
     const chunks = [];
     forwardRes.on("data", chunk => {
       if (dumper) dumper.writeChunk(chunk);
