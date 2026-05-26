@@ -2,6 +2,7 @@ import os from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
+import { logger } from "@/lib/logger";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import {
   enableTunnel, enableTailscale,
@@ -55,15 +56,15 @@ export async function initializeApp() {
     // Auto-resume tunnel (once per process)
     if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
       g.tunnelAutoResumed = true;
-      console.log("[InitApp] Tunnel was enabled, auto-resuming...");
-      safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
+      logger.info("[InitApp] Tunnel was enabled, auto-resuming...");
+      safeRestartTunnel("startup").catch((e) => logger.warn({ err: e }, "[InitApp] Tunnel resume failed"));
     }
 
     // Auto-resume tailscale (once per process)
     if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
       g.tailscaleAutoResumed = true;
-      console.log("[InitApp] Tailscale was enabled, auto-resuming...");
-      safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
+      logger.info("[InitApp] Tailscale was enabled, auto-resuming...");
+      safeRestartTailscale("startup").catch((e) => logger.warn({ err: e }, "[InitApp] Tailscale resume failed"));
     }
 
     if (!g.signalHandlersRegistered) {
@@ -93,7 +94,7 @@ export async function initializeApp() {
     startTokenRefreshWorker();
     autoStartMitm();
   } catch (error) {
-    console.error("[InitApp] Error:", error);
+    logger.error({ err: error }, "[InitApp] initialization error");
   }
 }
 
@@ -108,24 +109,24 @@ async function autoStartMitm() {
 
     const password = await loadEncryptedPassword();
     if (!password && process.platform !== "win32") {
-      console.log("[InitApp] MITM was enabled but no saved password found, skipping auto-start");
+      logger.warn("[InitApp] MITM was enabled but no saved password found, skipping auto-start");
       return;
     }
 
     const keys = await getApiKeys();
     const activeKey = keys.find(k => k.isActive !== false);
 
-    console.log("[InitApp] MITM was enabled, auto-starting...");
+    logger.info("[InitApp] MITM was enabled, auto-starting...");
     await startMitm(activeKey?.key || "sk_9router", password);
-    console.log("[InitApp] MITM auto-started");
+    logger.info("[InitApp] MITM auto-started");
     try {
       await restoreToolDNS(password);
-      console.log("[InitApp] DNS restored from saved state");
+      logger.info("[InitApp] DNS restored from saved state");
     } catch (e) {
-      console.log("[InitApp] DNS restore failed:", e.message);
+      logger.warn({ err: e }, "[InitApp] DNS restore failed");
     }
   } catch (err) {
-    console.log("[InitApp] MITM auto-start failed:", err.message);
+    logger.error({ err }, "[InitApp] MITM auto-start failed");
   } finally {
     g.mitmStartInProgress = false;
   }
@@ -164,18 +165,18 @@ async function safeRestartTunnel(reason) {
   // Bypass for network transitions (one-shot events) so user recovers fast after wifi change.
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
-    console.log(`[Tunnel] degraded but cooldown active, skip (${reason})`);
+    logger.debug(`[Tunnel] degraded but cooldown active, skip (${reason})`);
     return;
   }
   if (!await checkInternet()) return;
 
-  console.log(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  logger.info(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
   try {
     await enableTunnel();
     svc.lastRestartAt = Date.now();
-    console.log("[Tunnel] restart success");
+    logger.info("[Tunnel] restart success");
   } catch (err) {
-    console.log("[Tunnel] restart failed:", err.message);
+    logger.error({ err }, "[Tunnel] restart failed");
   }
 }
 
@@ -195,18 +196,18 @@ async function safeRestartTailscale(reason) {
 
   const force = FORCE_RESTART_REASONS.test(reason);
   if (!force && Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) {
-    console.log(`[Tailscale] degraded but cooldown active, skip (${reason})`);
+    logger.debug(`[Tailscale] degraded but cooldown active, skip (${reason})`);
     return;
   }
   if (!await checkInternet()) return;
 
-  console.log(`[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  logger.info(`[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();
-    console.log("[Tailscale] restart success");
+    logger.info("[Tailscale] restart success");
   } catch (err) {
-    console.log("[Tailscale] restart failed:", err.message);
+    logger.error({ err }, "[Tailscale] restart failed");
   }
 }
 
@@ -274,7 +275,7 @@ function startNetworkMonitor() {
       safeRestartTunnel(reason).catch(() => {});
       safeRestartTailscale(reason).catch(() => {});
     } catch (err) {
-      console.log("[NetworkMonitor] error:", err.message);
+      logger.warn({ err }, "[NetworkMonitor] error");
     }
   }, NETWORK_CHECK_INTERVAL_MS);
 
