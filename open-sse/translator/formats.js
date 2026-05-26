@@ -12,7 +12,7 @@ export const FORMATS = {
   KIRO: "kiro",
   CURSOR: "cursor",
   OLLAMA: "ollama",
-  COMMANDCODE: "commandcode"
+  COMMANDCODE: "commandcode",
 };
 
 /**
@@ -33,4 +33,3 @@ export function detectFormatByEndpoint(pathname, body) {
 
   return null;
 }
-

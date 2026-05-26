@@ -46,7 +46,7 @@ function runElevatedPowerShell(script) {
         (error, stdout, stderr) => {
           if (error) reject(new Error(stderr || error.message));
           else resolve(stdout);
-        }
+        },
       );
     });
   }
@@ -67,13 +67,16 @@ function runElevatedPowerShell(script) {
       (error, stdout, stderr) => {
         if (error) {
           const msg = stderr || error.message;
-          if (msg.includes("canceled by the user") || msg.includes("operation was canceled")) {
+          if (
+            msg.includes("canceled by the user") ||
+            msg.includes("operation was canceled")
+          ) {
             reject(new Error("User canceled UAC prompt"));
           } else {
             reject(new Error(msg));
           }
         } else resolve(stdout);
-      }
+      },
     );
   });
 }

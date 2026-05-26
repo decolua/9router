@@ -45,13 +45,13 @@ export NODE_ENV="production"
 
 **Variables de entorno:**
 
-| Variable | Por defecto | Descripción |
-|----------|---------|-------------|
-| `JWT_SECRET` | Auto-generado | **¡DEBE cambiarse en producción!** Usado para firmar tokens JWT |
-| `INITIAL_PASSWORD` | `123456` | Contraseña de login del dashboard |
-| `DATA_DIR` | `~/.9router` | Ruta de almacenamiento de la base de datos |
-| `NODE_ENV` | `development` | Establece a `production` para despliegue |
-| `ENABLE_REQUEST_LOGS` | `false` | Habilita logs de debug de request/response |
+| Variable              | Por defecto   | Descripción                                                     |
+| --------------------- | ------------- | --------------------------------------------------------------- |
+| `JWT_SECRET`          | Auto-generado | **¡DEBE cambiarse en producción!** Usado para firmar tokens JWT |
+| `INITIAL_PASSWORD`    | `123456`      | Contraseña de login del dashboard                               |
+| `DATA_DIR`            | `~/.9router`  | Ruta de almacenamiento de la base de datos                      |
+| `NODE_ENV`            | `development` | Establece a `production` para despliegue                        |
+| `ENABLE_REQUEST_LOGS` | `false`       | Habilita logs de debug de request/response                      |
 
 ### Paso 5: Crear el directorio de datos
 
@@ -165,7 +165,7 @@ docker run -d \
 Crea `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   9router:
@@ -258,7 +258,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;
@@ -272,7 +272,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

@@ -11,33 +11,35 @@ const BINARY_NAME = "cloudflared";
 const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
-const POWERSHELL_HIDDEN_COMMAND = "powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command";
+const POWERSHELL_HIDDEN_COMMAND =
+  "powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command";
 const DEFAULT_QUICK_TUNNEL_PROTOCOL = "http2";
 const QUICK_TUNNEL_PROTOCOLS = new Set(["http2", "quic", "auto"]);
 
-const GITHUB_BASE_URL = "https://github.com/cloudflare/cloudflared/releases/latest/download";
+const GITHUB_BASE_URL =
+  "https://github.com/cloudflare/cloudflared/releases/latest/download";
 
 const PLATFORM_MAPPINGS = {
   darwin: {
     x64: "cloudflared-darwin-amd64.tgz",
-    arm64: "cloudflared-darwin-arm64.tgz"
+    arm64: "cloudflared-darwin-arm64.tgz",
   },
   win32: {
     x64: "cloudflared-windows-amd64.exe",
     ia32: "cloudflared-windows-386.exe",
-    arm64: "cloudflared-windows-386.exe"
+    arm64: "cloudflared-windows-386.exe",
   },
   linux: {
     x64: "cloudflared-linux-amd64",
-    arm64: "cloudflared-linux-arm64"
-  }
+    arm64: "cloudflared-linux-arm64",
+  },
 };
 
 // Fallback order: prefer smallest/most-compatible binary per platform
 const PLATFORM_FALLBACK = {
   darwin: "cloudflared-darwin-amd64.tgz",
   win32: "cloudflared-windows-386.exe",
-  linux: "cloudflared-linux-amd64"
+  linux: "cloudflared-linux-amd64",
 };
 
 function getDownloadUrl() {
@@ -64,53 +66,61 @@ function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
 
-    https.get(url, (response) => {
-      if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
-        file.close();
-        fs.unlinkSync(dest);
-        downloadFile(response.headers.location, dest).then(resolve).catch(reject);
-        return;
-      }
+    https
+      .get(url, (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+          file.close();
+          fs.unlinkSync(dest);
+          downloadFile(response.headers.location, dest)
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
 
-      if (response.statusCode !== 200) {
-        file.close();
-        fs.unlinkSync(dest);
-        reject(new Error(`Download failed with status ${response.statusCode}`));
-        return;
-      }
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(dest);
+          reject(
+            new Error(`Download failed with status ${response.statusCode}`),
+          );
+          return;
+        }
 
-      const totalBytes = parseInt(response.headers["content-length"], 10) || 0;
-      let receivedBytes = 0;
-      dlState.downloading = true;
-      dlState.progress = 0;
+        const totalBytes =
+          parseInt(response.headers["content-length"], 10) || 0;
+        let receivedBytes = 0;
+        dlState.downloading = true;
+        dlState.progress = 0;
 
-      response.on("data", (chunk) => {
-        receivedBytes += chunk.length;
-        if (totalBytes > 0) dlState.progress = Math.round((receivedBytes / totalBytes) * 100);
-      });
+        response.on("data", (chunk) => {
+          receivedBytes += chunk.length;
+          if (totalBytes > 0)
+            dlState.progress = Math.round((receivedBytes / totalBytes) * 100);
+        });
 
-      response.pipe(file);
+        response.pipe(file);
 
-      file.on("finish", () => {
-        dlState.downloading = false;
-        dlState.progress = 100;
-        file.close(() => resolve(dest));
-      });
+        file.on("finish", () => {
+          dlState.downloading = false;
+          dlState.progress = 100;
+          file.close(() => resolve(dest));
+        });
 
-      file.on("error", (err) => {
+        file.on("error", (err) => {
+          dlState.downloading = false;
+          dlState.progress = 0;
+          file.close();
+          fs.unlinkSync(dest);
+          reject(err);
+        });
+      })
+      .on("error", (err) => {
         dlState.downloading = false;
         dlState.progress = 0;
         file.close();
-        fs.unlinkSync(dest);
+        if (fs.existsSync(dest)) fs.unlinkSync(dest);
         reject(err);
       });
-    }).on("error", (err) => {
-      dlState.downloading = false;
-      dlState.progress = 0;
-      file.close();
-      if (fs.existsSync(dest)) fs.unlinkSync(dest);
-      reject(err);
-    });
   });
 }
 
@@ -127,7 +137,8 @@ function isValidBinary(filePath) {
     fs.closeSync(fd);
     const magic = buf.toString("hex");
     if (IS_WINDOWS) return magic.startsWith("4d5a"); // PE (MZ)
-    if (os.platform() === "darwin") return magic.startsWith("cffaedfe") || magic.startsWith("cefaedfe");
+    if (os.platform() === "darwin")
+      return magic.startsWith("cffaedfe") || magic.startsWith("cefaedfe");
     return magic.startsWith("7f454c46"); // ELF (Linux)
   } catch {
     return false;
@@ -138,7 +149,9 @@ let downloadPromise = null;
 
 export async function ensureCloudflared() {
   if (downloadPromise) return downloadPromise;
-  downloadPromise = _ensureCloudflared().finally(() => { downloadPromise = null; });
+  downloadPromise = _ensureCloudflared().finally(() => {
+    downloadPromise = null;
+  });
   return downloadPromise;
 }
 
@@ -150,7 +163,11 @@ async function _ensureCloudflared() {
   // Clean up incomplete downloads from previous runs
   const tmpPath = `${BIN_PATH}.tmp`;
   if (fs.existsSync(tmpPath)) {
-    try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    try {
+      fs.unlinkSync(tmpPath);
+    } catch {
+      /* ignore */
+    }
   }
 
   if (fs.existsSync(BIN_PATH)) {
@@ -165,12 +182,17 @@ async function _ensureCloudflared() {
 
   const url = getDownloadUrl();
   const isArchive = url.endsWith(".tgz");
-  const downloadDest = isArchive ? path.join(BIN_DIR, "cloudflared.tgz.tmp") : tmpPath;
+  const downloadDest = isArchive
+    ? path.join(BIN_DIR, "cloudflared.tgz.tmp")
+    : tmpPath;
 
   await downloadFile(url, downloadDest);
 
   if (isArchive) {
-    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, { stdio: "pipe", windowsHide: true });
+    execSync(`tar -xzf "${downloadDest}" -C "${BIN_DIR}"`, {
+      stdio: "pipe",
+      windowsHide: true,
+    });
     fs.unlinkSync(downloadDest);
   } else {
     fs.renameSync(downloadDest, BIN_PATH);
@@ -194,12 +216,23 @@ export function setUnexpectedExitHandler(handler) {
 export async function spawnCloudflared(tunnelToken) {
   const binaryPath = await ensureCloudflared();
 
-  const child = spawn(binaryPath, ["tunnel", "run", "--dns-resolver-addrs", "1.1.1.1:53", "--token", tunnelToken], {
-    detached: false,
-    windowsHide: true,
-    cwd: os.tmpdir(),
-    stdio: ["ignore", "pipe", "pipe"]
-  });
+  const child = spawn(
+    binaryPath,
+    [
+      "tunnel",
+      "run",
+      "--dns-resolver-addrs",
+      "1.1.1.1:53",
+      "--token",
+      tunnelToken,
+    ],
+    {
+      detached: false,
+      windowsHide: true,
+      cwd: os.tmpdir(),
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
 
   cloudflaredProcess = child;
   savePid(child.pid);
@@ -252,11 +285,21 @@ export async function spawnCloudflared(tunnelToken) {
         }
         if (code === 1) {
           // Common exit code 1 issues: invalid token, auth failure, network issues
-          reject(new Error(`cloudflared exited with code ${code}${stderrOutput} Ensure your tunnel token is valid and network is reachable.`));
+          reject(
+            new Error(
+              `cloudflared exited with code ${code}${stderrOutput} Ensure your tunnel token is valid and network is reachable.`,
+            ),
+          );
         } else if (code === 2) {
-          reject(new Error(`cloudflared exited with code ${code}${stderrOutput} Check if required arguments are correct.`));
+          reject(
+            new Error(
+              `cloudflared exited with code ${code}${stderrOutput} Check if required arguments are correct.`,
+            ),
+          );
         } else {
-          reject(new Error(`cloudflared exited with code ${code}${stderrOutput}`));
+          reject(
+            new Error(`cloudflared exited with code ${code}${stderrOutput}`),
+          );
         }
         return;
       }
@@ -273,7 +316,9 @@ export async function spawnCloudflared(tunnelToken) {
 export async function spawnQuickTunnel(localPort, onUrlUpdate) {
   const binaryPath = await ensureCloudflared();
 
-  const configDir = fs.mkdtempSync(path.join(os.tmpdir(), "cloudflared-quick-"));
+  const configDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "cloudflared-quick-"),
+  );
   const configPath = path.join(configDir, "config.yml");
   // Avoid using default ~/.cloudflared/config.yml, which can conflict with quick tunnel behavior.
   fs.writeFileSync(configPath, "# quick-tunnel config placeholder\n", "utf8");
@@ -284,21 +329,44 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     isCleaned = true;
     try {
       fs.rmSync(configDir, { recursive: true, force: true });
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
   };
 
-  const requestedProtocol = String(process.env.TUNNEL_TRANSPORT_PROTOCOL || process.env.CLOUDFLARED_PROTOCOL || DEFAULT_QUICK_TUNNEL_PROTOCOL).trim().toLowerCase();
-  const tunnelProtocol = QUICK_TUNNEL_PROTOCOLS.has(requestedProtocol) ? requestedProtocol : DEFAULT_QUICK_TUNNEL_PROTOCOL;
-  const child = spawn(binaryPath, ["tunnel", "--url", `http://127.0.0.1:${localPort}`, "--config", configPath, "--no-autoupdate", "--retries", "99"], {
-    detached: false,
-    windowsHide: true,
-    cwd: os.tmpdir(),
-    env: {
-      ...process.env,
-      TUNNEL_TRANSPORT_PROTOCOL: tunnelProtocol,
+  const requestedProtocol = String(
+    process.env.TUNNEL_TRANSPORT_PROTOCOL ||
+      process.env.CLOUDFLARED_PROTOCOL ||
+      DEFAULT_QUICK_TUNNEL_PROTOCOL,
+  )
+    .trim()
+    .toLowerCase();
+  const tunnelProtocol = QUICK_TUNNEL_PROTOCOLS.has(requestedProtocol)
+    ? requestedProtocol
+    : DEFAULT_QUICK_TUNNEL_PROTOCOL;
+  const child = spawn(
+    binaryPath,
+    [
+      "tunnel",
+      "--url",
+      `http://127.0.0.1:${localPort}`,
+      "--config",
+      configPath,
+      "--no-autoupdate",
+      "--retries",
+      "99",
+    ],
+    {
+      detached: false,
+      windowsHide: true,
+      cwd: os.tmpdir(),
+      env: {
+        ...process.env,
+        TUNNEL_TRANSPORT_PROTOCOL: tunnelProtocol,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
     },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  );
 
   cloudflaredProcess = child;
   savePid(child.pid);
@@ -328,7 +396,11 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       if (resolved) return;
       resolved = true;
       cleanup();
-      reject(new Error(`Quick tunnel timed out. Last log: ${logTail.slice(-800) || "(empty)"}`));
+      reject(
+        new Error(
+          `Quick tunnel timed out. Last log: ${logTail.slice(-800) || "(empty)"}`,
+        ),
+      );
     }, 90000);
 
     let lastUrl = null;
@@ -379,11 +451,21 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
         cleanup();
         const tail = logTail.slice(-600).trim() || "(empty)";
         if (code === 1) {
-          reject(new Error(`cloudflared quick tunnel exited (code 1). Common causes: (1) outbound port 7844 (TCP/UDP) blocked, (2) TryCloudflare service issue, (3) cannot reach 127.0.0.1:${localPort}, (4) protocol (http2/quic) blocked by network. Last log: ${tail}`));
+          reject(
+            new Error(
+              `cloudflared quick tunnel exited (code 1). Common causes: (1) outbound port 7844 (TCP/UDP) blocked, (2) TryCloudflare service issue, (3) cannot reach 127.0.0.1:${localPort}, (4) protocol (http2/quic) blocked by network. Last log: ${tail}`,
+            ),
+          );
         } else if (code === 2) {
-          reject(new Error(`cloudflared exited (code 2). Bad arguments. Last log: ${tail}`));
+          reject(
+            new Error(
+              `cloudflared exited (code 2). Bad arguments. Last log: ${tail}`,
+            ),
+          );
         } else {
-          reject(new Error(`cloudflared exited (code ${code}). Last log: ${tail}`));
+          reject(
+            new Error(`cloudflared exited (code ${code}). Last log: ${tail}`),
+          );
         }
         return;
       }
@@ -400,18 +482,28 @@ function killCloudflaredByPort(port) {
   try {
     if (IS_WINDOWS) {
       const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.CommandLine -match ':${port}(\\D|$)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-      execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, { stdio: "ignore", windowsHide: true });
+      execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, {
+        stdio: "ignore",
+        windowsHide: true,
+      });
     } else {
-      execSync(`pkill -f "cloudflared.*:${port}([^0-9]|$)" 2>/dev/null || true`, { stdio: "ignore", windowsHide: true });
+      execSync(
+        `pkill -f "cloudflared.*:${port}([^0-9]|$)" 2>/dev/null || true`,
+        { stdio: "ignore", windowsHide: true },
+      );
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 export function killCloudflared(localPort) {
   if (cloudflaredProcess) {
     try {
       cloudflaredProcess.kill();
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
     cloudflaredProcess = null;
   }
 
@@ -419,7 +511,9 @@ export function killCloudflared(localPort) {
   if (pid) {
     try {
       process.kill(pid);
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+      /* ignore */
+    }
     clearPid();
   }
 

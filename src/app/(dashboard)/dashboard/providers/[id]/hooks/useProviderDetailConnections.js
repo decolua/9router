@@ -401,7 +401,9 @@ export function useProviderDetailConnections({
       if (isShift && lastClickedIndexRef.current !== null) {
         const start = Math.min(lastClickedIndexRef.current, currentIndex);
         const end = Math.max(lastClickedIndexRef.current, currentIndex);
-        const targetIds = displayedConnections.slice(start, end + 1).map((c) => c.id);
+        const targetIds = displayedConnections
+          .slice(start, end + 1)
+          .map((c) => c.id);
 
         let nextSelectedIds;
         if (shouldSelect) {

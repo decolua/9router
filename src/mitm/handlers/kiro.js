@@ -5,7 +5,10 @@ const fs = require("fs");
 const path = require("path");
 
 // Debug trace log — written to data/logs/mitm/kiro-debug.log (dev only)
-const DEBUG_LOG = path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log");
+const DEBUG_LOG = path.join(
+  __dirname,
+  "../../../data/logs/mitm/kiro-debug.log",
+);
 function dbg(msg) {
   if (!IS_DEV) return;
   try {
@@ -43,9 +46,11 @@ function encodeHeader(name, value) {
   const buf = Buffer.alloc(1 + nameBuf.length + 1 + 2 + valueBuf.length);
   let o = 0;
   buf[o++] = nameBuf.length;
-  nameBuf.copy(buf, o); o += nameBuf.length;
+  nameBuf.copy(buf, o);
+  o += nameBuf.length;
   buf[o++] = 7; // string type
-  buf.writeUInt16BE(valueBuf.length, o); o += 2;
+  buf.writeUInt16BE(valueBuf.length, o);
+  o += 2;
   valueBuf.copy(buf, o);
   return buf;
 }
@@ -65,7 +70,7 @@ function encodeHeader(name, value) {
 function buildEventStreamFrame(eventType, payload) {
   const payloadBuf = Buffer.from(
     typeof payload === "string" ? payload : JSON.stringify(payload),
-    "utf8"
+    "utf8",
   );
 
   // All three Smithy system headers are required
@@ -100,7 +105,11 @@ function buildEventStreamFrame(eventType, payload) {
 function safeArgsString(value) {
   if (typeof value === "string") return value;
   if (value == null) return "{}";
-  try { return JSON.stringify(value); } catch { return "{}"; }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "{}";
+  }
 }
 
 /**
@@ -117,7 +126,7 @@ function convertUserInputMessage(uim) {
 
   // Emit one "tool" message per tool result (OpenAI multi-tool format)
   for (const tr of toolResults) {
-    const text = (tr.content || []).map(c => c.text || "").join("\n");
+    const text = (tr.content || []).map((c) => c.text || "").join("\n");
     out.push({
       role: "tool",
       tool_call_id: tr.toolUseId || "",
@@ -148,7 +157,7 @@ function convertAssistantResponseMessage(arm) {
     return {
       role: "assistant",
       content: arm.content || null,
-      tool_calls: toolUses.map(tu => ({
+      tool_calls: toolUses.map((tu) => ({
         id: tu.toolUseId || `call_${Date.now()}`,
         type: "function",
         function: {
@@ -183,7 +192,9 @@ function codeWhispererToMessages(body) {
     if (item.userInputMessage) {
       messages.push(...convertUserInputMessage(item.userInputMessage));
     } else if (item.assistantResponseMessage) {
-      messages.push(convertAssistantResponseMessage(item.assistantResponseMessage));
+      messages.push(
+        convertAssistantResponseMessage(item.assistantResponseMessage),
+      );
     }
   }
 
@@ -212,21 +223,27 @@ function extractTools(body) {
   const cs = body.conversationState || {};
 
   // Tools are typically on the currentMessage; may also appear on the first history item
-  const fromCurrent = cs.currentMessage?.userInputMessage?.userInputMessageContext?.tools || [];
-  const fromHistory = cs.history?.find(h => h.userInputMessage?.userInputMessageContext?.tools)
-    ?.userInputMessage?.userInputMessageContext?.tools || [];
+  const fromCurrent =
+    cs.currentMessage?.userInputMessage?.userInputMessageContext?.tools || [];
+  const fromHistory =
+    cs.history?.find((h) => h.userInputMessage?.userInputMessageContext?.tools)
+      ?.userInputMessage?.userInputMessageContext?.tools || [];
   const cwTools = fromCurrent.length > 0 ? fromCurrent : fromHistory;
 
   if (!cwTools.length) return [];
 
-  return cwTools.map(item => {
+  return cwTools.map((item) => {
     const spec = item.toolSpecification || item;
     return {
       type: "function",
       function: {
         name: spec.name || "",
         description: spec.description || `Tool: ${spec.name || "unknown"}`,
-        parameters: spec.inputSchema?.json || { type: "object", properties: {}, required: [] },
+        parameters: spec.inputSchema?.json || {
+          type: "object",
+          properties: {},
+          required: [],
+        },
       },
     };
   });
@@ -286,19 +303,29 @@ async function pipeOpenAIasEventStream(routerRes, res) {
         }
 
         let chunk;
-        try { chunk = JSON.parse(raw); } catch { continue; }
+        try {
+          chunk = JSON.parse(raw);
+        } catch {
+          continue;
+        }
 
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
 
         // ── Text content ───────────────────────────────────────────────────────
         if (delta.content) {
-          res.write(buildEventStreamFrame("assistantResponseEvent", { content: delta.content }));
+          res.write(
+            buildEventStreamFrame("assistantResponseEvent", {
+              content: delta.content,
+            }),
+          );
         }
 
         // ── Tool calls (streamed in pieces by OpenAI SSE) ──────────────────────
         if (delta.tool_calls) {
-          dbg(`TOOL_CALLS delta: ${JSON.stringify(delta.tool_calls).slice(0, 300)}`);
+          dbg(
+            `TOOL_CALLS delta: ${JSON.stringify(delta.tool_calls).slice(0, 300)}`,
+          );
           for (const tc of delta.tool_calls) {
             const idx = tc.index ?? 0;
             if (!toolCallAccum[idx]) {
@@ -313,14 +340,18 @@ async function pipeOpenAIasEventStream(routerRes, res) {
             if (tc.function?.arguments != null) {
               acc.args += safeArgsString(tc.function.arguments);
             }
-            dbg(`  tc[${idx}] argType=${argType} id=${acc.id} name=${acc.name} args_so_far=${acc.args.slice(0, 100)}`);
+            dbg(
+              `  tc[${idx}] argType=${argType} id=${acc.id} name=${acc.name} args_so_far=${acc.args.slice(0, 100)}`,
+            );
           }
         }
 
         // ── Finish ─────────────────────────────────────────────────────────────
         const finish = chunk?.choices?.[0]?.finish_reason;
         if (finish) {
-          dbg(`FINISH finish_reason=${finish} toolCallKeys=${JSON.stringify(Object.keys(toolCallAccum))}`);
+          dbg(
+            `FINISH finish_reason=${finish} toolCallKeys=${JSON.stringify(Object.keys(toolCallAccum))}`,
+          );
           // Flush accumulated tool calls before stop
           if (finish === "tool_calls") {
             for (const acc of Object.values(toolCallAccum)) {
@@ -330,12 +361,16 @@ async function pipeOpenAIasEventStream(routerRes, res) {
               // Kiro then JSON.parses that string to get the tool arguments.
               // If we send input as a parsed object, Kiro does String(obj) → "[object Object]".
               const inputStr = acc.args || "{}";
-              dbg(`  toolUseEvent: id=${acc.id} name=${acc.name} inputStr=${inputStr.slice(0, 200)}`);
-              res.write(buildEventStreamFrame("toolUseEvent", {
-                toolUseId: acc.id,
-                name: acc.name,
-                input: inputStr,  // Must be a JSON STRING, not a parsed object
-              }));
+              dbg(
+                `  toolUseEvent: id=${acc.id} name=${acc.name} inputStr=${inputStr.slice(0, 200)}`,
+              );
+              res.write(
+                buildEventStreamFrame("toolUseEvent", {
+                  toolUseId: acc.id,
+                  name: acc.name,
+                  input: inputStr, // Must be a JSON STRING, not a parsed object
+                }),
+              );
             }
           }
           sendStop();
@@ -364,7 +399,9 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     // 1 + 2: CodeWhisperer → OpenAI messages + tools
     const messages = codeWhispererToMessages(body);
     if (messages.length === 0) {
-      throw new Error("codeWhispererToMessages produced 0 messages — check request body");
+      throw new Error(
+        "codeWhispererToMessages produced 0 messages — check request body",
+      );
     }
 
     const tools = extractTools(body);
@@ -378,7 +415,11 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     };
 
     // 3: Forward to 9router
-    const routerRes = await fetchRouter(openaiBody, "/v1/chat/completions", req.headers);
+    const routerRes = await fetchRouter(
+      openaiBody,
+      "/v1/chat/completions",
+      req.headers,
+    );
 
     // 4 + 5: Re-encode response as AWS EventStream binary
     res.writeHead(routerRes.status, {
@@ -394,7 +435,9 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
     if (!res.headersSent) {
       res.writeHead(500, { "Content-Type": "application/json" });
     }
-    res.end(JSON.stringify({ error: { message: error.message, type: "mitm_error" } }));
+    res.end(
+      JSON.stringify({ error: { message: error.message, type: "mitm_error" } }),
+    );
   }
 }
 

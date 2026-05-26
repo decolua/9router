@@ -45,13 +45,13 @@ export NODE_ENV="production"
 
 **Environment Variables:**
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated | **MUST change in production!** Used for JWT token signing |
-| `INITIAL_PASSWORD` | `123456` | Dashboard login password |
-| `DATA_DIR` | `~/.9router` | Database and data storage path |
-| `NODE_ENV` | `development` | Set to `production` for deployment |
-| `ENABLE_REQUEST_LOGS` | `false` | Enable debug request/response logs |
+| Variable              | Default        | Description                                               |
+| --------------------- | -------------- | --------------------------------------------------------- |
+| `JWT_SECRET`          | Auto-generated | **MUST change in production!** Used for JWT token signing |
+| `INITIAL_PASSWORD`    | `123456`       | Dashboard login password                                  |
+| `DATA_DIR`            | `~/.9router`   | Database and data storage path                            |
+| `NODE_ENV`            | `development`  | Set to `production` for deployment                        |
+| `ENABLE_REQUEST_LOGS` | `false`        | Enable debug request/response logs                        |
 
 ### Step 5: Create Data Directory
 
@@ -165,7 +165,7 @@ docker run -d \
 Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   9router:
@@ -258,7 +258,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;
@@ -272,7 +272,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # SSE support - CRITICAL for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

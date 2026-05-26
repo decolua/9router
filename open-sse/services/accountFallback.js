@@ -1,4 +1,8 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import {
+  ERROR_RULES,
+  BACKOFF_CONFIG,
+  TRANSIENT_COOLDOWN_MS,
+} from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -22,7 +26,10 @@ export function getQuotaCooldown(backoffLevel = 0) {
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
-    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    ? (typeof errorText === "string"
+        ? errorText
+        : JSON.stringify(errorText)
+      ).toLowerCase()
     : "";
 
   for (const rule of ERROR_RULES) {
@@ -30,7 +37,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return {
+          shouldFallback: true,
+          cooldownMs: getQuotaCooldown(newLevel),
+          newBackoffLevel: newLevel,
+        };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
@@ -39,7 +50,11 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     if (rule.status && rule.status === status) {
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return {
+          shouldFallback: true,
+          cooldownMs: getQuotaCooldown(newLevel),
+          newBackoffLevel: newLevel,
+        };
       }
       return { shouldFallback: true, cooldownMs: rule.cooldownMs };
     }
@@ -165,7 +180,7 @@ export function buildClearModelLocksUpdate(connection) {
  */
 export function filterAvailableAccounts(accounts, excludeId = null) {
   const now = Date.now();
-  return accounts.filter(acc => {
+  return accounts.filter((acc) => {
     if (excludeId && acc.id === excludeId) return false;
     if (acc.rateLimitedUntil) {
       const until = new Date(acc.rateLimitedUntil).getTime();
@@ -188,7 +203,7 @@ export function resetAccountState(account) {
     rateLimitedUntil: null,
     backoffLevel: 0,
     lastError: null,
-    status: "active"
+    status: "active",
   };
 }
 
@@ -203,13 +218,21 @@ export function applyErrorState(account, status, errorText) {
   if (!account) return account;
 
   const backoffLevel = account.backoffLevel || 0;
-  const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
+  const { cooldownMs, newBackoffLevel } = checkFallbackError(
+    status,
+    errorText,
+    backoffLevel,
+  );
 
   return {
     ...account,
     rateLimitedUntil: cooldownMs > 0 ? getUnavailableUntil(cooldownMs) : null,
     backoffLevel: newBackoffLevel ?? backoffLevel,
-    lastError: { status, message: errorText, timestamp: new Date().toISOString() },
-    status: "error"
+    lastError: {
+      status,
+      message: errorText,
+      timestamp: new Date().toISOString(),
+    },
+    status: "error",
   };
 }

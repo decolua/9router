@@ -9,6 +9,7 @@ Crea combinaciones de modelos personalizadas con fallback automático. Los combo
 Los combos son **cadenas de fallback personalizadas** que creas en el dashboard. En lugar de usar un solo modelo, defines una secuencia de modelos que 9Router intenta en orden.
 
 **Ejemplo:**
+
 ```
 Nombre del combo: premium-coding
 Modelos:
@@ -18,6 +19,7 @@ Modelos:
 ```
 
 **Uso en CLI:**
+
 ```
 Model: premium-coding
 ```
@@ -29,6 +31,7 @@ Model: premium-coding
 ## ¿Por qué usar combos?
 
 ### 1. Maximiza el valor de la suscripción
+
 ```
 cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -37,6 +40,7 @@ cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 2. Minimiza costos
+
 ```
 glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 
@@ -47,6 +51,7 @@ glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
 
 ### 3. Garantiza disponibilidad 24/7
+
 ```
 cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -56,6 +61,7 @@ cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 4. Optimiza por calidad
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → gc/gemini-3-pro
 
@@ -84,16 +90,19 @@ Dashboard → Combos → Create New Combo
 ### Paso 3: Configurar el combo
 
 **Nombre del combo:**
+
 ```
 premium-coding
 ```
 
 **Descripción (opcional):**
+
 ```
 Suscripción primero, respaldo barato, emergencia gratis
 ```
 
 **Seleccionar modelos:**
+
 ```
 1. cc/claude-opus-4-5-20251101
 2. glm/glm-4.7
@@ -135,12 +144,14 @@ Models:
 ```
 
 **Uso:**
+
 ```
 Cursor IDE:
   Model: premium-coding
 ```
 
 **Comportamiento:**
+
 ```
 Mañana (cuota fresca):
   Solicitud → cc/claude-opus-4-5 ✅
@@ -153,6 +164,7 @@ Noche (cuota de GLM agotada):
 ```
 
 **Costo mensual (100M tokens):**
+
 ```
 80M vía Claude Code: $0 (suscripción)
 15M vía GLM: $9
@@ -179,6 +191,7 @@ Models:
 ```
 
 **Uso:**
+
 ```
 Cline:
   Provider: OpenAI Compatible
@@ -187,6 +200,7 @@ Cline:
 ```
 
 **Comportamiento:**
+
 ```
 Solicitud → glm/glm-4.7
   ✅ Cuota diaria disponible → Usa GLM ($0.60/1M)
@@ -195,6 +209,7 @@ Solicitud → glm/glm-4.7
 ```
 
 **Costo mensual (100M tokens):**
+
 ```
 70M vía GLM: $42
 20M vía MiniMax: $4
@@ -221,12 +236,14 @@ Models:
 ```
 
 **Uso:**
+
 ```
 Claude Desktop:
   Model: free-combo
 ```
 
 **Comportamiento:**
+
 ```
 Solicitud → if/kimi-k2-thinking
   ✅ Disponible → Usa iFlow
@@ -235,6 +252,7 @@ Solicitud → if/kimi-k2-thinking
 ```
 
 **Costo mensual:**
+
 ```
 100M tokens vía proveedores gratis: $0
 Total: $0 para siempre
@@ -259,6 +277,7 @@ Models:
 ```
 
 **Uso:**
+
 ```
 Codex CLI:
   export OPENAI_BASE_URL="http://localhost:20128"
@@ -266,6 +285,7 @@ Codex CLI:
 ```
 
 **Comportamiento:**
+
 ```
 Solicitud → cc/claude-opus-4-5
   ❌ Cuota agotada → cx/gpt-5.2-codex
@@ -295,6 +315,7 @@ Models:
 ```
 
 **Costo mensual (200M tokens):**
+
 ```
 50M vía Gemini CLI: $0 (nivel gratis)
 80M vía Claude Code: $0 (suscripción)
@@ -326,6 +347,7 @@ Models:
 ```
 
 **Rutina diaria:**
+
 ```
 08:00 - 13:00: Claude Code (cuota fresca de 5h)
 13:00 - 18:00: Gemini CLI (cuota 1K/día)
@@ -351,6 +373,7 @@ Settings → Models → Advanced:
 ### Claude Desktop
 
 Edita `~/.claude/config.json`:
+
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
@@ -510,6 +533,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Problema: El combo no aparece en la lista de modelos**
 
 **Solución:**
+
 1. Refresca el dashboard
 2. Verifica que el combo esté guardado (marca verde)
 3. Reinicia la herramienta CLI para refrescar la lista de modelos
@@ -517,6 +541,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Problema: El combo siempre usa el último modelo (nivel gratis)**
 
 **Solución:**
+
 1. Verifica la cuota de los modelos principales (Dashboard → Quota)
 2. Verifica que las API keys sean válidas (Dashboard → Providers)
 3. Verifica que no se hayan excedido los límites de presupuesto
@@ -524,6 +549,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Problema: El combo cuesta más de lo esperado**
 
 **Solución:**
+
 1. Dashboard → Analytics → Revisa el uso del combo
 2. Verifica si los modelos principales tienen cuota agotada
 3. Reordena los modelos (pon los más baratos primero)

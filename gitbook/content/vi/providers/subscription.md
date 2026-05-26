@@ -22,10 +22,10 @@ Provider tier subscription là lựa chọn **chính** - bạn đã trả tiền
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Pro | $20 | 5 giờ + Hàng tuần | Opus, Sonnet, Haiku |
-| Max | $100 | 5 giờ + Hàng tuần | Opus, Sonnet, Haiku |
+| Plan | Chi phí Hàng tháng | Quota Reset       | Models              |
+| ---- | ------------------ | ----------------- | ------------------- |
+| Pro  | $20                | 5 giờ + Hàng tuần | Opus, Sonnet, Haiku |
+| Max  | $100               | 5 giờ + Hàng tuần | Opus, Sonnet, Haiku |
 
 ### Setup
 
@@ -53,11 +53,11 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | Task phức tạp, kiến trúc |
+| Model ID                        | Mô tả             | Tốt nhất cho               |
+| ------------------------------- | ----------------- | -------------------------- |
+| `cc/claude-opus-4-5-20251101`   | Claude 4.5 Opus   | Task phức tạp, kiến trúc   |
 | `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Cân bằng tốc độ/chất lượng |
-| `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | Phản hồi nhanh |
+| `cc/claude-haiku-4-5-20251001`  | Claude 4.5 Haiku  | Phản hồi nhanh             |
 
 ### Mẹo Pro
 
@@ -72,10 +72,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Plus | $20 | 5 giờ + Hàng tuần | GPT 5.2, GPT 5.1 |
-| Pro | $200 | 5 giờ + Hàng tuần | GPT 5.2 Codex, GPT 5.1 Max |
+| Plan | Chi phí Hàng tháng | Quota Reset       | Models                     |
+| ---- | ------------------ | ----------------- | -------------------------- |
+| Plus | $20                | 5 giờ + Hàng tuần | GPT 5.2, GPT 5.1           |
+| Pro  | $200               | 5 giờ + Hàng tuần | GPT 5.2 Codex, GPT 5.1 Max |
 
 ### Setup
 
@@ -104,12 +104,12 @@ Model: cx/gpt-5.2-codex
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | Model coding mới nhất |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Context tối đa |
-| `cx/gpt-5.2` | GPT 5.2 | Task chung |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | Coding ổn định |
+| Model ID               | Mô tả             | Tốt nhất cho          |
+| ---------------------- | ----------------- | --------------------- |
+| `cx/gpt-5.2-codex`     | GPT 5.2 Codex     | Model coding mới nhất |
+| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Context tối đa        |
+| `cx/gpt-5.2`           | GPT 5.2           | Task chung            |
+| `cx/gpt-5.1-codex`     | GPT 5.1 Codex     | Coding ổn định        |
 
 ### Mẹo Pro
 
@@ -123,9 +123,9 @@ Model: cx/gpt-5.2-codex
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Quota | Reset |
-|------|--------------|-------|-------|
-| FREE | $0 | 180K completions/tháng + 1K/ngày | Hàng ngày + Hàng tháng |
+| Plan | Chi phí Hàng tháng | Quota                            | Reset                  |
+| ---- | ------------------ | -------------------------------- | ---------------------- |
+| FREE | $0                 | 180K completions/tháng + 1K/ngày | Hàng ngày + Hàng tháng |
 
 **Giá trị tốt nhất:** Free tier khổng lồ! Dùng trước tier trả phí.
 
@@ -156,12 +156,12 @@ Model: gc/gemini-3-flash-preview
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | Phản hồi nhanh |
-| `gc/gemini-3-pro-preview` | Gemini 3 Pro Preview | Task phức tạp |
-| `gc/gemini-2.5-pro` | Gemini 2.5 Pro | Production ổn định |
-| `gc/gemini-2.5-flash` | Gemini 2.5 Flash | Task nhanh |
+| Model ID                    | Mô tả                  | Tốt nhất cho       |
+| --------------------------- | ---------------------- | ------------------ |
+| `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | Phản hồi nhanh     |
+| `gc/gemini-3-pro-preview`   | Gemini 3 Pro Preview   | Task phức tạp      |
+| `gc/gemini-2.5-pro`         | Gemini 2.5 Pro         | Production ổn định |
+| `gc/gemini-2.5-flash`       | Gemini 2.5 Flash       | Task nhanh         |
 
 ### Mẹo Pro
 
@@ -176,10 +176,10 @@ Model: gc/gemini-3-flash-preview
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Individual | $10 | Hàng tháng (ngày 1) | GPT-5, Claude 4.5, Gemini 3 |
-| Business | $19 | Hàng tháng (ngày 1) | GPT-5, Claude 4.5, Gemini 3 |
+| Plan       | Chi phí Hàng tháng | Quota Reset         | Models                      |
+| ---------- | ------------------ | ------------------- | --------------------------- |
+| Individual | $10                | Hàng tháng (ngày 1) | GPT-5, Claude 4.5, Gemini 3 |
+| Business   | $19                | Hàng tháng (ngày 1) | GPT-5, Claude 4.5, Gemini 3 |
 
 ### Setup
 
@@ -208,12 +208,12 @@ Model: gh/gpt-5
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | Model OpenAI mới nhất |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Context tối đa |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Chất lượng Anthropic |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Chất lượng Google |
+| Model ID               | Mô tả             | Tốt nhất cho          |
+| ---------------------- | ----------------- | --------------------- |
+| `gh/gpt-5`             | GPT-5             | Model OpenAI mới nhất |
+| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Context tối đa        |
+| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Chất lượng Anthropic  |
+| `gh/gemini-3-pro`      | Gemini 3 Pro      | Chất lượng Google     |
 
 ### Mẹo Pro
 
@@ -227,9 +227,9 @@ Model: gh/gpt-5
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Quota | Models |
-|------|--------------|-------|--------|
-| FREE | $0 | Tương tự Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
+| Plan | Chi phí Hàng tháng | Quota               | Models                          |
+| ---- | ------------------ | ------------------- | ------------------------------- |
+| FREE | $0                 | Tương tự Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
 
 ### Setup
 
@@ -257,11 +257,11 @@ Model: ag/gemini-3-pro-high
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | Phản hồi chất lượng cao |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Chất lượng Anthropic |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Reasoning phức tạp |
+| Model ID                      | Mô tả                    | Tốt nhất cho            |
+| ----------------------------- | ------------------------ | ----------------------- |
+| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | Phản hồi chất lượng cao |
+| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Chất lượng Anthropic    |
+| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Reasoning phức tạp      |
 
 ### Mẹo Pro
 
@@ -273,15 +273,15 @@ Model: ag/gemini-3-pro-high
 
 ## So sánh Giá
 
-| Provider | Chi phí Hàng tháng | Quota Reset | Giá trị |
-|----------|--------------|-------------|-------|
-| **Claude Code Pro** | $20 | 5 giờ + Hàng tuần | ⭐⭐⭐⭐⭐ Chất lượng tốt nhất |
-| **Claude Code Max** | $100 | 5 giờ + Hàng tuần | ⭐⭐⭐⭐⭐ Quota cao nhất |
-| **Codex Plus** | $20 | 5 giờ + Hàng tuần | ⭐⭐⭐⭐ Giá trị tốt |
-| **Codex Pro** | $200 | 5 giờ + Hàng tuần | ⭐⭐⭐⭐⭐ Quota 10× |
-| **Gemini CLI** | **$0** | Hàng ngày + Hàng tháng | ⭐⭐⭐⭐⭐ MIỄN PHÍ 180K/tháng! |
-| **GitHub Copilot** | $10-19 | Hàng tháng (ngày 1) | ⭐⭐⭐⭐ Đa model |
-| **Antigravity** | **$0** | Hàng ngày + Hàng tháng | ⭐⭐⭐⭐ Claude MIỄN PHÍ! |
+| Provider            | Chi phí Hàng tháng | Quota Reset            | Giá trị                         |
+| ------------------- | ------------------ | ---------------------- | ------------------------------- |
+| **Claude Code Pro** | $20                | 5 giờ + Hàng tuần      | ⭐⭐⭐⭐⭐ Chất lượng tốt nhất  |
+| **Claude Code Max** | $100               | 5 giờ + Hàng tuần      | ⭐⭐⭐⭐⭐ Quota cao nhất       |
+| **Codex Plus**      | $20                | 5 giờ + Hàng tuần      | ⭐⭐⭐⭐ Giá trị tốt            |
+| **Codex Pro**       | $200               | 5 giờ + Hàng tuần      | ⭐⭐⭐⭐⭐ Quota 10×            |
+| **Gemini CLI**      | **$0**             | Hàng ngày + Hàng tháng | ⭐⭐⭐⭐⭐ MIỄN PHÍ 180K/tháng! |
+| **GitHub Copilot**  | $10-19             | Hàng tháng (ngày 1)    | ⭐⭐⭐⭐ Đa model               |
+| **Antigravity**     | **$0**             | Hàng ngày + Hàng tháng | ⭐⭐⭐⭐ Claude MIỄN PHÍ!       |
 
 ---
 
@@ -378,6 +378,7 @@ Night: Cheap/free tier
 ### "Quota exhausted"
 
 **Giải pháp:**
+
 - Kiểm tra quota tracker trong dashboard
 - Đợi reset (5 giờ hoặc hàng ngày)
 - Dùng combo fallback sang cheap/free tier
@@ -385,12 +386,14 @@ Night: Cheap/free tier
 ### "OAuth token expired"
 
 **Giải pháp:**
+
 - Auto-refresh bởi 9Router
 - Nếu vẫn lỗi: Dashboard → Provider → Reconnect
 
 ### "Rate limiting"
 
 **Giải pháp:**
+
 - Hết quota subscription
 - Thêm fallback: `cc/claude-opus → glm/glm-4.7`
 - Dùng free tier: `if/kimi-k2-thinking`

@@ -1,11 +1,19 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
+import {
+  PROVIDER_MODELS,
+  PROVIDER_ID_TO_ALIAS,
+} from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import {
+  getProviderConnections,
+  getCombos,
+  getCustomModels,
+  getModelAliases,
+} from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
@@ -14,13 +22,16 @@ import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
   kiro: async (conn) => {
-    const result = await resolveKiroModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    const result = await resolveKiroModels(
+      {
+        accessToken: conn.accessToken,
+        refreshToken: conn.refreshToken,
+        providerSpecificData: conn.providerSpecificData || {},
+      },
+      { log: console },
+    );
     return result?.models?.length ? { models: result.models } : null;
-  }
+  },
 };
 
 const parseOpenAIStyleModels = (data) => {
@@ -55,16 +66,18 @@ function inferKindFromUnknownModelId(modelId) {
   const lower = String(modelId).toLowerCase();
   if (/embed/.test(lower)) return "embedding";
   if (/tts|speech|audio|voice/.test(lower)) return "tts";
-  if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower)) return "image";
+  if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower))
+    return "image";
   return LLM_KIND;
 }
 
 async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
 
-  const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
-    ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
-    : "";
+  const baseUrl =
+    typeof connection?.providerSpecificData?.baseUrl === "string"
+      ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
+      : "";
 
   if (!baseUrl) return [];
 
@@ -108,8 +121,10 @@ async function fetchCompatibleModelIds(connection) {
       new Set(
         rawModels
           .map((model) => model?.id || model?.name || model?.model)
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
-      )
+          .filter(
+            (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+          ),
+      ),
     );
   } catch {
     return [];
@@ -120,9 +135,10 @@ async function fetchCompatibleModelIds(connection) {
 // LLM is the default kind for providers missing serviceKinds.
 function providerMatchesKinds(providerId, kindFilter) {
   const provider = AI_PROVIDERS[providerId];
-  const kinds = Array.isArray(provider?.serviceKinds) && provider.serviceKinds.length > 0
-    ? provider.serviceKinds
-    : [LLM_KIND];
+  const kinds =
+    Array.isArray(provider?.serviceKinds) && provider.serviceKinds.length > 0
+      ? provider.serviceKinds
+      : [LLM_KIND];
   return kindFilter.some((k) => kinds.includes(k));
 }
 
@@ -141,7 +157,7 @@ export async function buildModelsList(kindFilter) {
   let connections = [];
   try {
     connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
+    connections = connections.filter((c) => c.isActive !== false);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }
@@ -173,7 +189,9 @@ export async function buildModelsList(kindFilter) {
   } catch (e) {
     console.log("Could not fetch disabled models");
   }
-  const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+  const isDisabled = (alias, modelId) =>
+    Array.isArray(disabledByAlias[alias]) &&
+    disabledByAlias[alias].includes(modelId);
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
@@ -201,7 +219,7 @@ export async function buildModelsList(kindFilter) {
   if (connections.length === 0) {
     // DB unavailable -> return static models, filtered by per-model kind
     const aliasToProviderId = Object.fromEntries(
-      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id]),
     );
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = aliasToProviderId[alias] || alias;
@@ -218,7 +236,8 @@ export async function buildModelsList(kindFilter) {
     }
 
     for (const customModel of customModels) {
-      if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
+      if (!customModel?.id || (customModel.type && customModel.type !== "llm"))
+        continue;
       // Custom models without active connection are LLM-only by current schema
       if (!kindFilter.includes(LLM_KIND)) continue;
       const providerAlias = customModel.providerAlias;
@@ -239,33 +258,39 @@ export async function buildModelsList(kindFilter) {
 
       const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const outputAlias = (
-        conn?.providerSpecificData?.prefix
-        || getProviderAlias(providerId)
-        || staticAlias
+        conn?.providerSpecificData?.prefix ||
+        getProviderAlias(providerId) ||
+        staticAlias
       ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
       const enabledModels = conn?.providerSpecificData?.enabledModels;
       const hasExplicitEnabledModels =
         Array.isArray(enabledModels) && enabledModels.length > 0;
       const isCompatibleProvider =
-        isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+        isOpenAICompatibleProvider(providerId) ||
+        isAnthropicCompatibleProvider(providerId);
 
       // Build kind lookup for static models so we can filter even when only IDs are exposed
       const staticModelKindById = new Map(
-        providerModels.map((m) => [m.id, modelKind(m)])
+        providerModels.map((m) => [m.id, modelKind(m)]),
       );
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
             new Set(
               enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+                (modelId) =>
+                  typeof modelId === "string" && modelId.trim() !== "",
               ),
             ),
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !UPSTREAM_CONNECTION_RE.test(providerId)) {
+      if (
+        isCompatibleProvider &&
+        rawModelIds.length === 0 &&
+        !UPSTREAM_CONNECTION_RE.test(providerId)
+      ) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
@@ -280,7 +305,9 @@ export async function buildModelsList(kindFilter) {
             rawModelIds = live.models.map((m) => m.id);
           }
         } catch (err) {
-          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+          console.log(
+            `Live model fetch failed for ${providerId}: ${err?.message || err}`,
+          );
         }
       }
 
@@ -297,20 +324,27 @@ export async function buildModelsList(kindFilter) {
           }
           return modelId;
         })
-        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+        .filter(
+          (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+        );
 
       const customModelIds = customModels
         .filter((m) => {
           if (!m?.id || (m.type && m.type !== "llm")) return false;
           const alias = m.providerAlias;
-          return alias === staticAlias || alias === outputAlias || alias === providerId;
+          return (
+            alias === staticAlias ||
+            alias === outputAlias ||
+            alias === providerId
+          );
         })
         .map((m) => String(m.id).trim())
         .filter((modelId) => modelId !== "");
 
       const aliasModelIds = Object.values(modelAliases || {})
         .filter((fullModel) => {
-          if (typeof fullModel !== "string" || !fullModel.includes("/")) return false;
+          if (typeof fullModel !== "string" || !fullModel.includes("/"))
+            return false;
           return (
             fullModel.startsWith(`${outputAlias}/`) ||
             fullModel.startsWith(`${staticAlias}/`) ||
@@ -329,15 +363,25 @@ export async function buildModelsList(kindFilter) {
           }
           return fullModel;
         })
-        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+        .filter(
+          (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+        );
 
-      const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      const mergedModelIds = Array.from(
+        new Set([...modelIds, ...customModelIds, ...aliasModelIds]),
+      );
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer static metadata, otherwise infer from ID heuristics
-        const kind = staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
+        const kind =
+          staticModelKindById.get(modelId) ||
+          inferKindFromUnknownModelId(modelId);
         if (!kindFilter.includes(kind)) continue;
-        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        if (
+          isDisabled(outputAlias, modelId) ||
+          isDisabled(staticAlias, modelId)
+        )
+          continue;
 
         models.push({
           id: `${outputAlias}/${modelId}`,
@@ -349,18 +393,25 @@ export async function buildModelsList(kindFilter) {
       // Merge sub-config models (TTS / embedding) that live on AI_PROVIDERS, not PROVIDER_MODELS
       const providerInfo = AI_PROVIDERS[providerId];
       const subConfigModels = [];
-      if (kindFilter.includes("tts") && Array.isArray(providerInfo?.ttsConfig?.models)) {
+      if (
+        kindFilter.includes("tts") &&
+        Array.isArray(providerInfo?.ttsConfig?.models)
+      ) {
         for (const m of providerInfo.ttsConfig.models) {
           if (m?.id) subConfigModels.push(m.id);
         }
       }
-      if (kindFilter.includes("embedding") && Array.isArray(providerInfo?.embeddingConfig?.models)) {
+      if (
+        kindFilter.includes("embedding") &&
+        Array.isArray(providerInfo?.embeddingConfig?.models)
+      ) {
         for (const m of providerInfo.embeddingConfig.models) {
           if (m?.id) subConfigModels.push(m.id);
         }
       }
       for (const subId of subConfigModels) {
-        if (isDisabled(outputAlias, subId) || isDisabled(staticAlias, subId)) continue;
+        if (isDisabled(outputAlias, subId) || isDisabled(staticAlias, subId))
+          continue;
         models.push({
           id: `${outputAlias}/${subId}`,
           object: "model",
@@ -419,14 +470,17 @@ export async function OPTIONS() {
 export async function GET() {
   try {
     const data = await buildModelsList([LLM_KIND]);
-    return Response.json({ object: "list", data }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
-    });
+    return Response.json(
+      { object: "list", data },
+      {
+        headers: { "Access-Control-Allow-Origin": "*" },
+      },
+    );
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json(
       { error: { message: error.message, type: "server_error" } },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

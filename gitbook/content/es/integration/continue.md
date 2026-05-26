@@ -23,6 +23,7 @@ Integra 9Router con la extensión Continue para llevar la asistencia de IA direc
 Agrega la siguiente configuración a tu `config.json`:
 
 **Configuración de un solo modelo:**
+
 ```json
 {
   "models": [
@@ -38,6 +39,7 @@ Agrega la siguiente configuración a tu `config.json`:
 ```
 
 **Configuración de múltiples modelos:**
+
 ```json
 {
   "models": [
@@ -75,6 +77,7 @@ Agrega la siguiente configuración a tu `config.json`:
 
 **Para 9Router en la nube:**
 Reemplaza `apiBase` con:
+
 ```json
 "apiBase": "https://9router.com/v1"
 ```
@@ -94,37 +97,44 @@ Reemplaza `apiBase` con:
 ## Modelos disponibles
 
 ### Modelos Claude (Anthropic)
+
 - `cc/claude-opus-4-5-20251101` - El más capaz, ideal para tareas complejas
 - `cc/claude-sonnet-4-20250514` - Rendimiento y velocidad equilibrados
 - `cc/claude-haiku-4-20250514` - El más rápido, bueno para tareas simples
 
 ### Modelos DeepSeek
+
 - `cx/deepseek-chat` - Excelente para generación de código
 - `cx/deepseek-reasoner` - Mejor para resolución de problemas complejos
 
 ### Modelos GLM (Zhipu AI)
+
 - `glm/glm-4-plus` - Chino e inglés avanzado
 - `glm/glm-4-flash` - Respuestas rápidas
 
 ## Ejemplos de uso
 
 ### Explicación de código
+
 1. Selecciona código en el editor
 2. Abre la barra lateral de Continue
 3. Escribe: "Explain this code"
 4. Modelo: `cc/claude-sonnet-4-20250514`
 
 ### Generación de código
+
 1. Abre la barra lateral de Continue
 2. Escribe: "Create a React component for user profile card"
 3. Modelo: `cx/deepseek-chat`
 
 ### Refactorización
+
 1. Selecciona código para refactorizar
 2. Escribe: "Refactor this to use async/await"
 3. Modelo: `cc/claude-sonnet-4-20250514`
 
 ### Corrección de bugs
+
 1. Selecciona código problemático
 2. Escribe: "Find and fix the bug in this code"
 3. Modelo: `cx/deepseek-reasoner`
@@ -204,21 +214,25 @@ Configura qué contexto envía Continue al modelo:
 ## Solución de problemas
 
 ### El modelo no responde
+
 - Verifica que 9Router esté corriendo: `curl http://localhost:20128/health`
 - Verifica la API key en config.json
 - Revisa la consola de desarrollador de VSCode por errores: `Help` → `Toggle Developer Tools`
 
 ### Modelo incorrecto seleccionado
+
 - Clic en el dropdown de modelo en la barra lateral de Continue
 - Selecciona el modelo correcto de 9Router
 - El nombre del modelo debe coincidir exactamente (sensible a mayúsculas)
 
 ### La configuración no se carga
+
 - Verifica que la sintaxis JSON sea válida (usa un validador de JSON)
 - Verifica la ubicación del archivo: `~/.continue/config.json`
 - Recarga la ventana de VSCode después de cambios
 
 ### Rendimiento lento
+
 - Cambia a modelos más rápidos (haiku, flash)
 - Reduce el tamaño del contexto en contextProviders
 - Verifica la latencia de red hacia 9Router
@@ -226,17 +240,20 @@ Configura qué contexto envía Continue al modelo:
 ## Mejores prácticas
 
 ### Estrategia de selección de modelo
+
 - **Ediciones rápidas**: Usa `cc/claude-haiku-4-20250514`
 - **Generación de código**: Usa `cx/deepseek-chat`
 - **Refactoring complejo**: Usa `cc/claude-opus-4-5-20251101`
 - **Resolución de problemas**: Usa `cx/deepseek-reasoner`
 
 ### Gestión de contexto
+
 - Selecciona solo el código relevante antes de preguntar
 - Usa prompts específicos y claros
 - Divide tareas complejas en pasos más pequeños
 
 ### Optimización de costos
+
 - Usa modelos más rápidos/baratos para tareas simples
 - Limita el tamaño del contexto cuando sea posible
 - Cachea respuestas usadas con frecuencia

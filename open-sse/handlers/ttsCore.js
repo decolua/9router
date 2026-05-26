@@ -48,27 +48,55 @@ function createTtsResponse(base64Audio, format, responseFormat) {
  *
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleTtsCore({ provider, model, input, credentials, responseFormat = "mp3", language }) {
+export async function handleTtsCore({
+  provider,
+  model,
+  input,
+  credentials,
+  responseFormat = "mp3",
+  language,
+}) {
   if (!input?.trim()) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      "Missing required field: input",
+    );
   }
 
   try {
     // Special-case adapters (google-tts, edge-tts, local-device, elevenlabs, openai, openrouter, gemini)
     const adapter = getTtsAdapter(provider);
     if (adapter) {
-      const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, { language });
+      const result = await adapter.synthesize(
+        input.trim(),
+        model,
+        credentials,
+        responseFormat,
+        { language },
+      );
       // Adapter may return a full {success, response} (legacy) or {base64, format}
       if (result.success !== undefined) return result;
       return createTtsResponse(result.base64, result.format, responseFormat);
     }
 
     // Generic config-driven (hyperbolic, deepgram, nvidia, huggingface, inworld, cartesia, playht, coqui, tortoise, qwen, ...)
-    const result = await synthesizeViaConfig(provider, input.trim(), model, credentials);
-    if (result) return createTtsResponse(result.base64, result.format, responseFormat);
+    const result = await synthesizeViaConfig(
+      provider,
+      input.trim(),
+      model,
+      credentials,
+    );
+    if (result)
+      return createTtsResponse(result.base64, result.format, responseFormat);
 
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support TTS via this route.`);
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      `Provider '${provider}' does not support TTS via this route.`,
+    );
   } catch (err) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "TTS synthesis failed");
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      err.message || "TTS synthesis failed",
+    );
   }
 }

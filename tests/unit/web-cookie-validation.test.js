@@ -20,7 +20,9 @@ async function validateGrokWeb(apiKey) {
     crypto.getRandomValues(a);
     return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
   };
-  const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
+  const statsigId = Buffer.from(
+    "e:TypeError: Cannot read properties of null (reading 'children')",
+  ).toString("base64");
   const traceId = randomHex(16);
   const spanId = randomHex(8);
   const res = await fetch("https://grok.com/rest/app-chat/conversations/new", {
@@ -31,15 +33,24 @@ async function validateGrokWeb(apiKey) {
       Cookie: `sso=${token}`,
       Origin: "https://grok.com",
       Referer: "https://grok.com/",
-      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
       "x-statsig-id": statsigId,
       "x-xai-request-id": crypto.randomUUID(),
       traceparent: `00-${traceId}-${spanId}-00`,
     },
-    body: JSON.stringify({ temporary: true, modelName: "grok-4", message: "ping" }),
+    body: JSON.stringify({
+      temporary: true,
+      modelName: "grok-4",
+      message: "ping",
+    }),
   });
   if (res.status === 401 || res.status === 403) {
-    return { valid: false, error: "Invalid SSO cookie — re-paste from grok.com DevTools → Cookies → sso" };
+    return {
+      valid: false,
+      error:
+        "Invalid SSO cookie — re-paste from grok.com DevTools → Cookies → sso",
+    };
   }
   return { valid: true, error: null };
 }
@@ -47,7 +58,9 @@ async function validateGrokWeb(apiKey) {
 async function validatePerplexityWeb(apiKey) {
   let sessionToken = apiKey;
   if (sessionToken.startsWith("__Secure-next-auth.session-token=")) {
-    sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);
+    sessionToken = sessionToken.slice(
+      "__Secure-next-auth.session-token=".length,
+    );
   }
   const res = await fetch("https://www.perplexity.ai/rest/sse/perplexity_ask", {
     method: "POST",
@@ -61,14 +74,20 @@ async function validatePerplexityWeb(apiKey) {
     body: JSON.stringify({ query_str: "ping" }),
   });
   if (res.status === 401 || res.status === 403) {
-    return { valid: false, error: "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai" };
+    return {
+      valid: false,
+      error:
+        "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai",
+    };
   }
   return { valid: true, error: null };
 }
 
 describe("grok-web validation", () => {
   beforeEach(() => vi.clearAllMocks());
-  afterEach(() => { global.fetch = originalFetch; });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
 
   it("should return valid:true when response is 200", async () => {
     global.fetch = vi.fn().mockResolvedValue({ status: 200 });
@@ -141,7 +160,9 @@ describe("grok-web validation", () => {
 
 describe("perplexity-web validation", () => {
   beforeEach(() => vi.clearAllMocks());
-  afterEach(() => { global.fetch = originalFetch; });
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
 
   it("should return valid:true when response is 200", async () => {
     global.fetch = vi.fn().mockResolvedValue({ status: 200 });

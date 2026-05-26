@@ -22,10 +22,10 @@ Subscription tier providers are your **primary** choice - you're already paying 
 
 ### Pricing
 
-| Plan | Monthly Cost | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Pro | $20 | 5-hour + Weekly | Opus, Sonnet, Haiku |
-| Max | $100 | 5-hour + Weekly | Opus, Sonnet, Haiku |
+| Plan | Monthly Cost | Quota Reset     | Models              |
+| ---- | ------------ | --------------- | ------------------- |
+| Pro  | $20          | 5-hour + Weekly | Opus, Sonnet, Haiku |
+| Max  | $100         | 5-hour + Weekly | Opus, Sonnet, Haiku |
 
 ### Setup
 
@@ -53,11 +53,11 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | Complex tasks, architecture |
-| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Balanced speed/quality |
-| `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | Fast responses |
+| Model ID                        | Description       | Best For                    |
+| ------------------------------- | ----------------- | --------------------------- |
+| `cc/claude-opus-4-5-20251101`   | Claude 4.5 Opus   | Complex tasks, architecture |
+| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Balanced speed/quality      |
+| `cc/claude-haiku-4-5-20251001`  | Claude 4.5 Haiku  | Fast responses              |
 
 ### Pro Tips
 
@@ -72,10 +72,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Pricing
 
-| Plan | Monthly Cost | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Plus | $20 | 5-hour + Weekly | GPT 5.2, GPT 5.1 |
-| Pro | $200 | 5-hour + Weekly | GPT 5.2 Codex, GPT 5.1 Max |
+| Plan | Monthly Cost | Quota Reset     | Models                     |
+| ---- | ------------ | --------------- | -------------------------- |
+| Plus | $20          | 5-hour + Weekly | GPT 5.2, GPT 5.1           |
+| Pro  | $200         | 5-hour + Weekly | GPT 5.2 Codex, GPT 5.1 Max |
 
 ### Setup
 
@@ -104,12 +104,12 @@ Model: cx/gpt-5.2-codex
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | Latest coding model |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Maximum context |
-| `cx/gpt-5.2` | GPT 5.2 | General tasks |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | Stable coding |
+| Model ID               | Description       | Best For            |
+| ---------------------- | ----------------- | ------------------- |
+| `cx/gpt-5.2-codex`     | GPT 5.2 Codex     | Latest coding model |
+| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Maximum context     |
+| `cx/gpt-5.2`           | GPT 5.2           | General tasks       |
+| `cx/gpt-5.1-codex`     | GPT 5.1 Codex     | Stable coding       |
 
 ### Pro Tips
 
@@ -123,9 +123,9 @@ Model: cx/gpt-5.2-codex
 
 ### Pricing
 
-| Plan | Monthly Cost | Quota | Reset |
-|------|--------------|-------|-------|
-| FREE | $0 | 180K completions/month + 1K/day | Daily + Monthly |
+| Plan | Monthly Cost | Quota                           | Reset           |
+| ---- | ------------ | ------------------------------- | --------------- |
+| FREE | $0           | 180K completions/month + 1K/day | Daily + Monthly |
 
 **Best Value:** Huge free tier! Use this before paid tiers.
 
@@ -156,12 +156,12 @@ Model: gc/gemini-3-flash-preview
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | Fast responses |
-| `gc/gemini-3-pro-preview` | Gemini 3 Pro Preview | Complex tasks |
-| `gc/gemini-2.5-pro` | Gemini 2.5 Pro | Stable production |
-| `gc/gemini-2.5-flash` | Gemini 2.5 Flash | Quick tasks |
+| Model ID                    | Description            | Best For          |
+| --------------------------- | ---------------------- | ----------------- |
+| `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | Fast responses    |
+| `gc/gemini-3-pro-preview`   | Gemini 3 Pro Preview   | Complex tasks     |
+| `gc/gemini-2.5-pro`         | Gemini 2.5 Pro         | Stable production |
+| `gc/gemini-2.5-flash`       | Gemini 2.5 Flash       | Quick tasks       |
 
 ### Pro Tips
 
@@ -176,10 +176,10 @@ Model: gc/gemini-3-flash-preview
 
 ### Pricing
 
-| Plan | Monthly Cost | Quota Reset | Models |
-|------|--------------|-------------|--------|
-| Individual | $10 | Monthly (1st) | GPT-5, Claude 4.5, Gemini 3 |
-| Business | $19 | Monthly (1st) | GPT-5, Claude 4.5, Gemini 3 |
+| Plan       | Monthly Cost | Quota Reset   | Models                      |
+| ---------- | ------------ | ------------- | --------------------------- |
+| Individual | $10          | Monthly (1st) | GPT-5, Claude 4.5, Gemini 3 |
+| Business   | $19          | Monthly (1st) | GPT-5, Claude 4.5, Gemini 3 |
 
 ### Setup
 
@@ -208,12 +208,12 @@ Model: gh/gpt-5
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | Latest OpenAI model |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Maximum context |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Anthropic quality |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Google quality |
+| Model ID               | Description       | Best For            |
+| ---------------------- | ----------------- | ------------------- |
+| `gh/gpt-5`             | GPT-5             | Latest OpenAI model |
+| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Maximum context     |
+| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Anthropic quality   |
+| `gh/gemini-3-pro`      | Gemini 3 Pro      | Google quality      |
 
 ### Pro Tips
 
@@ -227,9 +227,9 @@ Model: gh/gpt-5
 
 ### Pricing
 
-| Plan | Monthly Cost | Quota | Models |
-|------|--------------|-------|--------|
-| FREE | $0 | Similar to Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
+| Plan | Monthly Cost | Quota                 | Models                          |
+| ---- | ------------ | --------------------- | ------------------------------- |
+| FREE | $0           | Similar to Gemini CLI | Gemini 3 Pro, Claude Sonnet 4.5 |
 
 ### Setup
 
@@ -257,11 +257,11 @@ Model: ag/gemini-3-pro-high
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | High-quality responses |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Anthropic quality |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Complex reasoning |
+| Model ID                      | Description              | Best For               |
+| ----------------------------- | ------------------------ | ---------------------- |
+| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | High-quality responses |
+| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Anthropic quality      |
+| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Complex reasoning      |
 
 ### Pro Tips
 
@@ -273,15 +273,15 @@ Model: ag/gemini-3-pro-high
 
 ## Pricing Comparison
 
-| Provider | Monthly Cost | Quota Reset | Value |
-|----------|--------------|-------------|-------|
-| **Claude Code Pro** | $20 | 5-hour + Weekly | ⭐⭐⭐⭐⭐ Best quality |
-| **Claude Code Max** | $100 | 5-hour + Weekly | ⭐⭐⭐⭐⭐ Highest quota |
-| **Codex Plus** | $20 | 5-hour + Weekly | ⭐⭐⭐⭐ Good value |
-| **Codex Pro** | $200 | 5-hour + Weekly | ⭐⭐⭐⭐⭐ 10× quota |
-| **Gemini CLI** | **$0** | Daily + Monthly | ⭐⭐⭐⭐⭐ FREE 180K/month! |
-| **GitHub Copilot** | $10-19 | Monthly (1st) | ⭐⭐⭐⭐ Multi-model |
-| **Antigravity** | **$0** | Daily + Monthly | ⭐⭐⭐⭐ FREE Claude! |
+| Provider            | Monthly Cost | Quota Reset     | Value                       |
+| ------------------- | ------------ | --------------- | --------------------------- |
+| **Claude Code Pro** | $20          | 5-hour + Weekly | ⭐⭐⭐⭐⭐ Best quality     |
+| **Claude Code Max** | $100         | 5-hour + Weekly | ⭐⭐⭐⭐⭐ Highest quota    |
+| **Codex Plus**      | $20          | 5-hour + Weekly | ⭐⭐⭐⭐ Good value         |
+| **Codex Pro**       | $200         | 5-hour + Weekly | ⭐⭐⭐⭐⭐ 10× quota        |
+| **Gemini CLI**      | **$0**       | Daily + Monthly | ⭐⭐⭐⭐⭐ FREE 180K/month! |
+| **GitHub Copilot**  | $10-19       | Monthly (1st)   | ⭐⭐⭐⭐ Multi-model        |
+| **Antigravity**     | **$0**       | Daily + Monthly | ⭐⭐⭐⭐ FREE Claude!       |
 
 ---
 
@@ -378,6 +378,7 @@ Night: Cheap/free tier
 ### "Quota exhausted"
 
 **Solution:**
+
 - Check dashboard quota tracker
 - Wait for reset (5-hour or daily)
 - Use combo fallback to cheap/free tier
@@ -385,12 +386,14 @@ Night: Cheap/free tier
 ### "OAuth token expired"
 
 **Solution:**
+
 - Auto-refreshed by 9Router
 - If issues: Dashboard → Provider → Reconnect
 
 ### "Rate limiting"
 
 **Solution:**
+
 - Subscription quota out
 - Add fallback: `cc/claude-opus → glm/glm-4.7`
 - Use free tier: `if/kimi-k2-thinking`

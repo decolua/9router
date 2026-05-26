@@ -35,13 +35,17 @@ JS (OpenAI SDK):
 
 ```js
 import OpenAI from "openai";
-const client = new OpenAI({ baseURL: `${process.env.NINEROUTER_URL}/v1`, apiKey: process.env.NINEROUTER_KEY });
+const client = new OpenAI({
+  baseURL: `${process.env.NINEROUTER_URL}/v1`,
+  apiKey: process.env.NINEROUTER_KEY,
+});
 const res = await client.chat.completions.create({
   model: "openai/gpt-5",
   messages: [{ role: "user", content: "Hi" }],
   stream: true,
 });
-for await (const chunk of res) process.stdout.write(chunk.choices[0]?.delta?.content || "");
+for await (const chunk of res)
+  process.stdout.write(chunk.choices[0]?.delta?.content || "");
 ```
 
 ## Anthropic format
@@ -57,17 +61,35 @@ curl -X POST $NINEROUTER_URL/v1/messages \
 ## Response shape
 
 OpenAI (`/v1/chat/completions`):
+
 ```json
-{ "id": "chatcmpl-...", "object": "chat.completion", "model": "openai/gpt-5",
-  "choices": [{ "index": 0, "message": { "role": "assistant", "content": "Hello!" }, "finish_reason": "stop" }],
-  "usage": { "prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10 } }
+{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "model": "openai/gpt-5",
+  "choices": [
+    {
+      "index": 0,
+      "message": { "role": "assistant", "content": "Hello!" },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": { "prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10 }
+}
 ```
 
 Streaming (`stream:true`) emits SSE: `data: {choices:[{delta:{content:"..."}}]}\n\n` ... `data: [DONE]\n\n`.
 
 Anthropic (`/v1/messages`):
+
 ```json
-{ "id": "msg_...", "type": "message", "role": "assistant", "model": "cc/claude-opus-4-7",
+{
+  "id": "msg_...",
+  "type": "message",
+  "role": "assistant",
+  "model": "cc/claude-opus-4-7",
   "content": [{ "type": "text", "text": "Hello!" }],
-  "stop_reason": "end_turn", "usage": { "input_tokens": 8, "output_tokens": 2 } }
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 8, "output_tokens": 2 }
+}
 ```

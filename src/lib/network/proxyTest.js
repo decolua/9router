@@ -10,7 +10,9 @@ function getErrorMessage(err) {
   const causeMessage = err?.cause?.message;
 
   if (causeMessage && causeMessage !== base) {
-    return causeCode ? `${base}: ${causeMessage} (${causeCode})` : `${base}: ${causeMessage}`;
+    return causeCode
+      ? `${base}: ${causeMessage} (${causeCode})`
+      : `${base}: ${causeMessage}`;
   }
 
   if (causeCode && !base.includes(causeCode)) {

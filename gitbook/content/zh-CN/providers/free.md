@@ -20,9 +20,9 @@
 
 ### 价格
 
-| 套餐 | 月费 | 模型 | 配额 |
-|------|--------------|--------|-------|
-| 免费 | $0 | 8 个模型 | 无限 |
+| 套餐 | 月费 | 模型     | 配额 |
+| ---- | ---- | -------- | ---- |
+| 免费 | $0   | 8 个模型 | 无限 |
 
 **最佳价值:** 免费层中模型最多!Kimi K2、Qwen3、GLM、MiniMax、DeepSeek。
 
@@ -58,16 +58,16 @@ Model: if/kimi-k2-thinking
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | 复杂推理 |
-| `if/kimi-k2` | Kimi K2 | 通用编码 |
-| `if/qwen3-coder-plus` | Qwen3 Coder Plus | 代码生成 |
-| `if/glm-4.7` | GLM 4.7 | 中文 + 英文 |
-| `if/minimax-m2` | MiniMax M2 | 长上下文 |
-| `if/deepseek-r1` | DeepSeek R1 | 推理任务 |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | 对话型 |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | 复杂逻辑 |
+| 模型 ID                     | 描述                   | 最佳场景    |
+| --------------------------- | ---------------------- | ----------- |
+| `if/kimi-k2-thinking`       | Kimi K2 Thinking       | 复杂推理    |
+| `if/kimi-k2`                | Kimi K2                | 通用编码    |
+| `if/qwen3-coder-plus`       | Qwen3 Coder Plus       | 代码生成    |
+| `if/glm-4.7`                | GLM 4.7                | 中文 + 英文 |
+| `if/minimax-m2`             | MiniMax M2             | 长上下文    |
+| `if/deepseek-r1`            | DeepSeek R1            | 推理任务    |
+| `if/deepseek-v3.2-chat`     | DeepSeek V3.2 Chat     | 对话型      |
+| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | 复杂逻辑    |
 
 ### 专业建议
 
@@ -82,9 +82,9 @@ Model: if/kimi-k2-thinking
 
 ### 价格
 
-| 套餐 | 月费 | 模型 | 配额 |
-|------|--------------|--------|-------|
-| 免费 | $0 | 3 个模型 | 无限 |
+| 套餐 | 月费 | 模型     | 配额 |
+| ---- | ---- | -------- | ---- |
+| 免费 | $0   | 3 个模型 | 无限 |
 
 ### 设置
 
@@ -114,11 +114,11 @@ Model: qw/qwen3-coder-plus
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | 高级编码 |
+| 模型 ID                | 描述              | 最佳场景 |
+| ---------------------- | ----------------- | -------- |
+| `qw/qwen3-coder-plus`  | Qwen3 Coder Plus  | 高级编码 |
 | `qw/qwen3-coder-flash` | Qwen3 Coder Flash | 快速响应 |
-| `qw/vision-model` | Qwen3 Vision | 图像分析 |
+| `qw/vision-model`      | Qwen3 Vision      | 图像分析 |
 
 ### 专业建议
 
@@ -133,9 +133,9 @@ Model: qw/qwen3-coder-plus
 
 ### 价格
 
-| 套餐 | 月费 | 模型 | 配额 |
-|------|--------------|--------|-------|
-| 免费 | $0 | Claude Sonnet 4.5、Haiku 4.5 | 无限 |
+| 套餐 | 月费 | 模型                         | 配额 |
+| ---- | ---- | ---------------------------- | ---- |
+| 免费 | $0   | Claude Sonnet 4.5、Haiku 4.5 | 无限 |
 
 **最佳价值:** 免费 Claude!与付费 Claude Code 同质量。
 
@@ -167,10 +167,10 @@ Model: kr/claude-sonnet-4.5
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
+| 模型 ID                | 描述              | 最佳场景      |
+| ---------------------- | ----------------- | ------------- |
 | `kr/claude-sonnet-4.5` | Claude Sonnet 4.5 | 质量/速度平衡 |
-| `kr/claude-haiku-4.5` | Claude Haiku 4.5 | 快速响应 |
+| `kr/claude-haiku-4.5`  | Claude Haiku 4.5  | 快速响应      |
 
 ### 专业建议
 
@@ -183,11 +183,11 @@ Model: kr/claude-sonnet-4.5
 
 ## 特性对比
 
-| 提供商 | 模型 | 最佳模型 | 设置方式 | 配额 |
-|----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | 无限 |
-| **Qwen** | 3 | Qwen3 Coder Plus | 设备码 | 无限 |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | 无限 |
+| 提供商    | 模型 | 最佳模型          | 设置方式       | 配额 |
+| --------- | ---- | ----------------- | -------------- | ---- |
+| **iFlow** | 8    | Kimi K2 Thinking  | OAuth          | 无限 |
+| **Qwen**  | 3    | Qwen3 Coder Plus  | 设备码         | 无限 |
+| **Kiro**  | 2    | Claude Sonnet 4.5 | AWS Builder ID | 无限 |
 
 **赢家:** 多样性看 iFlow,质量看 Kiro!
 
@@ -242,6 +242,7 @@ CLI 中使用: complete-fallback
 ```
 
 **结果:**
+
 - 第 1 层: 免费订阅(Gemini CLI)
 - 第 2 层: 付费订阅(Claude Code)
 - 第 3 层: 低价备用(GLM、MiniMax)
@@ -372,17 +373,20 @@ CLI 中使用: complete-fallback
 ### 场景:每月 100M tokens
 
 **方案 1:仅 ChatGPT API**
+
 ```
 100M × $20/1M = $2,000/月
 ```
 
 **方案 2:仅 9Router 免费层**
+
 ```
 100M 通过免费层 = $0/月
 节省: $2,000/月 (100%)
 ```
 
 **方案 3:9Router 完整策略**
+
 ```
 60M 通过 Gemini CLI(免费): $0
 30M 通过 Claude Code(订阅): 无额外费用
@@ -399,6 +403,7 @@ CLI 中使用: complete-fallback
 ### "OAuth failed"
 
 **方案:**
+
 - 检查网络连接
 - 尝试其他浏览器
 - 清除浏览器缓存
@@ -407,6 +412,7 @@ CLI 中使用: complete-fallback
 ### "Model not available"
 
 **方案:**
+
 - 检查仪表盘中提供商已连接
 - 确认 OAuth token 有效
 - 必要时重新连接提供商
@@ -414,6 +420,7 @@ CLI 中使用: complete-fallback
 ### "Slow responses"
 
 **方案:**
+
 - 免费层优先级较低
 - 在非高峰时段使用
 - 切换到其他免费提供商

@@ -16,7 +16,7 @@ export async function POST(request) {
     if (!accessToken || typeof accessToken !== "string") {
       return NextResponse.json(
         { error: "Access token is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -33,12 +33,15 @@ export async function POST(request) {
         const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
         const missingPadding = (4 - (base64.length % 4)) % 4;
         const padded = base64 + "=".repeat(missingPadding);
-        const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+        const payload = JSON.parse(
+          Buffer.from(padded, "base64").toString("utf8"),
+        );
 
         // Extract from OpenAI JWT structure
         const auth = payload["https://api.openai.com/auth"] || {};
         const profile = payload["https://api.openai.com/profile"] || {};
-        email = profile.email || payload.email || payload.preferred_username || null;
+        email =
+          profile.email || payload.email || payload.preferred_username || null;
 
         if (auth.chatgpt_account_id) {
           providerSpecificData.chatgptAccountId = auth.chatgpt_account_id;
@@ -61,8 +64,10 @@ export async function POST(request) {
     if (!email) {
       const info = extractCodexAccountInfo(token);
       if (info.email) email = info.email;
-      if (info.chatgptAccountId) providerSpecificData.chatgptAccountId = info.chatgptAccountId;
-      if (info.chatgptPlanType) providerSpecificData.chatgptPlanType = info.chatgptPlanType;
+      if (info.chatgptAccountId)
+        providerSpecificData.chatgptAccountId = info.chatgptAccountId;
+      if (info.chatgptPlanType)
+        providerSpecificData.chatgptPlanType = info.chatgptPlanType;
     }
 
     const connectionName = name || email || "ChatGPT Access Token";

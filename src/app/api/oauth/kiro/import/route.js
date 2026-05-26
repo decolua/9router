@@ -13,14 +13,16 @@ export async function POST(request) {
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
         { error: "Refresh token is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     const kiroService = new KiroService();
 
     // Validate and refresh token
-    const tokenData = await kiroService.validateImportToken(refreshToken.trim());
+    const tokenData = await kiroService.validateImportToken(
+      refreshToken.trim(),
+    );
 
     // Extract email from JWT if available
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
@@ -31,7 +33,9 @@ export async function POST(request) {
       authType: "oauth",
       accessToken: tokenData.accessToken,
       refreshToken: tokenData.refreshToken,
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      expiresAt: new Date(
+        Date.now() + tokenData.expiresIn * 1000,
+      ).toISOString(),
       email: email || null,
       providerSpecificData: {
         profileArn: tokenData.profileArn,

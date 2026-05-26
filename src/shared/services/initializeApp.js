@@ -181,7 +181,8 @@ async function autoStartMitm() {
 
 // Cooldown only applies to repeating watchdog ticks (anti hammer-loop).
 // Network/exit events are one-shot transitions → bypass to recover fast.
-const FORCE_RESTART_REASONS = /^(startup|netchange|sleep|sleep\+netchange|online|unexpected-exit)$/;
+const FORCE_RESTART_REASONS =
+  /^(startup|netchange|sleep|sleep\+netchange|online|unexpected-exit)$/;
 
 // ─── Safe restart (4 guards: spawn / cooldown / alive / internet) ────────────
 
@@ -221,7 +222,9 @@ async function safeRestartTunnel(reason) {
   }
   if (!(await checkInternet())) return;
 
-  console.log(`[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  console.log(
+    `[Tunnel] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`,
+  );
   try {
     await enableTunnel();
     svc.lastRestartAt = Date.now();
@@ -252,7 +255,9 @@ async function safeRestartTailscale(reason) {
   }
   if (!(await checkInternet())) return;
 
-  console.log(`[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`);
+  console.log(
+    `[Tailscale] safeRestart (${reason}) — tunnel unreachable${force ? " [force]" : ""}`,
+  );
   try {
     await enableTailscale();
     svc.lastRestartAt = Date.now();

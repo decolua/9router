@@ -105,7 +105,7 @@ export async function getObservabilityWorker() {
     const { Worker } = await import("worker_threads");
     const { fileURLToPath } = await import("url");
     const path = await import("path");
-    
+
     // Resolve absolute path string directly from the ESM raw string metadata to bypass Webpack's URL polyfill
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);

@@ -52,14 +52,19 @@ function DonateModalContent({ onClose }) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+        onClick={onClose}
+      />
       <div
         ref={modalRef}
         className="relative w-full bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-w-3xl flex flex-col max-h-[85vh]"
       >
         <div className="flex items-center justify-between p-3 border-b border-black/5 dark:border-white/5">
           <h2 className="text-lg font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-pink-500">volunteer_activism</span>
+            <span className="material-symbols-outlined text-pink-500">
+              volunteer_activism
+            </span>
             {data?.title || "Support 9Router"}
           </h2>
           <button
@@ -74,17 +79,23 @@ function DonateModalContent({ onClose }) {
         <div className="p-6 overflow-y-auto flex-1">
           {loading && (
             <div className="flex items-center justify-center py-10 text-text-muted">
-              <span className="material-symbols-outlined animate-spin mr-2">progress_activity</span>
+              <span className="material-symbols-outlined animate-spin mr-2">
+                progress_activity
+              </span>
               Loading...
             </div>
           )}
           {error && (
-            <div className="text-red-500 py-4">Failed to load donate info: {error}</div>
+            <div className="text-red-500 py-4">
+              Failed to load donate info: {error}
+            </div>
           )}
           {!loading && !error && data && (
             <>
               {data.message && (
-                <p className="text-text-muted text-sm mb-6 text-center">{data.message}</p>
+                <p className="text-text-muted text-sm mb-6 text-center">
+                  {data.message}
+                </p>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {data.channels?.map((ch) => (
@@ -107,7 +118,9 @@ DonateModalContent.propTypes = {
 export default function DonateModal({ isOpen, onClose }) {
   if (!isOpen || typeof document === "undefined") return null;
 
-  return <DonateModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />;
+  return (
+    <DonateModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />
+  );
 }
 
 function DonateChannelCard({ channel }) {
@@ -122,7 +135,9 @@ function DonateChannelCard({ channel }) {
       </div>
       <div className="font-semibold text-text-main mb-1">{label}</div>
       {description && (
-        <div className="text-xs text-text-muted mb-3 text-center">{description}</div>
+        <div className="text-xs text-text-muted mb-3 text-center">
+          {description}
+        </div>
       )}
       {qr && (
         <img
@@ -146,7 +161,9 @@ function DonateChannelCard({ channel }) {
           style={{ backgroundColor: color }}
         >
           Open
-          <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+          <span className="material-symbols-outlined text-[16px]">
+            open_in_new
+          </span>
         </a>
       )}
     </div>

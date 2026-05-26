@@ -22,7 +22,7 @@ export class GithubExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true) {
     const token = credentials.copilotToken || credentials.accessToken;
     return {
-      "Authorization": `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "copilot-integration-id": "vscode-chat",
       "editor-version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
@@ -30,10 +30,12 @@ export class GithubExecutor extends BaseExecutor {
       "user-agent": GITHUB_COPILOT.USER_AGENT,
       "openai-intent": "conversation-panel",
       "x-github-api-version": GITHUB_COPILOT.API_VERSION,
-      "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      "x-request-id":
+        crypto.randomUUID?.() ||
+        `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
-      "Accept": stream ? "text/event-stream" : "application/json"
+      Accept: stream ? "text/event-stream" : "application/json",
     };
   }
 
@@ -44,37 +46,51 @@ export class GithubExecutor extends BaseExecutor {
     if (!body?.messages) return body;
 
     const sanitized = { ...body };
-    
+
     // Handle response_format for Claude models via GitHub
     // GitHub's internal translation doesn't respect response_format, so we inject it as a system prompt
     // AND prepend a reminder to the last user message for maximum effectiveness
-    if (body.response_format && body.model?.includes('claude')) {
+    if (body.response_format && body.model?.includes("claude")) {
       const responseFormat = body.response_format;
-      let systemInstruction = '';
-      if (responseFormat.type === 'json_schema' && responseFormat.json_schema?.schema) {
-        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks. Never wrap JSON in triple backticks. Output ONLY the raw JSON object.';
-      } else if (responseFormat.type === 'json_object') {
-        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks.';
+      let systemInstruction = "";
+      if (
+        responseFormat.type === "json_schema" &&
+        responseFormat.json_schema?.schema
+      ) {
+        systemInstruction =
+          "CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks. Never wrap JSON in triple backticks. Output ONLY the raw JSON object.";
+      } else if (responseFormat.type === "json_object") {
+        systemInstruction =
+          "CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks.";
       }
       if (systemInstruction) {
         // Add to system message
-        const systemIdx = body.messages.findIndex(m => m.role === 'system');
+        const systemIdx = body.messages.findIndex((m) => m.role === "system");
         if (systemIdx >= 0) {
-          body.messages[systemIdx].content = systemInstruction + '\n\n' + body.messages[systemIdx].content;
+          body.messages[systemIdx].content =
+            systemInstruction + "\n\n" + body.messages[systemIdx].content;
         } else {
-          body.messages.unshift({ role: 'system', content: systemInstruction });
+          body.messages.unshift({ role: "system", content: systemInstruction });
         }
-        
+
         // Also prepend to the last user message as a reminder
-        const lastUserIdx = body.messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0).pop();
+        const lastUserIdx = body.messages
+          .map((m, i) => (m.role === "user" ? i : -1))
+          .filter((i) => i >= 0)
+          .pop();
         if (lastUserIdx >= 0) {
           const userMsg = body.messages[lastUserIdx];
-          const userContent = typeof userMsg.content === 'string' ? userMsg.content : JSON.stringify(userMsg.content);
-          userMsg.content = 'Respond with ONLY raw JSON (no markdown, no backticks, no code blocks): ' + userContent;
+          const userContent =
+            typeof userMsg.content === "string"
+              ? userMsg.content
+              : JSON.stringify(userMsg.content);
+          userMsg.content =
+            "Respond with ONLY raw JSON (no markdown, no backticks, no code blocks): " +
+            userContent;
         }
       }
     }
-    sanitized.messages = body.messages.map(msg => {
+    sanitized.messages = body.messages.map((msg) => {
       // assistant messages with only tool_calls have content: null — leave as-is
       if (!msg.content) return msg;
 
@@ -84,17 +100,23 @@ export class GithubExecutor extends BaseExecutor {
       // Array content: filter/convert unsupported part types
       if (Array.isArray(msg.content)) {
         const cleanContent = msg.content
-          .map(part => {
+          .map((part) => {
             if (part.type === "text") return part;
             if (part.type === "image_url") return part;
             // Serialize tool_use, tool_result, thinking, etc. as text
             const text = part.text || part.content || JSON.stringify(part);
-            return { type: "text", text: typeof text === "string" ? text : JSON.stringify(text) };
+            return {
+              type: "text",
+              text: typeof text === "string" ? text : JSON.stringify(text),
+            };
           })
-          .filter(part => part.text !== ""); // remove empty text parts
+          .filter((part) => part.text !== ""); // remove empty text parts
 
         // If all content was stripped (e.g. only tool_result with no text), drop content
-        return { ...msg, content: cleanContent.length > 0 ? cleanContent : null };
+        return {
+          ...msg,
+          content: cleanContent.length > 0 ? cleanContent : null,
+        };
       }
 
       return msg;
@@ -127,7 +149,8 @@ export class GithubExecutor extends BaseExecutor {
   supportsReasoningEffort(model) {
     const m = model.toLowerCase();
     // Claude models that DO support reasoning_effort
-    if (/claude.*opus.*4\.6/i.test(m) || /claude.*sonnet.*4\.6/i.test(m)) return true;
+    if (/claude.*opus.*4\.6/i.test(m) || /claude.*sonnet.*4\.6/i.test(m))
+      return true;
     // All other Claude models: strip
     if (/claude/i.test(model)) return false;
     // GPT-5 family, Gemini, etc.: keep
@@ -136,12 +159,18 @@ export class GithubExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const transformed = { ...body };
-    if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+    if (
+      this.requiresMaxCompletionTokens(model) &&
+      transformed.max_tokens !== undefined
+    ) {
       transformed.max_completion_tokens = transformed.max_tokens;
       delete transformed.max_tokens;
     }
     // Strip temperature for models that don't support it
-    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+    if (
+      !this.supportsTemperature(model) &&
+      transformed.temperature !== undefined
+    ) {
       delete transformed.temperature;
     }
     // Always strip Claude-style thinking payload (Copilot doesn't understand it)
@@ -153,7 +182,10 @@ export class GithubExecutor extends BaseExecutor {
       delete transformed.reasoning_effort;
     }
     // Strip reasoning_effort only for models that reject it
-    if (!this.supportsReasoningEffort(model) && transformed.reasoning_effort !== undefined) {
+    if (
+      !this.supportsReasoningEffort(model) &&
+      transformed.reasoning_effort !== undefined
+    ) {
       delete transformed.reasoning_effort;
     }
     return transformed;
@@ -172,15 +204,23 @@ export class GithubExecutor extends BaseExecutor {
     // This handles Claude models on GitHub Copilot which reject non-text/image_url content types
     const sanitizedOptions = {
       ...options,
-      body: this.sanitizeMessagesForChatCompletions(options.body)
+      body: this.sanitizeMessagesForChatCompletions(options.body),
     };
 
-    const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
+    const result = await super.execute({
+      ...sanitizedOptions,
+      proxyOptions: options.proxyOptions || null,
+    });
 
     if (result.response.status === HTTP_STATUS.BAD_REQUEST) {
       const errorBody = await result.response.clone().text();
 
-      if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
+      if (
+        errorBody.includes(
+          "not accessible via the /chat/completions endpoint",
+        ) ||
+        errorBody.includes("The requested model is not supported")
+      ) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
         return this.executeWithResponsesEndpoint(options);
@@ -190,20 +230,37 @@ export class GithubExecutor extends BaseExecutor {
     return result;
   }
 
-  async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async executeWithResponsesEndpoint({
+    model,
+    body,
+    stream,
+    credentials,
+    signal,
+    log,
+    proxyOptions = null,
+  }) {
     const url = this.config.responsesUrl;
     const headers = this.buildHeaders(credentials, stream);
 
-    const transformedBody = openaiToOpenAIResponsesRequest(model, body, stream, credentials);
+    const transformedBody = openaiToOpenAIResponsesRequest(
+      model,
+      body,
+      stream,
+      credentials,
+    );
 
     log?.debug("GITHUB", "Sending translated request to /responses");
 
-    const response = await proxyAwareFetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(transformedBody),
-      signal
-    }, proxyOptions);
+    const response = await proxyAwareFetch(
+      url,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(transformedBody),
+        signal,
+      },
+      proxyOptions,
+    );
 
     if (!response.ok) {
       return { response, url, headers, transformedBody };
@@ -247,15 +304,25 @@ export class GithubExecutor extends BaseExecutor {
           if (parsed && !parsed.done) {
             const converted = openaiResponsesToOpenAIResponse(parsed, state);
             if (converted) {
-              controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
+              controller.enqueue(
+                new TextEncoder().encode(formatSSE(converted, "openai")),
+              );
             }
           }
         }
-      }
+      },
     });
 
     if (!response.body) {
-      return { response: new Response("", { status: response.status, headers: response.headers }), url, headers, transformedBody };
+      return {
+        response: new Response("", {
+          status: response.status,
+          headers: response.headers,
+        }),
+        url,
+        headers,
+        transformedBody,
+      };
     }
     const convertedStream = response.body.pipeThrough(transformStream);
 
@@ -263,29 +330,36 @@ export class GithubExecutor extends BaseExecutor {
       response: new Response(convertedStream, {
         status: response.status,
         statusText: response.statusText,
-        headers: response.headers
+        headers: response.headers,
       }),
       url,
       headers,
-      transformedBody
+      transformedBody,
     };
   }
 
   async refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
     try {
-      const response = await proxyAwareFetch("https://api.github.com/copilot_internal/v2/token", {
-        headers: {
-          "Authorization": `token ${githubAccessToken}`,
-          "User-Agent": GITHUB_COPILOT.USER_AGENT,
-          "Editor-Version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
-          "Editor-Plugin-Version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
-          "Accept": "application/json",
-          "x-github-api-version": GITHUB_COPILOT.API_VERSION
-        }
-      }, proxyOptions);
+      const response = await proxyAwareFetch(
+        "https://api.github.com/copilot_internal/v2/token",
+        {
+          headers: {
+            Authorization: `token ${githubAccessToken}`,
+            "User-Agent": GITHUB_COPILOT.USER_AGENT,
+            "Editor-Version": `vscode/${GITHUB_COPILOT.VSCODE_VERSION}`,
+            "Editor-Plugin-Version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
+            Accept: "application/json",
+            "x-github-api-version": GITHUB_COPILOT.API_VERSION,
+          },
+        },
+        proxyOptions,
+      );
       if (!response.ok) {
         const errorText = await response.text();
-        log?.error?.("TOKEN", `Copilot token refresh failed: ${response.status} ${errorText}`);
+        log?.error?.(
+          "TOKEN",
+          `Copilot token refresh failed: ${response.status} ${errorText}`,
+        );
         return null;
       }
       const data = await response.json();
@@ -308,15 +382,26 @@ export class GithubExecutor extends BaseExecutor {
         params.client_secret = this.config.clientSecret;
       }
 
-      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.github.token, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams(params)
-      }, proxyOptions);
+      const response = await proxyAwareFetch(
+        OAUTH_ENDPOINTS.github.token,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "application/json",
+          },
+          body: new URLSearchParams(params),
+        },
+        proxyOptions,
+      );
       if (!response.ok) return null;
       const tokens = await response.json();
       log?.info?.("TOKEN", "GitHub token refreshed");
-      return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || refreshToken,
+        expiresIn: tokens.expires_in,
+      };
     } catch (error) {
       log?.error?.("TOKEN", `GitHub refresh error: ${error.message}`);
       return null;
@@ -324,21 +409,42 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   async refreshCredentials(credentials, log, proxyOptions = null) {
-    let copilotResult = await this.refreshCopilotToken(credentials.accessToken, log, proxyOptions);
+    let copilotResult = await this.refreshCopilotToken(
+      credentials.accessToken,
+      log,
+      proxyOptions,
+    );
 
     if (!copilotResult && credentials.refreshToken) {
-      const githubTokens = await this.refreshGitHubToken(credentials.refreshToken, log, proxyOptions);
+      const githubTokens = await this.refreshGitHubToken(
+        credentials.refreshToken,
+        log,
+        proxyOptions,
+      );
       if (githubTokens?.accessToken) {
-        copilotResult = await this.refreshCopilotToken(githubTokens.accessToken, log, proxyOptions);
+        copilotResult = await this.refreshCopilotToken(
+          githubTokens.accessToken,
+          log,
+          proxyOptions,
+        );
         if (copilotResult) {
-          return { ...githubTokens, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
+          return {
+            ...githubTokens,
+            copilotToken: copilotResult.token,
+            copilotTokenExpiresAt: copilotResult.expiresAt,
+          };
         }
         return githubTokens;
       }
     }
 
     if (copilotResult) {
-      return { accessToken: credentials.accessToken, refreshToken: credentials.refreshToken, copilotToken: copilotResult.token, copilotTokenExpiresAt: copilotResult.expiresAt };
+      return {
+        accessToken: credentials.accessToken,
+        refreshToken: credentials.refreshToken,
+        copilotToken: copilotResult.token,
+        copilotTokenExpiresAt: copilotResult.expiresAt,
+      };
     }
 
     return null;

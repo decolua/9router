@@ -8,10 +8,11 @@ import { deriveSessionId } from "../../utils/sessionManager.js";
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
   if (Array.isArray(msg.content)) {
-    return msg.content.some(block =>
-      (block.type === "text" && block.text?.trim()) ||
-      block.type === "tool_use" ||
-      block.type === "tool_result"
+    return msg.content.some(
+      (block) =>
+        (block.type === "text" && block.text?.trim()) ||
+        block.type === "tool_use" ||
+        block.type === "tool_result",
     );
   }
   return false;
@@ -26,7 +27,7 @@ export function fixToolUseOrdering(messages) {
   // Pass 1: Fix assistant messages with tool_use - remove text after tool_use
   for (const msg of messages) {
     if (msg.role === "assistant" && Array.isArray(msg.content)) {
-      const hasToolUse = msg.content.some(b => b.type === "tool_use");
+      const hasToolUse = msg.content.some((b) => b.type === "tool_use");
       if (hasToolUse) {
         // Keep only: thinking blocks + tool_use blocks (remove text blocks after tool_use)
         const newContent = [];
@@ -36,7 +37,10 @@ export function fixToolUseOrdering(messages) {
           if (block.type === "tool_use") {
             foundToolUse = true;
             newContent.push(block);
-          } else if (block.type === "thinking" || block.type === "redacted_thinking") {
+          } else if (
+            block.type === "thinking" ||
+            block.type === "redacted_thinking"
+          ) {
             newContent.push(block);
           } else if (!foundToolUse) {
             // Keep text blocks BEFORE tool_use
@@ -58,17 +62,29 @@ export function fixToolUseOrdering(messages) {
 
     if (last && last.role === msg.role) {
       // Merge content arrays
-      const lastContent = Array.isArray(last.content) ? last.content : [{ type: "text", text: last.content }];
-      const msgContent = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
+      const lastContent = Array.isArray(last.content)
+        ? last.content
+        : [{ type: "text", text: last.content }];
+      const msgContent = Array.isArray(msg.content)
+        ? msg.content
+        : [{ type: "text", text: msg.content }];
 
       // Put tool_result first, then other content
-      const toolResults = [...lastContent.filter(b => b.type === "tool_result"), ...msgContent.filter(b => b.type === "tool_result")];
-      const otherContent = [...lastContent.filter(b => b.type !== "tool_result"), ...msgContent.filter(b => b.type !== "tool_result")];
+      const toolResults = [
+        ...lastContent.filter((b) => b.type === "tool_result"),
+        ...msgContent.filter((b) => b.type === "tool_result"),
+      ];
+      const otherContent = [
+        ...lastContent.filter((b) => b.type !== "tool_result"),
+        ...msgContent.filter((b) => b.type !== "tool_result"),
+      ];
 
       last.content = [...toolResults, ...otherContent];
     } else {
       // Ensure content is array
-      const content = Array.isArray(msg.content) ? msg.content : [{ type: "text", text: msg.content }];
+      const content = Array.isArray(msg.content)
+        ? msg.content
+        : [{ type: "text", text: msg.content }];
       merged.push({ role: msg.role, content: [...content] });
     }
   }
@@ -76,7 +92,10 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
-const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minimax-cn"]);
+const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set([
+  "minimax",
+  "minimax-cn",
+]);
 
 // Prepare request for Claude format endpoints
 // - Cleanup cache_control
@@ -84,7 +103,12 @@ const CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG = new Set(["minimax", "minim
 // - Add thinking block for Anthropic endpoint (provider === "claude")
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
-export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null) {
+export function prepareClaudeRequest(
+  body,
+  provider = null,
+  apiKey = null,
+  connectionId = null,
+) {
   // MiniMax exposes a Claude-compatible endpoint but rejects Anthropic's extended
   // structured output parameter with a generic 400 "invalid params" response.
   if (CLAUDE_FORMAT_PROVIDERS_WITHOUT_OUTPUT_CONFIG.has(provider)) {
@@ -134,7 +158,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // Check if thinking is enabled AND last message is from user
     const lastMessage = filtered[filtered.length - 1];
     const lastMessageIsUser = lastMessage?.role === "user";
-    const thinkingEnabled = body.thinking?.type === "enabled" && lastMessageIsUser;
+    const thinkingEnabled =
+      body.thinking?.type === "enabled" && lastMessageIsUser;
 
     // Pass 2 (reverse): add cache_control to last assistant + handle thinking for Anthropic
     let lastAssistantProcessed = false;
@@ -147,7 +172,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         if (!lastAssistantProcessed && msg.content.length > 0) {
           for (let j = msg.content.length - 1; j >= 0; j--) {
             const block = msg.content[j];
-            if (block.type !== "thinking" && block.type !== "redacted_thinking") {
+            if (
+              block.type !== "thinking" &&
+              block.type !== "redacted_thinking"
+            ) {
               block.cache_control = { type: "ephemeral" };
               break;
             }
@@ -156,13 +184,19 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         }
 
         // Handle thinking blocks for Anthropic endpoint only
-        if (provider === "claude" || provider?.startsWith("anthropic-compatible")) {
+        if (
+          provider === "claude" ||
+          provider?.startsWith("anthropic-compatible")
+        ) {
           let hasToolUse = false;
           let hasThinking = false;
 
           // Always replace signature for all thinking blocks
           for (const block of msg.content) {
-            if (block.type === "thinking" || block.type === "redacted_thinking") {
+            if (
+              block.type === "thinking" ||
+              block.type === "redacted_thinking"
+            ) {
               block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
               hasThinking = true;
             }
@@ -174,7 +208,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
             msg.content.unshift({
               type: "thinking",
               thinking: ".",
-              signature: DEFAULT_THINKING_CLAUDE_SIGNATURE
+              signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
             });
           }
         }
@@ -186,7 +220,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if (body.tools && Array.isArray(body.tools)) {
     // Strip built-in tools (e.g. web_search_20250305) for providers that don't support them
     if (provider !== "claude") {
-      body.tools = body.tools.filter(tool => !tool.type || tool.type === "function");
+      body.tools = body.tools.filter(
+        (tool) => !tool.type || tool.type === "function",
+      );
     }
 
     body.tools = body.tools.map((tool, i) => {
@@ -206,11 +242,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
   // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
-  if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
+  if (
+    (provider === "claude" || provider?.startsWith("anthropic-compatible")) &&
+    apiKey
+  ) {
     const sessionId = connectionId ? deriveSessionId(connectionId) : null;
     body = applyCloaking(body, apiKey, sessionId);
   }
 
   return body;
 }
-

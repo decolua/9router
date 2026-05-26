@@ -19,20 +19,28 @@ function clearDumpDir() {
   try {
     if (!fs.existsSync(DUMP_DIR)) return;
     for (const f of fs.readdirSync(DUMP_DIR)) {
-      try { fs.rmSync(path.join(DUMP_DIR, f), { recursive: true, force: true }); } catch { /* ignore */ }
+      try {
+        fs.rmSync(path.join(DUMP_DIR, f), { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const EMPTY_BODY_RE = /^\s*(\{\s*\}|\[\s*\]|null)?\s*$/;
 
 function slugify(s, max = 80) {
-  return String(s).replace(/[^a-zA-Z0-9]/g, "_").substring(0, max);
+  return String(s)
+    .replace(/[^a-zA-Z0-9]/g, "_")
+    .substring(0, max);
 }
 
 function isBlacklisted(url) {
   if (!url) return false;
-  return LOG_BLACKLIST_URL_PARTS.some(part => url.includes(part));
+  return LOG_BLACKLIST_URL_PARTS.some((part) => url.includes(part));
 }
 
 // Decode body buffer based on content-encoding header
@@ -43,7 +51,9 @@ function decodeBody(buf, encoding) {
     if (enc.includes("gzip")) return zlib.gunzipSync(buf);
     if (enc.includes("br")) return zlib.brotliDecompressSync(buf);
     if (enc.includes("deflate")) return zlib.inflateSync(buf);
-  } catch { /* return raw on failure */ }
+  } catch {
+    /* return raw on failure */
+  }
   return buf;
 }
 
@@ -55,16 +65,29 @@ function dumpRequest(req, bodyBuffer, tag = "raw") {
     const slug = slugify((req.headers.host || "") + req.url);
     const file = path.join(DUMP_DIR, `${ts}_${tag}_${slug}.req.json`);
     let parsed = null;
-    try { parsed = JSON.parse(bodyBuffer.toString()); } catch { /* not JSON */ }
-    fs.writeFileSync(file, JSON.stringify({
-      method: req.method,
-      url: req.url,
-      host: req.headers.host,
-      headers: req.headers,
-      body: parsed ?? bodyBuffer.toString("utf8")
-    }, null, 2));
+    try {
+      parsed = JSON.parse(bodyBuffer.toString());
+    } catch {
+      /* not JSON */
+    }
+    fs.writeFileSync(
+      file,
+      JSON.stringify(
+        {
+          method: req.method,
+          url: req.url,
+          host: req.headers.host,
+          headers: req.headers,
+          body: parsed ?? bodyBuffer.toString("utf8"),
+        },
+        null,
+        2,
+      ),
+    );
     return file;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 // Buffer-based response dumper — collects chunks then decodes + writes once on end()
@@ -78,7 +101,10 @@ function createResponseDumper(req, tag = "raw") {
   let headers = {};
   const chunks = [];
   return {
-    writeHeader: (s, h) => { status = s; headers = h || {}; },
+    writeHeader: (s, h) => {
+      status = s;
+      headers = h || {};
+    },
     writeChunk: (chunk) => {
       if (chunk == null) return;
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -97,9 +123,11 @@ function createResponseDumper(req, tag = "raw") {
         delete cleanHeaders["Content-Encoding"];
         const out = `STATUS: ${status}\nHEADERS: ${JSON.stringify(cleanHeaders, null, 2)}\n---BODY---\n${text}`;
         fs.writeFileSync(file, out);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     },
-    file
+    file,
   };
 }
 

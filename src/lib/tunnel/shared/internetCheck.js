@@ -13,14 +13,21 @@ export function checkInternet() {
     const finish = (ok) => {
       if (done) return;
       done = true;
-      try { socket.destroy(); } catch { /* ignore */ }
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
       resolve(ok);
     };
     socket.setTimeout(INTERNET_CHECK.timeoutMs);
     socket.once("connect", () => finish(true));
     socket.once("timeout", () => finish(false));
     socket.once("error", () => finish(false));
-    try { socket.connect(INTERNET_CHECK.port, INTERNET_CHECK.host); }
-    catch { finish(false); }
+    try {
+      socket.connect(INTERNET_CHECK.port, INTERNET_CHECK.host);
+    } catch {
+      finish(false);
+    }
   });
 }

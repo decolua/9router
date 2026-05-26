@@ -45,7 +45,9 @@ export default function ConsoleLogClient() {
       } else if (msg.type === "line") {
         setLogs((prev) => {
           const next = [...prev, msg.line];
-          return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
+          return next.length > CONSOLE_LOG_CONFIG.maxLines
+            ? next.slice(-CONSOLE_LOG_CONFIG.maxLines)
+            : next;
         });
       } else if (msg.type === "clear") {
         setLogs([]);
@@ -67,7 +69,12 @@ export default function ConsoleLogClient() {
     <div className="">
       <Card>
         <div className="flex items-center justify-end px-4 pt-3 pb-2">
-          <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
+          <Button
+            size="sm"
+            variant="outline"
+            icon="delete"
+            onClick={handleClear}
+          >
             Clear
           </Button>
         </div>

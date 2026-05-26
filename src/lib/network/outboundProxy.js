@@ -3,9 +3,11 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
-export function applyOutboundProxyEnv(
-  { outboundProxyEnabled, outboundProxyUrl, outboundNoProxy } = {}
-) {
+export function applyOutboundProxyEnv({
+  outboundProxyEnabled,
+  outboundProxyUrl,
+  outboundNoProxy,
+} = {}) {
   if (typeof process === "undefined" || !process.env) return;
   const enabled = Boolean(outboundProxyEnabled);
   const proxyUrl = normalizeString(outboundProxyUrl);

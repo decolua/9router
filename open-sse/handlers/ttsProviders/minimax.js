@@ -10,10 +10,19 @@ function hexToBase64(audioHex) {
 }
 
 // MiniMax T2A HTTP: returns hex-encoded audio in non-streaming mode.
-export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voiceId }) {
+export default async function minimaxTts({
+  baseUrl,
+  apiKey,
+  text,
+  modelId,
+  voiceId,
+}) {
   const res = await fetch(baseUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
       model: modelId || "speech-2.8-hd",
       text,
@@ -38,15 +47,22 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
   const rawText = await res.text();
   let data = {};
   if (rawText) {
-    try { data = JSON.parse(rawText); } catch { data = {}; }
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      data = {};
+    }
   }
 
   const baseResp = data.base_resp || data.baseResp || {};
   const statusCode = Number(baseResp.status_code ?? baseResp.statusCode ?? 0);
-  const statusMessage = baseResp.status_msg || baseResp.statusMsg || data.message || "";
+  const statusMessage =
+    baseResp.status_msg || baseResp.statusMsg || data.message || "";
 
   if (!res.ok) {
-    throw new Error(statusMessage || rawText || `MiniMax TTS error (${res.status})`);
+    throw new Error(
+      statusMessage || rawText || `MiniMax TTS error (${res.status})`,
+    );
   }
   if (statusCode !== 0) {
     throw new Error(statusMessage || "MiniMax TTS upstream error");
@@ -54,6 +70,7 @@ export default async function minimaxTts({ baseUrl, apiKey, text, modelId, voice
 
   return {
     base64: hexToBase64(data.data?.audio),
-    format: data.extra_info?.audio_format || data.extraInfo?.audioFormat || "mp3",
+    format:
+      data.extra_info?.audio_format || data.extraInfo?.audioFormat || "mp3",
   };
 }

@@ -44,6 +44,7 @@ npm install -g 9router
 ```
 
 **利点:**
+
 - ✅ どのディレクトリからでも実行
 - ✅ シンプルなコマンド: `9router`
 - ✅ `npm update -g 9router` で自動更新
@@ -65,6 +66,7 @@ npx 9router
 ```
 
 **利点:**
+
 - ✅ プロジェクトごとに分離
 - ✅ プロジェクトごとのバージョン管理
 - ✅ グローバル名前空間の汚染なし
@@ -82,6 +84,7 @@ npm start
 ```
 
 **利点:**
+
 - ✅ 最新の開発機能
 - ✅ 開発に貢献可能
 - ✅ カスタム変更
@@ -97,6 +100,7 @@ npm start
 ```
 
 **何が起こるか:**
+
 1. サーバーが `http://localhost:20128` で起動
 2. ダッシュボードが自動的にブラウザで開く
 3. `~/.9router` にデータディレクトリが作成される
@@ -105,9 +109,11 @@ npm start
 ### ダッシュボードログイン
 
 **デフォルト認証情報:**
+
 - パスワード: `123456`
 
 **⚠️ パスワードをすぐに変更:**
+
 1. ダッシュボードにログイン
 2. Settings → Change Password
 3. 強力なパスワードを使用
@@ -121,6 +127,7 @@ Dashboard → Settings → API Keys
 ```
 
 **APIキー形式の例:**
+
 ```
 9r_1234567890abcdef1234567890abcdef
 ```
@@ -136,6 +143,7 @@ curl http://localhost:20128/health
 ```
 
 **期待されるレスポンス:**
+
 ```json
 {
   "status": "ok",
@@ -151,6 +159,7 @@ curl http://localhost:20128/v1/models \
 ```
 
 **期待されるレスポンス:**
+
 ```json
 {
   "object": "list",
@@ -208,6 +217,7 @@ export ENABLE_REQUEST_LOGS="false"
 **デフォルトの場所:** `~/.9router`
 
 **内容:**
+
 ```
 ~/.9router/
   ├── db.json           # データベース (プロバイダー、コンボ、使用量)
@@ -246,6 +256,7 @@ export PORT="3000"
 ### ポートがすでに使用されている
 
 **エラー:**
+
 ```
 Error: listen EADDRINUSE: address already in use :::20128
 ```
@@ -269,6 +280,7 @@ kill -9 <PID>
 ### Permission Denied
 
 **エラー:**
+
 ```
 Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
 ```
@@ -289,6 +301,7 @@ npm install -g 9router
 ### Node.jsバージョンが古すぎる
 
 **エラー:**
+
 ```
 Error: The engine "node" is incompatible with this module
 ```
@@ -427,7 +440,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
-        
+
         # SSE support for streaming
         proxy_buffering off;
         proxy_read_timeout 86400;

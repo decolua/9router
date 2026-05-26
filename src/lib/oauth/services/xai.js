@@ -3,7 +3,11 @@ import { OAuthService } from "./oauth.js";
 import crypto from "crypto";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "../constants/xai.js";
 import { startLocalServer } from "../utils/server.js";
-import { generateCodeVerifier, generateCodeChallenge, generateState } from "../utils/pkce.js";
+import {
+  generateCodeVerifier,
+  generateCodeChallenge,
+  generateState,
+} from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 
 /**
@@ -59,7 +63,10 @@ export async function discoverEndpoints() {
     if (res.ok) {
       const data = await res.json();
       cachedDiscovery = {
-        authorizeUrl: validateOAuthEndpoint(data.authorization_endpoint, "authorization_endpoint"),
+        authorizeUrl: validateOAuthEndpoint(
+          data.authorization_endpoint,
+          "authorization_endpoint",
+        ),
         tokenUrl: validateOAuthEndpoint(data.token_endpoint, "token_endpoint"),
       };
       return cachedDiscovery;
@@ -85,10 +92,16 @@ export function decodeIdTokenEmail(idToken) {
   if (parts.length !== 3) return undefined;
   try {
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padding = (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) % BASE64_BLOCK_SIZE;
-    const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString("utf8");
+    const padding =
+      (BASE64_BLOCK_SIZE - (base64.length % BASE64_BLOCK_SIZE)) %
+      BASE64_BLOCK_SIZE;
+    const json = Buffer.from(base64 + "=".repeat(padding), "base64").toString(
+      "utf8",
+    );
     const payload = JSON.parse(json);
-    return payload.email || payload.preferred_username || payload.sub || undefined;
+    return (
+      payload.email || payload.preferred_username || payload.sub || undefined
+    );
   } catch {
     return undefined;
   }
@@ -194,7 +207,12 @@ export class XaiService extends OAuthService {
       const codeVerifier = generateCodeVerifier(XAI_PKCE_VERIFIER_BYTES);
       const codeChallenge = generateCodeChallenge(codeVerifier);
       const state = generateState();
-      const authUrl = this.buildXaiAuthUrl(redirectUri, state, codeChallenge, authorizeUrl);
+      const authUrl = this.buildXaiAuthUrl(
+        redirectUri,
+        state,
+        codeChallenge,
+        authorizeUrl,
+      );
 
       console.log("\nOpening browser for xAI authentication...");
       console.log(`If browser doesn't open, visit:\n${authUrl}\n`);
@@ -202,7 +220,10 @@ export class XaiService extends OAuthService {
 
       spinner.start("Waiting for xAI authorization...");
       await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("Authentication timeout (5 minutes)")), 300000);
+        const timeout = setTimeout(
+          () => reject(new Error("Authentication timeout (5 minutes)")),
+          300000,
+        );
         const iv = setInterval(() => {
           if (callbackParams) {
             clearInterval(iv);
@@ -214,10 +235,14 @@ export class XaiService extends OAuthService {
       close();
 
       if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
+        throw new Error(
+          callbackParams.error_description || callbackParams.error,
+        );
       }
-      if (!callbackParams.code) throw new Error("No authorization code received");
-      if (callbackParams.state !== state) throw new Error("Invalid state parameter");
+      if (!callbackParams.code)
+        throw new Error("No authorization code received");
+      if (callbackParams.state !== state)
+        throw new Error("Invalid state parameter");
 
       spinner.start("Exchanging code for tokens...");
       const tokens = await this.exchangeXaiCode({

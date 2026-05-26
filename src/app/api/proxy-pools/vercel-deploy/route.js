@@ -60,10 +60,14 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const vercelToken = body.vercelToken;
-    const projectName = body.projectName?.trim() || `relay-${Date.now().toString(36)}`;
+    const projectName =
+      body.projectName?.trim() || `relay-${Date.now().toString(36)}`;
 
     if (!vercelToken) {
-      return NextResponse.json({ error: "Vercel API token is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Vercel API token is required" },
+        { status: 400 },
+      );
     }
 
     // Deploy relay function to Vercel
@@ -102,7 +106,7 @@ export async function POST(request) {
       const err = await deployRes.json().catch(() => ({}));
       return NextResponse.json(
         { error: err.error?.message || "Failed to create Vercel deployment" },
-        { status: deployRes.status }
+        { status: deployRes.status },
       );
     }
 
@@ -137,6 +141,9 @@ export async function POST(request) {
     return NextResponse.json({ proxyPool, deployUrl }, { status: 201 });
   } catch (error) {
     console.log("Error deploying Vercel relay:", error);
-    return NextResponse.json({ error: error.message || "Deploy failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Deploy failed" },
+      { status: 500 },
+    );
   }
 }

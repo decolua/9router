@@ -91,7 +91,6 @@ export default function HeaderMenu({ onLogout }) {
   const { toggleTheme, isDark } = useTheme();
   const menuRef = useRef(null);
 
-
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {

@@ -26,7 +26,10 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
     return {
       ok: false,
       status: 500,
-      error: err?.name === "AbortError" ? "Relay test timed out" : (err?.message || String(err)),
+      error:
+        err?.name === "AbortError"
+          ? "Relay test timed out"
+          : err?.message || String(err),
     };
   } finally {
     clearTimeout(timer);
@@ -40,18 +43,26 @@ export async function POST(request, { params }) {
     const proxyPool = await getProxyPoolById(id);
 
     if (!proxyPool) {
-      return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Proxy pool not found" },
+        { status: 404 },
+      );
     }
 
-    const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno"
-      ? await testVercelRelay(proxyPool.proxyUrl)
-      : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
+    const result =
+      proxyPool.type === "vercel" ||
+      proxyPool.type === "cloudflare" ||
+      proxyPool.type === "deno"
+        ? await testVercelRelay(proxyPool.proxyUrl)
+        : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();
 
     await updateProxyPool(id, {
       testStatus: result.ok ? "active" : "error",
       lastTestedAt: now,
-      lastError: result.ok ? null : (result.error || `Proxy test failed with status ${result.status}`),
+      lastError: result.ok
+        ? null
+        : result.error || `Proxy test failed with status ${result.status}`,
       isActive: result.ok,
     });
 
@@ -65,6 +76,9 @@ export async function POST(request, { params }) {
     });
   } catch (error) {
     console.log("Error testing proxy pool:", error);
-    return NextResponse.json({ error: "Failed to test proxy pool" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to test proxy pool" },
+      { status: 500 },
+    );
   }
 }

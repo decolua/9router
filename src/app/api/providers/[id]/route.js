@@ -15,13 +15,20 @@ function normalizeProxyConfig(body = {}) {
   if (!hasAnyProxyField) return { hasAnyProxyField: false };
 
   const enabled = body?.connectionProxyEnabled === true;
-  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
-  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+  const url =
+    typeof body?.connectionProxyUrl === "string"
+      ? body.connectionProxyUrl.trim()
+      : "";
+  const noProxy =
+    typeof body?.connectionNoProxy === "string"
+      ? body.connectionNoProxy.trim()
+      : "";
 
   if (enabled && !url) {
     return {
       hasAnyProxyField: true,
-      error: "Connection proxy URL is required when connection proxy is enabled",
+      error:
+        "Connection proxy URL is required when connection proxy is enabled",
     };
   }
 
@@ -38,7 +45,11 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
     return { hasProxyPoolField: false, proxyPoolId: null };
   }
 
-  if (proxyPoolIdInput === null || proxyPoolIdInput === "" || proxyPoolIdInput === "__none__") {
+  if (
+    proxyPoolIdInput === null ||
+    proxyPoolIdInput === "" ||
+    proxyPoolIdInput === "__none__"
+  ) {
     return { hasProxyPoolField: true, proxyPoolId: null };
   }
 
@@ -55,8 +66,18 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   return { hasProxyPoolField: true, proxyPoolId };
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+function shouldMergeProviderSpecificData(
+  existing,
+  incoming,
+  hasLegacyProxy,
+  hasProxyPoolField,
+) {
+  return (
+    existing !== undefined ||
+    incoming !== undefined ||
+    hasLegacyProxy ||
+    hasProxyPoolField
+  );
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -66,7 +87,10 @@ export async function GET(request, { params }) {
     const connection = await getProviderConnectionById(id);
 
     if (!connection) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Connection not found" },
+        { status: 404 },
+      );
     }
 
     // Hide sensitive fields
@@ -79,7 +103,10 @@ export async function GET(request, { params }) {
     return NextResponse.json({ connection: result });
   } catch (error) {
     console.log("Error fetching connection:", error);
-    return NextResponse.json({ error: "Failed to fetch connection" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch connection" },
+      { status: 500 },
+    );
   }
 }
 
@@ -98,12 +125,15 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
-      providerSpecificData
+      providerSpecificData,
     } = body;
 
     const existing = await getProviderConnectionById(id);
     if (!existing) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Connection not found" },
+        { status: 404 },
+      );
     }
 
     const proxyConfig = normalizeProxyConfig(body);
@@ -113,13 +143,17 @@ export async function PUT(request, { params }) {
 
     const proxyPoolResult = await normalizeProxyPoolUpdate(body.proxyPoolId);
     if (proxyPoolResult.error) {
-      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+      return NextResponse.json(
+        { error: proxyPoolResult.error },
+        { status: 400 },
+      );
     }
 
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
-    if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
+    if (globalPriority !== undefined)
+      updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
@@ -132,7 +166,7 @@ export async function PUT(request, { params }) {
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField,
       )
     ) {
       updateData.providerSpecificData = {
@@ -141,16 +175,20 @@ export async function PUT(request, { params }) {
       };
 
       if (proxyConfig.hasAnyProxyField) {
-        updateData.providerSpecificData.connectionProxyEnabled = proxyConfig.connectionProxyEnabled;
-        updateData.providerSpecificData.connectionProxyUrl = proxyConfig.connectionProxyUrl;
-        updateData.providerSpecificData.connectionNoProxy = proxyConfig.connectionNoProxy;
+        updateData.providerSpecificData.connectionProxyEnabled =
+          proxyConfig.connectionProxyEnabled;
+        updateData.providerSpecificData.connectionProxyUrl =
+          proxyConfig.connectionProxyUrl;
+        updateData.providerSpecificData.connectionNoProxy =
+          proxyConfig.connectionNoProxy;
       }
 
       if (proxyPoolResult.hasProxyPoolField) {
         if (proxyPoolResult.proxyPoolId === null) {
           delete updateData.providerSpecificData.proxyPoolId;
         } else {
-          updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+          updateData.providerSpecificData.proxyPoolId =
+            proxyPoolResult.proxyPoolId;
         }
       }
     }
@@ -167,7 +205,10 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ connection: result });
   } catch (error) {
     console.log("Error updating connection:", error);
-    return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update connection" },
+      { status: 500 },
+    );
   }
 }
 
@@ -178,12 +219,18 @@ export async function DELETE(request, { params }) {
 
     const deleted = await deleteProviderConnection(id);
     if (!deleted) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Connection not found" },
+        { status: 404 },
+      );
     }
 
     return NextResponse.json({ message: "Connection deleted successfully" });
   } catch (error) {
     console.log("Error deleting connection:", error);
-    return NextResponse.json({ error: "Failed to delete connection" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to delete connection" },
+      { status: 500 },
+    );
   }
 }

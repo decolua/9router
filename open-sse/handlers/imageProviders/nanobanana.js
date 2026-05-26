@@ -1,5 +1,11 @@
 // NanoBanana API — async submit + poll record-info
-import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import {
+  sleep,
+  nowSec,
+  sizeToAspectRatio,
+  POLL_INTERVAL_MS,
+  POLL_TIMEOUT_MS,
+} from "./_base.js";
 
 const SUBMIT_URL = "https://api.nanobananaapi.ai/api/v1/nanobanana/generate";
 const POLL_BASE = "https://api.nanobananaapi.ai/api/v1/nanobanana/record-info";
@@ -15,7 +21,10 @@ export default {
   },
   buildBody: (_model, body) => {
     const ratio = sizeToAspectRatio(body.size);
-    const isEdit = !!(body.image || (Array.isArray(body.images) && body.images.length));
+    const isEdit = !!(
+      body.image ||
+      (Array.isArray(body.images) && body.images.length)
+    );
     const req = {
       prompt: body.prompt,
       type: isEdit ? "IMAGETOIAMGE" : "TEXTTOIAMGE",
@@ -25,7 +34,9 @@ export default {
       callBackUrl: "https://localhost/callback",
     };
     if (isEdit) {
-      const urls = Array.isArray(body.images) ? body.images.filter(Boolean) : [];
+      const urls = Array.isArray(body.images)
+        ? body.images.filter(Boolean)
+        : [];
       if (body.image) urls.push(body.image);
       req.imageUrls = urls;
     }
@@ -34,7 +45,8 @@ export default {
   // Async: parse submit → poll until SUCCESS, return raw poll data
   async parseResponse(response, { headers }) {
     const submitData = await response.json();
-    if (submitData.code !== 200) throw new Error(submitData.msg || "NanoBanana submit failed");
+    if (submitData.code !== 200)
+      throw new Error(submitData.msg || "NanoBanana submit failed");
     const taskId = submitData.data?.taskId;
     if (!taskId) throw new Error("NanoBanana: no taskId returned");
     const pollUrl = `${POLL_BASE}?taskId=${encodeURIComponent(taskId)}`;
@@ -46,13 +58,17 @@ export default {
       const s = await r.json();
       const flag = s.data?.successFlag;
       if (flag === 1) return s.data;
-      if (flag === 2 || flag === 3) throw new Error(s.data?.errorMessage || "NanoBanana generation failed");
+      if (flag === 2 || flag === 3)
+        throw new Error(s.data?.errorMessage || "NanoBanana generation failed");
     }
     throw new Error("NanoBanana polling timeout");
   },
   normalize: (responseBody, prompt) => {
-    const url = responseBody.response?.resultImageUrl || responseBody.response?.originImageUrl;
-    if (url) return { created: nowSec(), data: [{ url, revised_prompt: prompt }] };
+    const url =
+      responseBody.response?.resultImageUrl ||
+      responseBody.response?.originImageUrl;
+    if (url)
+      return { created: nowSec(), data: [{ url, revised_prompt: prompt }] };
     return { created: nowSec(), data: [] };
   },
 };

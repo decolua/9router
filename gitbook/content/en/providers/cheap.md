@@ -20,12 +20,13 @@ Cheap tier providers are your **backup** when subscription quota exhausted:
 
 ### Pricing
 
-| Tier | Input | Output | Reset |
-|------|-------|--------|-------|
-| Standard | $0.60/1M | $2.20/1M | Daily 10:00 AM |
+| Tier        | Input    | Output   | Reset                     |
+| ----------- | -------- | -------- | ------------------------- |
+| Standard    | $0.60/1M | $2.20/1M | Daily 10:00 AM            |
 | Coding Plan | $0.60/1M | $2.20/1M | Daily 10:00 AM (3× quota) |
 
 **Cost Example (10M tokens):**
+
 - Input: 10M × $0.60 = $6
 - Output: 10M × $2.20 = $22
 - **Total: $6-22** vs $200 on ChatGPT API!
@@ -64,10 +65,10 @@ Model: glm/glm-4.7
 
 ### Available Models
 
-| Model ID | Description | Context | Best For |
-|----------|-------------|---------|----------|
-| `glm/glm-4.7` | GLM 4.7 | 128K | Coding, general tasks |
-| `glm/glm-4.6v` | GLM 4.6V Vision | 128K | Image analysis |
+| Model ID       | Description     | Context | Best For              |
+| -------------- | --------------- | ------- | --------------------- |
+| `glm/glm-4.7`  | GLM 4.7         | 128K    | Coding, general tasks |
+| `glm/glm-4.6v` | GLM 4.6V Vision | 128K    | Image analysis        |
 
 ### Pro Tips
 
@@ -93,11 +94,12 @@ Plan your heavy tasks around reset time!
 
 ### Pricing
 
-| Tier | Input | Output | Reset |
-|------|-------|--------|-------|
+| Tier     | Input    | Output   | Reset          |
+| -------- | -------- | -------- | -------------- |
 | Standard | $0.20/1M | $1.00/1M | 5-hour rolling |
 
 **Cost Example (10M tokens):**
+
 - Input: 10M × $0.20 = $2
 - Output: 10M × $1.00 = $10
 - **Total: $2-10** - Cheapest option!
@@ -135,8 +137,8 @@ Model: minimax/MiniMax-M2.1
 
 ### Available Models
 
-| Model ID | Description | Context | Best For |
-|----------|-------------|---------|----------|
+| Model ID               | Description  | Context   | Best For             |
+| ---------------------- | ------------ | --------- | -------------------- |
 | `minimax/MiniMax-M2.1` | MiniMax M2.1 | 1M tokens | Long context, coding |
 
 ### Pro Tips
@@ -166,11 +168,12 @@ Code 24/7 with minimal cost!
 
 ### Pricing
 
-| Plan | Monthly Cost | Included Tokens | Effective Cost |
-|------|--------------|-----------------|----------------|
-| Subscription | $9 | 10M tokens | $0.90/1M |
+| Plan         | Monthly Cost | Included Tokens | Effective Cost |
+| ------------ | ------------ | --------------- | -------------- |
+| Subscription | $9           | 10M tokens      | $0.90/1M       |
 
 **Cost Example:**
+
 - $9/month flat
 - 10M tokens included
 - **Effective: $0.90/1M** - Best value for consistent usage!
@@ -208,9 +211,9 @@ Model: kimi/kimi-latest
 
 ### Available Models
 
-| Model ID | Description | Context | Best For |
-|----------|-------------|---------|----------|
-| `kimi/kimi-latest` | Kimi Latest | 200K | General coding |
+| Model ID           | Description | Context | Best For       |
+| ------------------ | ----------- | ------- | -------------- |
+| `kimi/kimi-latest` | Kimi Latest | 200K    | General coding |
 
 ### Pro Tips
 
@@ -237,12 +240,12 @@ Total: 10M tokens = $9 flat
 
 ## Pricing Comparison
 
-| Provider | Input/1M | Output/1M | Reset | 10M Cost | Best For |
-|----------|----------|-----------|-------|----------|----------|
-| **GLM-4.7** | $0.60 | $2.20 | Daily 10AM | $6-22 | Daily quota users |
-| **MiniMax M2.1** | $0.20 | $1.00 | 5-hour | $2-10 | **Cheapest!** |
-| **Kimi K2** | $0.90 | $0.90 | Monthly | **$9 flat** | Consistent usage |
-| ChatGPT API | $20.00 | $20.00 | None | $200 | ❌ Expensive |
+| Provider         | Input/1M | Output/1M | Reset      | 10M Cost    | Best For          |
+| ---------------- | -------- | --------- | ---------- | ----------- | ----------------- |
+| **GLM-4.7**      | $0.60    | $2.20     | Daily 10AM | $6-22       | Daily quota users |
+| **MiniMax M2.1** | $0.20    | $1.00     | 5-hour     | $2-10       | **Cheapest!**     |
+| **Kimi K2**      | $0.90    | $0.90     | Monthly    | **$9 flat** | Consistent usage  |
+| ChatGPT API      | $20.00   | $20.00    | None       | $200        | ❌ Expensive      |
 
 **Savings:** 90-95% cheaper than ChatGPT API!
 
@@ -433,6 +436,7 @@ Monthly: $30 limit
 ### "Quota exhausted"
 
 **Solution:**
+
 - GLM: Wait until 10:00 AM Beijing time
 - MiniMax: Wait 5 hours from first use
 - Kimi: Wait until 1st of next month
@@ -441,6 +445,7 @@ Monthly: $30 limit
 ### "API key invalid"
 
 **Solution:**
+
 - Check API key copied correctly
 - Verify account has credits
 - Regenerate API key if needed
@@ -448,6 +453,7 @@ Monthly: $30 limit
 ### "High costs"
 
 **Solution:**
+
 - Check usage stats in Dashboard
 - Set budget alerts
 - Switch to MiniMax ($0.2/1M cheapest)

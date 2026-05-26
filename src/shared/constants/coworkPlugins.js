@@ -16,7 +16,12 @@ const DEFAULT_PLUGINS = [
     url: "https://mcp.tavily.com/mcp",
     transport: "http",
     oauth: true,
-    toolNames: ["tavily_search", "tavily_extract", "tavily_crawl", "tavily_map"],
+    toolNames: [
+      "tavily_search",
+      "tavily_extract",
+      "tavily_crawl",
+      "tavily_map",
+    ],
   },
 ];
 
@@ -26,10 +31,22 @@ const LOCAL_STDIO_PLUGINS = [
     name: "browsermcp",
     title: "Browser MCP",
     description: "Control your running Chrome (requires Chrome extension)",
-    extensionUrl: "https://chromewebstore.google.com/detail/browser-mcp-automate-your/bjfgambnhccakkhmkepdoekmckoijdlc",
+    extensionUrl:
+      "https://chromewebstore.google.com/detail/browser-mcp-automate-your/bjfgambnhccakkhmkepdoekmckoijdlc",
     command: "npx",
     args: ["-y", "@browsermcp/mcp@latest"],
-    toolNames: ["browser_navigate", "browser_snapshot", "browser_click", "browser_type", "browser_screenshot", "browser_get_console_logs", "browser_wait", "browser_press_key", "browser_go_back", "browser_go_forward"],
+    toolNames: [
+      "browser_navigate",
+      "browser_snapshot",
+      "browser_click",
+      "browser_type",
+      "browser_screenshot",
+      "browser_get_console_logs",
+      "browser_wait",
+      "browser_press_key",
+      "browser_go_back",
+      "browser_go_forward",
+    ],
   },
 ];
 
@@ -70,6 +87,19 @@ function buildManagedMcpServers(plugins) {
 }
 
 // Allowlist of executables that may be spawned for custom stdio MCP plugins.
-const ALLOWED_MCP_COMMANDS = new Set(["npx", "node", "uvx", "python", "python3", "bunx", "bun"]);
+const ALLOWED_MCP_COMMANDS = new Set([
+  "npx",
+  "node",
+  "uvx",
+  "python",
+  "python3",
+  "bunx",
+  "bun",
+]);
 
-module.exports = { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, ALLOWED_MCP_COMMANDS, buildManagedMcpServers };
+module.exports = {
+  DEFAULT_PLUGINS,
+  LOCAL_STDIO_PLUGINS,
+  ALLOWED_MCP_COMMANDS,
+  buildManagedMcpServers,
+};

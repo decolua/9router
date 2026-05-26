@@ -15,7 +15,10 @@ import { v5 as uuidv5 } from "uuid";
  * @returns {string} - 64-character hex string
  */
 export function generateHashed64Hex(input, salt = "") {
-  return crypto.createHash("sha256").update(input + salt).digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(input + salt)
+    .digest("hex");
 }
 
 /**
@@ -46,23 +49,24 @@ export function generateCursorChecksum(machineId) {
 
   // Create byte array from timestamp (6 bytes, big-endian)
   const byteArray = new Uint8Array([
-    (timestamp >> 40) & 0xFF,
-    (timestamp >> 32) & 0xFF,
-    (timestamp >> 24) & 0xFF,
-    (timestamp >> 16) & 0xFF,
-    (timestamp >> 8) & 0xFF,
-    timestamp & 0xFF
+    (timestamp >> 40) & 0xff,
+    (timestamp >> 32) & 0xff,
+    (timestamp >> 24) & 0xff,
+    (timestamp >> 16) & 0xff,
+    (timestamp >> 8) & 0xff,
+    timestamp & 0xff,
   ]);
 
   // Jyh cipher obfuscation
   let t = 165;
   for (let i = 0; i < byteArray.length; i++) {
-    byteArray[i] = ((byteArray[i] ^ t) + (i % 256)) & 0xFF;
+    byteArray[i] = ((byteArray[i] ^ t) + (i % 256)) & 0xff;
     t = byteArray[i];
   }
 
   // URL-safe base64 encode (without padding)
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let encoded = "";
 
   for (let i = 0; i < byteArray.length; i += 3) {
@@ -92,14 +96,19 @@ export function generateCursorChecksum(machineId) {
  * @param {boolean} ghostMode - Enable ghost mode (privacy)
  * @returns {Object} - Headers object
  */
-export function buildCursorHeaders(accessToken, machineId = null, ghostMode = true) {
+export function buildCursorHeaders(
+  accessToken,
+  machineId = null,
+  ghostMode = true,
+) {
   // Clean token if it has prefix
   const cleanToken = accessToken.includes("::")
     ? accessToken.split("::")[1]
     : accessToken;
 
   // Generate machine ID if not provided
-  const effectiveMachineId = machineId || generateHashed64Hex(cleanToken, "machineId");
+  const effectiveMachineId =
+    machineId || generateHashed64Hex(cleanToken, "machineId");
 
   // Generate derived values
   const sessionId = generateSessionId(cleanToken);
@@ -120,7 +129,7 @@ export function buildCursorHeaders(accessToken, machineId = null, ghostMode = tr
   }
 
   return {
-    "authorization": `Bearer ${cleanToken}`,
+    authorization: `Bearer ${cleanToken}`,
     "connect-accept-encoding": "gzip",
     "connect-protocol-version": "1",
     "content-type": "application/connect+proto",
@@ -134,10 +143,11 @@ export function buildCursorHeaders(accessToken, machineId = null, ghostMode = tr
     "x-cursor-client-arch": arch,
     "x-cursor-client-device-type": "desktop",
     "x-cursor-config-version": crypto.randomUUID(),
-    "x-cursor-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    "x-cursor-timezone":
+      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     "x-ghost-mode": ghostMode ? "true" : "false",
     "x-request-id": crypto.randomUUID(),
-    "x-session-id": sessionId
+    "x-session-id": sessionId,
   };
 }
 
@@ -145,5 +155,5 @@ export default {
   generateCursorChecksum,
   buildCursorHeaders,
   generateHashed64Hex,
-  generateSessionId
+  generateSessionId,
 };

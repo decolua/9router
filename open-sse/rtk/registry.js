@@ -20,13 +20,13 @@ const REGISTRY = {
   [FILTERS.TREE]: tree,
   [FILTERS.SMART_TRUNCATE]: smartTruncate,
   [FILTERS.READ_NUMBERED]: readNumbered,
-  [FILTERS.SEARCH_LIST]: searchList
+  [FILTERS.SEARCH_LIST]: searchList,
 };
 
 // Rust resolve_filter aliases (pipe_cmd.rs): grep|rg, find|fd
 const ALIASES = {
   rg: grep,
-  fd: find
+  fd: find,
 };
 
 export function resolveFilter(name) {

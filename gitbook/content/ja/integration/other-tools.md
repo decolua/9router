@@ -5,6 +5,7 @@
 ## 概要
 
 9RouterはOpenAI互換APIエンドポイントを提供し、以下と動作します:
+
 - カスタムスクリプトとアプリケーション
 - APIクライアントとテストツール
 - CLIツールとユーティリティ
@@ -16,6 +17,7 @@
 任意のOpenAI互換ツールは以下の設定で9Routerに接続できます:
 
 **ローカル9Router:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
@@ -23,6 +25,7 @@ Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
 ```
 
 **クラウド9Router:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -32,15 +35,18 @@ Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
 ## 利用可能なモデル
 
 ### Claudeモデル (Anthropic)
+
 - `cc/claude-opus-4-5-20251101`
 - `cc/claude-sonnet-4-20250514`
 - `cc/claude-haiku-4-20250514`
 
 ### DeepSeekモデル
+
 - `cx/deepseek-chat`
 - `cx/deepseek-reasoner`
 
 ### GLMモデル (Zhipu AI)
+
 - `glm/glm-4-plus`
 - `glm/glm-4-flash`
 
@@ -73,14 +79,12 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 const response = await client.chat.completions.create({
   model: "cc/claude-sonnet-4-20250514",
-  messages: [
-    { role: "user", content: "Hello, how are you?" }
-  ]
+  messages: [{ role: "user", content: "Hello, how are you?" }],
 });
 
 console.log(response.choices[0].message.content);
@@ -103,23 +107,24 @@ curl http://localhost:20128/v1/chat/completions \
 ### HTTPクライアント (Postman、Insomnia)
 
 **Request:**
+
 ```
 POST http://localhost:20128/v1/chat/completions
 ```
 
 **Headers:**
+
 ```
 Content-Type: application/json
 Authorization: Bearer your-api-key-from-dashboard
 ```
 
 **Body:**
+
 ```json
 {
   "model": "cc/claude-sonnet-4-20250514",
-  "messages": [
-    {"role": "user", "content": "Hello, how are you?"}
-  ],
+  "messages": [{ "role": "user", "content": "Hello, how are you?" }],
   "temperature": 0.7,
   "max_tokens": 1000
 }
@@ -199,14 +204,14 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 async function streamResponse(prompt) {
   const stream = await client.chat.completions.create({
     model: "cc/claude-sonnet-4-20250514",
     messages: [{ role: "user", content: prompt }],
-    stream: true
+    stream: true,
   });
 
   for await (const chunk of stream) {
@@ -319,6 +324,7 @@ def chat_with_retry(prompt, max_retries=3):
 ### 接続の問題
 
 **問題:** 9Routerに接続できない
+
 ```bash
 # 9Routerが動作中か確認
 curl http://localhost:20128/health
@@ -328,6 +334,7 @@ curl http://localhost:20128/health
 ```
 
 **解決策:**
+
 - 9Routerが動作中か確認
 - ポート20128がブロックされていないか確認
 - 正しいbase URLを確認 (`/v1`を含む)
@@ -335,11 +342,13 @@ curl http://localhost:20128/health
 ### 認証エラー
 
 **問題:** 401 Unauthorized
+
 ```
 Error: Invalid API key
 ```
 
 **解決策:**
+
 - ダッシュボードからのAPIキーを確認
 - AuthorizationヘッダーフォーマットがBearer your-api-keyであることを確認
 - APIキーに余分なスペースや改行がないことを確認
@@ -347,11 +356,13 @@ Error: Invalid API key
 ### モデルが見つからない
 
 **問題:** 404 Model not found
+
 ```
 Error: Model 'cc/claude-opus' not found
 ```
 
 **解決策:**
+
 - 正確なモデル名を使用 (大文字小文字を区別)
 - 利用可能なモデルを確認: `curl http://localhost:20128/v1/models`
 - プランでモデルが有効になっていることを確認
@@ -359,11 +370,13 @@ Error: Model 'cc/claude-opus' not found
 ### タイムアウトの問題
 
 **問題:** リクエストタイムアウト
+
 ```
 Error: Request timed out after 30s
 ```
 
 **解決策:**
+
 - クライアント設定でタイムアウトを増やす
 - 時間制約のあるタスクには高速モデルを使用
 - 9Routerへのネットワーク接続を確認
@@ -371,11 +384,13 @@ Error: Request timed out after 30s
 ### レート制限
 
 **問題:** 429 Too Many Requests
+
 ```
 Error: Rate limit exceeded
 ```
 
 **解決策:**
+
 - 指数バックオフを実装
 - リクエスト頻度を減らす
 - ダッシュボードでレート制限を確認
@@ -384,24 +399,28 @@ Error: Rate limit exceeded
 ## ベストプラクティス
 
 ### セキュリティ
+
 - APIキーを環境変数に保存
 - APIキーをバージョン管理にコミットしない
 - クラウドデプロイにはHTTPSを使用
 - APIキーを定期的にローテーション
 
 ### パフォーマンス
+
 - タスクの複雑さに応じて適切なモデルを使用
 - 繰り返しクエリにキャッシュを実装
 - 長い応答にはストリーミングを使用
 - 可能な場合はリクエストをバッチ処理
 
 ### エラーハンドリング
+
 - 常にtry-catchブロックを実装
 - 指数バックオフでリトライロジックを追加
 - デバッグのためエラーをログ
 - フォールバックメカニズムを提供
 
 ### コスト最適化
+
 - シンプルなタスクには費用対効果の高いモデルを選択
 - 適切な場合は応答をキャッシュ
 - ダッシュボードで使用量をモニター

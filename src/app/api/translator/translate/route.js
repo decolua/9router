@@ -11,7 +11,10 @@ export async function POST(request) {
     const { step, body } = await request.json();
 
     if (!step || !body) {
-      return NextResponse.json({ success: false, error: "Step and body required" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "Step and body required" },
+        { status: 400 },
+      );
     }
 
     switch (step) {
@@ -21,7 +24,10 @@ export async function POST(request) {
         const { provider, model } = parseModel(clientBody.model);
         const sourceFormat = detectFormat(clientBody);
         const targetFormat = getTargetFormat(provider);
-        return NextResponse.json({ success: true, result: { provider, model, sourceFormat, targetFormat } });
+        return NextResponse.json({
+          success: true,
+          result: { provider, model, sourceFormat, targetFormat },
+        });
       }
 
       case 2: {
@@ -33,7 +39,15 @@ export async function POST(request) {
         const stream = clientBody.stream !== false;
 
         // translateRequest(source, OPENAI) = only the first half
-        const result = translateRequest(sourceFormat, FORMATS.OPENAI, model, clientBody, stream, null, provider);
+        const result = translateRequest(
+          sourceFormat,
+          FORMATS.OPENAI,
+          model,
+          clientBody,
+          stream,
+          null,
+          provider,
+        );
         delete result._toolNameMap;
 
         return NextResponse.json({ success: true, result: { body: result } });
@@ -46,21 +60,38 @@ export async function POST(request) {
         const model = body.model;
 
         if (!provider || !model) {
-          return NextResponse.json({ success: false, error: "provider and model required" }, { status: 400 });
+          return NextResponse.json(
+            { success: false, error: "provider and model required" },
+            { status: 400 },
+          );
         }
 
         const targetFormat = getTargetFormat(provider);
         const stream = openaiBody.stream !== false;
 
         // translateRequest(OPENAI, target) = second half of pipeline
-        const translated = translateRequest(FORMATS.OPENAI, targetFormat, model, openaiBody, stream, null, provider);
+        const translated = translateRequest(
+          FORMATS.OPENAI,
+          targetFormat,
+          model,
+          openaiBody,
+          stream,
+          null,
+          provider,
+        );
         delete translated._toolNameMap;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
         const connections = await getProviderConnections({ provider });
-        const connection = connections.find(c => c.isActive !== false);
+        const connection = connections.find((c) => c.isActive !== false);
         if (!connection) {
-          return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
+          return NextResponse.json(
+            {
+              success: false,
+              error: `No active connection for provider: ${provider}`,
+            },
+            { status: 400 },
+          );
         }
 
         const credentials = {
@@ -69,22 +100,36 @@ export async function POST(request) {
           refreshToken: connection.refreshToken,
           copilotToken: connection.copilotToken,
           projectId: connection.projectId,
-          providerSpecificData: connection.providerSpecificData
+          providerSpecificData: connection.providerSpecificData,
         };
 
         const executor = getExecutor(provider);
         const url = executor.buildUrl(model, stream, 0, credentials);
         const headers = executor.buildHeaders(credentials, stream);
-        const finalBody = executor.transformRequest(model, translated, stream, credentials);
+        const finalBody = executor.transformRequest(
+          model,
+          translated,
+          stream,
+          credentials,
+        );
 
-        return NextResponse.json({ success: true, result: { url, headers, body: finalBody } });
+        return NextResponse.json({
+          success: true,
+          result: { url, headers, body: finalBody },
+        });
       }
 
       default:
-        return NextResponse.json({ success: false, error: "Invalid step (1-3)" }, { status: 400 });
+        return NextResponse.json(
+          { success: false, error: "Invalid step (1-3)" },
+          { status: 400 },
+        );
     }
   } catch (error) {
     console.error("Error in translator:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: error.message },
+      { status: 500 },
+    );
   }
 }

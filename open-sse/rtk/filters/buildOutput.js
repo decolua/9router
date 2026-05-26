@@ -23,8 +23,14 @@ export function buildOutput(input) {
 
     // Continuation of cargo error block: keep verbatim while in block
     if (inCargoError) {
-      if (!trimmed) { inCargoError = false; continue; }
-      if (RE_CARGO_ERR_CONT.test(line)) { errors.push(line); continue; }
+      if (!trimmed) {
+        inCargoError = false;
+        continue;
+      }
+      if (RE_CARGO_ERR_CONT.test(line)) {
+        errors.push(line);
+        continue;
+      }
       inCargoError = false;
     }
 
@@ -75,13 +81,18 @@ export function buildOutput(input) {
       compilingCount++;
       continue;
     }
-    if (/^\s*Downloading\s+\S+/i.test(trimmed) || /^Fetching\s+/i.test(trimmed)) {
+    if (
+      /^\s*Downloading\s+\S+/i.test(trimmed) ||
+      /^Fetching\s+/i.test(trimmed)
+    ) {
       downloadingCount++;
       continue;
     }
 
     if (
-      /^(added|removed|changed|audited|installed)\s+\d+\s+package/i.test(trimmed) ||
+      /^(added|removed|changed|audited|installed)\s+\d+\s+package/i.test(
+        trimmed,
+      ) ||
       /^\s*Finished\s+/i.test(trimmed) ||
       /^BUILD SUCCESS/i.test(trimmed) ||
       /^\d+\s+(vulnerabilities|packages?|warnings?|errors?)/i.test(trimmed) ||

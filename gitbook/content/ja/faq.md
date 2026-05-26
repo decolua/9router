@@ -9,11 +9,13 @@
 **9Routerは、サブスクリプションの価値を最大化し、コストを最小限に抑えるAIモデルルーターです。**
 
 3階層フォールバックシステムを使用して、複数のAIプロバイダー間でリクエストをインテリジェントにルーティングします:
+
 1. **サブスクリプション階層** - すでに支払っているClaude Code、Codex、Geminiのクォータを最大化
 2. **低価格階層** - 超低価格な代替手段(100万トークンあたり$0.20〜$0.60)
 3. **無料階層** - 無制限の無料モデルによる緊急バックアップ
 
 **主な利点:**
+
 - サブスクリプションのクォータを無駄にしない
 - クォータ消費時の自動フォールバック
 - リアルタイムクォータトラッキング
@@ -26,6 +28,7 @@
 **9Routerは3階層の料金戦略を使用します:**
 
 ### Tier 1: サブスクリプション(最初に最大化)
+
 - **Claude Code** (Pro/Max): 月$20〜100 - 5時間 + 週次クォータ
 - **OpenAI Codex** (Plus/Pro): 月$20〜200 - 5時間 + 週次クォータ
 - **Gemini CLI**: 無料 - 月18万コンプリーション + 1K/日
@@ -35,6 +38,7 @@
 **目標:** リセット前にクォータを余すことなく使用!
 
 ### Tier 2: 低価格(バックアップ)
+
 - **GLM-4.7**: 100万トークンあたり$0.60/$2.20 - 毎日午前10時リセット
 - **MiniMax M2.1**: 100万トークンあたり$0.20/$1.00 - 5時間ローリング
 - **Kimi K2**: 月$9固定(1000万トークン)
@@ -42,6 +46,7 @@
 **目標:** ChatGPT API(100万あたり$20)より90%安い!
 
 ### Tier 3: 無料(緊急時)
+
 - **iFlow**: 8モデル無料(Kimi K2、Qwen3、GLM、MiniMax...)
 - **Qwen**: 3モデル無料(Qwen3 Coder Plus/Flash、Vision)
 - **Kiro**: 2モデル無料(Claude Sonnet 4.5、Haiku 4.5)
@@ -55,6 +60,7 @@
 **はい、9Router自体は100%無料でオープンソースです。**
 
 **利用可能な無料階層プロバイダー:**
+
 - **Gemini CLI** - 月18万コンプリーション(無料Googleアカウント)
 - **iFlow** - 8モデル無制限(無料OAuth)
 - **Qwen** - 3モデル無制限(無料OAuth)
@@ -63,6 +69,7 @@
 **無料階層プロバイダーのみを使用して永久に無料でコーディングできます!**
 
 **オプションの有料プロバイダー:**
+
 - すでに持っている可能性のあるサブスクリプションサービス(Claude Code、Codex、Copilot)
 - 超低価格な代替手段(100万トークンあたり$0.20〜$0.60)
 
@@ -71,6 +78,7 @@
 ## どのプロバイダーがサポートされていますか?
 
 ### サブスクリプションプロバイダー
+
 - **Claude Code** (Pro/Max) - Claude 4.5 Opus/Sonnet/Haiku
 - **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex、GPT 5.1 Codex Max
 - **Gemini CLI** (無料) - Gemini 3 Flash/Pro、2.5 Pro/Flash
@@ -78,12 +86,14 @@
 - **Antigravity** (Google) - Gemini 3 Pro、Claude Sonnet 4.5
 
 ### 低価格プロバイダー
+
 - **GLM** (Zhipu AI) - GLM 4.7、GLM 4.6V Vision
 - **MiniMax** - MiniMax M2.1
 - **Kimi** (Moonshot AI) - Kimi Latest
 - **OpenRouter** - 任意のOpenRouterモデルへのパススルー
 
 ### 無料プロバイダー
+
 - **iFlow** - 8モデル(Kimi K2、Qwen3、GLM、MiniMax、DeepSeek...)
 - **Qwen** - 3モデル(Qwen3 Coder Plus/Flash、Vision)
 - **Kiro** - 2モデル(Claude Sonnet 4.5、Haiku 4.5)
@@ -112,6 +122,7 @@
 ```
 
 **コンボの作成方法:**
+
 ```
 Dashboard → Combos → Create New
 → 優先順位順にモデルを追加
@@ -119,6 +130,7 @@ Dashboard → Combos → Create New
 ```
 
 **利点:**
+
 - クォータ切れ時のダウンタイムゼロ
 - 自動コスト最適化
 - すべてのツール用の単一モデル名
@@ -132,6 +144,7 @@ Dashboard → Combos → Create New
 **9Routerはすべてのプロバイダーのクォータをリアルタイムで追跡します:**
 
 **機能:**
+
 - **トークン消費** - リクエストごとの入出力トークン
 - **リセットカウントダウン** - クォータが更新されるまでの時間
 - **使用統計** - 日次/週次/月次レポート
@@ -139,12 +152,14 @@ Dashboard → Combos → Create New
 - **クォータアラート** - クォータが少ない時の通知
 
 **クォータタイプ:**
+
 - **5時間ローリング** - Claude Code、Codex、MiniMax
 - **日次リセット** - Gemini CLI(1K/日)、GLM(午前10時)
 - **週次リセット** - Claude Code、Codex(追加クォータ)
 - **月次リセット** - Gemini CLI(18万)、GitHub Copilot(1日)
 
 **クォータを表示:**
+
 ```
 Dashboard → Providers → Quota Tracking
 → リアルタイム使用量 + リセットカウントダウン
@@ -170,6 +185,7 @@ Cursor Settings → Models → Advanced:
 ```
 
 **代替案:** パブリックドメインでVPSにセルフホスト:
+
 ```bash
 # VPSへデプロイ
 git clone https://github.com/decolua/9router.git
@@ -182,6 +198,7 @@ npm start
 ```
 
 **他のCLIツールはlocalhostで動作:**
+
 - Cline ✅
 - Claude Desktop ✅
 - Codex CLI ✅
@@ -197,6 +214,7 @@ npm start
 **はい! 9Routerは複数のデプロイメントオプションをサポートします:**
 
 ### Localhost(デフォルト)
+
 ```bash
 npm install -g 9router
 9router
@@ -205,6 +223,7 @@ npm install -g 9router
 ```
 
 ### VPS/クラウド
+
 ```bash
 git clone https://github.com/decolua/9router.git
 cd 9router/app
@@ -218,6 +237,7 @@ npm start
 ```
 
 ### Docker
+
 ```bash
 docker build -t 9router .
 docker run -d \
@@ -228,12 +248,14 @@ docker run -d \
 ```
 
 ### Cloudflare Workers
+
 ```bash
 cd 9router/app
 npm run deploy:cloudflare
 ```
 
 **環境変数:**
+
 - `JWT_SECRET` - **本番環境で必ず変更!**
 - `DATA_DIR` - データベース保存パス(デフォルト: `~/.9router`)
 - `INITIAL_PASSWORD` - ダッシュボードログイン(デフォルト: `123456`)
@@ -248,33 +270,39 @@ npm run deploy:cloudflare
 **はい、9Routerはセキュリティとプライバシーを優先します:**
 
 **ローカルストレージ:**
+
 - すべてのデータは`~/.9router`(またはカスタム`DATA_DIR`)にローカル保存
 - 9Routerサーバーへのデータ送信なし
 - OAuthトークンはJWTで暗号化
 
 **テレメトリなし:**
+
 - 使用状況追跡なし
 - アナリティクスなし
 - フォンホームなし
 
 **オープンソース:**
+
 - 完全なソースコードがGitHubで利用可能
 - 自分でセキュリティを監査可能
 - コミュニティレビュー済み
 
 **ベストプラクティス:**
+
 - 本番環境で`JWT_SECRET`を変更
 - 強力な`INITIAL_PASSWORD`を使用
 - クラウドデプロイでHTTPSを有効化
 - APIキーを定期的にローテーション
 
 **9Routerが保存するもの:**
+
 - プロバイダーOAuthトークン(暗号化)
 - APIキー(暗号化)
 - 使用統計(ローカルのみ)
 - コンボ設定
 
 **9Routerが保存しないもの:**
+
 - プロンプトやレスポンス
 - 生成したコード
 - 個人情報
@@ -286,11 +314,13 @@ npm run deploy:cloudflare
 **更新方法はインストールタイプによって異なります:**
 
 ### グローバルNPMインストール
+
 ```bash
 npm update -g 9router
 ```
 
 ### ローカルインストール
+
 ```bash
 cd 9router/app
 git pull origin main
@@ -300,6 +330,7 @@ npm start
 ```
 
 ### Docker
+
 ```bash
 docker pull 9router:latest
 docker stop 9router
@@ -311,11 +342,13 @@ docker run -d \
 ```
 
 **バージョンを確認:**
+
 ```bash
 9router --version
 ```
 
 **破壊的変更:**
+
 - [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)を確認
 - メジャー更新前に`~/.9router`をバックアップ
 - メジャーバージョンの移行ガイドを確認
@@ -337,26 +370,27 @@ docker run -d \
    - ユースケースと利点を説明
 
 3. **コードを提出:**
+
    ```bash
    # リポジトリをフォーク
    git clone https://github.com/YOUR_USERNAME/9router.git
    cd 9router
-   
+
    # ブランチを作成
    git checkout -b feature/your-feature
-   
+
    # 変更を加える
    npm install
    npm run dev
-   
+
    # テスト
    npm test
-   
+
    # コミットしてプッシュ
    git add .
    git commit -m "Add your feature"
    git push origin feature/your-feature
-   
+
    # GitHubでPull Requestを作成
    ```
 
@@ -370,6 +404,7 @@ docker run -d \
    - 例については`app/lib/providers/`を参照
 
 **貢献ガイドライン:**
+
 - 既存のコードスタイルに従う
 - 新機能にはテストを追加
 - ドキュメントを更新

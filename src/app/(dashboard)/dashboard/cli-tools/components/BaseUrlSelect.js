@@ -29,9 +29,20 @@ const writeSavedPresets = (presets) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
 };
 
-const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
+const buildOptions = ({
+  requiresExternalUrl,
+  tunnelEnabled,
+  tunnelPublicUrl,
+  tailscaleEnabled,
+  tailscaleUrl,
+  cloudEnabled,
+  cloudUrl,
+  savedPresets,
+  withV1,
+}) => {
   const opts = [];
-  const wrap = (url) => (withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, ""));
+  const wrap = (url) =>
+    withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, "");
   if (!requiresExternalUrl) {
     const localUrl = wrap(`http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
     opts.push({ value: "local", label: localUrl, url: localUrl });
@@ -49,7 +60,12 @@ const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tai
     opts.push({ value: "cloud", label: u, url: u });
   }
   savedPresets.forEach((p) => {
-    opts.push({ value: `saved:${p.name}`, label: p.baseUrl, url: p.baseUrl, saved: true });
+    opts.push({
+      value: `saved:${p.name}`,
+      label: p.baseUrl,
+      url: p.baseUrl,
+      saved: true,
+    });
   });
   opts.push({ value: CUSTOM_VALUE, label: "Custom URL...", url: "" });
   return opts;
@@ -77,8 +93,29 @@ export default function BaseUrlSelect({
   }, []);
 
   const options = useMemo(
-    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }),
-    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
+    () =>
+      buildOptions({
+        requiresExternalUrl,
+        tunnelEnabled,
+        tunnelPublicUrl,
+        tailscaleEnabled,
+        tailscaleUrl,
+        cloudEnabled,
+        cloudUrl,
+        savedPresets,
+        withV1,
+      }),
+    [
+      requiresExternalUrl,
+      tunnelEnabled,
+      tunnelPublicUrl,
+      tailscaleEnabled,
+      tailscaleUrl,
+      cloudEnabled,
+      cloudUrl,
+      savedPresets,
+      withV1,
+    ],
   );
 
   // Always default to first option (127.0.0.1) on mount, ignore persisted value
@@ -101,11 +138,15 @@ export default function BaseUrlSelect({
       const trimmed = (value || "").trim();
       if (!trimmed) return;
       let defaultName = trimmed;
-      try { defaultName = new URL(trimmed).host; } catch {}
+      try {
+        defaultName = new URL(trimmed).host;
+      } catch {}
       const name = window.prompt("Save endpoint as:", defaultName);
       if (!name?.trim()) return;
-      const updated = [...savedPresets.filter((p) => p.name !== name.trim()), { name: name.trim(), baseUrl: trimmed }]
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const updated = [
+        ...savedPresets.filter((p) => p.name !== name.trim()),
+        { name: name.trim(), baseUrl: trimmed },
+      ].sort((a, b) => a.name.localeCompare(b.name));
       setSavedPresets(updated);
       writeSavedPresets(updated);
       return;
@@ -150,13 +191,22 @@ export default function BaseUrlSelect({
           className="flex-1 min-w-0 px-2 py-2 bg-surface rounded text-xs border border-border focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
         >
           {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
           ))}
           {canSave && <option value={SAVE_VALUE}>+ Save current as...</option>}
         </select>
         {isSaved && (
-          <button type="button" onClick={handleDeleteSaved} className="p-1 text-text-muted hover:text-red-500 rounded transition-colors shrink-0" title="Delete saved endpoint">
-            <span className="material-symbols-outlined text-[14px]">delete</span>
+          <button
+            type="button"
+            onClick={handleDeleteSaved}
+            className="p-1 text-text-muted hover:text-red-500 rounded transition-colors shrink-0"
+            title="Delete saved endpoint"
+          >
+            <span className="material-symbols-outlined text-[14px]">
+              delete
+            </span>
           </button>
         )}
       </div>
@@ -165,7 +215,9 @@ export default function BaseUrlSelect({
           type="text"
           value={customInput}
           onChange={handleCustomInput}
-          placeholder={withV1 ? "https://example.com/v1" : "https://example.com"}
+          placeholder={
+            withV1 ? "https://example.com/v1" : "https://example.com"
+          }
           className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
         />
       )}

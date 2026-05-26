@@ -51,8 +51,10 @@ export async function getPricing() {
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
   const userPricing = await getUserPricing();
-  if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
-  const { getPricingForModel: resolveConst } = await import("@/shared/constants/pricing.js");
+  if (provider && userPricing[provider]?.[model])
+    return userPricing[provider][model];
+  const { getPricingForModel: resolveConst } =
+    await import("@/shared/constants/pricing.js");
   return resolveConst(provider, model);
 }
 
@@ -61,15 +63,18 @@ export async function updatePricing(pricingData) {
   const db = await getAdapter();
   db.transaction(() => {
     for (const [provider, models] of Object.entries(pricingData)) {
-      const row = db.get(`SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
-      const current = row ? (parseJson(row.value, {}) || {}) : {};
+      const row = db.get(
+        `SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`,
+        [provider],
+      );
+      const current = row ? parseJson(row.value, {}) || {} : {};
       const merged = { ...current };
       for (const [model, pricing] of Object.entries(models)) {
         merged[model] = pricing;
       }
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
-        [provider, stringifyJson(merged)]
+        [provider, stringifyJson(merged)],
       );
     }
   });
@@ -85,15 +90,18 @@ export async function resetPricing(provider, model) {
       db.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
       return;
     }
-    const row = db.get(`SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
-    const current = row ? (parseJson(row.value, {}) || {}) : {};
+    const row = db.get(
+      `SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`,
+      [provider],
+    );
+    const current = row ? parseJson(row.value, {}) || {} : {};
     delete current[model];
     if (Object.keys(current).length === 0) {
       db.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
     } else {
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
-        [provider, stringifyJson(current)]
+        [provider, stringifyJson(current)],
       );
     }
   });

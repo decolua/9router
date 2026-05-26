@@ -11,12 +11,14 @@
 9Router is a smart proxy that sits between your coding tools (Cursor, Cline, Claude Desktop) and AI providers. It automatically routes requests to the best available model based on quota, cost, and availability.
 
 **Stop wasting money:**
+
 - ❌ Subscription quota expires unused every month
 - ❌ Rate limits stop you mid-coding
 - ❌ Expensive APIs ($20-50/month per provider)
 - ❌ Manual switching between providers
 
 **Start maximizing value:**
+
 - ✅ **Maximize Subscriptions** - Track and use every bit of Claude Code, Codex, Gemini quota
 - ✅ **FREE Available** - Access iFlow, Qwen, Kiro models via CLI
 - ✅ **Ultra-Cheap Backup** - GLM ($0.6/1M), MiniMax M2.1 ($0.20/1M)
@@ -56,6 +58,7 @@ Works with any tool that supports custom OpenAI endpoints:
 ### 💰 Cost Optimization
 
 **Real example (100M tokens/month):**
+
 ```
 60M via Gemini CLI: $0 (free tier)
 30M via Claude Code: $0 (subscription you already have)
@@ -81,11 +84,11 @@ Already paying for Claude Code ($20-100/month) or Codex ($20-200/month)? Get ful
 
 When subscription quota runs out, pay pennies:
 
-| Provider | Cost per 1M tokens | Reset |
-|----------|-------------------|-------|
-| **GLM-4.7** | $0.60 input / $2.20 output | Daily 10:00 AM |
+| Provider         | Cost per 1M tokens         | Reset          |
+| ---------------- | -------------------------- | -------------- |
+| **GLM-4.7**      | $0.60 input / $2.20 output | Daily 10:00 AM |
 | **MiniMax M2.1** | $0.20 input / $1.00 output | 5-hour rolling |
-| **Kimi K2** | $9/month (10M tokens) | Monthly |
+| **Kimi K2**      | $9/month (10M tokens)      | Monthly        |
 
 **~90% cheaper than ChatGPT API ($20/1M)!**
 

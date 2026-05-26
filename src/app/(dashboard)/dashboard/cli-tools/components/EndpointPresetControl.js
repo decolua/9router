@@ -12,13 +12,17 @@ function maskApiKey(apiKey) {
 
 function normalizePresets(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter((preset) => preset?.name && preset?.baseUrl && preset?.apiKey);
+  return value.filter(
+    (preset) => preset?.name && preset?.baseUrl && preset?.apiKey,
+  );
 }
 
 function readPresets() {
   if (typeof window === "undefined") return [];
   try {
-    return normalizePresets(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]"));
+    return normalizePresets(
+      JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]"),
+    );
   } catch {
     return [];
   }
@@ -26,7 +30,10 @@ function readPresets() {
 
 function writePresets(presets) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizePresets(presets)));
+  window.localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(normalizePresets(presets)),
+  );
 }
 
 export default function EndpointPresetControl({
@@ -40,7 +47,7 @@ export default function EndpointPresetControl({
 
   const selectedPreset = useMemo(
     () => presets.find((preset) => preset.name === selectedName) || null,
-    [presets, selectedName]
+    [presets, selectedName],
   );
 
   const handleSelect = (name) => {
@@ -65,7 +72,11 @@ export default function EndpointPresetControl({
     const name = window.prompt("Preset name", defaultName);
     if (!name?.trim()) return;
 
-    const nextPreset = { name: name.trim(), baseUrl: trimmedBaseUrl, apiKey: trimmedApiKey };
+    const nextPreset = {
+      name: name.trim(),
+      baseUrl: trimmedBaseUrl,
+      apiKey: trimmedApiKey,
+    };
     const nextPresets = [
       ...presets.filter((preset) => preset.name !== nextPreset.name),
       nextPreset,
@@ -78,7 +89,9 @@ export default function EndpointPresetControl({
 
   const handleDelete = () => {
     if (!selectedPreset) return;
-    const nextPresets = presets.filter((preset) => preset.name !== selectedPreset.name);
+    const nextPresets = presets.filter(
+      (preset) => preset.name !== selectedPreset.name,
+    );
     setPresets(nextPresets);
     setSelectedName("");
     writePresets(nextPresets);
@@ -86,8 +99,12 @@ export default function EndpointPresetControl({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">Preset</span>
-      <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+      <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right">
+        Preset
+      </span>
+      <span className="material-symbols-outlined text-text-muted text-[14px]">
+        arrow_forward
+      </span>
       <select
         value={selectedName}
         onChange={(event) => handleSelect(event.target.value)}

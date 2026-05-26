@@ -21,12 +21,14 @@ Launch Roo AI Assistant and open the settings panel.
 3. Configure the following settings:
 
 **For Local 9Router:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
 **For Cloud 9Router:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -37,15 +39,18 @@ API Key: your-api-key-from-dashboard
 Choose from available 9Router models:
 
 **Claude Models:**
+
 - `cc/claude-opus-4-5-20251101` - Most capable
 - `cc/claude-sonnet-4-20250514` - Balanced
 - `cc/claude-haiku-4-20250514` - Fast
 
 **DeepSeek Models:**
+
 - `cx/deepseek-chat` - General purpose
 - `cx/deepseek-reasoner` - Complex reasoning
 
 **GLM Models:**
+
 - `glm/glm-4-plus` - Advanced
 - `glm/glm-4-flash` - Fast responses
 
@@ -60,18 +65,21 @@ Hello! Can you confirm you're connected through 9Router?
 ## Usage Examples
 
 ### Basic Chat
+
 ```
 Ask Roo: "Explain quantum computing in simple terms"
 Model: cc/claude-sonnet-4-20250514
 ```
 
 ### Code Generation
+
 ```
 Ask Roo: "Write a Python function to calculate Fibonacci numbers"
 Model: cx/deepseek-chat
 ```
 
 ### Complex Reasoning
+
 ```
 Ask Roo: "Analyze the trade-offs between microservices and monolithic architecture"
 Model: cx/deepseek-reasoner
@@ -87,16 +95,19 @@ Model: cx/deepseek-reasoner
 ## Troubleshooting
 
 ### Connection Failed
+
 - Verify 9Router is running: `curl http://localhost:20128/health`
 - Check API key is correct
 - Ensure Base URL includes `/v1` suffix
 
 ### Model Not Available
+
 - Check model name matches exactly (case-sensitive)
 - Verify model is enabled in your 9Router plan
 - Try a different model from the list
 
 ### Slow Responses
+
 - Switch to faster models (haiku, flash)
 - Check network connection
 - Monitor 9Router logs for issues
@@ -116,6 +127,7 @@ Alias: "code" → cx/deepseek-chat
 ### Multiple Profiles
 
 Set up different profiles for different use cases:
+
 - **Development**: DeepSeek models for code
 - **Writing**: Claude models for content
 - **Research**: Reasoner models for analysis

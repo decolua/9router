@@ -41,6 +41,7 @@ Dashboard → Providers → Connect [Provider]
 ```
 
 **Ví dụ: Claude Code**
+
 1. Click "Connect Claude Code"
 2. Đăng nhập tài khoản Claude
 3. Cho phép 9Router
@@ -58,6 +59,7 @@ Dashboard → Providers → Add API Key
 ```
 
 **Ví dụ: GLM-4.7**
+
 1. Đăng ký tại [Zhipu AI](https://open.bigmodel.cn/)
 2. Lấy API key từ Coding Plan
 3. Dashboard → Add API Key → Provider: `glm` → Paste key
@@ -74,6 +76,7 @@ Dashboard → Providers → Connect [Free Provider]
 ```
 
 **Ví dụ: iFlow**
+
 1. Click "Connect iFlow"
 2. Đăng nhập tài khoản iFlow
 3. Cho phép
@@ -142,6 +145,7 @@ Use in CLI: premium-coding
 ```
 
 **Cách hoạt động:**
+
 1. Thử Claude Opus trước (subscription của bạn)
 2. Nếu hết quota → GLM-4.7 (siêu rẻ)
 3. Nếu hết budget → iFlow (miễn phí)
@@ -154,46 +158,56 @@ Use in CLI: premium-coding
 ### Subscription Models (Dùng đầu tiên)
 
 **Claude Code (`cc/`)** - Subscription Pro/Max:
+
 - `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
 - `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Subscription Plus/Pro:
+
 - `cx/gpt-5.2-codex` - GPT 5.2 Codex
 - `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
 
 **Gemini CLI (`gc/`)** - MIỄN PHÍ 180K/tháng:
+
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - Subscription:
+
 - `gh/gpt-5` - GPT-5
 - `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
 
 ### Cheap Models (Backup)
 
 **GLM (`glm/`)** - $0.6/$2.2 per 1M:
+
 - `glm/glm-4.7` - GLM 4.7 (reset 10AM hàng ngày)
 
 **MiniMax (`minimax/`)** - $0.20/$1.00 per 1M:
+
 - `minimax/MiniMax-M2.1` - MiniMax M2.1 (reset 5h)
 
 **Kimi (`kimi/`)** - $9/tháng (10M tokens):
+
 - `kimi/kimi-latest` - Kimi Latest
 
 ### Model MIỄN PHÍ (Khẩn cấp)
 
 **iFlow (`if/`)** - 8 models MIỄN PHÍ:
+
 - `if/kimi-k2-thinking` - Kimi K2 Thinking
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
 **Qwen (`qw/`)** - 3 models MIỄN PHÍ:
+
 - `qw/qwen3-coder-plus` - Qwen3 Coder Plus
 - `qw/qwen3-coder-flash` - Qwen3 Coder Flash
 
 **Kiro (`kr/`)** - 2 models MIỄN PHÍ:
+
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 

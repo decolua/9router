@@ -8,7 +8,10 @@ export async function POST(request, { params }) {
     const result = await testSingleConnection(id);
 
     if (result.error === "Connection not found") {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Connection not found" },
+        { status: 404 },
+      );
     }
 
     return NextResponse.json({

@@ -21,14 +21,14 @@ curl "$NINEROUTER_URL/v1/models/info?id=openai/whisper-1"
 
 `POST $NINEROUTER_URL/v1/audio/transcriptions` (OpenAI Whisper compatible, `multipart/form-data`)
 
-| Field | Required | Notes |
-|---|---|---|
-| `model` | yes | from `/v1/models/stt` |
-| `file` | yes | audio file (mp3, wav, m4a, webm, ogg, flac) |
-| `language` | no | ISO-639-1 (e.g. `en`, `vi`) |
-| `prompt` | no | hint text to guide transcription |
-| `response_format` | no | `json` (default) / `text` / `verbose_json` / `srt` / `vtt` |
-| `temperature` | no | 0–1 |
+| Field             | Required | Notes                                                      |
+| ----------------- | -------- | ---------------------------------------------------------- |
+| `model`           | yes      | from `/v1/models/stt`                                      |
+| `file`            | yes      | audio file (mp3, wav, m4a, webm, ogg, flac)                |
+| `language`        | no       | ISO-639-1 (e.g. `en`, `vi`)                                |
+| `prompt`          | no       | hint text to guide transcription                           |
+| `response_format` | no       | `json` (default) / `text` / `verbose_json` / `srt` / `vtt` |
+| `temperature`     | no       | 0–1                                                        |
 
 ## Examples
 
@@ -46,10 +46,14 @@ JS (Node):
 import { createReadStream } from "node:fs";
 const form = new FormData();
 form.append("model", "groq/whisper-large-v3-turbo");
-form.append("file", new Blob([await (await import("node:fs/promises")).readFile("audio.mp3")]), "audio.mp3");
+form.append(
+  "file",
+  new Blob([await (await import("node:fs/promises")).readFile("audio.mp3")]),
+  "audio.mp3",
+);
 const r = await fetch(`${process.env.NINEROUTER_URL}/v1/audio/transcriptions`, {
   method: "POST",
-  headers: { "Authorization": `Bearer ${process.env.NINEROUTER_KEY}` },
+  headers: { Authorization: `Bearer ${process.env.NINEROUTER_KEY}` },
   body: form,
 });
 const { text } = await r.json();
@@ -59,6 +63,7 @@ console.log(text);
 ## Response shape
 
 Default (`response_format=json`):
+
 ```json
 { "text": "Xin chào, đây là bản ghi âm." }
 ```
@@ -68,12 +73,12 @@ Default (`response_format=json`):
 
 ## Provider quirks
 
-| Provider | `model` format | Notes |
-|---|---|---|
-| `openai` | `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` | Native OpenAI shape |
-| `groq` | `whisper-large-v3`, `whisper-large-v3-turbo`, `distil-whisper-large-v3-en` | Fastest; OpenAI shape |
-| `gemini` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Server converts to `generateContent` with audio inline |
-| `deepgram` | `nova-3`, `nova-2`, `whisper-large` | Token auth; server adapts response |
-| `assemblyai` | `universal-3-pro`, `universal-2` | Async upload+poll handled server-side |
-| `nvidia` | `nvidia/parakeet-ctc-1.1b-asr` | NIM endpoint |
-| `huggingface` | `openai/whisper-large-v3`, `openai/whisper-small` | HF Inference API |
+| Provider      | `model` format                                                             | Notes                                                  |
+| ------------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `openai`      | `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`                 | Native OpenAI shape                                    |
+| `groq`        | `whisper-large-v3`, `whisper-large-v3-turbo`, `distil-whisper-large-v3-en` | Fastest; OpenAI shape                                  |
+| `gemini`      | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite`              | Server converts to `generateContent` with audio inline |
+| `deepgram`    | `nova-3`, `nova-2`, `whisper-large`                                        | Token auth; server adapts response                     |
+| `assemblyai`  | `universal-3-pro`, `universal-2`                                           | Async upload+poll handled server-side                  |
+| `nvidia`      | `nvidia/parakeet-ctc-1.1b-asr`                                             | NIM endpoint                                           |
+| `huggingface` | `openai/whisper-large-v3`, `openai/whisper-small`                          | HF Inference API                                       |

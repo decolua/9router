@@ -8,7 +8,12 @@ const IS_DEV = process.env.NODE_ENV === "development";
 const LSOF_BIN = (() => {
   if (process.platform === "win32") return null;
   for (const p of ["/usr/sbin/lsof", "/usr/bin/lsof", "/sbin/lsof"]) {
-    try { fs.accessSync(p, fs.constants.X_OK); return p; } catch { /* try next */ }
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
+    } catch {
+      /* try next */
+    }
   }
   return "lsof"; // last-resort fallback (depends on PATH)
 })();
@@ -42,13 +47,19 @@ const MODEL_SYNONYMS = {
 // Order matters: more specific patterns first. Catches AG renamed variants (e.g. gemini-pro-agent)
 const MODEL_PATTERNS = {
   antigravity: [
-    { match: /flash.*low|low.*flash|flash.*medium|medium.*flash/i, alias: "gemini-3.5-flash-low" },
-    { match: /flash.*agent|agent.*flash|flash/i,                   alias: "gemini-3-flash-agent" },
-    { match: /pro.*low|low.*pro/i,                                 alias: "gemini-3.1-pro-low" },
-    { match: /gemini.*pro|pro.*gemini/i,                           alias: "gemini-pro-agent" },
-    { match: /opus/i,                                              alias: "claude-opus-4-6-thinking" },
-    { match: /sonnet|claude/i,                                     alias: "claude-sonnet-4-6" },
-    { match: /gpt.*oss|oss/i,                                      alias: "gpt-oss-120b-medium" },
+    {
+      match: /flash.*low|low.*flash|flash.*medium|medium.*flash/i,
+      alias: "gemini-3.5-flash-low",
+    },
+    {
+      match: /flash.*agent|agent.*flash|flash/i,
+      alias: "gemini-3-flash-agent",
+    },
+    { match: /pro.*low|low.*pro/i, alias: "gemini-3.1-pro-low" },
+    { match: /gemini.*pro|pro.*gemini/i, alias: "gemini-pro-agent" },
+    { match: /opus/i, alias: "claude-opus-4-6-thinking" },
+    { match: /sonnet|claude/i, alias: "claude-sonnet-4-6" },
+    { match: /gpt.*oss|oss/i, alias: "gpt-oss-120b-medium" },
   ],
 };
 
@@ -64,10 +75,23 @@ const LOG_BLACKLIST_URL_PARTS = [
 function getToolForHost(host) {
   const h = (host || "").split(":")[0];
   if (h === "api.individual.githubcopilot.com") return "copilot";
-  if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
+  if (
+    h === "daily-cloudcode-pa.googleapis.com" ||
+    h === "cloudcode-pa.googleapis.com"
+  )
+    return "antigravity";
   if (h === "q.us-east-1.amazonaws.com") return "kiro";
   if (h === "api2.cursor.sh") return "cursor";
   return null;
 }
 
-module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, LOG_BLACKLIST_URL_PARTS, getToolForHost };
+module.exports = {
+  IS_DEV,
+  LSOF_BIN,
+  TARGET_HOSTS,
+  URL_PATTERNS,
+  MODEL_SYNONYMS,
+  MODEL_PATTERNS,
+  LOG_BLACKLIST_URL_PARTS,
+  getToolForHost,
+};

@@ -20,7 +20,8 @@ function flattenText(content) {
     const parts = [];
     for (const p of content) {
       if (typeof p === "string") parts.push(p);
-      else if (p && typeof p === "object" && typeof p.text === "string") parts.push(p.text);
+      else if (p && typeof p === "object" && typeof p.text === "string")
+        parts.push(p.text);
     }
     return parts.join("\n");
   }
@@ -53,7 +54,11 @@ function toContentBlocks(content) {
 function safeParseJson(s) {
   if (s == null) return {};
   if (typeof s !== "string") return s;
-  try { return JSON.parse(s); } catch { return {}; }
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
 }
 
 function convertMessages(messages = []) {
@@ -71,15 +76,18 @@ function convertMessages(messages = []) {
     }
 
     if (role === "tool") {
-      const value = typeof m.content === "string" ? m.content : flattenText(m.content);
+      const value =
+        typeof m.content === "string" ? m.content : flattenText(m.content);
       out.push({
         role: "tool",
-        content: [{
-          type: "tool-result",
-          toolCallId: m.tool_call_id || "",
-          toolName: m.name || "",
-          output: { type: "text", value },
-        }],
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: m.tool_call_id || "",
+            toolName: m.name || "",
+            output: { type: "text", value },
+          },
+        ],
       });
       continue;
     }
@@ -99,7 +107,10 @@ function convertMessages(messages = []) {
           });
         }
       }
-      out.push({ role: "assistant", content: blocks.length ? blocks : [{ type: "text", text: "" }] });
+      out.push({
+        role: "assistant",
+        content: blocks.length ? blocks : [{ type: "text", text: "" }],
+      });
       continue;
     }
 

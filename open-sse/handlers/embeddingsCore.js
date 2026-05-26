@@ -1,4 +1,8 @@
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import {
+  createErrorResult,
+  parseUpstreamError,
+  formatProviderError,
+} from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -23,17 +27,23 @@ export async function handleEmbeddingsCore({
   // Validate input
   const input = body.input;
   if (!input) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      "Missing required field: input",
+    );
   }
   if (typeof input !== "string" && !Array.isArray(input)) {
-    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "input must be a string or array of strings");
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      "input must be a string or array of strings",
+    );
   }
 
   const adapter = getEmbeddingAdapter(provider);
   if (!adapter) {
     return createErrorResult(
       HTTP_STATUS.BAD_REQUEST,
-      `Provider '${provider}' does not support embeddings.`
+      `Provider '${provider}' does not support embeddings.`,
     );
   }
 
@@ -46,7 +56,10 @@ export async function handleEmbeddingsCore({
     dimensions: body.dimensions,
   });
 
-  log?.debug?.("EMBEDDINGS", `${provider.toUpperCase()} | ${model} | input_type=${Array.isArray(input) ? `array[${input.length}]` : "string"}`);
+  log?.debug?.(
+    "EMBEDDINGS",
+    `${provider.toUpperCase()} | ${model} | input_type=${Array.isArray(input) ? `array[${input.length}]` : "string"}`,
+  );
 
   let providerResponse;
   try {
@@ -56,7 +69,12 @@ export async function handleEmbeddingsCore({
       body: JSON.stringify(requestBody),
     });
   } catch (error) {
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const errMsg = formatProviderError(
+      error,
+      provider,
+      model,
+      HTTP_STATUS.BAD_GATEWAY,
+    );
     log?.debug?.("EMBEDDINGS", `Fetch error: ${errMsg}`);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
@@ -71,11 +89,14 @@ export async function handleEmbeddingsCore({
     const newCredentials = await refreshWithRetry(
       () => executor.refreshCredentials(credentials, log),
       3,
-      log
+      log,
     );
 
     if (newCredentials?.accessToken || newCredentials?.apiKey) {
-      log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed for embeddings`);
+      log?.info?.(
+        "TOKEN",
+        `${provider.toUpperCase()} | refreshed for embeddings`,
+      );
       Object.assign(credentials, newCredentials);
       if (onCredentialsRefreshed) await onCredentialsRefreshed(newCredentials);
 
@@ -88,7 +109,10 @@ export async function handleEmbeddingsCore({
           body: JSON.stringify(requestBody),
         });
       } catch {
-        log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`);
+        log?.warn?.(
+          "TOKEN",
+          `${provider.toUpperCase()} | retry after refresh failed`,
+        );
       }
     } else {
       log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
@@ -97,7 +121,12 @@ export async function handleEmbeddingsCore({
 
   if (!providerResponse.ok) {
     const { statusCode, message } = await parseUpstreamError(providerResponse);
-    const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
+    const errMsg = formatProviderError(
+      new Error(message),
+      provider,
+      model,
+      statusCode,
+    );
     log?.debug?.("EMBEDDINGS", `Provider error: ${errMsg}`);
     return createErrorResult(statusCode, errMsg);
   }
@@ -106,13 +135,19 @@ export async function handleEmbeddingsCore({
   try {
     responseBody = await providerResponse.json();
   } catch {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      `Invalid JSON response from ${provider}`,
+    );
   }
 
   if (onRequestSuccess) await onRequestSuccess();
 
   const normalized = adapter.normalize(responseBody, model);
-  log?.debug?.("EMBEDDINGS", `Success | usage=${JSON.stringify(normalized.usage || {})}`);
+  log?.debug?.(
+    "EMBEDDINGS",
+    `Success | usage=${JSON.stringify(normalized.usage || {})}`,
+  );
 
   return {
     success: true,

@@ -7,18 +7,37 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
-import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import {
+  AI_PROVIDERS,
+  FREE_TIER_PROVIDERS,
+  WEB_COOKIE_PROVIDERS,
+  isOpenAICompatibleProvider,
+  isAnthropicCompatibleProvider,
+  isCustomEmbeddingProvider,
+} from "@/shared/constants/providers";
+import {
+  normalizeProviderId,
+  normalizeProviderSpecificData,
+} from "@/lib/providerNormalization";
 
 export const dynamic = "force-dynamic";
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
-  const url = typeof body?.connectionProxyUrl === "string" ? body.connectionProxyUrl.trim() : "";
-  const noProxy = typeof body?.connectionNoProxy === "string" ? body.connectionNoProxy.trim() : "";
+  const url =
+    typeof body?.connectionProxyUrl === "string"
+      ? body.connectionProxyUrl.trim()
+      : "";
+  const noProxy =
+    typeof body?.connectionNoProxy === "string"
+      ? body.connectionNoProxy.trim()
+      : "";
 
   if (enabled && !url) {
-    return { error: "Connection proxy URL is required when connection proxy is enabled" };
+    return {
+      error:
+        "Connection proxy URL is required when connection proxy is enabled",
+    };
   }
 
   return {
@@ -29,7 +48,12 @@ function normalizeProxyConfig(body = {}) {
 }
 
 async function normalizeProxyPoolId(proxyPoolId) {
-  if (proxyPoolId === undefined || proxyPoolId === null || proxyPoolId === "" || proxyPoolId === "__none__") {
+  if (
+    proxyPoolId === undefined ||
+    proxyPoolId === null ||
+    proxyPoolId === "" ||
+    proxyPoolId === "__none__"
+  ) {
     return { proxyPoolId: null };
   }
 
@@ -58,13 +82,18 @@ export async function GET() {
       for (const node of nodes) {
         if (node.id && node.name) nodeNameMap[node.id] = node.name;
       }
-    } catch { }
+    } catch {}
 
     // Hide sensitive fields, enrich name for compatible providers
-    const safeConnections = connections.map(c => {
-      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+    const safeConnections = connections.map((c) => {
+      const isCompatible =
+        isOpenAICompatibleProvider(c.provider) ||
+        isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
-        ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        ? c.name ||
+          nodeNameMap[c.provider] ||
+          c.providerSpecificData?.nodeName ||
+          c.provider
         : c.name;
       return {
         ...c,
@@ -79,7 +108,10 @@ export async function GET() {
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
     console.log("Error fetching providers:", error);
-    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch providers" },
+      { status: 500 },
+    );
   }
 }
 
@@ -88,7 +120,15 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
-    const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
+    const {
+      apiKey,
+      name,
+      displayName,
+      priority,
+      globalPriority,
+      defaultModel,
+      testStatus,
+    } = body;
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
@@ -96,13 +136,17 @@ export async function POST(request) {
 
     const proxyPoolResult = await normalizeProxyPoolId(body.proxyPoolId);
     if (proxyPoolResult.error) {
-      return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
+      return NextResponse.json(
+        { error: proxyPoolResult.error },
+        { status: 400 },
+      );
     }
     const proxyPoolId = proxyPoolResult.proxyPoolId;
 
     // Validation
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
-    const isValidProvider = APIKEY_PROVIDERS[provider] ||
+    const isValidProvider =
+      APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
       isWebCookieProvider ||
       isOpenAICompatibleProvider(provider) ||
@@ -113,19 +157,31 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
     if (!apiKey && provider !== "ollama-local") {
-      return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required`,
+        },
+        { status: 400 },
+      );
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
     if (!connectionName) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
-    let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
+    let providerSpecificData = normalizeProviderSpecificData(
+      provider,
+      body,
+      body.providerSpecificData,
+    );
 
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "OpenAI Compatible node not found" },
+          { status: 404 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -136,7 +192,10 @@ export async function POST(request) {
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Anthropic Compatible node not found" },
+          { status: 404 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -146,7 +205,10 @@ export async function POST(request) {
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
-        return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
+        return NextResponse.json(
+          { error: "Custom Embedding node not found" },
+          { status: 404 },
+        );
       }
       providerSpecificData = {
         prefix: node.prefix,
@@ -186,6 +248,9 @@ export async function POST(request) {
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
     console.log("Error creating provider:", error);
-    return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create provider" },
+      { status: 500 },
+    );
   }
 }

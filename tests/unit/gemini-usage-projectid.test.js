@@ -20,15 +20,17 @@ describe("Gemini CLI usage project id resolution", () => {
   });
 
   it("uses the projectId stored on the provider connection", async () => {
-    proxyAwareFetch.mockResolvedValueOnce(jsonResponse({
-      buckets: [
-        {
-          modelId: "gemini-3-flash-preview",
-          remainingFraction: 0.75,
-          resetTime: "2026-05-25T12:00:00Z",
-        },
-      ],
-    }));
+    proxyAwareFetch.mockResolvedValueOnce(
+      jsonResponse({
+        buckets: [
+          {
+            modelId: "gemini-3-flash-preview",
+            remainingFraction: 0.75,
+            resetTime: "2026-05-25T12:00:00Z",
+          },
+        ],
+      }),
+    );
 
     const usage = await getUsageForProvider({
       provider: "gemini-cli",
@@ -42,7 +44,7 @@ describe("Gemini CLI usage project id resolution", () => {
       expect.objectContaining({
         body: JSON.stringify({ project: "cloud-code-project" }),
       }),
-      null
+      null,
     );
     expect(usage.quotas["gemini-3-flash-preview"]).toMatchObject({
       used: 250,
@@ -53,10 +55,12 @@ describe("Gemini CLI usage project id resolution", () => {
 
   it("normalizes project objects returned by loadCodeAssist", async () => {
     proxyAwareFetch
-      .mockResolvedValueOnce(jsonResponse({
-        cloudaicompanionProject: { id: "project-from-load" },
-        currentTier: { name: "Free" },
-      }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          cloudaicompanionProject: { id: "project-from-load" },
+          currentTier: { name: "Free" },
+        }),
+      )
       .mockResolvedValueOnce(jsonResponse({ buckets: [] }));
 
     await getUsageForProvider({
@@ -69,7 +73,7 @@ describe("Gemini CLI usage project id resolution", () => {
       expect.objectContaining({
         body: JSON.stringify({ project: "project-from-load" }),
       }),
-      null
+      null,
     );
   });
 

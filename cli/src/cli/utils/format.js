@@ -121,5 +121,5 @@ module.exports = {
   formatDate,
   formatNumber,
   formatBytes,
-  getRelativeTime
+  getRelativeTime,
 };

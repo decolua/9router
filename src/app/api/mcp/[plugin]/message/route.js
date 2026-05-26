@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export async function POST(request, { params }) {
   const { plugin } = await params;
   if (!findPlugin(plugin)) {
-    return NextResponse.json({ error: `Unknown plugin: ${plugin}` }, { status: 404 });
+    return NextResponse.json(
+      { error: `Unknown plugin: ${plugin}` },
+      { status: 404 },
+    );
   }
   try {
     const body = await request.json();

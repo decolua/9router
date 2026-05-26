@@ -1,5 +1,10 @@
 import { loadState, saveState, generateShortId } from "../shared/state.js";
-import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
+import {
+  spawnQuickTunnel,
+  killCloudflared,
+  isCloudflaredRunning,
+  setUnexpectedExitHandler,
+} from "./cloudflared.js";
 import { clearPid } from "./pid.js";
 import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
 import { WORKER_URL } from "./config.js";
@@ -12,18 +17,26 @@ const svc = {
   activeLocalPort: null,
 };
 
-export function getTunnelService() { return svc; }
-export function isTunnelManuallyDisabled() { return svc.cancelToken.cancelled; }
-export function isTunnelReconnecting() { return svc.spawnInProgress; }
+export function getTunnelService() {
+  return svc;
+}
+export function isTunnelManuallyDisabled() {
+  return svc.cancelToken.cancelled;
+}
+export function isTunnelReconnecting() {
+  return svc.spawnInProgress;
+}
 
 let onUnexpectedExit = null;
-export function setTunnelUnexpectedExitCallback(cb) { onUnexpectedExit = cb; }
+export function setTunnelUnexpectedExitCallback(cb) {
+  onUnexpectedExit = cb;
+}
 
 async function registerTunnelUrl(shortId, tunnelUrl) {
   await fetch(`${WORKER_URL}/api/tunnel/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shortId, tunnelUrl })
+    body: JSON.stringify({ shortId, tunnelUrl }),
   });
 }
 
@@ -50,9 +63,17 @@ export async function enableTunnel(localPort = 20128) {
         ]);
         if (directOk && publicOk) {
           console.log(`[Tunnel] already running, reuse: ${existing.tunnelUrl}`);
-          return { success: true, tunnelUrl: existing.tunnelUrl, shortId: existing.shortId, publicUrl, alreadyRunning: true };
+          return {
+            success: true,
+            tunnelUrl: existing.tunnelUrl,
+            shortId: existing.shortId,
+            publicUrl,
+            alreadyRunning: true,
+          };
         }
-        console.log(`[Tunnel] stale (direct=${directOk} public=${publicOk}), respawn`);
+        console.log(
+          `[Tunnel] stale (direct=${directOk} public=${publicOk}), respawn`,
+        );
       }
     }
 
@@ -73,7 +94,9 @@ export async function enableTunnel(localPort = 20128) {
 
     // Register exit handler BEFORE spawn so it fires even on early exit
     setUnexpectedExitHandler(() => {
-      console.warn("[Tunnel] cloudflared exited unexpectedly, scheduling respawn");
+      console.warn(
+        "[Tunnel] cloudflared exited unexpectedly, scheduling respawn",
+      );
       if (onUnexpectedExit) onUnexpectedExit();
     });
 
@@ -85,14 +108,18 @@ export async function enableTunnel(localPort = 20128) {
     await registerTunnelUrl(shortId, tunnelUrl);
     saveState({ shortId, tunnelUrl });
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
-    console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
+    console.log(
+      `[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`,
+    );
 
     // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
     await waitForHealth(publicUrl, token);
     console.log("[Tunnel] public URL healthy");
     // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked
     if (!(await probeUrlAlive(tunnelUrl))) {
-      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+      console.warn(
+        "[Tunnel] direct URL not reachable yet, continuing via publicUrl",
+      );
     } else {
       console.log("[Tunnel] direct URL healthy");
     }
@@ -113,7 +140,11 @@ export async function disableTunnel() {
   svc.cancelToken.cancelled = true;
   setUnexpectedExitHandler(null);
 
-  try { killCloudflared(svc.activeLocalPort); } catch (e) { console.warn(`[Tunnel] kill warn: ${e.message}`); }
+  try {
+    killCloudflared(svc.activeLocalPort);
+  } catch (e) {
+    console.warn(`[Tunnel] kill warn: ${e.message}`);
+  }
   clearPid();
 
   const state = loadState();
@@ -143,6 +174,6 @@ export async function getTunnelStatus() {
     tunnelUrl,
     shortId,
     publicUrl,
-    running
+    running,
   };
 }

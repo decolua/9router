@@ -5,6 +5,7 @@
 ## Overview
 
 9Router provides an OpenAI-compatible API endpoint that works with:
+
 - Custom scripts and applications
 - API clients and testing tools
 - CLI tools and utilities
@@ -16,6 +17,7 @@
 Any OpenAI-compatible tool can connect to 9Router using these settings:
 
 **Local 9Router:**
+
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
@@ -23,6 +25,7 @@ Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 ```
 
 **Cloud 9Router:**
+
 ```
 Base URL: https://9router.com/v1
 API Key: your-api-key-from-dashboard
@@ -32,15 +35,18 @@ Model: any 9Router model (cc/*, cx/*, glm/*, etc.)
 ## Available Models
 
 ### Claude Models (Anthropic)
+
 - `cc/claude-opus-4-5-20251101`
 - `cc/claude-sonnet-4-20250514`
 - `cc/claude-haiku-4-20250514`
 
 ### DeepSeek Models
+
 - `cx/deepseek-chat`
 - `cx/deepseek-reasoner`
 
 ### GLM Models (Zhipu AI)
+
 - `glm/glm-4-plus`
 - `glm/glm-4-flash`
 
@@ -73,14 +79,12 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 const response = await client.chat.completions.create({
   model: "cc/claude-sonnet-4-20250514",
-  messages: [
-    { role: "user", content: "Hello, how are you?" }
-  ]
+  messages: [{ role: "user", content: "Hello, how are you?" }],
 });
 
 console.log(response.choices[0].message.content);
@@ -103,23 +107,24 @@ curl http://localhost:20128/v1/chat/completions \
 ### HTTP Client (Postman, Insomnia)
 
 **Request:**
+
 ```
 POST http://localhost:20128/v1/chat/completions
 ```
 
 **Headers:**
+
 ```
 Content-Type: application/json
 Authorization: Bearer your-api-key-from-dashboard
 ```
 
 **Body:**
+
 ```json
 {
   "model": "cc/claude-sonnet-4-20250514",
-  "messages": [
-    {"role": "user", "content": "Hello, how are you?"}
-  ],
+  "messages": [{ "role": "user", "content": "Hello, how are you?" }],
   "temperature": 0.7,
   "max_tokens": 1000
 }
@@ -199,14 +204,14 @@ import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: "your-api-key-from-dashboard",
-  baseURL: "http://localhost:20128/v1"
+  baseURL: "http://localhost:20128/v1",
 });
 
 async function streamResponse(prompt) {
   const stream = await client.chat.completions.create({
     model: "cc/claude-sonnet-4-20250514",
     messages: [{ role: "user", content: prompt }],
-    stream: true
+    stream: true,
   });
 
   for await (const chunk of stream) {
@@ -319,6 +324,7 @@ def chat_with_retry(prompt, max_retries=3):
 ### Connection Issues
 
 **Problem:** Cannot connect to 9Router
+
 ```bash
 # Check if 9Router is running
 curl http://localhost:20128/health
@@ -328,6 +334,7 @@ curl http://localhost:20128/health
 ```
 
 **Solution:**
+
 - Verify 9Router is running
 - Check port 20128 is not blocked
 - Ensure correct base URL (include `/v1`)
@@ -335,11 +342,13 @@ curl http://localhost:20128/health
 ### Authentication Errors
 
 **Problem:** 401 Unauthorized
+
 ```
 Error: Invalid API key
 ```
 
 **Solution:**
+
 - Verify API key from dashboard
 - Check Authorization header format: `Bearer your-api-key`
 - Ensure no extra spaces or newlines in API key
@@ -347,11 +356,13 @@ Error: Invalid API key
 ### Model Not Found
 
 **Problem:** 404 Model not found
+
 ```
 Error: Model 'cc/claude-opus' not found
 ```
 
 **Solution:**
+
 - Use exact model name (case-sensitive)
 - Check available models: `curl http://localhost:20128/v1/models`
 - Verify model is enabled in your plan
@@ -359,11 +370,13 @@ Error: Model 'cc/claude-opus' not found
 ### Timeout Issues
 
 **Problem:** Request timeout
+
 ```
 Error: Request timed out after 30s
 ```
 
 **Solution:**
+
 - Increase timeout in client configuration
 - Use faster models for time-sensitive tasks
 - Check network connection to 9Router
@@ -371,11 +384,13 @@ Error: Request timed out after 30s
 ### Rate Limiting
 
 **Problem:** 429 Too Many Requests
+
 ```
 Error: Rate limit exceeded
 ```
 
 **Solution:**
+
 - Implement exponential backoff
 - Reduce request frequency
 - Check rate limits in dashboard
@@ -384,24 +399,28 @@ Error: Rate limit exceeded
 ## Best Practices
 
 ### Security
+
 - Store API keys in environment variables
 - Never commit API keys to version control
 - Use HTTPS for cloud deployments
 - Rotate API keys regularly
 
 ### Performance
+
 - Use appropriate models for task complexity
 - Implement caching for repeated queries
 - Use streaming for long responses
 - Batch requests when possible
 
 ### Error Handling
+
 - Always implement try-catch blocks
 - Add retry logic with exponential backoff
 - Log errors for debugging
 - Provide fallback mechanisms
 
 ### Cost Optimization
+
 - Choose cost-effective models for simple tasks
 - Cache responses when appropriate
 - Monitor usage in dashboard

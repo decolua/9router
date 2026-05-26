@@ -34,7 +34,8 @@ function stripAnsi(str) {
 
 function formatArg(arg) {
   if (typeof arg === "string") return stripAnsi(arg);
-  if (arg instanceof Error) return stripAnsi(arg.stack || arg.message || String(arg));
+  if (arg instanceof Error)
+    return stripAnsi(arg.stack || arg.message || String(arg));
   try {
     return stripAnsi(JSON.stringify(arg));
   } catch {

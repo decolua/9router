@@ -30,10 +30,16 @@ export function gitStatus(input) {
 
     // Long-form branch detection (LLM usually sends this, not porcelain)
     const longBranch = raw.match(/^On branch (\S+)/);
-    if (longBranch) { branch = longBranch[1]; continue; }
+    if (longBranch) {
+      branch = longBranch[1];
+      continue;
+    }
 
     // Porcelain branch header: "## main...origin/main"
-    if (raw.startsWith("##")) { branch = raw.replace(/^##\s*/, ""); continue; }
+    if (raw.startsWith("##")) {
+      branch = raw.replace(/^##\s*/, "");
+      continue;
+    }
 
     // Porcelain status (2 chars + space + path)
     if (raw.length >= 3 && /^[ MADRCU?!][ MADRCU?!] /.test(raw)) {
@@ -62,13 +68,21 @@ export function gitStatus(input) {
     }
 
     // Long form fallback ("modified:   path", "new file:   path", ...)
-    const longMatch = raw.match(/^\s*(modified|new file|deleted|renamed|both modified):\s+(.+)$/);
+    const longMatch = raw.match(
+      /^\s*(modified|new file|deleted|renamed|both modified):\s+(.+)$/,
+    );
     if (longMatch) {
       const kind = longMatch[1];
       const path = longMatch[2].trim();
-      if (kind === "both modified") { conflicts++; }
-      else if (kind === "modified" || kind === "deleted") { modified++; modifiedFiles.push(path); }
-      else if (kind === "new file" || kind === "renamed") { staged++; stagedFiles.push(path); }
+      if (kind === "both modified") {
+        conflicts++;
+      } else if (kind === "modified" || kind === "deleted") {
+        modified++;
+        modifiedFiles.push(path);
+      } else if (kind === "new file" || kind === "renamed") {
+        staged++;
+        stagedFiles.push(path);
+      }
       continue;
     }
 
@@ -89,7 +103,8 @@ export function gitStatus(input) {
 
   if (modified > 0) {
     out += `~ Modified: ${modified} files\n`;
-    for (const f of modifiedFiles.slice(0, STATUS_MAX_FILES)) out += `   ${f}\n`;
+    for (const f of modifiedFiles.slice(0, STATUS_MAX_FILES))
+      out += `   ${f}\n`;
     if (modifiedFiles.length > STATUS_MAX_FILES) {
       out += `   ... +${modifiedFiles.length - STATUS_MAX_FILES} more\n`;
     }
@@ -97,7 +112,8 @@ export function gitStatus(input) {
 
   if (untracked > 0) {
     out += `? Untracked: ${untracked} files\n`;
-    for (const f of untrackedFiles.slice(0, STATUS_MAX_UNTRACKED)) out += `   ${f}\n`;
+    for (const f of untrackedFiles.slice(0, STATUS_MAX_UNTRACKED))
+      out += `   ${f}\n`;
     if (untrackedFiles.length > STATUS_MAX_UNTRACKED) {
       out += `   ... +${untrackedFiles.length - STATUS_MAX_UNTRACKED} more\n`;
     }

@@ -17,14 +17,14 @@ export async function POST(request) {
     if (!accessToken || typeof accessToken !== "string") {
       return NextResponse.json(
         { error: "Access token is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!machineId || typeof machineId !== "string") {
       return NextResponse.json(
         { error: "Machine ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -33,7 +33,7 @@ export async function POST(request) {
     // Validate token by making API call
     const tokenData = await cursorService.validateImportToken(
       accessToken.trim(),
-      machineId.trim()
+      machineId.trim(),
     );
 
     // Try to extract user info from token
@@ -45,7 +45,9 @@ export async function POST(request) {
       authType: "oauth",
       accessToken: tokenData.accessToken,
       refreshToken: null, // Cursor doesn't have public refresh endpoint
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      expiresAt: new Date(
+        Date.now() + tokenData.expiresIn * 1000,
+      ).toISOString(),
       email: userInfo?.email || null,
       providerSpecificData: {
         machineId: tokenData.machineId,

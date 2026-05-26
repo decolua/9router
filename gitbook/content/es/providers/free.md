@@ -20,9 +20,9 @@ Los proveedores del nivel gratis son tu **fallback** cuando se agota la cuota de
 
 ### Precios
 
-| Plan | Costo mensual | Modelos | Cuota |
-|------|--------------|--------|-------|
-| FREE | $0 | 8 modelos | Ilimitado |
+| Plan | Costo mensual | Modelos   | Cuota     |
+| ---- | ------------- | --------- | --------- |
+| FREE | $0            | 8 modelos | Ilimitado |
 
 **Mejor valor:** ¡La mayoría de modelos en el nivel gratis! Kimi K2, Qwen3, GLM, MiniMax, DeepSeek.
 
@@ -58,16 +58,16 @@ Model: if/kimi-k2-thinking
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | Razonamiento complejo |
-| `if/kimi-k2` | Kimi K2 | Codificación general |
-| `if/qwen3-coder-plus` | Qwen3 Coder Plus | Generación de código |
-| `if/glm-4.7` | GLM 4.7 | Chino + inglés |
-| `if/minimax-m2` | MiniMax M2 | Contexto largo |
-| `if/deepseek-r1` | DeepSeek R1 | Tareas de razonamiento |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | Conversacional |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Lógica compleja |
+| ID del modelo               | Descripción            | Ideal para             |
+| --------------------------- | ---------------------- | ---------------------- |
+| `if/kimi-k2-thinking`       | Kimi K2 Thinking       | Razonamiento complejo  |
+| `if/kimi-k2`                | Kimi K2                | Codificación general   |
+| `if/qwen3-coder-plus`       | Qwen3 Coder Plus       | Generación de código   |
+| `if/glm-4.7`                | GLM 4.7                | Chino + inglés         |
+| `if/minimax-m2`             | MiniMax M2             | Contexto largo         |
+| `if/deepseek-r1`            | DeepSeek R1            | Tareas de razonamiento |
+| `if/deepseek-v3.2-chat`     | DeepSeek V3.2 Chat     | Conversacional         |
+| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Lógica compleja        |
 
 ### Pro Tips
 
@@ -82,9 +82,9 @@ Model: if/kimi-k2-thinking
 
 ### Precios
 
-| Plan | Costo mensual | Modelos | Cuota |
-|------|--------------|--------|-------|
-| FREE | $0 | 3 modelos | Ilimitado |
+| Plan | Costo mensual | Modelos   | Cuota     |
+| ---- | ------------- | --------- | --------- |
+| FREE | $0            | 3 modelos | Ilimitado |
 
 ### Configuración
 
@@ -114,11 +114,11 @@ Model: qw/qwen3-coder-plus
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | Codificación avanzada |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Respuestas rápidas |
-| `qw/vision-model` | Qwen3 Vision | Análisis de imágenes |
+| ID del modelo          | Descripción       | Ideal para            |
+| ---------------------- | ----------------- | --------------------- |
+| `qw/qwen3-coder-plus`  | Qwen3 Coder Plus  | Codificación avanzada |
+| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Respuestas rápidas    |
+| `qw/vision-model`      | Qwen3 Vision      | Análisis de imágenes  |
 
 ### Pro Tips
 
@@ -133,9 +133,9 @@ Model: qw/qwen3-coder-plus
 
 ### Precios
 
-| Plan | Costo mensual | Modelos | Cuota |
-|------|--------------|--------|-------|
-| FREE | $0 | Claude Sonnet 4.5, Haiku 4.5 | Ilimitado |
+| Plan | Costo mensual | Modelos                      | Cuota     |
+| ---- | ------------- | ---------------------------- | --------- |
+| FREE | $0            | Claude Sonnet 4.5, Haiku 4.5 | Ilimitado |
 
 **Mejor valor:** ¡Claude GRATIS! Misma calidad que Claude Code de pago.
 
@@ -167,10 +167,10 @@ Model: kr/claude-sonnet-4.5
 
 ### Modelos disponibles
 
-| ID del modelo | Descripción | Ideal para |
-|----------|-------------|----------|
+| ID del modelo          | Descripción       | Ideal para                    |
+| ---------------------- | ----------------- | ----------------------------- |
 | `kr/claude-sonnet-4.5` | Claude Sonnet 4.5 | Calidad/velocidad equilibrada |
-| `kr/claude-haiku-4.5` | Claude Haiku 4.5 | Respuestas rápidas |
+| `kr/claude-haiku-4.5`  | Claude Haiku 4.5  | Respuestas rápidas            |
 
 ### Pro Tips
 
@@ -183,11 +183,11 @@ Model: kr/claude-sonnet-4.5
 
 ## Comparación de características
 
-| Proveedor | Modelos | Mejor modelo | Configuración | Cuota |
-|----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | Ilimitado |
-| **Qwen** | 3 | Qwen3 Coder Plus | Device Code | Ilimitado |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | Ilimitado |
+| Proveedor | Modelos | Mejor modelo      | Configuración  | Cuota     |
+| --------- | ------- | ----------------- | -------------- | --------- |
+| **iFlow** | 8       | Kimi K2 Thinking  | OAuth          | Ilimitado |
+| **Qwen**  | 3       | Qwen3 Coder Plus  | Device Code    | Ilimitado |
+| **Kiro**  | 2       | Claude Sonnet 4.5 | AWS Builder ID | Ilimitado |
 
 **Ganador:** ¡iFlow por variedad, Kiro por calidad!
 
@@ -242,6 +242,7 @@ Usar en CLI: complete-fallback
 ```
 
 **Resultado:**
+
 - Nivel 1: Suscripción GRATIS (Gemini CLI)
 - Nivel 2: Suscripción de pago (Claude Code)
 - Nivel 3: Respaldo barato (GLM, MiniMax)
@@ -372,17 +373,20 @@ Perfecto para:
 ### Escenario: 100M tokens/mes
 
 **Opción 1: Solo ChatGPT API**
+
 ```
 100M × $20/1M = $2,000/mes
 ```
 
 **Opción 2: Solo nivel gratis de 9Router**
+
 ```
 100M vía nivel gratis = $0/mes
 Ahorros: $2,000/mes (100%)
 ```
 
 **Opción 3: Estrategia completa de 9Router**
+
 ```
 60M vía Gemini CLI (GRATIS): $0
 30M vía Claude Code (suscripción): $0 extra
@@ -399,6 +403,7 @@ Ahorros: $1,995/mes (99.76%)
 ### "OAuth failed"
 
 **Solución:**
+
 - Verifica la conexión a internet
 - Prueba otro navegador
 - Limpia la caché del navegador
@@ -407,6 +412,7 @@ Ahorros: $1,995/mes (99.76%)
 ### "Modelo no disponible"
 
 **Solución:**
+
 - Verifica que el proveedor esté conectado en el dashboard
 - Verifica que el token OAuth sea válido
 - Reconecta el proveedor si es necesario
@@ -414,6 +420,7 @@ Ahorros: $1,995/mes (99.76%)
 ### "Respuestas lentas"
 
 **Solución:**
+
 - El nivel gratis puede tener menor prioridad
 - Úsalo durante horas off-peak
 - Cambia a otro proveedor gratis

@@ -10,12 +10,17 @@
  */
 export async function fetchImageAsBase64(imageUrl, options = {}) {
   const { signal, timeoutMs = 10000 } = options;
-  if (!imageUrl || (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))) {
+  if (
+    !imageUrl ||
+    (!imageUrl.startsWith("http://") && !imageUrl.startsWith("https://"))
+  ) {
     return null;
   }
 
   const controller = new AbortController();
-  const timeout = signal ? null : setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = signal
+    ? null
+    : setTimeout(() => controller.abort(), timeoutMs);
   const fetchSignal = signal || controller.signal;
 
   try {

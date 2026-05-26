@@ -10,7 +10,10 @@ export async function GET() {
     return NextResponse.json({ aliases });
   } catch (error) {
     console.log("Error fetching aliases:", error);
-    return NextResponse.json({ error: "Failed to fetch aliases" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch aliases" },
+      { status: 500 },
+    );
   }
 }
 
@@ -21,7 +24,10 @@ export async function PUT(request) {
     const { model, alias } = body;
 
     if (!model || !alias) {
-      return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Model and alias required" },
+        { status: 400 },
+      );
     }
 
     await setModelAlias(alias, model);
@@ -29,7 +35,10 @@ export async function PUT(request) {
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
     console.log("Error updating alias:", error);
-    return NextResponse.json({ error: "Failed to update alias" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to update alias" },
+      { status: 500 },
+    );
   }
 }
 
@@ -48,6 +57,9 @@ export async function DELETE(request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error deleting alias:", error);
-    return NextResponse.json({ error: "Failed to delete alias" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to delete alias" },
+      { status: 500 },
+    );
   }
 }

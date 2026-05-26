@@ -31,10 +31,13 @@ export class BaseExecutor {
       "high traffic",
       "temporarily unavailable",
       "server is busy",
-      "overload"
+      "overload",
     ];
     if (status === 529 || status === 503) return true;
-    if (status === 429 && overloadedKeywords.some(keyword => msg.includes(keyword))) {
+    if (
+      status === 429 &&
+      overloadedKeywords.some((keyword) => msg.includes(keyword))
+    ) {
       return true;
     }
     return false;
@@ -266,7 +269,7 @@ export class BaseExecutor {
               retryAttemptsByUrl[urlIndex]++;
               log?.debug?.(
                 "RETRY",
-                `Overloaded status ${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s. Error details: ${bodyText.slice(0, 100)}`
+                `Overloaded status ${response.status} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${delayMs / 1000}s. Error details: ${bodyText.slice(0, 100)}`,
               );
               await new Promise((resolve) => setTimeout(resolve, delayMs));
               urlIndex--;

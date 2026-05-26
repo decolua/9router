@@ -19,14 +19,15 @@ function getAuthGroup(providerId, connection = null) {
     }
     return connection.authType;
   }
-  
+
   // Fallback to constants
   if (FREE_PROVIDERS[providerId]) return "free";
   if (OAUTH_PROVIDERS[providerId]) return "oauth";
   if (APIKEY_PROVIDERS[providerId]) return "apikey";
   if (
     typeof providerId === "string" &&
-    (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) || providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))
+    (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) ||
+      providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))
   )
     return "compatible";
   return "apikey";
@@ -35,7 +36,8 @@ function getAuthGroup(providerId, connection = null) {
 function isCompatibleProvider(providerId) {
   return (
     typeof providerId === "string" &&
-    (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) || providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))
+    (providerId.startsWith(OPENAI_COMPATIBLE_PREFIX) ||
+      providerId.startsWith(ANTHROPIC_COMPATIBLE_PREFIX))
   );
 }
 
@@ -53,21 +55,34 @@ export async function POST(request) {
 
     let connectionsToTest = [];
     if (mode === "provider" && providerId) {
-      connectionsToTest = allConnections.filter((c) => c.provider === providerId);
+      connectionsToTest = allConnections.filter(
+        (c) => c.provider === providerId,
+      );
     } else if (mode === "oauth") {
-      connectionsToTest = allConnections.filter((c) => getAuthGroup(c.provider, c) === "oauth");
+      connectionsToTest = allConnections.filter(
+        (c) => getAuthGroup(c.provider, c) === "oauth",
+      );
     } else if (mode === "free") {
-      connectionsToTest = allConnections.filter((c) => getAuthGroup(c.provider, c) === "free");
+      connectionsToTest = allConnections.filter(
+        (c) => getAuthGroup(c.provider, c) === "free",
+      );
     } else if (mode === "apikey") {
-      connectionsToTest = allConnections.filter((c) => getAuthGroup(c.provider, c) === "apikey");
+      connectionsToTest = allConnections.filter(
+        (c) => getAuthGroup(c.provider, c) === "apikey",
+      );
     } else if (mode === "compatible") {
-      connectionsToTest = allConnections.filter((c) => isCompatibleProvider(c.provider));
+      connectionsToTest = allConnections.filter((c) =>
+        isCompatibleProvider(c.provider),
+      );
     } else if (mode === "all") {
       connectionsToTest = allConnections;
     } else {
       return NextResponse.json(
-        { error: "Invalid mode. Use: provider, oauth, free, apikey, compatible, all" },
-        { status: 400 }
+        {
+          error:
+            "Invalid mode. Use: provider, oauth, free, apikey, compatible, all",
+        },
+        { status: 400 },
       );
     }
 
@@ -106,7 +121,12 @@ export async function POST(request) {
           valid: false,
           latencyMs: 0,
           error: error.message,
-          diagnosis: { type: "network_error", source: "local", code: null, message: error.message },
+          diagnosis: {
+            type: "network_error",
+            source: "local",
+            code: null,
+            message: error.message,
+          },
           statusCode: null,
           testedAt: new Date().toISOString(),
         });

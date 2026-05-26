@@ -69,7 +69,9 @@ export class OAuthService {
         close();
 
         if (callbackParams.error) {
-          throw new Error(callbackParams.error_description || callbackParams.error);
+          throw new Error(
+            callbackParams.error_description || callbackParams.error,
+          );
         }
 
         if (!callbackParams.code) {
@@ -84,7 +86,12 @@ export class OAuthService {
   /**
    * Exchange authorization code for tokens
    */
-  async exchangeCode(code, redirectUri, codeVerifier, contentType = "application/x-www-form-urlencoded") {
+  async exchangeCode(
+    code,
+    redirectUri,
+    codeVerifier,
+    contentType = "application/x-www-form-urlencoded",
+  ) {
     const body =
       contentType === "application/json"
         ? JSON.stringify({
@@ -127,7 +134,10 @@ export class OAuthService {
     const { codeVerifier, codeChallenge, state } = generatePKCE();
 
     // Start local server and get redirect URI
-    const { redirectUri, waitForCallback } = await this.startAuthFlow(null, providerName);
+    const { redirectUri, waitForCallback } = await this.startAuthFlow(
+      null,
+      providerName,
+    );
 
     // Build authorization URL
     const authUrl = buildAuthUrlFn(redirectUri, state, codeChallenge);
@@ -154,4 +164,3 @@ export class OAuthService {
     };
   }
 }
-

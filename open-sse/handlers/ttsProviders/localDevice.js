@@ -34,19 +34,33 @@ async function fetchVoicesWin() {
   ].join(" ");
   const { stdout } = await execFileAsync(
     "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
-    { windowsHide: true }
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-Command",
+      script,
+    ],
+    { windowsHide: true },
   );
   const raw = JSON.parse(stdout.trim() || "[]");
   const list = Array.isArray(raw) ? raw : [raw];
   return list.map((v) => {
     const culture = v.Culture || "en-US";
     const [lang, country = ""] = culture.split("-");
-    const genderMap = { 1: "Male", 2: "Female", Male: "Male", Female: "Female" };
+    const genderMap = {
+      1: "Male",
+      2: "Female",
+      Male: "Male",
+      Female: "Female",
+    };
     return {
-      id: v.Name, name: v.Name,
+      id: v.Name,
+      name: v.Name,
       locale: culture.replace("-", "_"),
-      lang, country,
+      lang,
+      country,
       gender: genderMap[v.Gender] || "",
     };
   });
@@ -55,7 +69,10 @@ async function fetchVoicesWin() {
 export async function fetchLocalDeviceVoices() {
   if (_voicesCache) return _voicesCache;
   try {
-    const voices = process.platform === "win32" ? await fetchVoicesWin() : await fetchVoicesMac();
+    const voices =
+      process.platform === "win32"
+        ? await fetchVoicesWin()
+        : await fetchVoicesMac();
     _voicesCache = voices;
     return voices;
   } catch {
@@ -68,9 +85,20 @@ async function synthesizeMacOrWin(text, voiceId) {
   const aiffPath = join(dir, "out.aiff");
   const mp3Path = join(dir, "out.mp3");
   try {
-    const args = voiceId ? ["-v", voiceId, "-o", aiffPath, text] : ["-o", aiffPath, text];
+    const args = voiceId
+      ? ["-v", voiceId, "-o", aiffPath, text]
+      : ["-o", aiffPath, text];
     await execFileAsync("say", args);
-    await execFileAsync("ffmpeg", ["-y", "-i", aiffPath, "-codec:a", "libmp3lame", "-qscale:a", "4", mp3Path]);
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-i",
+      aiffPath,
+      "-codec:a",
+      "libmp3lame",
+      "-qscale:a",
+      "4",
+      mp3Path,
+    ]);
     const buf = await readFile(mp3Path);
     return buf.toString("base64");
   } finally {

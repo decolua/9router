@@ -1,4 +1,8 @@
-import { getConsoleLogs, getConsoleEmitter, initConsoleLogCapture } from "@/lib/consoleLogBuffer";
+import {
+  getConsoleLogs,
+  getConsoleEmitter,
+  initConsoleLogCapture,
+} from "@/lib/consoleLogBuffer";
 
 export const dynamic = "force-dynamic";
 
@@ -27,14 +31,22 @@ export async function GET(request) {
       // Send all buffered logs immediately on connect
       const buffered = getConsoleLogs();
       if (buffered.length > 0) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`));
+        controller.enqueue(
+          encoder.encode(
+            `data: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`,
+          ),
+        );
       }
 
       // Push new lines as they arrive
       state.send = (line) => {
         if (state.closed) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "line", line })}\n\n`));
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "line", line })}\n\n`,
+            ),
+          );
         } catch {
           cleanup();
         }
@@ -44,7 +56,9 @@ export async function GET(request) {
       state.sendClear = () => {
         if (state.closed) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "clear" })}\n\n`));
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "clear" })}\n\n`),
+          );
         } catch {
           cleanup();
         }
@@ -55,7 +69,10 @@ export async function GET(request) {
 
       // Keepalive ping every 25s
       state.keepalive = setInterval(() => {
-        if (state.closed) { clearInterval(state.keepalive); return; }
+        if (state.closed) {
+          clearInterval(state.keepalive);
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
@@ -73,7 +90,7 @@ export async function GET(request) {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 }

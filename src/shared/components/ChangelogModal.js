@@ -122,7 +122,9 @@ ChangelogModalContent.propTypes = {
 export default function ChangelogModal({ isOpen, onClose }) {
   if (!isOpen || typeof document === "undefined") return null;
 
-  return <ChangelogModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />;
+  return (
+    <ChangelogModalContent key={isOpen ? "open" : "closed"} onClose={onClose} />
+  );
 }
 
 ChangelogModal.propTypes = {

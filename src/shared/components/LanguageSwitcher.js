@@ -159,7 +159,9 @@ export default function LanguageSwitcher({
           <span className="material-symbols-outlined text-[20px]">
             language
           </span>
-          <span className="text-sm font-medium">{getLocaleInfo(locale).name}</span>
+          <span className="text-sm font-medium">
+            {getLocaleInfo(locale).name}
+          </span>
           <span className="text-lg">{getLocaleInfo(locale).flag}</span>
         </button>
       )}

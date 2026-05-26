@@ -14,7 +14,8 @@ const useSettingsStore = create((set, get) => ({
   // Skips network when cache is fresh; pass {force:true} to override
   fetchSettings: async ({ force = false } = {}) => {
     const { lastFetched, settings } = get();
-    if (!force && settings && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return settings;
+    if (!force && settings && Date.now() - lastFetched < CLIENT_STORE_TTL_MS)
+      return settings;
     set({ loading: true, error: null });
     try {
       const res = await fetch("/api/settings");

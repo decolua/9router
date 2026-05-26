@@ -7,7 +7,8 @@ export const CAVEMAN_LEVELS = {
   ULTRA: "ultra",
 };
 
-const SHARED_BOUNDARIES = "Code blocks, file paths, commands, errors, URLs: keep exact. Security warnings, irreversible action confirmations, multi-step ordered sequences: write normal. Resume terse style after.";
+const SHARED_BOUNDARIES =
+  "Code blocks, file paths, commands, errors, URLs: keep exact. Security warnings, irreversible action confirmations, multi-step ordered sequences: write normal. Resume terse style after.";
 
 export const CAVEMAN_PROMPTS = {
   [CAVEMAN_LEVELS.LITE]: [

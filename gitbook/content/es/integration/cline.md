@@ -28,16 +28,19 @@ Integra 9Router con la extensión Cline de VSCode para enrutar tus solicitudes d
 Establece la URL base a tu endpoint de 9Router:
 
 **Para 9Router local:**
+
 ```
 http://localhost:20128/v1
 ```
 
 **Para 9Router en la nube:**
+
 ```
 https://9router.com
 ```
 
 **Pasos:**
+
 1. En el campo **Base URL**, ingresa tu endpoint de 9Router
 2. Asegúrate de incluir `/v1` al final
 
@@ -79,13 +82,13 @@ Model: gpt-4
 
 Puedes usar cualquier modelo configurado en tu dashboard de 9Router. Ejemplos comunes:
 
-| Nombre del modelo | Proveedor | Descripción |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| Nombre del modelo   | Proveedor | Descripción       |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## Uso
 
@@ -183,6 +186,7 @@ Si experimentas problemas de timeout con solicitudes grandes:
 ### Enrutamiento de modelos
 
 9Router enruta automáticamente tus solicitudes al mejor proveedor disponible según:
+
 - Disponibilidad del modelo
 - Estado de salud del proveedor
 - Optimización de costos
@@ -195,6 +199,7 @@ Si un proveedor falla, 9Router automáticamente cambia a proveedores alternativo
 ### Seguimiento de uso
 
 Monitorea tu uso de Cline a través del dashboard de 9Router:
+
 - Total de solicitudes
 - Uso de tokens
 - Costo por modelo

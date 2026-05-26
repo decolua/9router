@@ -20,9 +20,9 @@ Provider free tier là **fallback** khi hết quota subscription và cheap:
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | 8 models | Không giới hạn |
+| Plan | Chi phí Hàng tháng | Models   | Quota          |
+| ---- | ------------------ | -------- | -------------- |
+| FREE | $0                 | 8 models | Không giới hạn |
 
 **Giá trị tốt nhất:** Nhiều model nhất trong free tier! Kimi K2, Qwen3, GLM, MiniMax, DeepSeek.
 
@@ -58,16 +58,16 @@ Model: if/kimi-k2-thinking
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | Reasoning phức tạp |
-| `if/kimi-k2` | Kimi K2 | Coding chung |
-| `if/qwen3-coder-plus` | Qwen3 Coder Plus | Tạo code |
-| `if/glm-4.7` | GLM 4.7 | Tiếng Trung + Anh |
-| `if/minimax-m2` | MiniMax M2 | Context dài |
-| `if/deepseek-r1` | DeepSeek R1 | Task reasoning |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | Conversational |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Logic phức tạp |
+| Model ID                    | Mô tả                  | Tốt nhất cho       |
+| --------------------------- | ---------------------- | ------------------ |
+| `if/kimi-k2-thinking`       | Kimi K2 Thinking       | Reasoning phức tạp |
+| `if/kimi-k2`                | Kimi K2                | Coding chung       |
+| `if/qwen3-coder-plus`       | Qwen3 Coder Plus       | Tạo code           |
+| `if/glm-4.7`                | GLM 4.7                | Tiếng Trung + Anh  |
+| `if/minimax-m2`             | MiniMax M2             | Context dài        |
+| `if/deepseek-r1`            | DeepSeek R1            | Task reasoning     |
+| `if/deepseek-v3.2-chat`     | DeepSeek V3.2 Chat     | Conversational     |
+| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Logic phức tạp     |
 
 ### Mẹo Pro
 
@@ -82,9 +82,9 @@ Model: if/kimi-k2-thinking
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | 3 models | Không giới hạn |
+| Plan | Chi phí Hàng tháng | Models   | Quota          |
+| ---- | ------------------ | -------- | -------------- |
+| FREE | $0                 | 3 models | Không giới hạn |
 
 ### Setup
 
@@ -114,11 +114,11 @@ Model: qw/qwen3-coder-plus
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | Coding nâng cao |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Phản hồi nhanh |
-| `qw/vision-model` | Qwen3 Vision | Phân tích ảnh |
+| Model ID               | Mô tả             | Tốt nhất cho    |
+| ---------------------- | ----------------- | --------------- |
+| `qw/qwen3-coder-plus`  | Qwen3 Coder Plus  | Coding nâng cao |
+| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Phản hồi nhanh  |
+| `qw/vision-model`      | Qwen3 Vision      | Phân tích ảnh   |
 
 ### Mẹo Pro
 
@@ -133,9 +133,9 @@ Model: qw/qwen3-coder-plus
 
 ### Pricing
 
-| Plan | Chi phí Hàng tháng | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | Claude Sonnet 4.5, Haiku 4.5 | Không giới hạn |
+| Plan | Chi phí Hàng tháng | Models                       | Quota          |
+| ---- | ------------------ | ---------------------------- | -------------- |
+| FREE | $0                 | Claude Sonnet 4.5, Haiku 4.5 | Không giới hạn |
 
 **Giá trị tốt nhất:** Claude MIỄN PHÍ! Cùng chất lượng với Claude Code trả phí.
 
@@ -167,10 +167,10 @@ Model: kr/claude-sonnet-4.5
 
 ### Model có sẵn
 
-| Model ID | Mô tả | Tốt nhất cho |
-|----------|-------------|----------|
+| Model ID               | Mô tả             | Tốt nhất cho               |
+| ---------------------- | ----------------- | -------------------------- |
 | `kr/claude-sonnet-4.5` | Claude Sonnet 4.5 | Cân bằng chất lượng/tốc độ |
-| `kr/claude-haiku-4.5` | Claude Haiku 4.5 | Phản hồi nhanh |
+| `kr/claude-haiku-4.5`  | Claude Haiku 4.5  | Phản hồi nhanh             |
 
 ### Mẹo Pro
 
@@ -183,11 +183,11 @@ Model: kr/claude-sonnet-4.5
 
 ## So sánh Tính năng
 
-| Provider | Models | Model tốt nhất | Setup | Quota |
-|----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | Không giới hạn |
-| **Qwen** | 3 | Qwen3 Coder Plus | Device Code | Không giới hạn |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | Không giới hạn |
+| Provider  | Models | Model tốt nhất    | Setup          | Quota          |
+| --------- | ------ | ----------------- | -------------- | -------------- |
+| **iFlow** | 8      | Kimi K2 Thinking  | OAuth          | Không giới hạn |
+| **Qwen**  | 3      | Qwen3 Coder Plus  | Device Code    | Không giới hạn |
+| **Kiro**  | 2      | Claude Sonnet 4.5 | AWS Builder ID | Không giới hạn |
 
 **Thắng cuộc:** iFlow vì đa dạng, Kiro vì chất lượng!
 
@@ -242,6 +242,7 @@ Use in CLI: complete-fallback
 ```
 
 **Kết quả:**
+
 - Tier 1: Subscription MIỄN PHÍ (Gemini CLI)
 - Tier 2: Subscription trả phí (Claude Code)
 - Tier 3: Backup rẻ (GLM, MiniMax)
@@ -372,17 +373,20 @@ Perfect for:
 ### Kịch bản: 100M tokens/tháng
 
 **Phương án 1: Chỉ ChatGPT API**
+
 ```
 100M × $20/1M = $2,000/month
 ```
 
 **Phương án 2: Chỉ 9Router Free Tier**
+
 ```
 100M via free tier = $0/month
 Savings: $2,000/month (100%)
 ```
 
 **Phương án 3: Chiến lược Hoàn chỉnh 9Router**
+
 ```
 60M via Gemini CLI (FREE): $0
 30M via Claude Code (subscription): $0 extra
@@ -399,6 +403,7 @@ Savings: $1,995/month (99.76%)
 ### "OAuth failed"
 
 **Giải pháp:**
+
 - Kiểm tra kết nối internet
 - Thử browser khác
 - Xóa cache browser
@@ -407,6 +412,7 @@ Savings: $1,995/month (99.76%)
 ### "Model not available"
 
 **Giải pháp:**
+
 - Kiểm tra provider đã kết nối trong dashboard
 - Xác minh OAuth token hợp lệ
 - Kết nối lại provider nếu cần
@@ -414,6 +420,7 @@ Savings: $1,995/month (99.76%)
 ### "Slow responses"
 
 **Giải pháp:**
+
 - Free tier có thể có ưu tiên thấp hơn
 - Dùng trong giờ thấp điểm
 - Chuyển sang free provider khác

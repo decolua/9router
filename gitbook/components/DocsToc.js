@@ -17,7 +17,7 @@ export default function DocsToc({ headings, lang = DEFAULT_LANG }) {
           }
         });
       },
-      { rootMargin: "-80px 0px -80% 0px" }
+      { rootMargin: "-80px 0px -80% 0px" },
     );
 
     headings.forEach(({ id }) => {

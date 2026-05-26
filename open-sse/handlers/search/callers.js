@@ -40,7 +40,9 @@
 export function parseDomainFilter(domainFilter) {
   if (!domainFilter?.length) return { includes: [], excludes: [] };
   const includes = domainFilter.filter((d) => !d.startsWith("-"));
-  const excludes = domainFilter.filter((d) => d.startsWith("-")).map((d) => d.slice(1));
+  const excludes = domainFilter
+    .filter((d) => d.startsWith("-"))
+    .map((d) => d.slice(1));
   return { includes, excludes };
 }
 
@@ -56,7 +58,10 @@ export function getProviderSetting(params, key) {
     return fromOptions.trim();
   }
   const fromProviderData = params.providerSpecificData?.[key];
-  if (typeof fromProviderData === "string" && fromProviderData.trim().length > 0) {
+  if (
+    typeof fromProviderData === "string" &&
+    fromProviderData.trim().length > 0
+  ) {
     return fromProviderData.trim();
   }
   return undefined;
@@ -80,7 +85,8 @@ export function resolveBaseUrl(config, params) {
  * @returns {number|undefined}
  */
 export function toPageNumber(offset, maxResults) {
-  if (typeof offset !== "number" || offset <= 0 || maxResults <= 0) return undefined;
+  if (typeof offset !== "number" || offset <= 0 || maxResults <= 0)
+    return undefined;
   return Math.floor(offset / maxResults) + 1;
 }
 
@@ -95,22 +101,32 @@ function buildSerperRequest(config, params) {
     url: `${resolveBaseUrl(config, params)}${endpoint}`,
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-Key": params.token },
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": params.token,
+      },
       body: JSON.stringify(body),
     },
   };
 }
 
 function buildBraveRequest(config, params) {
-  const endpoint = params.searchType === "news" ? "/news/search" : "/web/search";
-  const qp = new URLSearchParams({ q: params.query, count: String(params.maxResults) });
+  const endpoint =
+    params.searchType === "news" ? "/news/search" : "/web/search";
+  const qp = new URLSearchParams({
+    q: params.query,
+    count: String(params.maxResults),
+  });
   if (params.country) qp.set("country", params.country);
   if (params.language) qp.set("search_lang", params.language);
   return {
     url: `${resolveBaseUrl(config, params)}${endpoint}?${qp}`,
     init: {
       method: "GET",
-      headers: { Accept: "application/json", "X-Subscription-Token": params.token },
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": params.token,
+      },
     },
   };
 }
@@ -119,12 +135,16 @@ function buildPerplexityRequest(config, params) {
   const body = { query: params.query, max_results: params.maxResults };
   if (params.country) body.country = params.country;
   if (params.language) body.search_language_filter = [params.language];
-  if (params.domainFilter?.length) body.search_domain_filter = params.domainFilter;
+  if (params.domainFilter?.length)
+    body.search_domain_filter = params.domainFilter;
   return {
     url: resolveBaseUrl(config, params),
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.token}`,
+      },
       body: JSON.stringify(body),
     },
   };
@@ -146,7 +166,10 @@ function buildExaRequest(config, params) {
     url: resolveBaseUrl(config, params),
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": params.token },
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": params.token,
+      },
       body: JSON.stringify(body),
     },
   };
@@ -166,7 +189,10 @@ function buildTavilyRequest(config, params) {
     url: resolveBaseUrl(config, params),
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${params.token}`,
+      },
       body: JSON.stringify(body),
     },
   };
@@ -229,7 +255,8 @@ function buildLinkupRequest(config, params) {
     if (params.timeRange === "day") from.setUTCDate(from.getUTCDate() - 1);
     if (params.timeRange === "week") from.setUTCDate(from.getUTCDate() - 7);
     if (params.timeRange === "month") from.setUTCMonth(from.getUTCMonth() - 1);
-    if (params.timeRange === "year") from.setUTCFullYear(from.getUTCFullYear() - 1);
+    if (params.timeRange === "year")
+      from.setUTCFullYear(from.getUTCFullYear() - 1);
     body.fromDate = from.toISOString().slice(0, 10);
     body.toDate = toDate;
   }
@@ -238,7 +265,10 @@ function buildLinkupRequest(config, params) {
     url: resolveBaseUrl(config, params),
     init: {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify(body),
     },
   };
@@ -278,9 +308,17 @@ function buildYouComRequest(config, params) {
     count: String(Math.min(params.maxResults, 100)),
   });
 
-  if (params.timeRange && params.timeRange !== "any") qp.set("freshness", params.timeRange);
-  if (typeof params.offset === "number" && params.offset > 0 && params.maxResults > 0) {
-    qp.set("offset", String(Math.min(Math.floor(params.offset / params.maxResults), 9)));
+  if (params.timeRange && params.timeRange !== "any")
+    qp.set("freshness", params.timeRange);
+  if (
+    typeof params.offset === "number" &&
+    params.offset > 0 &&
+    params.maxResults > 0
+  ) {
+    qp.set(
+      "offset",
+      String(Math.min(Math.floor(params.offset / params.maxResults), 9)),
+    );
   }
   if (params.country) qp.set("country", params.country);
   if (params.language) qp.set("language", params.language);
@@ -291,7 +329,7 @@ function buildYouComRequest(config, params) {
     qp.set("livecrawl", params.searchType === "news" ? "news" : "web");
     qp.append(
       "livecrawl_formats",
-      params.contentOptions.format === "markdown" ? "markdown" : "html"
+      params.contentOptions.format === "markdown" ? "markdown" : "html",
     );
   }
 
@@ -313,7 +351,8 @@ function buildSearxngRequest(config, params) {
     categories: params.searchType === "news" ? "news" : "general",
   });
   if (params.language) qp.set("language", params.language);
-  if (params.timeRange && params.timeRange !== "any") qp.set("time_range", params.timeRange);
+  if (params.timeRange && params.timeRange !== "any")
+    qp.set("time_range", params.timeRange);
 
   const page = toPageNumber(params.offset, params.maxResults);
   if (page) qp.set("pageno", String(page));
@@ -330,16 +369,16 @@ function buildSearxngRequest(config, params) {
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const BUILDERS = {
-  "serper": buildSerperRequest,
+  serper: buildSerperRequest,
   "brave-search": buildBraveRequest,
-  "perplexity": buildPerplexityRequest,
-  "exa": buildExaRequest,
-  "tavily": buildTavilyRequest,
+  perplexity: buildPerplexityRequest,
+  exa: buildExaRequest,
+  tavily: buildTavilyRequest,
   "google-pse": buildGooglePseRequest,
-  "linkup": buildLinkupRequest,
-  "searchapi": buildSearchApiRequest,
-  "youcom": buildYouComRequest,
-  "searxng": buildSearxngRequest,
+  linkup: buildLinkupRequest,
+  searchapi: buildSearchApiRequest,
+  youcom: buildYouComRequest,
+  searxng: buildSearxngRequest,
 };
 
 /**

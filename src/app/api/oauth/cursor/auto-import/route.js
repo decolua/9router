@@ -83,7 +83,9 @@ function extractTokensViaBetterSqlite(dbPath) {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
   const query = (key) => {
-    const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
+    const row = db
+      .prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1")
+      .get(key);
     return row?.value || null;
   };
 
@@ -100,13 +102,19 @@ function extractTokensViaBetterSqlite(dbPath) {
   let accessToken = null;
   for (const key of ACCESS_TOKEN_KEYS) {
     const raw = query(key);
-    if (raw) { accessToken = normalize(raw); break; }
+    if (raw) {
+      accessToken = normalize(raw);
+      break;
+    }
   }
 
   let machineId = null;
   for (const key of MACHINE_ID_KEYS) {
     const raw = query(key);
-    if (raw) { machineId = normalize(raw); break; }
+    if (raw) {
+      machineId = normalize(raw);
+      break;
+    }
   }
 
   db.close();
@@ -205,15 +213,21 @@ export async function GET() {
         cursorInstalled = true;
       } catch {
         try {
-          const desktopFile = join(homedir(), ".local/share/applications/cursor.desktop");
+          const desktopFile = join(
+            homedir(),
+            ".local/share/applications/cursor.desktop",
+          );
           await access(desktopFile, constants.R_OK);
           cursorInstalled = true;
-        } catch { /* not found */ }
+        } catch {
+          /* not found */
+        }
       }
       if (!cursorInstalled) {
         return NextResponse.json({
           found: false,
-          error: "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
+          error:
+            "Cursor config files found but Cursor IDE does not appear to be installed. Skipping auto-import.",
         });
       }
     }

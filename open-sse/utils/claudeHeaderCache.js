@@ -35,7 +35,9 @@ let cachedHeaders = null;
 function isClaudeCodeClient(headers) {
   const ua = (headers["user-agent"] || "").toLowerCase();
   const xApp = (headers["x-app"] || "").toLowerCase();
-  return ua.includes("claude-cli") || ua.includes("claude-code") || xApp === "cli";
+  return (
+    ua.includes("claude-cli") || ua.includes("claude-code") || xApp === "cli"
+  );
 }
 
 /**
@@ -56,7 +58,9 @@ export function cacheClaudeHeaders(headers) {
 
   if (Object.keys(captured).length > 0) {
     cachedHeaders = captured;
-    console.log(`[ClaudeHeaders] Cached ${Object.keys(captured).length} identity headers from Claude Code client`);
+    console.log(
+      `[ClaudeHeaders] Cached ${Object.keys(captured).length} identity headers from Claude Code client`,
+    );
   }
 }
 

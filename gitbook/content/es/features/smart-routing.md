@@ -21,6 +21,7 @@ Solicitud → 9Router → Verificar Nivel 1 (Suscripción)
 ### Sistema de fallback de 3 niveles
 
 **Nivel 1: SUSCRIPCIÓN (Primario)**
+
 - Claude Code (Pro/Max)
 - OpenAI Codex (Plus/Pro)
 - Gemini CLI (GRATIS 180K/mes)
@@ -30,6 +31,7 @@ Solicitud → 9Router → Verificar Nivel 1 (Suscripción)
 **Objetivo**: Maximizar el valor de las suscripciones que ya pagas.
 
 **Nivel 2: BARATO (Respaldo)**
+
 - GLM-4.7 ($0.60/1M entrada)
 - MiniMax M2.1 ($0.20/1M entrada)
 - Kimi K2 ($9/mes plano)
@@ -37,6 +39,7 @@ Solicitud → 9Router → Verificar Nivel 1 (Suscripción)
 **Objetivo**: Respaldo ultra-barato cuando se agota la cuota de suscripción (~90% más barato que ChatGPT API).
 
 **Nivel 3: GRATIS (Emergencia)**
+
 - iFlow (8 modelos)
 - Qwen (3 modelos)
 - Kiro (Claude GRATIS)
@@ -148,6 +151,7 @@ Dashboard → Settings → Fallback Priority
 ```
 
 Ejemplo de orden personalizado:
+
 ```
 Nivel 1: Gemini CLI → Claude Code → Codex
 Nivel 2: MiniMax → GLM → Kimi
@@ -169,12 +173,14 @@ Dashboard → Settings → Notifications
 ### Ejemplo 1: Fallback automático básico
 
 **Configuración:**
+
 ```
 Model: cc/claude-opus-4-5-20251101
 Fallback: Auto (3 niveles por defecto)
 ```
 
 **Comportamiento:**
+
 ```
 Mañana (cuota fresca):
   Solicitud → cc/claude-opus-4-5 ✅
@@ -194,6 +200,7 @@ Madrugada (toda la cuota de pago agotada):
 ### Ejemplo 2: Enrutamiento consciente del presupuesto
 
 **Configuración:**
+
 ```
 Dashboard → Settings:
   Presupuesto diario: $2
@@ -202,6 +209,7 @@ Dashboard → Settings:
 ```
 
 **Comportamiento:**
+
 ```
 Día 1-15 (dentro del presupuesto):
   Solicitudes → glm/glm-4.7 (nivel barato)
@@ -220,6 +228,7 @@ Mes siguiente (presupuesto se reinicia):
 ### Ejemplo 3: Modo solo suscripción
 
 **Configuración:**
+
 ```
 Dashboard → Settings:
   Fallback automático: OFF
@@ -227,6 +236,7 @@ Dashboard → Settings:
 ```
 
 **Comportamiento:**
+
 ```
 Solicitud → cc/claude-opus-4-5
   ✅ Cuota disponible → Éxito
@@ -238,12 +248,14 @@ Solicitud → cc/claude-opus-4-5
 ### Ejemplo 4: Modo solo gratis
 
 **Configuración:**
+
 ```
 Model: if/kimi-k2-thinking
 Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Comportamiento:**
+
 ```
 Todas las solicitudes → Solo nivel gratis
 Costo: $0 para siempre
@@ -265,6 +277,7 @@ Estrategia:
 ```
 
 **Ejemplo de combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -279,6 +292,7 @@ Estrategia:
 ```
 
 **Ejemplo de combo:**
+
 ```
 gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 ```
@@ -293,6 +307,7 @@ Estrategia:
 ```
 
 **Ejemplo de combo:**
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 ```
@@ -307,6 +322,7 @@ Estrategia:
 ```
 
 **Ejemplo de combo:**
+
 ```
 cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
@@ -319,16 +335,17 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 
 Planifica tu uso según los tiempos de reinicio de cuota:
 
-| Proveedor | Reinicio de cuota | Estrategia |
-|----------|-------------|----------|
-| **Claude Code** | 5 horas + semanal | Usar en la mañana, cuota fresca |
-| **Codex** | 5 horas + semanal | Usar después de cuota de Claude |
-| **Gemini CLI** | Diario (1K) + Mensual (180K) | Usar durante el día |
-| **GLM-4.7** | Diario 10:00 AM | Usar en la noche, se reinicia al día siguiente |
-| **MiniMax M2.1** | Rolling 5 horas | Usar cuando sea, rastrea ventana rolling |
-| **iFlow/Qwen/Kiro** | Sin límite | Respaldo de emergencia |
+| Proveedor           | Reinicio de cuota            | Estrategia                                     |
+| ------------------- | ---------------------------- | ---------------------------------------------- |
+| **Claude Code**     | 5 horas + semanal            | Usar en la mañana, cuota fresca                |
+| **Codex**           | 5 horas + semanal            | Usar después de cuota de Claude                |
+| **Gemini CLI**      | Diario (1K) + Mensual (180K) | Usar durante el día                            |
+| **GLM-4.7**         | Diario 10:00 AM              | Usar en la noche, se reinicia al día siguiente |
+| **MiniMax M2.1**    | Rolling 5 horas              | Usar cuando sea, rastrea ventana rolling       |
+| **iFlow/Qwen/Kiro** | Sin límite                   | Respaldo de emergencia                         |
 
 **Ejemplo de rutina diaria:**
+
 ```
 08:00 - 13:00: Claude Code (cuota fresca 5h)
 13:00 - 18:00: Gemini CLI (cuota 1K/día)
@@ -367,7 +384,7 @@ Dashboard → Analytics:
     - 30M vía Claude Code (suscripción)
     - 15M vía GLM-4.7 ($9)
     - 5M vía iFlow (gratis)
-  
+
   Costo: $9 (vs $1000 en ChatGPT API)
   Ahorros: 99%
 ```
@@ -379,6 +396,7 @@ Dashboard → Analytics:
 **Problema: "All providers quota exhausted"**
 
 **Solución:**
+
 1. Verifica el rastreador de cuota del dashboard
 2. Espera el reinicio de cuota (mira la cuenta regresiva)
 3. Agrega el nivel gratis a la cadena de fallback
@@ -387,6 +405,7 @@ Dashboard → Analytics:
 **Problema: "Demasiados cambios de fallback"**
 
 **Solución:**
+
 1. Verifica si el proveedor principal está caído
 2. Aumenta los límites de cuota (mejora la suscripción)
 3. Usa un modelo principal más barato (GLM en lugar de Claude)
@@ -394,6 +413,7 @@ Dashboard → Analytics:
 **Problema: "Costos inesperados"**
 
 **Solución:**
+
 1. Dashboard → Analytics → Revisa el uso
 2. Establece límites de presupuesto diarios/mensuales
 3. Cambia al nivel gratis para tareas no críticas

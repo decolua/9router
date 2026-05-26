@@ -32,9 +32,15 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
   const handler = FORMAT_HANDLERS[cfg.format];
   if (!handler) return null;
   const apiKey = credentials?.apiKey;
-  if (cfg.authType !== "none" && !apiKey) throw new Error(`${provider} API key required`);
+  if (cfg.authType !== "none" && !apiKey)
+    throw new Error(`${provider} API key required`);
   const defaultModel = cfg.models?.[0]?.id || "";
-  const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", cfg.models || []);
+  const { modelId, voiceId } = parseModelVoice(
+    model,
+    defaultModel,
+    "",
+    cfg.models || [],
+  );
   return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId });
 }
 
@@ -47,4 +53,9 @@ export const VOICE_FETCHERS = {
 };
 
 // Re-export for backward compat
-export { fetchEdgeTtsVoices, fetchLocalDeviceVoices, fetchElevenLabsVoices, fetchGeminiVoices };
+export {
+  fetchEdgeTtsVoices,
+  fetchLocalDeviceVoices,
+  fetchElevenLabsVoices,
+  fetchGeminiVoices,
+};

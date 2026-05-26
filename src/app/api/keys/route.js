@@ -11,7 +11,10 @@ export async function GET() {
     return NextResponse.json({ keys });
   } catch (error) {
     console.log("Error fetching keys:", error);
-    return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch keys" },
+      { status: 500 },
+    );
   }
 }
 
@@ -29,14 +32,20 @@ export async function POST(request) {
     const machineId = await getConsistentMachineId();
     const apiKey = await createApiKey(name, machineId);
 
-    return NextResponse.json({
-      key: apiKey.key,
-      name: apiKey.name,
-      id: apiKey.id,
-      machineId: apiKey.machineId,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        key: apiKey.key,
+        name: apiKey.name,
+        id: apiKey.id,
+        machineId: apiKey.machineId,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     console.log("Error creating key:", error);
-    return NextResponse.json({ error: "Failed to create key" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create key" },
+      { status: 500 },
+    );
   }
 }

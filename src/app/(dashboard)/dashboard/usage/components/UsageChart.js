@@ -70,12 +70,19 @@ export default function UsageChart({ period = "7d" }) {
       </div>
 
       {loading ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">Loading...</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">
+          Loading...
+        </div>
       ) : !hasData ? (
-        <div className="h-48 flex items-center justify-center text-text-muted text-sm">No data for this period</div>
+        <div className="h-48 flex items-center justify-center text-text-muted text-sm">
+          No data for this period
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <AreaChart
+            data={data}
+            margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+          >
             <defs>
               <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
@@ -109,7 +116,9 @@ export default function UsageChart({ period = "7d" }) {
                 fontSize: "12px",
               }}
               formatter={(value, name) =>
-                name === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
+                name === "tokens"
+                  ? [fmtTokens(value), "Tokens"]
+                  : [fmtCost(value), "Cost"]
               }
             />
             {viewMode === "tokens" ? (

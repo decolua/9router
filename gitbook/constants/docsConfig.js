@@ -7,24 +7,24 @@ const NAV_STRUCTURE = [
     items: [
       { key: "introduction", slug: "" },
       { key: "quickStart", slug: "getting-started/quick-start" },
-      { key: "installation", slug: "getting-started/installation" }
-    ]
+      { key: "installation", slug: "getting-started/installation" },
+    ],
   },
   {
     key: "providers",
     items: [
       { key: "subscription", slug: "providers/subscription" },
       { key: "cheap", slug: "providers/cheap" },
-      { key: "free", slug: "providers/free" }
-    ]
+      { key: "free", slug: "providers/free" },
+    ],
   },
   {
     key: "features",
     items: [
       { key: "smartRouting", slug: "features/smart-routing" },
       { key: "combos", slug: "features/combos" },
-      { key: "quotaTracking", slug: "features/quota-tracking" }
-    ]
+      { key: "quotaTracking", slug: "features/quota-tracking" },
+    ],
   },
   {
     key: "integration",
@@ -35,23 +35,23 @@ const NAV_STRUCTURE = [
       { key: "cline", slug: "integration/cline" },
       { key: "roo", slug: "integration/roo" },
       { key: "continue", slug: "integration/continue" },
-      { key: "otherTools", slug: "integration/other-tools" }
-    ]
+      { key: "otherTools", slug: "integration/other-tools" },
+    ],
   },
   {
     key: "deployment",
     items: [
       { key: "localhost", slug: "deployment/localhost" },
-      { key: "cloud", slug: "deployment/cloud" }
-    ]
+      { key: "cloud", slug: "deployment/cloud" },
+    ],
   },
   {
     key: "help",
     items: [
       { key: "troubleshooting", slug: "troubleshooting" },
-      { key: "faq", slug: "faq" }
-    ]
-  }
+      { key: "faq", slug: "faq" },
+    ],
+  },
 ];
 
 // Translations for section/item titles (5 langs).
@@ -85,7 +85,7 @@ const TRANSLATIONS = {
     faq: "FAQ",
     goToApp: "Go to App",
     selectLanguage: "Select Language",
-    onThisPage: "On this page"
+    onThisPage: "On this page",
   },
   vi: {
     gettingStarted: "Bắt đầu",
@@ -116,7 +116,7 @@ const TRANSLATIONS = {
     faq: "Câu hỏi thường gặp",
     goToApp: "Vào ứng dụng",
     selectLanguage: "Chọn ngôn ngữ",
-    onThisPage: "Trên trang này"
+    onThisPage: "Trên trang này",
   },
   "zh-CN": {
     gettingStarted: "开始使用",
@@ -147,7 +147,7 @@ const TRANSLATIONS = {
     faq: "常见问题",
     goToApp: "前往应用",
     selectLanguage: "选择语言",
-    onThisPage: "本页内容"
+    onThisPage: "本页内容",
   },
   es: {
     gettingStarted: "Comenzar",
@@ -178,7 +178,7 @@ const TRANSLATIONS = {
     faq: "Preguntas frecuentes",
     goToApp: "Ir a la app",
     selectLanguage: "Seleccionar idioma",
-    onThisPage: "En esta página"
+    onThisPage: "En esta página",
   },
   ja: {
     gettingStarted: "はじめに",
@@ -209,8 +209,8 @@ const TRANSLATIONS = {
     faq: "よくある質問",
     goToApp: "アプリへ",
     selectLanguage: "言語を選択",
-    onThisPage: "このページ"
-  }
+    onThisPage: "このページ",
+  },
 };
 
 // Translate one key for given language with fallback to default.
@@ -220,14 +220,14 @@ export function t(lang, key) {
 
 // Build localized navigation for sidebar.
 export function getNavigation(lang) {
-  return NAV_STRUCTURE.map(section => ({
+  return NAV_STRUCTURE.map((section) => ({
     key: section.key,
     title: t(lang, section.key),
-    items: section.items.map(item => ({
+    items: section.items.map((item) => ({
       key: item.key,
       slug: item.slug,
-      title: t(lang, item.key)
-    }))
+      title: t(lang, item.key),
+    })),
   }));
 }
 
@@ -238,5 +238,5 @@ export const DOCS_CONFIG = {
   logo: "9Router",
   appUrl: "https://9router.com",
   githubUrl: "https://github.com/decolua/9router",
-  navigation: getNavigation(DEFAULT_LANG)
+  navigation: getNavigation(DEFAULT_LANG),
 };

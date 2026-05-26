@@ -42,11 +42,11 @@ echo $ANTHROPIC_BASE_URL
 
 Claude Code hỗ trợ các alias model sau ánh xạ sang model 9Router:
 
-| Alias | Model | Biến môi trường |
-|-------|-------|---------------------|
-| `opus` | Claude Opus 4.5 | `ANTHROPIC_DEFAULT_OPUS_MODEL` |
+| Alias    | Model             | Biến môi trường                  |
+| -------- | ----------------- | -------------------------------- |
+| `opus`   | Claude Opus 4.5   | `ANTHROPIC_DEFAULT_OPUS_MODEL`   |
 | `sonnet` | Claude Sonnet 4.5 | `ANTHROPIC_DEFAULT_SONNET_MODEL` |
-| `haiku` | Claude Haiku 4.5 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
+| `haiku`  | Claude Haiku 4.5  | `ANTHROPIC_DEFAULT_HAIKU_MODEL`  |
 
 ## Ví dụ Sử dụng
 

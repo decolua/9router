@@ -42,11 +42,11 @@ echo $ANTHROPIC_BASE_URL
 
 Claude Code supports the following model aliases that map to 9Router models:
 
-| Alias | Model | Environment Variable |
-|-------|-------|---------------------|
-| `opus` | Claude Opus 4.5 | `ANTHROPIC_DEFAULT_OPUS_MODEL` |
+| Alias    | Model             | Environment Variable             |
+| -------- | ----------------- | -------------------------------- |
+| `opus`   | Claude Opus 4.5   | `ANTHROPIC_DEFAULT_OPUS_MODEL`   |
 | `sonnet` | Claude Sonnet 4.5 | `ANTHROPIC_DEFAULT_SONNET_MODEL` |
-| `haiku` | Claude Haiku 4.5 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
+| `haiku`  | Claude Haiku 4.5  | `ANTHROPIC_DEFAULT_HAIKU_MODEL`  |
 
 ## Usage Examples
 

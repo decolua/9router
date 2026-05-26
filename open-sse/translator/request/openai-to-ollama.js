@@ -19,7 +19,7 @@ export function openaiToOllamaRequest(model, body, stream) {
   const result = {
     model: model,
     messages: normalizeMessages(body.messages),
-    stream: stream
+    stream: stream,
   };
 
   // Temperature
@@ -84,12 +84,13 @@ function normalizeMessages(messages) {
       if (!toolResult) continue;
 
       // Get tool_name from map or use msg.name as fallback
-      const toolName = toolCallMap.get(msg.tool_call_id) || msg.name || "unknown_tool";
+      const toolName =
+        toolCallMap.get(msg.tool_call_id) || msg.name || "unknown_tool";
 
       result.push({
         role: "tool",
         tool_name: toolName,
-        content: toolResult
+        content: toolResult,
       });
       continue;
     }
@@ -97,23 +98,24 @@ function normalizeMessages(messages) {
     // Handle assistant messages with tool_calls
     if (msg.role === "assistant" && msg.tool_calls) {
       const content = normalizeContent(msg.content) || "";
-      
+
       // Convert OpenAI tool_calls format to Ollama format
-      const ollamaToolCalls = msg.tool_calls.map(tc => ({
+      const ollamaToolCalls = msg.tool_calls.map((tc) => ({
         type: "function",
         function: {
           index: tc.index || 0,
           name: tc.function?.name || "",
-          arguments: typeof tc.function?.arguments === "string" 
-            ? JSON.parse(tc.function.arguments || "{}")
-            : tc.function?.arguments || {}
-        }
+          arguments:
+            typeof tc.function?.arguments === "string"
+              ? JSON.parse(tc.function.arguments || "{}")
+              : tc.function?.arguments || {},
+        },
       }));
 
       result.push({
         role: "assistant",
         content: content,
-        tool_calls: ollamaToolCalls
+        tool_calls: ollamaToolCalls,
       });
       continue;
     }
@@ -128,7 +130,7 @@ function normalizeMessages(messages) {
 
     const out = {
       role: role,
-      content: content
+      content: content,
     };
 
     if (images.length > 0) {
@@ -153,8 +155,8 @@ function normalizeContent(content) {
   if (Array.isArray(content)) {
     // Extract text from content array
     const textParts = content
-      .filter(block => block && block.type === "text" && block.text)
-      .map(block => block.text);
+      .filter((block) => block && block.type === "text" && block.text)
+      .map((block) => block.text);
 
     return textParts.join("\n") || "";
   }
@@ -176,7 +178,10 @@ function extractImagesFromContent(content) {
   for (const block of content) {
     if (!block || block.type !== "image_url") continue;
 
-    const url = typeof block.image_url === "string" ? block.image_url : block.image_url?.url;
+    const url =
+      typeof block.image_url === "string"
+        ? block.image_url
+        : block.image_url?.url;
     if (typeof url !== "string" || !url) continue;
 
     const m = url.match(/^data:[^;]+;base64,([\s\S]+)$/);

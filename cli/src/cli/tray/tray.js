@@ -58,14 +58,18 @@ function initTray(options) {
  */
 function buildMenuItems(port, autostartEnabled) {
   return [
-    { title: `9Router (Port ${port})`, tooltip: "Server is running", enabled: false },
+    {
+      title: `9Router (Port ${port})`,
+      tooltip: "Server is running",
+      enabled: false,
+    },
     { title: "Open Dashboard", tooltip: "Open in browser", enabled: true },
     {
       title: autostartEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
       tooltip: "Run on OS startup",
-      enabled: true
+      enabled: true,
     },
-    { title: "Quit", tooltip: "Stop server and exit", enabled: true }
+    { title: "Quit", tooltip: "Stop server and exit", enabled: true },
   ];
 }
 
@@ -125,10 +129,12 @@ function initWindowsTray(options) {
       items,
       onClick: (index) => {
         handleClick(index, options, (newEnabled) => {
-          const newTitle = newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
+          const newTitle = newEnabled
+            ? "✓ Auto-start Enabled"
+            : "Enable Auto-start";
           trayInstance.updateItem(MENU_INDEX.AUTOSTART, newTitle, true);
         });
-      }
+      },
     });
 
     isWinTray = true;
@@ -156,14 +162,28 @@ function resolveSystray() {
 
   // 1) systray2 in runtime dir (where ensureTrayRuntime installs it)
   if (runtimeDir) {
-    try { return { mod: require(path.join(runtimeDir, "systray2")).default, isV2: true }; } catch (e) {}
+    try {
+      return {
+        mod: require(path.join(runtimeDir, "systray2")).default,
+        isV2: true,
+      };
+    } catch (e) {}
   }
   // 2) systray2 resolvable from the package's own node_modules / NODE_PATH
-  try { return { mod: require("systray2").default, isV2: true }; } catch (e) {}
+  try {
+    return { mod: require("systray2").default, isV2: true };
+  } catch (e) {}
   // 3) Legacy systray fallback (unlikely to render on modern macOS)
-  try { return { mod: require("systray").default, isV2: false }; } catch (e) {}
+  try {
+    return { mod: require("systray").default, isV2: false };
+  } catch (e) {}
   if (runtimeDir) {
-    try { return { mod: require(path.join(runtimeDir, "systray")).default, isV2: false }; } catch (e) {}
+    try {
+      return {
+        mod: require(path.join(runtimeDir, "systray")).default,
+        isV2: false,
+      };
+    } catch (e) {}
   }
   return null;
 }
@@ -174,10 +194,22 @@ function chmodTrayBin(pkgName) {
   // chmod on every init avoids a hard-to-diagnose silent tray failure.
   try {
     const { getRuntimeNodeModules } = require("../../../hooks/sqliteRuntime");
-    const binName = process.platform === "darwin" ? "tray_darwin_release" : "tray_linux_release";
+    const binName =
+      process.platform === "darwin"
+        ? "tray_darwin_release"
+        : "tray_linux_release";
     const candidates = [
       path.join(getRuntimeNodeModules(), pkgName, "traybin", binName),
-      path.join(__dirname, "..", "..", "..", "node_modules", pkgName, "traybin", binName)
+      path.join(
+        __dirname,
+        "..",
+        "..",
+        "..",
+        "node_modules",
+        pkgName,
+        "traybin",
+        binName,
+      ),
     ];
     for (const p of candidates) {
       if (fs.existsSync(p)) fs.chmodSync(p, 0o755);
@@ -205,7 +237,7 @@ function initUnixTray(options) {
       isTemplateIcon: false,
       title: "",
       tooltip: `9Router - Port ${port}`,
-      items
+      items,
     };
 
     trayInstance = new SysTray({ menu, debug: false, copyDir: true });
@@ -218,9 +250,9 @@ function initUnixTray(options) {
           item: {
             title: newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
             tooltip: "Run on OS startup",
-            enabled: true
+            enabled: true,
           },
-          seq_id: MENU_INDEX.AUTOSTART
+          seq_id: MENU_INDEX.AUTOSTART,
         });
       });
     });
@@ -230,7 +262,9 @@ function initUnixTray(options) {
       // failures (binary crash, EACCES, etc.) so users can see why the icon
       // didn't appear instead of getting a misleading "running in tray" log.
       trayInstance.ready().catch((err) => {
-        process.stderr.write(`[9router] tray failed to start: ${err && err.message ? err.message : err}\n`);
+        process.stderr.write(
+          `[9router] tray failed to start: ${err && err.message ? err.message : err}\n`,
+        );
       });
     } else {
       trayInstance.onReady(() => {});
@@ -256,21 +290,33 @@ function killTray() {
   if (!instance) return Promise.resolve();
 
   if (wasWin) {
-    try { instance.kill(); } catch (e) {}
+    try {
+      instance.kill();
+    } catch (e) {}
     return Promise.resolve();
   }
 
   // Unix: get the Go tray child process handle.
   let proc = null;
   try {
-    proc = instance._process || (typeof instance.process === "function" ? instance.process() : null);
+    proc =
+      instance._process ||
+      (typeof instance.process === "function" ? instance.process() : null);
   } catch (e) {}
 
   // Graceful shutdown: send {type:"exit"} via IPC so the Go binary can call
   // systray.Quit() and release NSStatusItem. SIGKILL leaves a ghost icon on
   // the macOS menubar until logout, causing duplicate icons after re-spawn.
-  const gracefulQuit = () => { try { instance.kill(true); } catch (e) {} };
-  const closeIpc = () => { try { instance.kill(false); } catch (e) {} };
+  const gracefulQuit = () => {
+    try {
+      instance.kill(true);
+    } catch (e) {}
+  };
+  const closeIpc = () => {
+    try {
+      instance.kill(false);
+    } catch (e) {}
+  };
 
   if (!proc || !proc.pid) {
     gracefulQuit();
@@ -280,20 +326,44 @@ function killTray() {
 
   return new Promise((resolve) => {
     let done = false;
-    const finish = () => { if (done) return; done = true; closeIpc(); resolve(); };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      closeIpc();
+      resolve();
+    };
 
     proc.once("exit", finish);
     gracefulQuit();
 
     // Escalate: SIGTERM after 800ms, SIGKILL after 1600ms if still alive.
-    setTimeout(() => { try { process.kill(proc.pid, 0); proc.kill("SIGTERM"); } catch (e) {} }, 800);
-    setTimeout(() => { try { process.kill(proc.pid, 0); proc.kill("SIGKILL"); } catch (e) {} }, 1600);
+    setTimeout(() => {
+      try {
+        process.kill(proc.pid, 0);
+        proc.kill("SIGTERM");
+      } catch (e) {}
+    }, 800);
+    setTimeout(() => {
+      try {
+        process.kill(proc.pid, 0);
+        proc.kill("SIGKILL");
+      } catch (e) {}
+    }, 1600);
 
     // Fallback poll in case "exit" never fires (detached child, pipe closed)
     const deadline = Date.now() + 3000;
     const poll = setInterval(() => {
-      try { process.kill(proc.pid, 0); } catch { clearInterval(poll); finish(); return; }
-      if (Date.now() > deadline) { clearInterval(poll); finish(); }
+      try {
+        process.kill(proc.pid, 0);
+      } catch {
+        clearInterval(poll);
+        finish();
+        return;
+      }
+      if (Date.now() > deadline) {
+        clearInterval(poll);
+        finish();
+      }
     }, 50);
   });
 }
@@ -318,5 +388,5 @@ function openBrowser(url) {
 
 module.exports = {
   initTray,
-  killTray
+  killTray,
 };

@@ -8,19 +8,24 @@ export async function GET() {
   try {
     const settings = await getSettings();
     const cookieStore = await cookies();
-    const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+    const session = await getDashboardAuthSession(
+      cookieStore.get("auth_token")?.value,
+    );
     const requireLogin = settings.requireLogin !== false;
     const authMode = settings.authMode || "password";
     const oidcName = String(session?.oidcName || "").trim();
     const oidcEmail = String(session?.oidcEmail || "").trim();
-    const displayName = oidcName || oidcEmail || (session?.oidc ? "OIDC user" : "Password user");
+    const displayName =
+      oidcName || oidcEmail || (session?.oidc ? "OIDC user" : "Password user");
     const loginMethod = session?.oidc ? "OIDC" : "Password";
 
     return NextResponse.json({
       requireLogin,
       authMode,
       oidcConfigured: isOidcConfigured(settings),
-      oidcLoginLabel: (settings.oidcLoginLabel || "Sign in with OIDC").trim() || "Sign in with OIDC",
+      oidcLoginLabel:
+        (settings.oidcLoginLabel || "Sign in with OIDC").trim() ||
+        "Sign in with OIDC",
       hasPassword: !!settings.password,
       displayName,
       loginMethod,

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { createProxyPool, getProviderConnections, getProxyPools } from "@/models";
+import {
+  createProxyPool,
+  getProviderConnections,
+  getProxyPools,
+} from "@/models";
 
 function toBoolean(value) {
   if (value === "true") return true;
@@ -11,7 +15,8 @@ const VALID_PROXY_TYPES = ["http", "vercel", "cloudflare", "deno"];
 
 function normalizeProxyPoolInput(body = {}) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";
-  const proxyUrl = typeof body?.proxyUrl === "string" ? body.proxyUrl.trim() : "";
+  const proxyUrl =
+    typeof body?.proxyUrl === "string" ? body.proxyUrl.trim() : "";
   const noProxy = typeof body?.noProxy === "string" ? body.noProxy.trim() : "";
   const isActive = body?.isActive === undefined ? true : body.isActive === true;
   const strictProxy = body?.strictProxy === true;
@@ -70,7 +75,10 @@ export async function GET(request) {
     return NextResponse.json({ proxyPools: enrichedProxyPools });
   } catch (error) {
     console.log("Error fetching proxy pools:", error);
-    return NextResponse.json({ error: "Failed to fetch proxy pools" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch proxy pools" },
+      { status: 500 },
+    );
   }
 }
 
@@ -88,6 +96,9 @@ export async function POST(request) {
     return NextResponse.json({ proxyPool }, { status: 201 });
   } catch (error) {
     console.log("Error creating proxy pool:", error);
-    return NextResponse.json({ error: "Failed to create proxy pool" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create proxy pool" },
+      { status: 500 },
+    );
   }
 }

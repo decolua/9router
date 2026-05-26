@@ -31,11 +31,14 @@ function matches(name, pattern) {
 }
 
 function dedupeTools(tools) {
-  if (!Array.isArray(tools) || tools.length === 0) return { tools, stripped: [] };
+  if (!Array.isArray(tools) || tools.length === 0)
+    return { tools, stripped: [] };
   const names = tools.map(getToolName);
   const toStrip = new Set();
   for (const rule of DEDUP_RULES) {
-    const hasTrigger = names.some((n) => rule.triggers.some((p) => matches(n, p)));
+    const hasTrigger = names.some((n) =>
+      rule.triggers.some((p) => matches(n, p)),
+    );
     if (!hasTrigger) continue;
     for (const n of names) {
       if (rule.strip.some((p) => matches(n, p))) toStrip.add(n);

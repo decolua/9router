@@ -13,6 +13,7 @@ npm install -g 9router
 ```
 
 **要求:**
+
 - Node.js 20 或更高
 - npm 9 或更高
 
@@ -29,6 +30,7 @@ npm install -g 9router
 仪表盘会自动在浏览器中打开,地址为 `http://localhost:3000`
 
 **默认配置:**
+
 - **仪表盘**: `http://localhost:3000`
 - **API Endpoint**: `http://localhost:20128/v1`
 - **数据目录**: `~/.9router`

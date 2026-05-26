@@ -13,7 +13,10 @@ export async function GET() {
     return NextResponse.json({ combos });
   } catch (error) {
     console.log("Error fetching combos:", error);
-    return NextResponse.json({ error: "Failed to fetch combos" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch combos" },
+      { status: 500 },
+    );
   }
 }
 
@@ -29,20 +32,33 @@ export async function POST(request) {
 
     // Validate name format
     if (!VALID_NAME_REGEX.test(name)) {
-      return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Name can only contain letters, numbers, -, _ and ." },
+        { status: 400 },
+      );
     }
 
     // Check if name already exists
     const existing = await getComboByName(name);
     if (existing) {
-      return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Combo name already exists" },
+        { status: 400 },
+      );
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const combo = await createCombo({
+      name,
+      models: models || [],
+      kind: kind || null,
+    });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {
     console.log("Error creating combo:", error);
-    return NextResponse.json({ error: "Failed to create combo" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create combo" },
+      { status: 500 },
+    );
   }
 }

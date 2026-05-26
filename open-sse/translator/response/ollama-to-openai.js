@@ -20,7 +20,7 @@ export function ollamaToOpenAI(chunk, state) {
     state.ollama = {
       id: `chatcmpl-${Date.now()}`,
       created: Math.floor(Date.now() / 1000),
-      model: chunk.model || state.model
+      model: chunk.model || state.model,
     };
   }
 
@@ -29,7 +29,7 @@ export function ollamaToOpenAI(chunk, state) {
   // Final chunk with done=true
   if (chunk.done) {
     const usage = extractUsage(chunk);
-    
+
     // Determine finish_reason based on done_reason and previous tool_calls
     let finishReason = "stop";
     if (chunk.done_reason === "tool_calls" || state.hadToolCalls) {
@@ -41,12 +41,14 @@ export function ollamaToOpenAI(chunk, state) {
       object: "chat.completion.chunk",
       created: created,
       model: model,
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: finishReason
-      }],
-      usage: usage
+      choices: [
+        {
+          index: 0,
+          delta: {},
+          finish_reason: finishReason,
+        },
+      ],
+      usage: usage,
     };
   }
 
@@ -56,7 +58,9 @@ export function ollamaToOpenAI(chunk, state) {
 
   const content = typeof message.content === "string" ? message.content : "";
   const thinking = typeof message.thinking === "string" ? message.thinking : "";
-  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : null;
+  const toolCalls = Array.isArray(message.tool_calls)
+    ? message.tool_calls
+    : null;
 
   // Skip empty chunks
   if (!content && !thinking && !toolCalls) return null;
@@ -72,7 +76,7 @@ export function ollamaToOpenAI(chunk, state) {
   const delta = {};
   if (content) delta.content = content;
   if (thinking) delta.reasoning_content = thinking;
-  
+
   // Convert Ollama tool_calls to OpenAI format
   if (toolCalls) {
     state.hadToolCalls = true;
@@ -84,11 +88,13 @@ export function ollamaToOpenAI(chunk, state) {
     object: "chat.completion.chunk",
     created: created,
     model: model,
-    choices: [{
-      index: 0,
-      delta: delta,
-      finish_reason: null
-    }]
+    choices: [
+      {
+        index: 0,
+        delta: delta,
+        finish_reason: null,
+      },
+    ],
   };
 }
 
@@ -99,7 +105,8 @@ function extractUsage(ollamaChunk) {
   return {
     prompt_tokens: ollamaChunk.prompt_eval_count || 0,
     completion_tokens: ollamaChunk.eval_count || 0,
-    total_tokens: (ollamaChunk.prompt_eval_count || 0) + (ollamaChunk.eval_count || 0)
+    total_tokens:
+      (ollamaChunk.prompt_eval_count || 0) + (ollamaChunk.eval_count || 0),
   };
 }
 
@@ -113,10 +120,11 @@ function convertToolCalls(toolCalls) {
     type: "function",
     function: {
       name: tc.function?.name || "",
-      arguments: typeof tc.function?.arguments === "string"
-        ? tc.function.arguments
-        : JSON.stringify(tc.function?.arguments || {})
-    }
+      arguments:
+        typeof tc.function?.arguments === "string"
+          ? tc.function.arguments
+          : JSON.stringify(tc.function?.arguments || {}),
+    },
   }));
 }
 
@@ -144,7 +152,7 @@ export function ollamaBodyToOpenAI(body) {
     created: Math.floor(Date.now() / 1000),
     model: body.model || "ollama",
     choices: [{ index: 0, message, finish_reason: finishReason }],
-    usage: extractUsage(body)
+    usage: extractUsage(body),
   };
 }
 

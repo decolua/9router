@@ -9,6 +9,7 @@ Tạo các tổ hợp model tùy chỉnh với fallback tự động. Combo cho 
 Combos là **chuỗi fallback tùy chỉnh** bạn tạo trong dashboard. Thay vì dùng một model duy nhất, bạn định nghĩa một chuỗi các model mà 9Router sẽ thử theo thứ tự.
 
 **Ví dụ:**
+
 ```
 Combo name: premium-coding
 Models:
@@ -18,6 +19,7 @@ Models:
 ```
 
 **Dùng trong CLI:**
+
 ```
 Model: premium-coding
 ```
@@ -29,6 +31,7 @@ Model: premium-coding
 ## Tại sao dùng Combos?
 
 ### 1. Tối đa hóa Giá trị Subscription
+
 ```
 cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -37,6 +40,7 @@ cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 2. Giảm Chi phí
+
 ```
 glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 
@@ -47,6 +51,7 @@ glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
 
 ### 3. Đảm bảo Khả dụng 24/7
+
 ```
 cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -56,6 +61,7 @@ cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 4. Tối ưu Chất lượng
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → gc/gemini-3-pro
 
@@ -84,16 +90,19 @@ Dashboard → Combos → Create New Combo
 ### Bước 3: Cấu hình Combo
 
 **Tên Combo:**
+
 ```
 premium-coding
 ```
 
 **Mô tả (tùy chọn):**
+
 ```
 Subscription first, cheap backup, free emergency
 ```
 
 **Chọn Models:**
+
 ```
 1. cc/claude-opus-4-5-20251101
 2. glm/glm-4.7
@@ -135,12 +144,14 @@ Models:
 ```
 
 **Sử dụng:**
+
 ```
 Cursor IDE:
   Model: premium-coding
 ```
 
 **Hoạt động:**
+
 ```
 Morning (fresh quota):
   Request → cc/claude-opus-4-5 ✅
@@ -153,6 +164,7 @@ Evening (GLM quota out):
 ```
 
 **Chi phí hàng tháng (100M tokens):**
+
 ```
 80M via Claude Code: $0 (subscription)
 15M via GLM: $9
@@ -179,6 +191,7 @@ Models:
 ```
 
 **Sử dụng:**
+
 ```
 Cline:
   Provider: OpenAI Compatible
@@ -187,6 +200,7 @@ Cline:
 ```
 
 **Hoạt động:**
+
 ```
 Request → glm/glm-4.7
   ✅ Daily quota available → Use GLM ($0.60/1M)
@@ -195,6 +209,7 @@ Request → glm/glm-4.7
 ```
 
 **Chi phí hàng tháng (100M tokens):**
+
 ```
 70M via GLM: $42
 20M via MiniMax: $4
@@ -221,12 +236,14 @@ Models:
 ```
 
 **Sử dụng:**
+
 ```
 Claude Desktop:
   Model: free-combo
 ```
 
 **Hoạt động:**
+
 ```
 Request → if/kimi-k2-thinking
   ✅ Available → Use iFlow
@@ -235,6 +252,7 @@ Request → if/kimi-k2-thinking
 ```
 
 **Chi phí hàng tháng:**
+
 ```
 100M tokens via free providers: $0
 Total: $0 forever
@@ -259,6 +277,7 @@ Models:
 ```
 
 **Sử dụng:**
+
 ```
 Codex CLI:
   export OPENAI_BASE_URL="http://localhost:20128"
@@ -266,6 +285,7 @@ Codex CLI:
 ```
 
 **Hoạt động:**
+
 ```
 Request → cc/claude-opus-4-5
   ❌ Quota out → cx/gpt-5.2-codex
@@ -295,6 +315,7 @@ Models:
 ```
 
 **Chi phí hàng tháng (200M tokens):**
+
 ```
 50M via Gemini CLI: $0 (free tier)
 80M via Claude Code: $0 (subscription)
@@ -326,6 +347,7 @@ Models:
 ```
 
 **Lịch trình hàng ngày:**
+
 ```
 08:00 - 13:00: Claude Code (fresh 5h quota)
 13:00 - 18:00: Gemini CLI (1K/day quota)
@@ -351,6 +373,7 @@ Settings → Models → Advanced:
 ### Claude Desktop
 
 Sửa `~/.claude/config.json`:
+
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
@@ -510,6 +533,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo không xuất hiện trong danh sách model**
 
 **Giải pháp:**
+
 1. Refresh dashboard
 2. Kiểm tra combo đã được lưu (dấu tick xanh)
 3. Khởi động lại CLI tool để refresh danh sách model
@@ -517,6 +541,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo luôn dùng model cuối cùng (free tier)**
 
 **Giải pháp:**
+
 1. Kiểm tra quota cho các model chính (Dashboard → Quota)
 2. Xác minh API keys hợp lệ (Dashboard → Providers)
 3. Kiểm tra giới hạn ngân sách không vượt quá
@@ -524,6 +549,7 @@ Dashboard → Combos → Clone "premium-coding"
 **Issue: Combo tốn hơn dự kiến**
 
 **Giải pháp:**
+
 1. Dashboard → Analytics → Xem usage combo
 2. Kiểm tra model chính có bị hết quota không
 3. Sắp xếp lại model (đặt rẻ hơn lên trước)

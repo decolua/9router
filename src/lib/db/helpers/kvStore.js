@@ -5,7 +5,10 @@ export function makeKv(scope) {
   return {
     async get(key, fallback = null) {
       const db = await getAdapter();
-      const row = db.get(`SELECT value FROM kv WHERE scope = ? AND key = ?`, [scope, key]);
+      const row = db.get(`SELECT value FROM kv WHERE scope = ? AND key = ?`, [
+        scope,
+        key,
+      ]);
       return row ? parseJson(row.value, fallback) : fallback;
     },
     async getAll() {
@@ -17,13 +20,19 @@ export function makeKv(scope) {
     },
     async set(key, value) {
       const db = await getAdapter();
-      db.run(`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`, [scope, key, stringifyJson(value)]);
+      db.run(
+        `INSERT INTO kv(scope, key, value) VALUES(?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+        [scope, key, stringifyJson(value)],
+      );
     },
     async setMany(obj) {
       const db = await getAdapter();
       db.transaction(() => {
         for (const [k, v] of Object.entries(obj)) {
-          db.run(`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`, [scope, k, stringifyJson(v)]);
+          db.run(
+            `INSERT INTO kv(scope, key, value) VALUES(?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+            [scope, k, stringifyJson(v)],
+          );
         }
       });
     },

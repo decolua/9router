@@ -11,11 +11,11 @@ const QWEN_STAINLESS = {
   runtime: "node",
   runtimeVersion: "v18.19.1",
   packageVersion: "5.11.0",
-  retryCount: "1"
+  retryCount: "1",
 };
 const QWEN_DEFAULT_SYSTEM_MESSAGE = {
   role: "system",
-  content: [{ type: "text", text: "", cache_control: { type: "ephemeral" } }]
+  content: [{ type: "text", text: "", cache_control: { type: "ephemeral" } }],
 };
 
 function ensureQwenSystemMessage(body) {
@@ -32,14 +32,20 @@ function ensureQwenSystemMessage(body) {
 function isQwenThinkingActive(body) {
   const thinking = body?.thinking;
   if (thinking === true || body?.enable_thinking === true) return true;
-  return typeof thinking === "object" && thinking !== null && !Array.isArray(thinking) && thinking.type === "enabled";
+  return (
+    typeof thinking === "object" &&
+    thinking !== null &&
+    !Array.isArray(thinking) &&
+    thinking.type === "enabled"
+  );
 }
 
 // Qwen rejects tool_choice="required" or object forms when thinking is active; neutralize to "auto".
 function sanitizeQwenThinkingToolChoice(body) {
   if (!isQwenThinkingActive(body)) return body;
   const tc = body.tool_choice;
-  const incompatible = tc === "required" || (typeof tc === "object" && tc !== null);
+  const incompatible =
+    tc === "required" || (typeof tc === "object" && tc !== null);
   if (!incompatible) return body;
   return { ...body, tool_choice: "auto" };
 }
@@ -62,7 +68,7 @@ function buildQwenUpstreamHeaders(credentials, stream = true) {
     "X-Stainless-Runtime-Version": QWEN_STAINLESS.runtimeVersion,
     Connection: "keep-alive",
     "Accept-Language": "*",
-    "Sec-Fetch-Mode": "cors"
+    "Sec-Fetch-Mode": "cors",
   };
   headers.Accept = stream ? "text/event-stream" : "application/json";
   return headers;
@@ -77,7 +83,9 @@ export class QwenExecutor extends DefaultExecutor {
   // Using portal.qwen.ai when the token is issued for another shard returns 401/403.
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const resourceUrl = credentials?.providerSpecificData?.resourceUrl;
-    const host = resourceUrl ? resourceUrl.replace(/^https?:\/\//, "").replace(/\/$/, "") : "portal.qwen.ai";
+    const host = resourceUrl
+      ? resourceUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")
+      : "portal.qwen.ai";
     return `https://${host}/v1/chat/completions`;
   }
 
@@ -87,7 +95,14 @@ export class QwenExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     let next = body && typeof body === "object" ? { ...body } : body;
-    if (stream && next?.messages && !next.stream_options && !next.thinking && !next.enable_thinking && next.stream !== false) {
+    if (
+      stream &&
+      next?.messages &&
+      !next.stream_options &&
+      !next.thinking &&
+      !next.enable_thinking &&
+      next.stream !== false
+    ) {
       next.stream_options = { include_usage: true };
     }
     next = sanitizeQwenThinkingToolChoice(next);
@@ -100,12 +115,15 @@ export class QwenExecutor extends DefaultExecutor {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.qwen.token, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
         body: new URLSearchParams({
           grant_type: "refresh_token",
           refresh_token: credentials.refreshToken,
-          client_id: PROVIDERS.qwen.clientId
-        })
+          client_id: PROVIDERS.qwen.clientId,
+        }),
       });
       if (!response.ok) return null;
       const tokens = await response.json();
@@ -116,8 +134,8 @@ export class QwenExecutor extends DefaultExecutor {
         expiresIn: tokens.expires_in,
         providerSpecificData: {
           ...(credentials.providerSpecificData || {}),
-          ...(tokens.resource_url ? { resourceUrl: tokens.resource_url } : {})
-        }
+          ...(tokens.resource_url ? { resourceUrl: tokens.resource_url } : {}),
+        },
       };
     } catch (error) {
       log?.error?.("TOKEN", `qwen refresh error: ${error.message}`);

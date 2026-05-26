@@ -36,9 +36,7 @@ describe("commandcode-to-openai — text-delta", () => {
 
 describe("commandcode-to-openai — reasoning-delta", () => {
   it("maps reasoning-delta to reasoning_content delta", () => {
-    const { chunks } = feed([
-      { type: "reasoning-delta", text: "thinking..." },
-    ]);
+    const { chunks } = feed([{ type: "reasoning-delta", text: "thinking..." }]);
     expect(chunks[0].choices[0].delta.reasoning_content).toBe("thinking...");
   });
 });
@@ -47,8 +45,8 @@ describe("commandcode-to-openai — tool-input-* with id field (live schema)", (
   it("registers tool index using event.id (NOT toolCallId)", () => {
     const { chunks } = feed([
       { type: "tool-input-start", id: "call_X", toolName: "Bash" },
-      { type: "tool-input-delta", id: "call_X", delta: "{\"cmd" },
-      { type: "tool-input-delta", id: "call_X", delta: "\":\"ls\"}" },
+      { type: "tool-input-delta", id: "call_X", delta: '{"cmd' },
+      { type: "tool-input-delta", id: "call_X", delta: '":"ls"}' },
     ]);
 
     // First chunk emits tool_calls with id
@@ -57,8 +55,12 @@ describe("commandcode-to-openai — tool-input-* with id field (live schema)", (
     expect(startChunk.function.name).toBe("Bash");
 
     // Subsequent deltas accumulate arguments
-    expect(chunks[1].choices[0].delta.tool_calls[0].function.arguments).toBe("{\"cmd");
-    expect(chunks[2].choices[0].delta.tool_calls[0].function.arguments).toBe("\":\"ls\"}");
+    expect(chunks[1].choices[0].delta.tool_calls[0].function.arguments).toBe(
+      '{"cmd',
+    );
+    expect(chunks[2].choices[0].delta.tool_calls[0].function.arguments).toBe(
+      '":"ls"}',
+    );
   });
 
   it("ignores tool-input-delta when id is unknown (no prior start)", () => {
@@ -73,8 +75,13 @@ describe("commandcode-to-openai — final tool-call event", () => {
   it("does NOT re-emit tool_calls when tool-input-* deltas already fired", () => {
     const { chunks } = feed([
       { type: "tool-input-start", id: "call_Y", toolName: "Write" },
-      { type: "tool-input-delta", id: "call_Y", delta: "{\"file\":\"a\"}" },
-      { type: "tool-call", toolCallId: "call_Y", toolName: "Write", input: { file: "a" } },
+      { type: "tool-input-delta", id: "call_Y", delta: '{"file":"a"}' },
+      {
+        type: "tool-call",
+        toolCallId: "call_Y",
+        toolName: "Write",
+        input: { file: "a" },
+      },
     ]);
     // Should be exactly 2 chunks (start + delta), no duplicate from final tool-call
     expect(chunks.length).toBe(2);
@@ -82,7 +89,12 @@ describe("commandcode-to-openai — final tool-call event", () => {
 
   it("emits a consolidated tool_calls when only the final tool-call event arrives", () => {
     const { chunks } = feed([
-      { type: "tool-call", toolCallId: "call_Z", toolName: "Read", input: { path: "/x" } },
+      {
+        type: "tool-call",
+        toolCallId: "call_Z",
+        toolName: "Read",
+        input: { path: "/x" },
+      },
     ]);
     expect(chunks.length).toBe(1);
     const tc = chunks[0].choices[0].delta.tool_calls[0];
@@ -107,11 +119,22 @@ describe("commandcode-to-openai — finish", () => {
   it("includes usage on the final chunk when totalUsage provided", () => {
     const { chunks } = feed([
       { type: "text-delta", text: "hi" },
-      { type: "finish-step", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
-      { type: "finish", totalUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+      {
+        type: "finish-step",
+        finishReason: "stop",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      },
+      {
+        type: "finish",
+        totalUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      },
     ]);
     const last = chunks[chunks.length - 1];
-    expect(last.usage).toEqual({ prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+    expect(last.usage).toEqual({
+      prompt_tokens: 10,
+      completion_tokens: 5,
+      total_tokens: 15,
+    });
   });
 });
 

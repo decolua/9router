@@ -32,7 +32,9 @@ export default function ProviderConnectionsList({
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
                 isSelected={isSelected(conn.id)}
-                onSelectChange={(checked, isShift) => toggleSelectConnection(conn.id, isShift)}
+                onSelectChange={(checked, isShift) =>
+                  toggleSelectConnection(conn.id, isShift)
+                }
                 isFirst={index === 0}
                 isLast={index === displayedConnections.length - 1}
                 onMoveUp={() =>

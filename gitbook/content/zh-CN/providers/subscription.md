@@ -22,10 +22,10 @@
 
 ### 价格
 
-| 套餐 | 月费 | 配额重置 | 模型 |
-|------|--------------|-------------|--------|
-| Pro | $20 | 5 小时 + 每周 | Opus、Sonnet、Haiku |
-| Max | $100 | 5 小时 + 每周 | Opus、Sonnet、Haiku |
+| 套餐 | 月费 | 配额重置      | 模型                |
+| ---- | ---- | ------------- | ------------------- |
+| Pro  | $20  | 5 小时 + 每周 | Opus、Sonnet、Haiku |
+| Max  | $100 | 5 小时 + 每周 | Opus、Sonnet、Haiku |
 
 ### 设置
 
@@ -53,11 +53,11 @@ Model: cc/claude-opus-4-5-20251101
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | 复杂任务、架构 |
-| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | 平衡速度/质量 |
-| `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | 快速响应 |
+| 模型 ID                         | 描述              | 最佳场景       |
+| ------------------------------- | ----------------- | -------------- |
+| `cc/claude-opus-4-5-20251101`   | Claude 4.5 Opus   | 复杂任务、架构 |
+| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | 平衡速度/质量  |
+| `cc/claude-haiku-4-5-20251001`  | Claude 4.5 Haiku  | 快速响应       |
 
 ### 专业建议
 
@@ -72,10 +72,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### 价格
 
-| 套餐 | 月费 | 配额重置 | 模型 |
-|------|--------------|-------------|--------|
-| Plus | $20 | 5 小时 + 每周 | GPT 5.2、GPT 5.1 |
-| Pro | $200 | 5 小时 + 每周 | GPT 5.2 Codex、GPT 5.1 Max |
+| 套餐 | 月费 | 配额重置      | 模型                       |
+| ---- | ---- | ------------- | -------------------------- |
+| Plus | $20  | 5 小时 + 每周 | GPT 5.2、GPT 5.1           |
+| Pro  | $200 | 5 小时 + 每周 | GPT 5.2 Codex、GPT 5.1 Max |
 
 ### 设置
 
@@ -104,12 +104,12 @@ Model: cx/gpt-5.2-codex
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | 最新编码模型 |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | 最大上下文 |
-| `cx/gpt-5.2` | GPT 5.2 | 通用任务 |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | 稳定编码 |
+| 模型 ID                | 描述              | 最佳场景     |
+| ---------------------- | ----------------- | ------------ |
+| `cx/gpt-5.2-codex`     | GPT 5.2 Codex     | 最新编码模型 |
+| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | 最大上下文   |
+| `cx/gpt-5.2`           | GPT 5.2           | 通用任务     |
+| `cx/gpt-5.1-codex`     | GPT 5.1 Codex     | 稳定编码     |
 
 ### 专业建议
 
@@ -123,9 +123,9 @@ Model: cx/gpt-5.2-codex
 
 ### 价格
 
-| 套餐 | 月费 | 配额 | 重置 |
-|------|--------------|-------|-------|
-| 免费 | $0 | 180K 次补全/月 + 每日 1K | 每日 + 每月 |
+| 套餐 | 月费 | 配额                     | 重置        |
+| ---- | ---- | ------------------------ | ----------- |
+| 免费 | $0   | 180K 次补全/月 + 每日 1K | 每日 + 每月 |
 
 **最佳性价比:** 巨大的免费层!请在付费层之前使用。
 
@@ -156,12 +156,12 @@ Model: gc/gemini-3-flash-preview
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
+| 模型 ID                     | 描述                   | 最佳场景 |
+| --------------------------- | ---------------------- | -------- |
 | `gc/gemini-3-flash-preview` | Gemini 3 Flash Preview | 快速响应 |
-| `gc/gemini-3-pro-preview` | Gemini 3 Pro Preview | 复杂任务 |
-| `gc/gemini-2.5-pro` | Gemini 2.5 Pro | 稳定生产 |
-| `gc/gemini-2.5-flash` | Gemini 2.5 Flash | 快速任务 |
+| `gc/gemini-3-pro-preview`   | Gemini 3 Pro Preview   | 复杂任务 |
+| `gc/gemini-2.5-pro`         | Gemini 2.5 Pro         | 稳定生产 |
+| `gc/gemini-2.5-flash`       | Gemini 2.5 Flash       | 快速任务 |
 
 ### 专业建议
 
@@ -176,10 +176,10 @@ Model: gc/gemini-3-flash-preview
 
 ### 价格
 
-| 套餐 | 月费 | 配额重置 | 模型 |
-|------|--------------|-------------|--------|
-| 个人 | $10 | 每月(1 日) | GPT-5、Claude 4.5、Gemini 3 |
-| 商业 | $19 | 每月(1 日) | GPT-5、Claude 4.5、Gemini 3 |
+| 套餐 | 月费 | 配额重置   | 模型                        |
+| ---- | ---- | ---------- | --------------------------- |
+| 个人 | $10  | 每月(1 日) | GPT-5、Claude 4.5、Gemini 3 |
+| 商业 | $19  | 每月(1 日) | GPT-5、Claude 4.5、Gemini 3 |
 
 ### 设置
 
@@ -208,12 +208,12 @@ Model: gh/gpt-5
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | 最新 OpenAI 模型 |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | 最大上下文 |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Anthropic 质量 |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Google 质量 |
+| 模型 ID                | 描述              | 最佳场景         |
+| ---------------------- | ----------------- | ---------------- |
+| `gh/gpt-5`             | GPT-5             | 最新 OpenAI 模型 |
+| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | 最大上下文       |
+| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Anthropic 质量   |
+| `gh/gemini-3-pro`      | Gemini 3 Pro      | Google 质量      |
 
 ### 专业建议
 
@@ -227,9 +227,9 @@ Model: gh/gpt-5
 
 ### 价格
 
-| 套餐 | 月费 | 配额 | 模型 |
-|------|--------------|-------|--------|
-| 免费 | $0 | 类似 Gemini CLI | Gemini 3 Pro、Claude Sonnet 4.5 |
+| 套餐 | 月费 | 配额            | 模型                            |
+| ---- | ---- | --------------- | ------------------------------- |
+| 免费 | $0   | 类似 Gemini CLI | Gemini 3 Pro、Claude Sonnet 4.5 |
 
 ### 设置
 
@@ -257,11 +257,11 @@ Model: ag/gemini-3-pro-high
 
 ### 可用模型
 
-| 模型 ID | 描述 | 最佳场景 |
-|----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | 高质量响应 |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Anthropic 质量 |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | 复杂推理 |
+| 模型 ID                       | 描述                     | 最佳场景       |
+| ----------------------------- | ------------------------ | -------------- |
+| `ag/gemini-3-pro-high`        | Gemini 3 Pro High        | 高质量响应     |
+| `ag/claude-sonnet-4-5`        | Claude Sonnet 4.5        | Anthropic 质量 |
+| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | 复杂推理       |
 
 ### 专业建议
 
@@ -273,15 +273,15 @@ Model: ag/gemini-3-pro-high
 
 ## 价格对比
 
-| 提供商 | 月费 | 配额重置 | 价值 |
-|----------|--------------|-------------|-------|
-| **Claude Code Pro** | $20 | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 最佳质量 |
-| **Claude Code Max** | $100 | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 最高配额 |
-| **Codex Plus** | $20 | 5 小时 + 每周 | ⭐⭐⭐⭐ 良好性价比 |
-| **Codex Pro** | $200 | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 10× 配额 |
-| **Gemini CLI** | **$0** | 每日 + 每月 | ⭐⭐⭐⭐⭐ 免费 180K/月! |
-| **GitHub Copilot** | $10-19 | 每月(1 日) | ⭐⭐⭐⭐ 多模型 |
-| **Antigravity** | **$0** | 每日 + 每月 | ⭐⭐⭐⭐ 免费 Claude! |
+| 提供商              | 月费   | 配额重置      | 价值                     |
+| ------------------- | ------ | ------------- | ------------------------ |
+| **Claude Code Pro** | $20    | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 最佳质量      |
+| **Claude Code Max** | $100   | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 最高配额      |
+| **Codex Plus**      | $20    | 5 小时 + 每周 | ⭐⭐⭐⭐ 良好性价比      |
+| **Codex Pro**       | $200   | 5 小时 + 每周 | ⭐⭐⭐⭐⭐ 10× 配额      |
+| **Gemini CLI**      | **$0** | 每日 + 每月   | ⭐⭐⭐⭐⭐ 免费 180K/月! |
+| **GitHub Copilot**  | $10-19 | 每月(1 日)    | ⭐⭐⭐⭐ 多模型          |
+| **Antigravity**     | **$0** | 每日 + 每月   | ⭐⭐⭐⭐ 免费 Claude!    |
 
 ---
 
@@ -378,6 +378,7 @@ Claude Code Pro
 ### "Quota exhausted"
 
 **方案:**
+
 - 查看仪表盘配额跟踪
 - 等待重置(5 小时或每日)
 - 使用组合回退到低价/免费层
@@ -385,12 +386,14 @@ Claude Code Pro
 ### "OAuth token expired"
 
 **方案:**
+
 - 9Router 会自动刷新
 - 若仍有问题: 仪表盘 → 提供商 → 重新连接
 
 ### "Rate limiting"
 
 **方案:**
+
 - 订阅配额已用尽
 - 添加回退:`cc/claude-opus → glm/glm-4.7`
 - 使用免费层:`if/kimi-k2-thinking`

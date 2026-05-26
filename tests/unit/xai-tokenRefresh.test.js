@@ -16,14 +16,18 @@ describe("xai/token-refresh wrapper", () => {
     const out = mod.formatProviderCredentials(
       "xai",
       { apiKey: "k", accessToken: "t", refreshToken: "r" },
-      null
+      null,
     );
     expect(out).toEqual({ apiKey: "k", accessToken: "t" });
   });
 
   it("refreshTokenByProvider returns null when refreshToken missing", async () => {
     const mod = await import("../../open-sse/services/tokenRefresh.js");
-    const out = await mod.refreshTokenByProvider("xai", { refreshToken: "" }, null);
+    const out = await mod.refreshTokenByProvider(
+      "xai",
+      { refreshToken: "" },
+      null,
+    );
     expect(out).toBeNull();
   });
 
@@ -46,7 +50,7 @@ describe("xai/token-refresh wrapper", () => {
     const out = await mod.refreshTokenByProvider(
       "xai",
       { refreshToken: "old-refresh" },
-      null
+      null,
     );
 
     expect(out).toEqual({

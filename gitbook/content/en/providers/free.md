@@ -20,9 +20,9 @@ Free tier providers are your **fallback** when subscription and cheap quota exha
 
 ### Pricing
 
-| Plan | Monthly Cost | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | 8 models | Unlimited |
+| Plan | Monthly Cost | Models   | Quota     |
+| ---- | ------------ | -------- | --------- |
+| FREE | $0           | 8 models | Unlimited |
 
 **Best Value:** Most models in free tier! Kimi K2, Qwen3, GLM, MiniMax, DeepSeek.
 
@@ -58,16 +58,16 @@ Model: if/kimi-k2-thinking
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | Complex reasoning |
-| `if/kimi-k2` | Kimi K2 | General coding |
-| `if/qwen3-coder-plus` | Qwen3 Coder Plus | Code generation |
-| `if/glm-4.7` | GLM 4.7 | Chinese + English |
-| `if/minimax-m2` | MiniMax M2 | Long context |
-| `if/deepseek-r1` | DeepSeek R1 | Reasoning tasks |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | Conversational |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Complex logic |
+| Model ID                    | Description            | Best For          |
+| --------------------------- | ---------------------- | ----------------- |
+| `if/kimi-k2-thinking`       | Kimi K2 Thinking       | Complex reasoning |
+| `if/kimi-k2`                | Kimi K2                | General coding    |
+| `if/qwen3-coder-plus`       | Qwen3 Coder Plus       | Code generation   |
+| `if/glm-4.7`                | GLM 4.7                | Chinese + English |
+| `if/minimax-m2`             | MiniMax M2             | Long context      |
+| `if/deepseek-r1`            | DeepSeek R1            | Reasoning tasks   |
+| `if/deepseek-v3.2-chat`     | DeepSeek V3.2 Chat     | Conversational    |
+| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Complex logic     |
 
 ### Pro Tips
 
@@ -82,9 +82,9 @@ Model: if/kimi-k2-thinking
 
 ### Pricing
 
-| Plan | Monthly Cost | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | 3 models | Unlimited |
+| Plan | Monthly Cost | Models   | Quota     |
+| ---- | ------------ | -------- | --------- |
+| FREE | $0           | 3 models | Unlimited |
 
 ### Setup
 
@@ -114,11 +114,11 @@ Model: qw/qwen3-coder-plus
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | Advanced coding |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Fast responses |
-| `qw/vision-model` | Qwen3 Vision | Image analysis |
+| Model ID               | Description       | Best For        |
+| ---------------------- | ----------------- | --------------- |
+| `qw/qwen3-coder-plus`  | Qwen3 Coder Plus  | Advanced coding |
+| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Fast responses  |
+| `qw/vision-model`      | Qwen3 Vision      | Image analysis  |
 
 ### Pro Tips
 
@@ -133,9 +133,9 @@ Model: qw/qwen3-coder-plus
 
 ### Pricing
 
-| Plan | Monthly Cost | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | Claude Sonnet 4.5, Haiku 4.5 | Unlimited |
+| Plan | Monthly Cost | Models                       | Quota     |
+| ---- | ------------ | ---------------------------- | --------- |
+| FREE | $0           | Claude Sonnet 4.5, Haiku 4.5 | Unlimited |
 
 **Best Value:** FREE Claude! Same quality as paid Claude Code.
 
@@ -167,10 +167,10 @@ Model: kr/claude-sonnet-4.5
 
 ### Available Models
 
-| Model ID | Description | Best For |
-|----------|-------------|----------|
+| Model ID               | Description       | Best For               |
+| ---------------------- | ----------------- | ---------------------- |
 | `kr/claude-sonnet-4.5` | Claude Sonnet 4.5 | Balanced quality/speed |
-| `kr/claude-haiku-4.5` | Claude Haiku 4.5 | Fast responses |
+| `kr/claude-haiku-4.5`  | Claude Haiku 4.5  | Fast responses         |
 
 ### Pro Tips
 
@@ -183,11 +183,11 @@ Model: kr/claude-sonnet-4.5
 
 ## Feature Comparison
 
-| Provider | Models | Best Model | Setup | Quota |
-|----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | Unlimited |
-| **Qwen** | 3 | Qwen3 Coder Plus | Device Code | Unlimited |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | Unlimited |
+| Provider  | Models | Best Model        | Setup          | Quota     |
+| --------- | ------ | ----------------- | -------------- | --------- |
+| **iFlow** | 8      | Kimi K2 Thinking  | OAuth          | Unlimited |
+| **Qwen**  | 3      | Qwen3 Coder Plus  | Device Code    | Unlimited |
+| **Kiro**  | 2      | Claude Sonnet 4.5 | AWS Builder ID | Unlimited |
 
 **Winner:** iFlow for variety, Kiro for quality!
 
@@ -242,6 +242,7 @@ Use in CLI: complete-fallback
 ```
 
 **Result:**
+
 - Tier 1: FREE subscription (Gemini CLI)
 - Tier 2: Paid subscription (Claude Code)
 - Tier 3: Cheap backup (GLM, MiniMax)
@@ -372,17 +373,20 @@ Perfect for:
 ### Scenario: 100M tokens/month
 
 **Option 1: ChatGPT API Only**
+
 ```
 100M × $20/1M = $2,000/month
 ```
 
 **Option 2: 9Router Free Tier Only**
+
 ```
 100M via free tier = $0/month
 Savings: $2,000/month (100%)
 ```
 
 **Option 3: 9Router Complete Strategy**
+
 ```
 60M via Gemini CLI (FREE): $0
 30M via Claude Code (subscription): $0 extra
@@ -399,6 +403,7 @@ Savings: $1,995/month (99.76%)
 ### "OAuth failed"
 
 **Solution:**
+
 - Check internet connection
 - Try different browser
 - Clear browser cache
@@ -407,6 +412,7 @@ Savings: $1,995/month (99.76%)
 ### "Model not available"
 
 **Solution:**
+
 - Check provider connected in dashboard
 - Verify OAuth token valid
 - Reconnect provider if needed
@@ -414,6 +420,7 @@ Savings: $1,995/month (99.76%)
 ### "Slow responses"
 
 **Solution:**
+
 - Free tier may have lower priority
 - Use during off-peak hours
 - Switch to different free provider

@@ -36,9 +36,15 @@ function createInitialCloudflareData(connection) {
 }
 
 function EditConnectionModalForm({ connection, onSave, onClose }) {
-  const [formData, setFormData] = useState(() => createInitialFormData(connection));
-  const [azureData, setAzureData] = useState(() => createInitialAzureData(connection));
-  const [cloudflareData, setCloudflareData] = useState(() => createInitialCloudflareData(connection));
+  const [formData, setFormData] = useState(() =>
+    createInitialFormData(connection),
+  );
+  const [azureData, setAzureData] = useState(() =>
+    createInitialAzureData(connection),
+  );
+  const [cloudflareData, setCloudflareData] = useState(() =>
+    createInitialCloudflareData(connection),
+  );
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -206,7 +212,9 @@ function EditConnectionModalForm({ connection, onSave, onClose }) {
             </div>
           </div>
           {validationResult && (
-            <Badge variant={validationResult === "success" ? "success" : "error"}>
+            <Badge
+              variant={validationResult === "success" ? "success" : "error"}
+            >
               {validationResult === "success" ? "Valid" : "Invalid"}
             </Badge>
           )}
@@ -215,7 +223,9 @@ function EditConnectionModalForm({ connection, onSave, onClose }) {
 
       {isAzure && (
         <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-          <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
+          <h3 className="font-semibold mb-3 text-sm">
+            Azure OpenAI Configuration
+          </h3>
           <div className="flex flex-col gap-3">
             <Input
               label="Azure Endpoint"
@@ -296,7 +306,13 @@ EditConnectionModalForm.propTypes = {
   onClose: PropTypes.func.isRequired,
 };
 
-export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
+export default function EditConnectionModal({
+  isOpen,
+  connection,
+  proxyPools,
+  onSave,
+  onClose,
+}) {
   if (!connection) return null;
 
   const modalInstanceKey = `${isOpen ? "open" : "closed"}-${connection.id}`;

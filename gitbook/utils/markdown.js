@@ -2,47 +2,87 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSlug from "rehype-slug";
-import { BookOpen, Rocket, Terminal, Monitor, FolderOpen, HelpCircle, MessageCircle, Mouse, Folder, Lock, Zap, Smartphone, Lightbulb, AlertTriangle, CheckCircle, ArrowRight, Layers, Plug, Cloud, Wallet, Gift, GitBranch, BarChart3, Code2, Sparkles, Server, PartyPopper, Siren, Link2, Target, Heart, Check, Home, Package, Wrench, OctagonX, Search, Globe, Container } from "lucide-react";
+import {
+  BookOpen,
+  Rocket,
+  Terminal,
+  Monitor,
+  FolderOpen,
+  HelpCircle,
+  MessageCircle,
+  Mouse,
+  Folder,
+  Lock,
+  Zap,
+  Smartphone,
+  Lightbulb,
+  AlertTriangle,
+  CheckCircle,
+  ArrowRight,
+  Layers,
+  Plug,
+  Cloud,
+  Wallet,
+  Gift,
+  GitBranch,
+  BarChart3,
+  Code2,
+  Sparkles,
+  Server,
+  PartyPopper,
+  Siren,
+  Link2,
+  Target,
+  Heart,
+  Check,
+  Home,
+  Package,
+  Wrench,
+  OctagonX,
+  Search,
+  Globe,
+  Container,
+} from "lucide-react";
 
 const PAGE_ICONS = {
   "Welcome to 9Router": BookOpen,
-  "Introduction": BookOpen,
+  Introduction: BookOpen,
   "Getting Started": Rocket,
   "Quick Start": Rocket,
-  "Installation": Terminal,
-  "Providers": Layers,
+  Installation: Terminal,
+  Providers: Layers,
   "Subscription (Maximize)": Sparkles,
   "Cheap (Backup)": Wallet,
   "Free (Fallback)": Gift,
-  "Features": Zap,
+  Features: Zap,
   "Smart Routing": GitBranch,
   "Combos & Fallback": Layers,
   "Quota Tracking": BarChart3,
-  "Integration": Plug,
+  Integration: Plug,
   "Claude Code": Code2,
   "OpenAI Codex": Code2,
-  "Cursor": Code2,
-  "Cline": Code2,
-  "Roo": Code2,
-  "Continue": Code2,
+  Cursor: Code2,
+  Cline: Code2,
+  Roo: Code2,
+  Continue: Code2,
   "Other Tools": Plug,
-  "Deployment": Cloud,
-  "Localhost": Monitor,
+  Deployment: Cloud,
+  Localhost: Monitor,
   "Cloud (VPS/Docker)": Server,
-  "Troubleshooting": HelpCircle,
-  "FAQ": MessageCircle,
-  "Frequently Asked Questions": MessageCircle
+  Troubleshooting: HelpCircle,
+  FAQ: MessageCircle,
+  "Frequently Asked Questions": MessageCircle,
 };
 
 const ICON_MAP = {
-  "terminal": Terminal,
-  "monitor": Monitor,
-  "mouse": Mouse,
-  "folder": Folder,
-  "lock": Lock,
-  "zap": Zap,
-  "smartphone": Smartphone,
-  "lightbulb": Lightbulb,
+  terminal: Terminal,
+  monitor: Monitor,
+  mouse: Mouse,
+  folder: Folder,
+  lock: Lock,
+  zap: Zap,
+  smartphone: Smartphone,
+  lightbulb: Lightbulb,
   "alert-triangle": AlertTriangle,
   "check-circle": CheckCircle,
   "arrow-right": ArrowRight,
@@ -88,10 +128,14 @@ const EMOJI_ICON_MAP = {
   "🔧": { Icon: Wrench, color: "text-gray-700" },
   "🔍": { Icon: Search, color: "text-gray-700" },
   "🌐": { Icon: Globe, color: "text-blue-500" },
-  "🐳": { Icon: Container, color: "text-blue-500" }
+  "🐳": { Icon: Container, color: "text-blue-500" },
 };
 
-const EMOJI_REGEX = new RegExp(`^(${Object.keys(EMOJI_ICON_MAP).map(e => e.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")).join("|")})\\s*`);
+const EMOJI_REGEX = new RegExp(
+  `^(${Object.keys(EMOJI_ICON_MAP)
+    .map((e) => e.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&"))
+    .join("|")})\\s*`,
+);
 
 export function parseMarkdown(content) {
   return content;
@@ -111,7 +155,7 @@ export function slugify(text) {
 function renderHeadingWithEmoji(tag, children, props) {
   const Tag = tag;
   const text = (Array.isArray(children) ? children : [children])
-    .map(c => (typeof c === "string" ? c : ""))
+    .map((c) => (typeof c === "string" ? c : ""))
     .join("");
   const emojiMatch = text.match(EMOJI_REGEX);
   const textForId = emojiMatch ? text.slice(emojiMatch[0].length).trim() : text;
@@ -121,12 +165,18 @@ function renderHeadingWithEmoji(tag, children, props) {
     const rest = text.slice(emojiMatch[0].length);
     return (
       <Tag id={id} {...props}>
-        <Icon className={`inline-block mr-2 align-[-0.15em] w-[1em] h-[1em] ${color}`} />
+        <Icon
+          className={`inline-block mr-2 align-[-0.15em] w-[1em] h-[1em] ${color}`}
+        />
         {rest}
       </Tag>
     );
   }
-  return <Tag id={id} {...props}>{children}</Tag>;
+  return (
+    <Tag id={id} {...props}>
+      {children}
+    </Tag>
+  );
 }
 
 export function MarkdownRenderer({ content }) {
@@ -140,7 +190,7 @@ export function MarkdownRenderer({ content }) {
           const text = children?.toString() || "";
           const IconComponent = PAGE_ICONS[text];
           const id = slugify(text);
-          
+
           return (
             <h1 id={id} {...props}>
               {IconComponent && <IconComponent className="inline-block mr-3" />}
@@ -148,28 +198,33 @@ export function MarkdownRenderer({ content }) {
             </h1>
           );
         },
-        h2: ({ node, children, ...props }) => renderHeadingWithEmoji("h2", children, props),
-        h3: ({ node, children, ...props }) => renderHeadingWithEmoji("h3", children, props),
+        h2: ({ node, children, ...props }) =>
+          renderHeadingWithEmoji("h2", children, props),
+        h3: ({ node, children, ...props }) =>
+          renderHeadingWithEmoji("h3", children, props),
         li: ({ node, children, ...props }) => {
           // Extract text from children (handle React elements)
           const extractText = (child) => {
-            if (typeof child === 'string') return child;
-            if (Array.isArray(child)) return child.map(extractText).join('');
-            if (child?.props?.children) return extractText(child.props.children);
-            return '';
+            if (typeof child === "string") return child;
+            if (Array.isArray(child)) return child.map(extractText).join("");
+            if (child?.props?.children)
+              return extractText(child.props.children);
+            return "";
           };
-          
+
           const text = extractText(children);
           const iconMatch = text.match(/^\[icon:([a-z-]+)\]\s*(.*)$/);
-          
+
           if (iconMatch) {
             const iconName = iconMatch[1];
             const restText = iconMatch[2];
             const IconComponent = ICON_MAP[iconName];
-            
+
             return (
               <li {...props}>
-                {IconComponent && <IconComponent className="inline-block mr-2 w-4 h-4 text-[#E68A6E]" />}
+                {IconComponent && (
+                  <IconComponent className="inline-block mr-2 w-4 h-4 text-[#E68A6E]" />
+                )}
                 {restText}
               </li>
             );
@@ -187,7 +242,7 @@ export function MarkdownRenderer({ content }) {
               </li>
             );
           }
-          
+
           return <li {...props}>{children}</li>;
         },
       }}
@@ -206,11 +261,11 @@ export function extractHeadings(content) {
     const level = match[1].length;
     const text = match[2].replace(EMOJI_REGEX, "").trim();
     const id = slugify(text);
-    
+
     headings.push({
       level,
       text,
-      id
+      id,
     });
   }
 

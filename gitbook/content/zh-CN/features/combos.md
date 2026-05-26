@@ -9,6 +9,7 @@
 组合是你在仪表盘中创建的 **自定义回退链**。它不是单一模型,而是定义一组顺序模型,由 9Router 依次尝试。
 
 **示例:**
+
 ```
 组合名: premium-coding
 模型:
@@ -18,6 +19,7 @@
 ```
 
 **CLI 中使用:**
+
 ```
 Model: premium-coding
 ```
@@ -29,6 +31,7 @@ Model: premium-coding
 ## 为什么使用组合?
 
 ### 1. 最大化订阅价值
+
 ```
 cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -37,6 +40,7 @@ cc/claude-opus → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 2. 最小化成本
+
 ```
 glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 
@@ -47,6 +51,7 @@ glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
 ```
 
 ### 3. 保障 24/7 可用
+
 ```
 cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 
@@ -56,6 +61,7 @@ cc/claude-opus → cx/gpt-5.2-codex → glm/glm-4.7 → if/kimi-k2-thinking
 ```
 
 ### 4. 质量优化
+
 ```
 cc/claude-opus-4-5 → cx/gpt-5.2-codex → gc/gemini-3-pro
 
@@ -84,16 +90,19 @@ http://localhost:20128
 ### 步骤 3:配置组合
 
 **组合名:**
+
 ```
 premium-coding
 ```
 
 **描述(可选):**
+
 ```
 订阅优先,低价备用,免费应急
 ```
 
 **选择模型:**
+
 ```
 1. cc/claude-opus-4-5-20251101
 2. glm/glm-4.7
@@ -135,12 +144,14 @@ Cursor/Cline/任意工具:
 ```
 
 **用法:**
+
 ```
 Cursor IDE:
   Model: premium-coding
 ```
 
 **行为:**
+
 ```
 早上(全新配额):
   请求 → cc/claude-opus-4-5 ✅
@@ -153,6 +164,7 @@ Cursor IDE:
 ```
 
 **月成本(100M tokens):**
+
 ```
 80M 通过 Claude Code: $0(订阅)
 15M 通过 GLM: $9
@@ -179,6 +191,7 @@ Cursor IDE:
 ```
 
 **用法:**
+
 ```
 Cline:
   Provider: OpenAI Compatible
@@ -187,6 +200,7 @@ Cline:
 ```
 
 **行为:**
+
 ```
 请求 → glm/glm-4.7
   ✅ 每日配额可用 → 使用 GLM(每 1M $0.60)
@@ -195,6 +209,7 @@ Cline:
 ```
 
 **月成本(100M tokens):**
+
 ```
 70M 通过 GLM: $42
 20M 通过 MiniMax: $4
@@ -221,12 +236,14 @@ Cline:
 ```
 
 **用法:**
+
 ```
 Claude Desktop:
   Model: free-combo
 ```
 
 **行为:**
+
 ```
 请求 → if/kimi-k2-thinking
   ✅ 可用 → 使用 iFlow
@@ -235,6 +252,7 @@ Claude Desktop:
 ```
 
 **月成本:**
+
 ```
 100M tokens 通过免费提供商: $0
 合计: 永远 $0
@@ -259,6 +277,7 @@ Claude Desktop:
 ```
 
 **用法:**
+
 ```
 Codex CLI:
   export OPENAI_BASE_URL="http://localhost:20128"
@@ -266,6 +285,7 @@ Codex CLI:
 ```
 
 **行为:**
+
 ```
 请求 → cc/claude-opus-4-5
   ❌ 配额用完 → cx/gpt-5.2-codex
@@ -295,6 +315,7 @@ Codex CLI:
 ```
 
 **月成本(200M tokens):**
+
 ```
 50M 通过 Gemini CLI: $0(免费层)
 80M 通过 Claude Code: $0(订阅)
@@ -326,6 +347,7 @@ Codex CLI:
 ```
 
 **日常安排:**
+
 ```
 08:00 - 13:00: Claude Code(全新 5h 配额)
 13:00 - 18:00: Gemini CLI(每日 1K 配额)
@@ -351,6 +373,7 @@ Settings → Models → Advanced:
 ### Claude Desktop
 
 编辑 `~/.claude/config.json`:
+
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
@@ -510,6 +533,7 @@ quality-first: 生产代码
 **问题:组合未出现在模型列表中**
 
 **方案:**
+
 1. 刷新仪表盘
 2. 检查组合已保存(绿色对勾)
 3. 重启 CLI 工具以刷新模型列表
@@ -517,6 +541,7 @@ quality-first: 生产代码
 **问题:组合总是用最后一个模型(免费层)**
 
 **方案:**
+
 1. 检查主模型的配额(仪表盘 → 配额)
 2. 确认 API keys 有效(仪表盘 → 提供商)
 3. 检查是否超出预算上限
@@ -524,6 +549,7 @@ quality-first: 生产代码
 **问题:组合成本超出预期**
 
 **方案:**
+
 1. 仪表盘 → 分析 → 查看组合使用情况
 2. 检查主模型是否配额耗尽
 3. 重新排序模型(更便宜的放前面)

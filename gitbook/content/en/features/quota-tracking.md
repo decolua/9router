@@ -106,7 +106,7 @@ Today (Feb 4, 2026):
   cc/claude-opus-4-5: 15M tokens ($0, subscription)
   glm/glm-4.7: 8M tokens ($4.80)
   if/kimi-k2-thinking: 3M tokens ($0, free)
-  
+
 Total: 26M tokens
 Cost: $4.80
 ```
@@ -118,6 +118,7 @@ Cost: $4.80
 ### Subscription Providers
 
 **Claude Code (Pro/Max)**
+
 ```
 Quota type: Time-based (5-hour rolling)
 Limit: 5 hours of usage
@@ -128,11 +129,12 @@ Dashboard shows:
   Opus: 2.5h / 5h used
   Sonnet: 1.2h / 5h used
   Haiku: 0.8h / 5h used
-  
+
 Weekly reset: Every Monday 00:00 UTC
 ```
 
 **OpenAI Codex (Plus/Pro)**
+
 ```
 Quota type: Time-based (5-hour rolling)
 Limit: 5 hours (Plus) / 10 hours (Pro)
@@ -144,6 +146,7 @@ Dashboard shows:
 ```
 
 **Gemini CLI (FREE)**
+
 ```
 Quota type: Request count + Monthly tokens
 Daily limit: 1,000 requests
@@ -158,6 +161,7 @@ Dashboard shows:
 ```
 
 **GitHub Copilot**
+
 ```
 Quota type: Monthly usage
 Limit: Varies by plan
@@ -171,6 +175,7 @@ Dashboard shows:
 ### Cheap Providers
 
 **GLM-4.7**
+
 ```
 Quota type: Daily token limit
 Limit: 10M tokens/day (Coding Plan)
@@ -184,6 +189,7 @@ Dashboard shows:
 ```
 
 **MiniMax M2.1**
+
 ```
 Quota type: Rolling 5-hour window
 Limit: 5M tokens per 5 hours
@@ -196,6 +202,7 @@ Dashboard shows:
 ```
 
 **Kimi K2**
+
 ```
 Quota type: Monthly subscription
 Limit: 10M tokens/month ($9 flat)
@@ -210,6 +217,7 @@ Dashboard shows:
 ### Free Providers
 
 **iFlow / Qwen / Kiro**
+
 ```
 Quota type: Unlimited (rate-limited)
 Limit: No hard limit
@@ -269,7 +277,7 @@ Projected (30 days): ~$120
 Breakdown by provider:
   GLM-4.7: $22.00 (78%)
   MiniMax M2.1: $6.00 (22%)
-  
+
 Average cost per 1M tokens: $0.62
 Savings vs ChatGPT API: 97% ($4,000 → $120)
 ```
@@ -286,7 +294,7 @@ Based on last 7 days usage:
 Monthly projection:
   Tokens: 1,500M (1.5B)
   Cost: $135
-  
+
 Breakdown:
   Subscription: 900M tokens ($0)
   GLM-4.7: 450M tokens ($90)
@@ -374,7 +382,7 @@ premium-coding:
   Requests: 456
   Tokens: 12M
   Cost: $2.40
-  
+
   Breakdown:
     cc/claude-opus: 8M tokens (67%, $0)
     glm/glm-4.7: 3M tokens (25%, $1.80)
@@ -384,7 +392,7 @@ budget-combo:
   Requests: 234
   Tokens: 6M
   Cost: $1.20
-  
+
   Breakdown:
     glm/glm-4.7: 4M tokens (67%, $2.40)
     if/kimi-k2-thinking: 2M tokens (33%, $0)
@@ -412,13 +420,14 @@ Delivery:
 ```
 
 **Example notifications:**
+
 ```
 ⚠️ Claude Code quota 80% used
    2.5h remaining (resets in 1h 30m)
-   
+
 ⚠️ GLM-4.7 quota 90% used
    1M tokens remaining (resets in 5h)
-   
+
 ✅ Gemini CLI quota reset
    1,000 requests available (daily limit)
 ```
@@ -440,14 +449,15 @@ Monthly budget: $150
 ```
 
 **Example notifications:**
+
 ```
 ⚠️ Daily budget 80% used
    $4.00 / $5.00 spent today
-   
+
 ⚠️ Monthly budget 50% reached
    $75 / $150 spent this month
    Projected: $135 (within budget)
-   
+
 🚨 Daily budget exceeded
    $5.20 / $5.00 spent today
    Auto-switched to free tier
@@ -483,12 +493,13 @@ Daily routine:
 ```
 
 **Example:**
+
 ```
 Morning check:
   ✅ Claude Code: 5h available (fresh reset)
   ✅ Gemini CLI: 1K requests available
   ⚠️ GLM-4.7: 2M tokens left (resets 10AM)
-  
+
 Action: Use Claude Code for morning work
 ```
 
@@ -511,6 +522,7 @@ Dashboard → Analytics → Combos:
 ```
 
 **Example:**
+
 ```
 Current: cc/claude-opus → glm/glm-4.7
   80% via Claude (good)
@@ -520,7 +532,7 @@ Optimized: gc/gemini-3-flash → cc/claude-opus → glm/glm-4.7
   50% via Gemini (free)
   40% via Claude (subscription)
   10% via GLM ($6/month)
-  
+
 Savings: $6/month
 ```
 
@@ -543,12 +555,12 @@ Dashboard → Analytics → Monthly Report:
   Total tokens: 1.5B
   Total cost: $120
   Savings: 97% vs ChatGPT API
-  
+
 Insights:
   - 60% usage via subscriptions ($0)
   - 30% via GLM ($90)
   - 10% via free tier ($0)
-  
+
 Optimization:
   - Increase Gemini CLI usage (free)
   - Reduce GLM usage (expensive)
@@ -650,6 +662,7 @@ Response:
 **Issue: Quota shows 0% but requests failing**
 
 **Solution:**
+
 1. Check provider connection (Dashboard → Providers)
 2. Verify API keys are valid
 3. Check if provider is down (status page)
@@ -658,6 +671,7 @@ Response:
 **Issue: Cost estimation incorrect**
 
 **Solution:**
+
 1. Dashboard → Settings → Pricing
 2. Verify pricing per provider matches current rates
 3. Update pricing if provider changed rates
@@ -666,6 +680,7 @@ Response:
 **Issue: Reset time not updating**
 
 **Solution:**
+
 1. Refresh dashboard (F5)
 2. Check system time is correct
 3. Verify timezone settings
@@ -674,6 +689,7 @@ Response:
 **Issue: Alerts not received**
 
 **Solution:**
+
 1. Dashboard → Settings → Alerts
 2. Verify email address is correct
 3. Check spam folder

@@ -28,16 +28,19 @@ Tích hợp 9Router với extension Cline VSCode để định tuyến request A
 Đặt base URL tới endpoint 9Router:
 
 **Cho 9Router cục bộ:**
+
 ```
 http://localhost:20128/v1
 ```
 
 **Cho 9Router cloud:**
+
 ```
 https://9router.com
 ```
 
 **Các bước:**
+
 1. Trong field **Base URL**, nhập endpoint 9Router
 2. Đảm bảo bao gồm `/v1` ở cuối
 
@@ -79,13 +82,13 @@ Model: gpt-4
 
 Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashboard. Ví dụ phổ biến:
 
-| Tên Model | Provider | Mô tả |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| Tên Model           | Provider  | Mô tả             |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## Sử dụng
 
@@ -183,6 +186,7 @@ Nếu gặp vấn đề timeout với request lớn:
 ### Định tuyến Model
 
 9Router tự động định tuyến request đến provider tốt nhất hiện có dựa trên:
+
 - Tính khả dụng của model
 - Trạng thái sức khỏe provider
 - Tối ưu chi phí
@@ -195,6 +199,7 @@ Nếu một provider thất bại, 9Router tự động fallback sang provider k
 ### Theo dõi Usage
 
 Giám sát usage Cline qua 9Router dashboard:
+
 - Tổng request
 - Token usage
 - Chi phí mỗi model

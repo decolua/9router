@@ -85,92 +85,90 @@ function EditCompatibleNodeModalContent({
   if (!node) return null;
 
   return (
-      <div className="flex flex-col gap-4">
-        <Input
-          label="Name"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
-          hint="Required. A friendly label for this node."
-        />
-        <Input
-          label="Prefix"
-          value={formData.prefix}
-          onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
-          placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
-          hint="Required. Used as the provider prefix for model IDs."
-        />
-        {!isAnthropic && (
-          <Select
-            label="API Type"
-            options={apiTypeOptions}
-            value={formData.apiType}
-            onChange={(e) =>
-              setFormData({ ...formData, apiType: e.target.value })
-            }
-          />
-        )}
-        <Input
-          label="Base URL"
-          value={formData.baseUrl}
+    <div className="flex flex-col gap-4">
+      <Input
+        label="Name"
+        value={formData.name}
+        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+        placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
+        hint="Required. A friendly label for this node."
+      />
+      <Input
+        label="Prefix"
+        value={formData.prefix}
+        onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
+        placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
+        hint="Required. Used as the provider prefix for model IDs."
+      />
+      {!isAnthropic && (
+        <Select
+          label="API Type"
+          options={apiTypeOptions}
+          value={formData.apiType}
           onChange={(e) =>
-            setFormData({ ...formData, baseUrl: e.target.value })
+            setFormData({ ...formData, apiType: e.target.value })
           }
-          placeholder={
-            isAnthropic
-              ? "https://api.anthropic.com/v1"
-              : "https://api.openai.com/v1"
-          }
-          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
-        <div className="flex gap-2">
-          <Input
-            label="API Key (for Check)"
-            type="password"
-            value={checkKey}
-            onChange={(e) => setCheckKey(e.target.value)}
-            className="flex-1"
-          />
-          <div className="pt-6">
-            <Button
-              onClick={handleValidate}
-              disabled={!checkKey || validating || !formData.baseUrl.trim()}
-              variant="secondary"
-            >
-              {validating ? "Checking..." : "Check"}
-            </Button>
-          </div>
-        </div>
+      )}
+      <Input
+        label="Base URL"
+        value={formData.baseUrl}
+        onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+        placeholder={
+          isAnthropic
+            ? "https://api.anthropic.com/v1"
+            : "https://api.openai.com/v1"
+        }
+        hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+      />
+      <div className="flex gap-2">
         <Input
-          label="Model ID (optional)"
-          value={checkModelId}
-          onChange={(e) => setCheckModelId(e.target.value)}
-          placeholder="e.g. my-model-id"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+          label="API Key (for Check)"
+          type="password"
+          value={checkKey}
+          onChange={(e) => setCheckKey(e.target.value)}
+          className="flex-1"
         />
-        {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
-        )}
-        <div className="flex gap-2">
+        <div className="pt-6">
           <Button
-            onClick={handleSubmit}
-            fullWidth
-            disabled={
-              !formData.name.trim() ||
-              !formData.prefix.trim() ||
-              !formData.baseUrl.trim() ||
-              saving
-            }
+            onClick={handleValidate}
+            disabled={!checkKey || validating || !formData.baseUrl.trim()}
+            variant="secondary"
           >
-            {saving ? "Saving..." : "Save"}
-          </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
-            Cancel
+            {validating ? "Checking..." : "Check"}
           </Button>
         </div>
       </div>
+      <Input
+        label="Model ID (optional)"
+        value={checkModelId}
+        onChange={(e) => setCheckModelId(e.target.value)}
+        placeholder="e.g. my-model-id"
+        hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+      />
+      {validationResult && (
+        <Badge variant={validationResult === "success" ? "success" : "error"}>
+          {validationResult === "success" ? "Valid" : "Invalid"}
+        </Badge>
+      )}
+      <div className="flex gap-2">
+        <Button
+          onClick={handleSubmit}
+          fullWidth
+          disabled={
+            !formData.name.trim() ||
+            !formData.prefix.trim() ||
+            !formData.baseUrl.trim() ||
+            saving
+          }
+        >
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <Button onClick={onClose} variant="ghost" fullWidth>
+          Cancel
+        </Button>
+      </div>
+    </div>
   );
 }
 

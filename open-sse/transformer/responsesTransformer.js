@@ -16,9 +16,14 @@ export function createResponsesLogger(model, logsDir = null) {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "").slice(0, 15);
   const uniqueId = Math.random().toString(36).slice(2, 8);
-  const baseDir = logsDir || (typeof process !== "undefined" ? process.cwd() : ".");
-  const logDir = path.join(baseDir, "logs", `responses_${model}_${timestamp}_${uniqueId}`);
-  
+  const baseDir =
+    logsDir || (typeof process !== "undefined" ? process.cwd() : ".");
+  const logDir = path.join(
+    baseDir,
+    "logs",
+    `responses_${model}_${timestamp}_${uniqueId}`,
+  );
+
   try {
     fs.mkdirSync(logDir, { recursive: true });
   } catch {
@@ -37,12 +42,18 @@ export function createResponsesLogger(model, logsDir = null) {
     },
     flush: () => {
       try {
-        fs.writeFileSync(path.join(logDir, "1_input_stream.txt"), inputEvents.join("\n"));
-        fs.writeFileSync(path.join(logDir, "2_output_stream.txt"), outputEvents.join("\n"));
+        fs.writeFileSync(
+          path.join(logDir, "1_input_stream.txt"),
+          inputEvents.join("\n"),
+        );
+        fs.writeFileSync(
+          path.join(logDir, "2_output_stream.txt"),
+          outputEvents.join("\n"),
+        );
       } catch (e) {
         console.log("[RESPONSES] Failed to write logs:", e.message);
       }
-    }
+    },
   };
 }
 
@@ -73,12 +84,12 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    completedSent: false
+    completedSent: false,
   };
 
   const encoder = new TextEncoder();
   const nextSeq = () => ++state.seq;
-  
+
   const emit = (controller, eventType, data) => {
     data.sequence_number = nextSeq();
     const output = `event: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
@@ -91,15 +102,15 @@ export function createResponsesApiTransformStream(logger = null) {
     if (!state.reasoningId) {
       state.reasoningId = `rs_${state.responseId}_${idx}`;
       state.reasoningIndex = idx;
-      
+
       emit(controller, "response.output_item.added", {
         type: "response.output_item.added",
         output_index: idx,
         item: {
           id: state.reasoningId,
           type: "reasoning",
-          summary: []
-        }
+          summary: [],
+        },
       });
 
       emit(controller, "response.reasoning_summary_part.added", {
@@ -107,7 +118,7 @@ export function createResponsesApiTransformStream(logger = null) {
         item_id: state.reasoningId,
         output_index: idx,
         summary_index: 0,
-        part: { type: "summary_text", text: "" }
+        part: { type: "summary_text", text: "" },
       });
       state.reasoningPartAdded = true;
     }
@@ -121,20 +132,20 @@ export function createResponsesApiTransformStream(logger = null) {
       item_id: state.reasoningId,
       output_index: state.reasoningIndex,
       summary_index: 0,
-      delta: text
+      delta: text,
     });
   };
 
   const closeReasoning = (controller) => {
     if (state.reasoningId && !state.reasoningDone) {
       state.reasoningDone = true;
-      
+
       emit(controller, "response.reasoning_summary_text.done", {
         type: "response.reasoning_summary_text.done",
         item_id: state.reasoningId,
         output_index: state.reasoningIndex,
         summary_index: 0,
-        text: state.reasoningBuf
+        text: state.reasoningBuf,
       });
 
       emit(controller, "response.reasoning_summary_part.done", {
@@ -142,7 +153,7 @@ export function createResponsesApiTransformStream(logger = null) {
         item_id: state.reasoningId,
         output_index: state.reasoningIndex,
         summary_index: 0,
-        part: { type: "summary_text", text: state.reasoningBuf }
+        part: { type: "summary_text", text: state.reasoningBuf },
       });
 
       emit(controller, "response.output_item.done", {
@@ -151,8 +162,8 @@ export function createResponsesApiTransformStream(logger = null) {
         item: {
           id: state.reasoningId,
           type: "reasoning",
-          summary: [{ type: "summary_text", text: state.reasoningBuf }]
-        }
+          summary: [{ type: "summary_text", text: state.reasoningBuf }],
+        },
       });
     }
   };
@@ -169,7 +180,7 @@ export function createResponsesApiTransformStream(logger = null) {
         output_index: parseInt(idx),
         content_index: 0,
         text: fullText,
-        logprobs: []
+        logprobs: [],
       });
 
       emit(controller, "response.content_part.done", {
@@ -177,7 +188,12 @@ export function createResponsesApiTransformStream(logger = null) {
         item_id: msgId,
         output_index: parseInt(idx),
         content_index: 0,
-        part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
+        part: {
+          type: "output_text",
+          annotations: [],
+          logprobs: [],
+          text: fullText,
+        },
       });
 
       emit(controller, "response.output_item.done", {
@@ -186,9 +202,16 @@ export function createResponsesApiTransformStream(logger = null) {
         item: {
           id: msgId,
           type: "message",
-          content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-          role: "assistant"
-        }
+          content: [
+            {
+              type: "output_text",
+              annotations: [],
+              logprobs: [],
+              text: fullText,
+            },
+          ],
+          role: "assistant",
+        },
       });
     }
   };
@@ -197,12 +220,12 @@ export function createResponsesApiTransformStream(logger = null) {
     const callId = state.funcCallIds[idx];
     if (callId && !state.funcItemDone[idx]) {
       const args = state.funcArgsBuf[idx] || "{}";
-      
+
       emit(controller, "response.function_call_arguments.done", {
         type: "response.function_call_arguments.done",
         item_id: `fc_${callId}`,
         output_index: parseInt(idx),
-        arguments: args
+        arguments: args,
       });
 
       emit(controller, "response.output_item.done", {
@@ -213,8 +236,8 @@ export function createResponsesApiTransformStream(logger = null) {
           type: "function_call",
           arguments: args,
           call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
+          name: state.funcNames[idx] || "",
+        },
       });
 
       state.funcItemDone[idx] = true;
@@ -233,8 +256,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
-        }
+          error: null,
+        },
       });
     }
   };
@@ -265,7 +288,7 @@ export function createResponsesApiTransformStream(logger = null) {
         }
 
         if (!parsed.choices?.length) continue;
-        
+
         const choice = parsed.choices[0];
         const idx = choice.index || 0;
         const delta = choice.delta || {};
@@ -274,7 +297,7 @@ export function createResponsesApiTransformStream(logger = null) {
         if (!state.started) {
           state.started = true;
           state.responseId = parsed.id ? `resp_${parsed.id}` : state.responseId;
-          
+
           emit(controller, "response.created", {
             type: "response.created",
             response: {
@@ -284,8 +307,8 @@ export function createResponsesApiTransformStream(logger = null) {
               status: "in_progress",
               background: false,
               error: null,
-              output: []
-            }
+              output: [],
+            },
           });
 
           emit(controller, "response.in_progress", {
@@ -294,8 +317,8 @@ export function createResponsesApiTransformStream(logger = null) {
               id: state.responseId,
               object: "response",
               created_at: state.created,
-              status: "in_progress"
-            }
+              status: "in_progress",
+            },
           });
         }
 
@@ -319,7 +342,7 @@ export function createResponsesApiTransformStream(logger = null) {
             const parts = content.split("</think>");
             const thinkPart = parts[0];
             const textPart = parts.slice(1).join("</think>");
-            
+
             if (thinkPart) emitReasoningDelta(controller, thinkPart);
             closeReasoning(controller);
             state.inThinking = false;
@@ -336,23 +359,33 @@ export function createResponsesApiTransformStream(logger = null) {
             if (!state.msgItemAdded[idx]) {
               state.msgItemAdded[idx] = true;
               const msgId = `msg_${state.responseId}_${idx}`;
-              
+
               emit(controller, "response.output_item.added", {
                 type: "response.output_item.added",
                 output_index: idx,
-                item: { id: msgId, type: "message", content: [], role: "assistant" }
+                item: {
+                  id: msgId,
+                  type: "message",
+                  content: [],
+                  role: "assistant",
+                },
               });
             }
 
             if (!state.msgContentAdded[idx]) {
               state.msgContentAdded[idx] = true;
-              
+
               emit(controller, "response.content_part.added", {
                 type: "response.content_part.added",
                 item_id: `msg_${state.responseId}_${idx}`,
                 output_index: idx,
                 content_index: 0,
-                part: { type: "output_text", annotations: [], logprobs: [], text: "" }
+                part: {
+                  type: "output_text",
+                  annotations: [],
+                  logprobs: [],
+                  text: "",
+                },
               });
             }
 
@@ -362,7 +395,7 @@ export function createResponsesApiTransformStream(logger = null) {
               output_index: idx,
               content_index: 0,
               delta: content,
-              logprobs: []
+              logprobs: [],
             });
 
             if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
@@ -383,7 +416,7 @@ export function createResponsesApiTransformStream(logger = null) {
 
             if (!state.funcCallIds[tcIdx] && newCallId) {
               state.funcCallIds[tcIdx] = newCallId;
-              
+
               emit(controller, "response.output_item.added", {
                 type: "response.output_item.added",
                 output_index: tcIdx,
@@ -392,8 +425,8 @@ export function createResponsesApiTransformStream(logger = null) {
                   type: "function_call",
                   arguments: "",
                   call_id: newCallId,
-                  name: state.funcNames[tcIdx] || ""
-                }
+                  name: state.funcNames[tcIdx] || "",
+                },
               });
             }
 
@@ -406,7 +439,7 @@ export function createResponsesApiTransformStream(logger = null) {
                   type: "response.function_call_arguments.delta",
                   item_id: `fc_${refCallId}`,
                   output_index: tcIdx,
-                  delta: tc.function.arguments
+                  delta: tc.function.arguments,
                 });
               }
               state.funcArgsBuf[tcIdx] += tc.function.arguments;
@@ -433,7 +466,6 @@ export function createResponsesApiTransformStream(logger = null) {
       logger?.logOutput("data: [DONE]");
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       logger?.flush();
-    }
+    },
   });
 }
-

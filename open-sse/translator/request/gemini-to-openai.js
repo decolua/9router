@@ -7,14 +7,17 @@ export function geminiToOpenAIRequest(model, body, stream) {
   const result = {
     model: model,
     messages: [],
-    stream: stream
+    stream: stream,
   };
 
   // Generation config
   if (body.generationConfig) {
     const config = body.generationConfig;
     if (config.maxOutputTokens) {
-      const tempBody = { max_tokens: config.maxOutputTokens, tools: body.tools };
+      const tempBody = {
+        max_tokens: config.maxOutputTokens,
+        tools: body.tools,
+      };
       result.max_tokens = adjustMaxTokens(tempBody);
     }
     if (config.temperature !== undefined) {
@@ -31,7 +34,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
     if (systemText) {
       result.messages.push({
         role: "system",
-        content: systemText
+        content: systemText,
       });
     }
   }
@@ -57,8 +60,8 @@ export function geminiToOpenAIRequest(model, body, stream) {
             function: {
               name: func.name,
               description: func.description || "",
-              parameters: func.parameters || { type: "object", properties: {} }
-            }
+              parameters: func.parameters || { type: "object", properties: {} },
+            },
           });
         }
       }
@@ -71,7 +74,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
 // Convert Gemini content to OpenAI message
 function convertGeminiContent(content) {
   const role = content.role === "user" ? "user" : "assistant";
-  
+
   if (!content.parts || !Array.isArray(content.parts)) {
     return null;
   }
@@ -88,8 +91,8 @@ function convertGeminiContent(content) {
       parts.push({
         type: "image_url",
         image_url: {
-          url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`
-        }
+          url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+        },
       });
     }
 
@@ -99,8 +102,8 @@ function convertGeminiContent(content) {
         type: "function",
         function: {
           name: part.functionCall.name,
-          arguments: JSON.stringify(part.functionCall.args || {})
-        }
+          arguments: JSON.stringify(part.functionCall.args || {}),
+        },
       });
     }
 
@@ -108,7 +111,11 @@ function convertGeminiContent(content) {
       return {
         role: "tool",
         tool_call_id: part.functionResponse.id || part.functionResponse.name,
-        content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
+        content: JSON.stringify(
+          part.functionResponse.response?.result ||
+            part.functionResponse.response ||
+            {},
+        ),
       };
     }
   }
@@ -125,7 +132,8 @@ function convertGeminiContent(content) {
   if (parts.length > 0) {
     return {
       role,
-      content: parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts
+      content:
+        parts.length === 1 && parts[0].type === "text" ? parts[0].text : parts,
     };
   }
 
@@ -136,7 +144,7 @@ function convertGeminiContent(content) {
 function extractGeminiText(content) {
   if (typeof content === "string") return content;
   if (content.parts && Array.isArray(content.parts)) {
-    return content.parts.map(p => p.text || "").join("");
+    return content.parts.map((p) => p.text || "").join("");
   }
   return "";
 }
@@ -144,4 +152,3 @@ function extractGeminiText(content) {
 // Register
 register(FORMATS.GEMINI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
-

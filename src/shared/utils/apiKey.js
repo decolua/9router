@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
-const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
+const API_KEY_SECRET =
+  process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
 
 /**
  * Generate 6-char random keyId
@@ -50,23 +51,23 @@ export function parseApiKey(apiKey) {
   if (!apiKey || !apiKey.startsWith("sk-")) return null;
 
   const parts = apiKey.split("-");
-  
+
   // New format: sk-{machineId}-{keyId}-{crc8} = 4 parts
   if (parts.length === 4) {
     const [, machineId, keyId, crc] = parts;
-    
+
     // Validate CRC
     const expectedCrc = generateCrc(machineId, keyId);
     if (crc !== expectedCrc) return null;
-    
+
     return { machineId, keyId, isNewFormat: true };
   }
-  
+
   // Old format: sk-{random8} = 2 parts
   if (parts.length === 2) {
     return { machineId: null, keyId: parts[1], isNewFormat: false };
   }
-  
+
   return null;
 }
 
@@ -78,10 +79,10 @@ export function parseApiKey(apiKey) {
 export function verifyApiKeyCrc(apiKey) {
   const parsed = parseApiKey(apiKey);
   if (!parsed) return false;
-  
+
   // Old format doesn't have CRC, always valid if parsed
   if (!parsed.isNewFormat) return true;
-  
+
   // New format already verified in parseApiKey
   return true;
 }
@@ -95,4 +96,3 @@ export function isNewFormatKey(apiKey) {
   const parsed = parseApiKey(apiKey);
   return parsed?.isNewFormat === true;
 }
-

@@ -24,10 +24,10 @@ curl "$NINEROUTER_URL/v1/audio/voices?provider=edge-tts&lang=vi" | jq '.data[].m
 
 `POST $NINEROUTER_URL/v1/audio/speech`
 
-| Field | Required | Notes |
-|---|---|---|
-| `model` | yes | voice ID from `/v1/models/tts` |
-| `input` | yes | text to speak |
+| Field   | Required | Notes                          |
+| ------- | -------- | ------------------------------ |
+| `model` | yes      | voice ID from `/v1/models/tts` |
+| `input` | yes      | text to speak                  |
 
 Query `?response_format=mp3` (default, raw bytes) or `?response_format=json` (`{audio: base64, format}`).
 
@@ -49,8 +49,14 @@ JS (save file):
 import { writeFile } from "node:fs/promises";
 const r = await fetch(`${process.env.NINEROUTER_URL}/v1/audio/speech`, {
   method: "POST",
-  headers: { "Authorization": `Bearer ${process.env.NINEROUTER_KEY}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ model: "el/eleven_multilingual_v2", input: "Xin chào" }),
+  headers: {
+    Authorization: `Bearer ${process.env.NINEROUTER_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "el/eleven_multilingual_v2",
+    input: "Xin chào",
+  }),
 });
 await writeFile("speech.mp3", Buffer.from(await r.arrayBuffer()));
 ```
@@ -60,21 +66,22 @@ await writeFile("speech.mp3", Buffer.from(await r.arrayBuffer()));
 Default → raw audio bytes (Content-Type `audio/mp3`).
 
 `?response_format=json`:
+
 ```json
 { "audio": "SUQzBAAAA...", "format": "mp3" }
 ```
 
 ## Provider quirks (model format)
 
-| Provider | `model` format | Notes |
-|---|---|---|
-| `openai` | `tts-1/alloy` (model/voice) or just voice | Default model `gpt-4o-mini-tts` |
-| `elevenlabs` | `<model_id>/<voice_id>` or `<voice_id>` | Default model `eleven_flash_v2_5`; list voices in Dashboard |
-| `openrouter` | `openai/gpt-4o-mini-tts/alloy` | Streamed via chat-completions audio modality |
-| `edge-tts` | voice id e.g. `vi-VN-HoaiMyNeural` | **noAuth**; default `vi-VN-HoaiMyNeural` |
-| `google-tts` | language code e.g. `en`, `vi` | **noAuth** |
-| `local-device` | OS voice name (`say -v ?` / SAPI) | **noAuth**; needs `ffmpeg` |
-| `deepgram` | `aura-asteria-en` etc | Token auth |
-| `nvidia`, `inworld`, `cartesia`, `playht` | `model/voice` | Provider-specific auth header |
-| `coqui`, `tortoise` | speaker / voice id | Localhost noAuth |
-| `hyperbolic` | model id | Body = `{text}` only |
+| Provider                                  | `model` format                            | Notes                                                       |
+| ----------------------------------------- | ----------------------------------------- | ----------------------------------------------------------- |
+| `openai`                                  | `tts-1/alloy` (model/voice) or just voice | Default model `gpt-4o-mini-tts`                             |
+| `elevenlabs`                              | `<model_id>/<voice_id>` or `<voice_id>`   | Default model `eleven_flash_v2_5`; list voices in Dashboard |
+| `openrouter`                              | `openai/gpt-4o-mini-tts/alloy`            | Streamed via chat-completions audio modality                |
+| `edge-tts`                                | voice id e.g. `vi-VN-HoaiMyNeural`        | **noAuth**; default `vi-VN-HoaiMyNeural`                    |
+| `google-tts`                              | language code e.g. `en`, `vi`             | **noAuth**                                                  |
+| `local-device`                            | OS voice name (`say -v ?` / SAPI)         | **noAuth**; needs `ffmpeg`                                  |
+| `deepgram`                                | `aura-asteria-en` etc                     | Token auth                                                  |
+| `nvidia`, `inworld`, `cartesia`, `playht` | `model/voice`                             | Provider-specific auth header                               |
+| `coqui`, `tortoise`                       | speaker / voice id                        | Localhost noAuth                                            |
+| `hyperbolic`                              | model id                                  | Body = `{text}` only                                        |

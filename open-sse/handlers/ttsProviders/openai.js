@@ -14,15 +14,23 @@ export default {
       voice = model;
     }
 
-    const baseUrl = (credentials.baseUrl || "https://api.openai.com").replace(/\/+$/, "");
+    const baseUrl = (credentials.baseUrl || "https://api.openai.com").replace(
+      /\/+$/,
+      "",
+    );
     const res = await fetch(`${baseUrl}/v1/audio/speech`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${credentials.apiKey}` },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${credentials.apiKey}`,
+      },
       body: JSON.stringify({ model: ttsModel, voice, input: text }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `OpenAI TTS failed: ${res.status}`);
+      throw new Error(
+        err?.error?.message || `OpenAI TTS failed: ${res.status}`,
+      );
     }
     const buf = await res.arrayBuffer();
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };

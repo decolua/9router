@@ -41,9 +41,9 @@ echo $OPENAI_API_KEY
 
 9Router provides the following Codex models:
 
-| Model ID | Description |
-|----------|-------------|
-| `cx/gpt-5.2-codex` | GPT-5.2 Codex - Latest version |
+| Model ID               | Description                          |
+| ---------------------- | ------------------------------------ |
+| `cx/gpt-5.2-codex`     | GPT-5.2 Codex - Latest version       |
 | `cx/gpt-5.1-codex-max` | GPT-5.1 Codex Max - Extended context |
 
 ## Usage Examples

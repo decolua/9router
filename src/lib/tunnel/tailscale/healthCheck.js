@@ -4,9 +4,13 @@ import { HEALTH_CHECK } from "./config.js";
 export async function probeUrlAlive(url) {
   if (!url) return false;
   let hostname;
-  try { hostname = new URL(url).hostname; } catch { return false; }
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return false;
+  }
 
-  if (!await resolveDns(hostname, HEALTH_CHECK.dnsTimeoutMs)) return false;
+  if (!(await resolveDns(hostname, HEALTH_CHECK.dnsTimeoutMs))) return false;
 
   try {
     const res = await fetch(`${url}/api/health`, {

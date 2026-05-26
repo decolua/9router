@@ -42,11 +42,11 @@ echo $ANTHROPIC_BASE_URL
 
 Claude Codeは9Routerモデルにマッピングされる以下のモデルエイリアスをサポート:
 
-| エイリアス | モデル | 環境変数 |
-|-------|-------|---------------------|
-| `opus` | Claude Opus 4.5 | `ANTHROPIC_DEFAULT_OPUS_MODEL` |
-| `sonnet` | Claude Sonnet 4.5 | `ANTHROPIC_DEFAULT_SONNET_MODEL` |
-| `haiku` | Claude Haiku 4.5 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` |
+| エイリアス | モデル            | 環境変数                         |
+| ---------- | ----------------- | -------------------------------- |
+| `opus`     | Claude Opus 4.5   | `ANTHROPIC_DEFAULT_OPUS_MODEL`   |
+| `sonnet`   | Claude Sonnet 4.5 | `ANTHROPIC_DEFAULT_SONNET_MODEL` |
+| `haiku`    | Claude Haiku 4.5  | `ANTHROPIC_DEFAULT_HAIKU_MODEL`  |
 
 ## 使用例
 

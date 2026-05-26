@@ -106,7 +106,7 @@ Today (Feb 4, 2026):
   cc/claude-opus-4-5: 15M tokens ($0, subscription)
   glm/glm-4.7: 8M tokens ($4.80)
   if/kimi-k2-thinking: 3M tokens ($0, free)
-  
+
 Total: 26M tokens
 Cost: $4.80
 ```
@@ -118,6 +118,7 @@ Cost: $4.80
 ### サブスクリプションプロバイダー
 
 **Claude Code (Pro/Max)**
+
 ```
 クォータタイプ: 時間ベース (5時間ローリング)
 上限: 5時間の使用
@@ -128,11 +129,12 @@ Cost: $4.80
   Opus: 2.5h / 5h 使用
   Sonnet: 1.2h / 5h 使用
   Haiku: 0.8h / 5h 使用
-  
+
 週次リセット: 毎週月曜00:00 UTC
 ```
 
 **OpenAI Codex (Plus/Pro)**
+
 ```
 クォータタイプ: 時間ベース (5時間ローリング)
 上限: 5時間 (Plus) / 10時間 (Pro)
@@ -144,6 +146,7 @@ Cost: $4.80
 ```
 
 **Gemini CLI (無料)**
+
 ```
 クォータタイプ: リクエスト数 + 月次トークン
 日次上限: 1,000 リクエスト
@@ -158,6 +161,7 @@ Cost: $4.80
 ```
 
 **GitHub Copilot**
+
 ```
 クォータタイプ: 月次使用量
 上限: プランによる
@@ -171,6 +175,7 @@ Cost: $4.80
 ### 低価格プロバイダー
 
 **GLM-4.7**
+
 ```
 クォータタイプ: 日次トークン上限
 上限: 10Mトークン/日 (Coding Plan)
@@ -184,6 +189,7 @@ Cost: $4.80
 ```
 
 **MiniMax M2.1**
+
 ```
 クォータタイプ: 5時間ローリングウィンドウ
 上限: 5時間あたり5Mトークン
@@ -196,6 +202,7 @@ Cost: $4.80
 ```
 
 **Kimi K2**
+
 ```
 クォータタイプ: 月次サブスクリプション
 上限: 10Mトークン/月 ($9固定)
@@ -210,6 +217,7 @@ Cost: $4.80
 ### 無料プロバイダー
 
 **iFlow / Qwen / Kiro**
+
 ```
 クォータタイプ: 無制限 (レート制限)
 上限: ハード制限なし
@@ -269,7 +277,7 @@ Projected (30 days): ~$120
 Breakdown by provider:
   GLM-4.7: $22.00 (78%)
   MiniMax M2.1: $6.00 (22%)
-  
+
 Average cost per 1M tokens: $0.62
 Savings vs ChatGPT API: 97% ($4,000 → $120)
 ```
@@ -286,7 +294,7 @@ Based on last 7 days usage:
 Monthly projection:
   Tokens: 1,500M (1.5B)
   Cost: $135
-  
+
 Breakdown:
   Subscription: 900M tokens ($0)
   GLM-4.7: 450M tokens ($90)
@@ -374,7 +382,7 @@ premium-coding:
   Requests: 456
   Tokens: 12M
   Cost: $2.40
-  
+
   Breakdown:
     cc/claude-opus: 8M tokens (67%, $0)
     glm/glm-4.7: 3M tokens (25%, $1.80)
@@ -384,7 +392,7 @@ budget-combo:
   Requests: 234
   Tokens: 6M
   Cost: $1.20
-  
+
   Breakdown:
     glm/glm-4.7: 4M tokens (67%, $2.40)
     if/kimi-k2-thinking: 2M tokens (33%, $0)
@@ -412,13 +420,14 @@ Delivery:
 ```
 
 **通知例:**
+
 ```
 ⚠️ Claude Code quota 80% used
    2.5h remaining (resets in 1h 30m)
-   
+
 ⚠️ GLM-4.7 quota 90% used
    1M tokens remaining (resets in 5h)
-   
+
 ✅ Gemini CLI quota reset
    1,000 requests available (daily limit)
 ```
@@ -440,14 +449,15 @@ Monthly budget: $150
 ```
 
 **通知例:**
+
 ```
 ⚠️ Daily budget 80% used
    $4.00 / $5.00 spent today
-   
+
 ⚠️ Monthly budget 50% reached
    $75 / $150 spent this month
    Projected: $135 (within budget)
-   
+
 🚨 Daily budget exceeded
    $5.20 / $5.00 spent today
    Auto-switched to free tier
@@ -483,12 +493,13 @@ Example alert:
 ```
 
 **例:**
+
 ```
 朝の確認:
   ✅ Claude Code: 5時間利用可 (新鮮なリセット)
   ✅ Gemini CLI: 1Kリクエスト利用可
   ⚠️ GLM-4.7: 2Mトークン残 (午前10時リセット)
-  
+
 アクション: 朝の作業にClaude Codeを使用
 ```
 
@@ -511,6 +522,7 @@ Dashboard → Analytics → Combos:
 ```
 
 **例:**
+
 ```
 現在: cc/claude-opus → glm/glm-4.7
   80% Claude経由 (良好)
@@ -520,7 +532,7 @@ Dashboard → Analytics → Combos:
   50% Gemini経由 (無料)
   40% Claude経由 (サブスクリプション)
   10% GLM経由 ($6/月)
-  
+
 節約: $6/月
 ```
 
@@ -543,12 +555,12 @@ Dashboard → Analytics → Monthly Report:
   Total tokens: 1.5B
   Total cost: $120
   Savings: 97% vs ChatGPT API
-  
+
 インサイト:
   - 60% サブスクリプション経由の使用 ($0)
   - 30% GLM経由 ($90)
   - 10% 無料階層経由 ($0)
-  
+
 最適化:
   - Gemini CLI使用を増やす (無料)
   - GLM使用を減らす (高価)
@@ -650,6 +662,7 @@ Response:
 **問題: クォータが0%を表示するがリクエストが失敗**
 
 **解決策:**
+
 1. プロバイダー接続を確認 (Dashboard → Providers)
 2. APIキーが有効か確認
 3. プロバイダーがダウンしているか確認 (ステータスページ)
@@ -658,6 +671,7 @@ Response:
 **問題: コスト見積もりが正しくない**
 
 **解決策:**
+
 1. Dashboard → Settings → Pricing
 2. プロバイダーごとの料金が現在のレートと一致するか確認
 3. プロバイダーがレートを変更した場合は料金を更新
@@ -666,6 +680,7 @@ Response:
 **問題: リセット時間が更新されない**
 
 **解決策:**
+
 1. ダッシュボードを更新 (F5)
 2. システム時刻が正しいか確認
 3. タイムゾーン設定を確認
@@ -674,6 +689,7 @@ Response:
 **問題: アラートが受信されない**
 
 **解決策:**
+
 1. Dashboard → Settings → Alerts
 2. メールアドレスが正しいか確認
 3. スパムフォルダを確認

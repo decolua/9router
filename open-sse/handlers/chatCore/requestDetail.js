@@ -1,15 +1,35 @@
-import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import {
+  saveRequestUsage,
+  appendRequestLog,
+  saveRequestDetail,
+} from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 
 const OPTIONAL_PARAMS = [
-  "temperature", "top_p", "top_k",
-  "max_tokens", "max_completion_tokens",
-  "thinking", "reasoning", "enable_thinking",
-  "presence_penalty", "frequency_penalty",
-  "seed", "stop", "tools", "tool_choice",
-  "response_format", "prediction", "store", "metadata",
-  "n", "logprobs", "top_logprobs", "logit_bias",
-  "user", "parallel_tool_calls"
+  "temperature",
+  "top_p",
+  "top_k",
+  "max_tokens",
+  "max_completion_tokens",
+  "thinking",
+  "reasoning",
+  "enable_thinking",
+  "presence_penalty",
+  "frequency_penalty",
+  "seed",
+  "stop",
+  "tools",
+  "tool_choice",
+  "response_format",
+  "prediction",
+  "store",
+  "metadata",
+  "n",
+  "logprobs",
+  "top_logprobs",
+  "logit_bias",
+  "user",
+  "parallel_tool_calls",
 ];
 
 export function extractRequestConfig(body, stream) {
@@ -29,7 +49,8 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens:
+        responseBody.usage.cache_creation_input_tokens,
     };
   }
 
@@ -39,7 +60,8 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens:
+        responseBody.usage.completion_tokens_details?.reasoning_tokens,
     };
   }
 
@@ -48,7 +70,7 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
       completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount
+      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount,
     };
   }
 
@@ -68,11 +90,19 @@ export function buildRequestDetail(base, overrides = {}) {
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     status: base.status || "success",
-    ...overrides
+    ...overrides,
   };
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE" }) {
+export function saveUsageStats({
+  provider,
+  model,
+  tokens,
+  connectionId,
+  apiKey,
+  endpoint,
+  label = "USAGE",
+}) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -80,14 +110,23 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
 
   if (inTokens === 0 && outTokens === 0) return;
 
-  const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const accountSuffix = connectionId ? ` | account=${connectionId.slice(0, 8)}...` : "";
-  console.log(`${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`);
+  const time = new Date().toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const accountSuffix = connectionId
+    ? ` | account=${connectionId.slice(0, 8)}...`
+    : "";
+  console.log(
+    `${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`,
+  );
 
   // Normalize to OpenAI token shape for storage
   const normalized = {
     prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
-    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
+    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0,
   };
 
   saveRequestUsage({
@@ -97,6 +136,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
   }).catch(() => {});
 }

@@ -19,7 +19,9 @@ async function getToken() {
   const rawCookies = res.headers.getSetCookie?.() || [];
   const cookie = rawCookies.map((c) => c.split(";")[0]).join("; ");
   const html = await res.text();
-  const match = html.match(/params_AbusePreventionHelper\s*=\s*\[([^,]+),([^,]+),/);
+  const match = html.match(
+    /params_AbusePreventionHelper\s*=\s*\[([^,]+),([^,]+),/,
+  );
   if (!match) throw new Error("Failed to parse Bing token");
   cache.token = { key: match[1], token: match[2].replace(/"/g, ""), cookie };
   cache.tokenTime = now;
@@ -35,18 +37,21 @@ async function ttsRequest(text, voiceId, token) {
   body.append("ssml", ssml);
   body.append("token", token.token);
   body.append("key", token.key);
-  return fetch("https://www.bing.com/tfettts?isVertical=1&&IG=1&IID=translator.5023&SFX=1", {
-    method: "POST",
-    body: body.toString(),
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "Accept": "*/*",
-      "Origin": "https://www.bing.com",
-      "Referer": "https://www.bing.com/translator",
-      "User-Agent": UA,
-      ...(token.cookie ? { "Cookie": token.cookie } : {}),
+  return fetch(
+    "https://www.bing.com/tfettts?isVertical=1&&IG=1&IID=translator.5023&SFX=1",
+    {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "*/*",
+        Origin: "https://www.bing.com",
+        Referer: "https://www.bing.com/translator",
+        "User-Agent": UA,
+        ...(token.cookie ? { Cookie: token.cookie } : {}),
+      },
     },
-  });
+  );
 }
 
 export async function fetchEdgeTtsVoices() {
@@ -54,7 +59,7 @@ export async function fetchEdgeTtsVoices() {
   if (_voicesCache && now - _voicesCacheTime < VOICES_TTL) return _voicesCache;
   const res = await fetch(
     "https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=6A5AA1D4EAFF4E9FB37E23D68491D6F4",
-    { headers: { "User-Agent": UA } }
+    { headers: { "User-Agent": UA } },
   );
   if (!res.ok) throw new Error(`Edge TTS voices fetch failed: ${res.status}`);
   const voices = await res.json();
@@ -80,7 +85,9 @@ export default {
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Error(`Bing TTS failed: ${res.status}${body ? " - " + body : ""}`);
+      throw new Error(
+        `Bing TTS failed: ${res.status}${body ? " - " + body : ""}`,
+      );
     }
     const buf = await res.arrayBuffer();
     if (buf.byteLength < 1024) throw new Error("Bing TTS returned empty audio");

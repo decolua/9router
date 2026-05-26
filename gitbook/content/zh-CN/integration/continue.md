@@ -23,6 +23,7 @@
 将以下配置添加到 `config.json`:
 
 **单模型设置:**
+
 ```json
 {
   "models": [
@@ -38,6 +39,7 @@
 ```
 
 **多模型设置:**
+
 ```json
 {
   "models": [
@@ -75,6 +77,7 @@
 
 **云端 9Router:**
 将 `apiBase` 替换为:
+
 ```json
 "apiBase": "https://9router.com/v1"
 ```
@@ -94,37 +97,44 @@
 ## 可用模型
 
 ### Claude 模型(Anthropic)
+
 - `cc/claude-opus-4-5-20251101` - 最强,适合复杂任务
 - `cc/claude-sonnet-4-20250514` - 性能与速度平衡
 - `cc/claude-haiku-4-20250514` - 最快,适合简单任务
 
 ### DeepSeek 模型
+
 - `cx/deepseek-chat` - 出色的代码生成
 - `cx/deepseek-reasoner` - 复杂问题求解
 
 ### GLM 模型(Zhipu AI)
+
 - `glm/glm-4-plus` - 高级中文与英文
 - `glm/glm-4-flash` - 快速响应
 
 ## 使用示例
 
 ### 代码解释
+
 1. 在编辑器中选中代码
 2. 打开 Continue 侧边栏
 3. 输入:"Explain this code"
 4. 模型:`cc/claude-sonnet-4-20250514`
 
 ### 代码生成
+
 1. 打开 Continue 侧边栏
 2. 输入:"Create a React component for user profile card"
 3. 模型:`cx/deepseek-chat`
 
 ### 重构
+
 1. 选中要重构的代码
 2. 输入:"Refactor this to use async/await"
 3. 模型:`cc/claude-sonnet-4-20250514`
 
 ### Bug 修复
+
 1. 选中有问题的代码
 2. 输入:"Find and fix the bug in this code"
 3. 模型:`cx/deepseek-reasoner`
@@ -204,21 +214,25 @@
 ## 故障排除
 
 ### 模型无响应
+
 - 确认 9Router 正在运行:`curl http://localhost:20128/health`
 - 检查 config.json 中的 API key
 - 查看 VSCode 开发者控制台错误:`Help` → `Toggle Developer Tools`
 
 ### 选错模型
+
 - 点击 Continue 侧边栏的模型下拉菜单
 - 选择正确的 9Router 模型
 - 模型名必须完全匹配(大小写敏感)
 
 ### 配置未加载
+
 - 确认 JSON 语法有效(使用 JSON 验证工具)
 - 检查文件位置:`~/.continue/config.json`
 - 修改后重新加载 VSCode 窗口
 
 ### 性能缓慢
+
 - 切换到更快的模型(haiku、flash)
 - 在 contextProviders 中减少上下文大小
 - 检查到 9Router 的网络延迟
@@ -226,17 +240,20 @@
 ## 最佳实践
 
 ### 模型选择策略
+
 - **快速编辑**:使用 `cc/claude-haiku-4-20250514`
 - **代码生成**:使用 `cx/deepseek-chat`
 - **复杂重构**:使用 `cc/claude-opus-4-5-20251101`
 - **问题求解**:使用 `cx/deepseek-reasoner`
 
 ### 上下文管理
+
 - 提问前只选中相关代码
 - 使用具体、清晰的 prompt
 - 将复杂任务拆分为小步骤
 
 ### 成本优化
+
 - 简单任务使用更快/更便宜的模型
 - 尽可能限制上下文大小
 - 缓存常用响应

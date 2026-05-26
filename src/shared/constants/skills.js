@@ -13,7 +13,8 @@ export const SKILLS = [
   {
     id: "9router",
     name: "9Router (Entry)",
-    description: "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
+    description:
+      "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, and links to every capability skill.",
     endpoint: null,
     icon: "hub",
     isEntry: true,
@@ -21,7 +22,8 @@ export const SKILLS = [
   {
     id: "9router-chat",
     name: "Chat",
-    description: "Chat / code-gen via OpenAI or Anthropic format with streaming.",
+    description:
+      "Chat / code-gen via OpenAI or Anthropic format with streaming.",
     endpoint: "/v1/chat/completions",
     icon: "chat",
   },
@@ -42,28 +44,32 @@ export const SKILLS = [
   {
     id: "9router-stt",
     name: "Speech-to-Text",
-    description: "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
+    description:
+      "Transcribe audio via OpenAI Whisper, Groq, Gemini, Deepgram, AssemblyAI…",
     endpoint: "/v1/audio/transcriptions",
     icon: "mic",
   },
   {
     id: "9router-embeddings",
     name: "Embeddings",
-    description: "Vectors for RAG / semantic search via OpenAI, Gemini, Mistral…",
+    description:
+      "Vectors for RAG / semantic search via OpenAI, Gemini, Mistral…",
     endpoint: "/v1/embeddings",
     icon: "scatter_plot",
   },
   {
     id: "9router-web-search",
     name: "Web Search",
-    description: "Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com.",
+    description:
+      "Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com.",
     endpoint: "/v1/search",
     icon: "search",
   },
   {
     id: "9router-web-fetch",
     name: "Web Fetch",
-    description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
+    description:
+      "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",
   },

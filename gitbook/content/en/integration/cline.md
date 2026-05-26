@@ -28,16 +28,19 @@ Integrate 9Router with Cline VSCode extension to route your AI requests through 
 Set the base URL to your 9Router endpoint:
 
 **For Local 9Router:**
+
 ```
 http://localhost:20128/v1
 ```
 
 **For Cloud 9Router:**
+
 ```
 https://9router.com
 ```
 
 **Steps:**
+
 1. In the **Base URL** field, enter your 9Router endpoint
 2. Make sure to include `/v1` at the end
 
@@ -79,13 +82,13 @@ Model: gpt-4
 
 You can use any model configured in your 9Router dashboard. Common examples:
 
-| Model Name | Provider | Description |
-|------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
-| `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| Model Name          | Provider  | Description       |
+| ------------------- | --------- | ----------------- |
+| `gpt-4`             | OpenAI    | GPT-4 Turbo       |
+| `gpt-4o`            | OpenAI    | GPT-4 Optimized   |
+| `claude-opus-4-5`   | Anthropic | Claude Opus 4.5   |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
-| `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
+| `gemini-2.0-flash`  | Google    | Gemini 2.0 Flash  |
 
 ## Usage
 
@@ -183,6 +186,7 @@ If you experience timeout issues with large requests:
 ### Model Routing
 
 9Router automatically routes your requests to the best available provider based on:
+
 - Model availability
 - Provider health status
 - Cost optimization
@@ -195,6 +199,7 @@ If a provider fails, 9Router automatically falls back to alternative providers c
 ### Usage Tracking
 
 Monitor your Cline usage through 9Router dashboard:
+
 - Total requests
 - Token usage
 - Cost per model

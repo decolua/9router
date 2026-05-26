@@ -35,7 +35,7 @@ function upsert(db, p) {
      ON CONFLICT(id) DO UPDATE SET
        isActive=excluded.isActive, testStatus=excluded.testStatus,
        data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.isActive, r.testStatus, r.data, r.createdAt, r.updatedAt]
+    [r.id, r.isActive, r.testStatus, r.data, r.createdAt, r.updatedAt],
   );
 }
 
@@ -43,8 +43,14 @@ export async function getProxyPools(filter = {}) {
   const db = await getAdapter();
   const where = [];
   const params = [];
-  if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
-  if (filter.testStatus) { where.push("testStatus = ?"); params.push(filter.testStatus); }
+  if (filter.isActive !== undefined) {
+    where.push("isActive = ?");
+    params.push(filter.isActive ? 1 : 0);
+  }
+  if (filter.testStatus) {
+    where.push("testStatus = ?");
+    params.push(filter.testStatus);
+  }
   const sql = `SELECT * FROM proxyPools${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const list = db.all(sql, params).map(rowToPool);
   list.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
@@ -83,7 +89,11 @@ export async function updateProxyPool(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToPool(row), ...data, updatedAt: new Date().toISOString() };
+    const merged = {
+      ...rowToPool(row),
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
     upsert(db, merged);
     result = merged;
   });

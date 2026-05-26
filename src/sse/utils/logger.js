@@ -4,7 +4,7 @@ const LOG_LEVELS = {
   DEBUG: 0,
   INFO: 1,
   WARN: 2,
-  ERROR: 3
+  ERROR: 3,
 };
 
 const LEVEL = LOG_LEVELS.DEBUG;
@@ -53,7 +53,9 @@ export function error(tag, message, data) {
 
 export function request(method, path, extra) {
   const dataStr = extra ? ` ${formatData(extra)}` : "";
-  console.log(`\x1b[36m[${formatTime()}] 📥 ${method} ${path}${dataStr}\x1b[0m`);
+  console.log(
+    `\x1b[36m[${formatTime()}] 📥 ${method} ${path}${dataStr}\x1b[0m`,
+  );
 }
 
 export function response(status, duration, extra) {
@@ -72,4 +74,3 @@ export function maskKey(key) {
   if (!key || key.length < 8) return "***";
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
-

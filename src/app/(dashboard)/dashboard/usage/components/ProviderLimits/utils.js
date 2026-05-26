@@ -16,20 +16,20 @@ export function formatResetTime(date) {
     if (diffMs <= 0) return "-";
 
     const totalMinutes = Math.ceil(diffMs / (1000 * 60));
-    
+
     // < 60 minutes: show only minutes
     if (totalMinutes < 60) {
       return `${totalMinutes}m`;
     }
-    
+
     const totalHours = Math.floor(totalMinutes / 60);
     const remainingMinutes = totalMinutes % 60;
-    
+
     // < 24 hours: show hours and minutes
     if (totalHours < 24) {
       return `${totalHours}h ${remainingMinutes}m`;
     }
-    
+
     // >= 24 hours: show days, hours, and minutes
     const days = Math.floor(totalHours / 24);
     const remainingHours = totalHours % 24;
@@ -204,7 +204,7 @@ export function parseQuotaData(provider, data) {
   const modelOrder = getModelsByProviderId(provider);
   if (modelOrder.length > 0) {
     const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
-    
+
     normalizedQuotas.sort((a, b) => {
       // Use modelKey for antigravity, otherwise use name
       const keyA = a.modelKey || a.name;
