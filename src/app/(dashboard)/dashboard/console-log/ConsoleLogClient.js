@@ -13,9 +13,53 @@ const LOG_LEVEL_COLORS = {
 };
 
 function colorLine(line) {
-  const match = line.match(/\[(\w+)\]/g);
-  const levelTag = match ? match[1]?.replace(/\[|\]/g, "") : null;
-  const color = LOG_LEVEL_COLORS[levelTag] || "text-green-400";
+  let color = "text-green-400"; // default fallback
+
+  if (
+    line.includes("❌") ||
+    line.includes("[ERROR]") ||
+    line.includes("ERROR")
+  ) {
+    color = "text-red-400";
+  } else if (
+    line.includes("⚠️") ||
+    line.includes("[WARN]") ||
+    line.includes("WARN")
+  ) {
+    color = "text-yellow-400";
+  } else if (
+    line.includes("📥") ||
+    line.includes("[REQUEST]") ||
+    line.includes("[ProxyFetch]")
+  ) {
+    color = "text-cyan-400";
+  } else if (
+    line.includes("🔍") ||
+    line.includes("[AUTH]") ||
+    line.includes("[ROUTING]")
+  ) {
+    color = "text-sky-400";
+  } else if (line.includes("🌊") || line.includes("[STREAM]")) {
+    color = "text-fuchsia-400";
+  } else if (
+    line.includes("📊") ||
+    line.includes("📈") ||
+    line.includes("[USAGE]") ||
+    line.includes("[STREAM USAGE]")
+  ) {
+    color = "text-pink-400";
+  } else if (line.includes("[PENDING]")) {
+    color = "text-indigo-400";
+  } else if (
+    line.includes("ℹ️") ||
+    line.includes("[INFO]") ||
+    line.includes("[COMBO]")
+  ) {
+    color = "text-green-400";
+  } else if (line.includes("[DB]") || line.includes("[InitApp]")) {
+    color = "text-slate-400";
+  }
+
   return <span className={color}>{line}</span>;
 }
 
