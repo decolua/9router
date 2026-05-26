@@ -13,10 +13,11 @@ const LOG_LEVEL_COLORS = {
 };
 
 function colorLine(line) {
-  let color = "#4ade80"; // default fallback (green-400)
+  let color = "#cbd5e1"; // default fallback (slate-300 / light gray)
 
   if (
     line.includes("❌") ||
+    line.includes("💥") ||
     line.includes("[ERROR]") ||
     line.includes("ERROR")
   ) {
@@ -34,6 +35,13 @@ function colorLine(line) {
   ) {
     color = "#22d3ee"; // cyan
   } else if (
+    line.includes("📤") ||
+    line.includes("ℹ️") ||
+    line.includes("[INFO]") ||
+    line.includes("[COMBO]")
+  ) {
+    color = "#4ade80"; // green
+  } else if (
     line.includes("🔍") ||
     line.includes("[AUTH]") ||
     line.includes("[ROUTING]")
@@ -50,12 +58,6 @@ function colorLine(line) {
     color = "#f472b6"; // pink
   } else if (line.includes("[PENDING]")) {
     color = "#818cf8"; // indigo
-  } else if (
-    line.includes("ℹ️") ||
-    line.includes("[INFO]") ||
-    line.includes("[COMBO]")
-  ) {
-    color = "#4ade80"; // green
   } else if (line.includes("[DB]") || line.includes("[InitApp]")) {
     color = "#94a3b8"; // slate
   }

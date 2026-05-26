@@ -262,7 +262,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-export default function ProviderTopology({
+function ProviderTopology({
   providers = [],
   activeRequests = [],
   lastProvider = "",
@@ -293,45 +293,85 @@ export default function ProviderTopology({
 
   // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
-  const [tick, setTick] = useState(0);
   const [activeSet, setActiveSet] = useState(new Set());
 
   useEffect(() => {
-    const seen = firstSeenRef.current;
-    const now = Date.now();
-    for (const p of rawActiveSet) {
-      if (!seen[p]) seen[p] = now;
-    }
-    for (const p of Object.keys(seen)) {
-      if (!rawActiveSet.has(p)) delete seen[p];
-    }
-  }, [rawActiveSet]);
+    const syncActiveSet = () => {
+      const seen = firstSeenRef.current;
+      const now = Date.now();
+      for (const p of rawActiveSet) {
+        if (!seen[p]) seen[p] = now;
+      }
+      for (const p of Object.keys(seen)) {
+        if (!rawActiveSet.has(p)) delete seen[p];
+      }
 
-  useEffect(() => {
+      const filtered = new Set();
+      for (const p of rawActiveSet) {
+        const ts = seen[p];
+        if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
+      }
+      setActiveSet(filtered);
+    };
+
+    const timer = setTimeout(syncActiveSet, 0);
     if (rawActiveSet.size === 0) {
-      setActiveSet(new Set());
-      return;
+      return () => clearTimeout(timer);
     }
-    const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
-    return () => clearInterval(id);
+
+    const intervalId = setInterval(syncActiveSet, FE_ACTIVE_TICK_MS);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(intervalId);
+    };
   }, [rawActiveSet]);
 
-  useEffect(() => {
-    const now = Date.now();
-    const filtered = new Set();
-    for (const p of rawActiveSet) {
-      const ts = firstSeenRef.current[p];
-      if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
-    }
-    setActiveSet(filtered);
-  }, [rawActiveSet, tick]);
+  const activeSetKey = useMemo(
+    () => Array.from(activeSet).sort().join(","),
+    [activeSet],
+  );
 
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastKey, errorKey],
+    [providers, activeSetKey, lastSet, errorSet],
   );
 
-  // Stable key — only remount when provider list changes
+  const fitOpts = useMemo(() => ({ padding: 0.2, duration: 200 }), []);
+
+  const onInit = useCallback(
+    (instance) => {
+      rfInstance.current = instance;
+      setTimeout(() => instance.fitView(fitOpts), 50);
+    },
+    [fitOpts],
+  );
+
+  const fitViewToGraph = useCallback(() => {
+    if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+  }, [fitOpts]);
+
+  const rfInstance = useRef(null);
+  const containerRef = useRef(null);
+
+  // Re-fit on container resize
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      fitViewToGraph();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fitViewToGraph]);
+
+  // Re-fit when node count/layout changes
+  useEffect(() => {
+    if (rfInstance.current) {
+      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
+      return () => clearTimeout(id);
+    }
+  }, [fitOpts, nodes.length]);
+
   const providersKey = useMemo(
     () =>
       providers
@@ -340,33 +380,6 @@ export default function ProviderTopology({
         .join(","),
     [providers],
   );
-
-  const rfInstance = useRef(null);
-  const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
-  const onInit = useCallback((instance) => {
-    rfInstance.current = instance;
-    setTimeout(() => instance.fitView(fitOpts), 50);
-  }, [fitOpts]);
-
-  // Re-fit on container resize
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // Re-fit when node count/layout changes
-  useEffect(() => {
-    if (rfInstance.current) {
-      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
-      return () => clearTimeout(id);
-    }
-  }, [nodes.length]);
 
   return (
     <div
@@ -383,30 +396,30 @@ export default function ProviderTopology({
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={fitOpts}
-          minZoom={0.1}
-          maxZoom={2}
-          onInit={onInit}
-          proOptions={{ hideAttribution: true }}
-          panOnDrag
-          zoomOnScroll
-          zoomOnPinch
-          zoomOnDoubleClick
-          preventScrolling={false}
           nodesDraggable={false}
           nodesConnectable={false}
           elementsSelectable={false}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          preventScrolling={false}
+          fitView
+          onInit={onInit}
         >
-          <Controls
-            showInteractive={false}
-            className="react-flow-controls-custom"
+          <Background
+            color="currentColor"
+            gap={24}
+            className="text-text-muted/10"
           />
+          <Controls showInteractive={false} />
         </ReactFlow>
       )}
     </div>
   );
 }
+
+export default ProviderTopology;
 
 ProviderTopology.propTypes = {
   providers: PropTypes.arrayOf(
