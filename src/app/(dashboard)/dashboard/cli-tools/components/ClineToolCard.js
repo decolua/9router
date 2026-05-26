@@ -32,34 +32,16 @@ export default function ClineToolCard({
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModel, setSelectedModel] = useState(
+    () => initialStatus?.settings?.openAiModelId || "",
+  );
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey)
-      setSelectedApiKey(apiKeys[0].key);
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  useEffect(() => {
-    if (status?.settings?.openAiModelId)
-      setSelectedModel(status.settings.openAiModelId);
-  }, [status]);
 
   const fetchModelAliases = async () => {
     try {
@@ -101,6 +83,19 @@ export default function ClineToolCard({
       setChecking(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!status) {
+        void checkStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isExpanded, status]);
 
   const handleApply = async () => {
     setApplying(true);

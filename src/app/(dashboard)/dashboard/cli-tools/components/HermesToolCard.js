@@ -34,8 +34,13 @@ export default function HermesToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const cfg = initialStatus?.settings?.model;
+    return cfg?.default || "";
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
@@ -53,24 +58,6 @@ export default function HermesToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setHermesStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !hermesStatus) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
   const fetchModelAliases = async () => {
     try {
       const res = await fetch("/api/models/alias");
@@ -81,13 +68,6 @@ export default function HermesToolCard({
     }
   };
 
-  useEffect(() => {
-    if (hermesStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const cfg = hermesStatus.settings?.model;
-      if (cfg?.default) setSelectedModel(cfg.default);
-    }
-  }, [hermesStatus]);
 
   const checkStatus = async () => {
     setChecking(true);
@@ -101,6 +81,19 @@ export default function HermesToolCard({
       setChecking(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!hermesStatus) {
+        void checkStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [hermesStatus, isExpanded]);
 
   const normalizeLocalhost = (url) =>
     url.replace("://localhost", "://127.0.0.1");

@@ -31,49 +31,23 @@ export default function CopilotToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
-  const [selectedModels, setSelectedModels] = useState([]);
+  const [selectedModels, setSelectedModels] = useState(() => {
+    if (!initialStatus?.config || !Array.isArray(initialStatus.config)) return [];
+    const entry = initialStatus.config.find((e) => e.name === "9Router");
+    return entry?.models?.length > 0 ? entry.models.map((m) => m.id) : [];
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const selectedModelsRef = useRef([]);
 
   useEffect(() => {
     selectedModelsRef.current = selectedModels;
   }, [selectedModels]);
-
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
-  // Pre-fill from existing config
-  useEffect(() => {
-    if (
-      status?.config &&
-      Array.isArray(status.config) &&
-      selectedModels.length === 0
-    ) {
-      const entry = status.config.find((e) => e.name === "9Router");
-      if (entry?.models?.length > 0) {
-        setSelectedModels(entry.models.map((m) => m.id));
-      }
-    }
-  }, [status]);
 
   const fetchModelAliases = async () => {
     try {
@@ -140,6 +114,19 @@ export default function CopilotToolCard({
       setChecking(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!status) {
+        void checkStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [isExpanded, status]);
 
   const handleApply = async () => {
     setApplying(true);

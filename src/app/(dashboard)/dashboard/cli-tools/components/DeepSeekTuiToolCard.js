@@ -34,8 +34,13 @@ export default function DeepSeekTuiToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [selectedModel, setSelectedModel] = useState(() => {
+    const openaiSection = initialStatus?.settings?.["providers.openai"];
+    return openaiSection?.model || "";
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
@@ -58,24 +63,6 @@ export default function DeepSeekTuiToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setDeepseekStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !deepseekStatus) {
-      checkStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
   const fetchModelAliases = async () => {
     try {
       const res = await fetch("/api/models/alias");
@@ -86,13 +73,6 @@ export default function DeepSeekTuiToolCard({
     }
   };
 
-  useEffect(() => {
-    if (deepseekStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const openaiSection = deepseekStatus.settings?.["providers.openai"];
-      if (openaiSection?.model) setSelectedModel(openaiSection.model);
-    }
-  }, [deepseekStatus]);
 
   const checkStatus = async () => {
     setChecking(true);
@@ -106,6 +86,19 @@ export default function DeepSeekTuiToolCard({
       setChecking(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!deepseekStatus) {
+        void checkStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [deepseekStatus, isExpanded]);
 
   const normalizeLocalhost = (url) =>
     url.replace("://localhost", "://127.0.0.1");

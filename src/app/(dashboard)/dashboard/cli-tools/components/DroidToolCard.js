@@ -34,8 +34,20 @@ export default function DroidToolCard({
   const [applying, setApplying] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [message, setMessage] = useState(null);
-  const [selectedApiKey, setSelectedApiKey] = useState("");
-  const [modelList, setModelList] = useState([]);
+  const [selectedApiKey, setSelectedApiKey] = useState(
+    () => apiKeys?.[0]?.key || "",
+  );
+  const [modelList, setModelList] = useState(() => {
+    const existingModels = (initialStatus?.settings?.customModels || [])
+      .filter((m) => m.id?.startsWith("custom:9Router"))
+      .sort((a, b) => (a.index || 0) - (b.index || 0))
+      .map((m) => m.model);
+    if (existingModels.length > 0) return existingModels;
+    const legacy = initialStatus?.settings?.customModels?.find(
+      (m) => m.id === "custom:9Router-0",
+    );
+    return legacy?.model ? [legacy.model] : [];
+  });
   const [modelInput, setModelInput] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
@@ -62,24 +74,6 @@ export default function DroidToolCard({
 
   const configStatus = getConfigStatus();
 
-  useEffect(() => {
-    if (apiKeys?.length > 0 && !selectedApiKey) {
-      setSelectedApiKey(apiKeys[0].key);
-    }
-  }, [apiKeys, selectedApiKey]);
-
-  useEffect(() => {
-    if (initialStatus) setDroidStatus(initialStatus);
-  }, [initialStatus]);
-
-  useEffect(() => {
-    if (isExpanded && !droidStatus) {
-      checkDroidStatus();
-      fetchModelAliases();
-    }
-    if (isExpanded) fetchModelAliases();
-  }, [isExpanded]);
-
   const fetchModelAliases = async () => {
     try {
       const res = await fetch("/api/models/alias");
@@ -90,27 +84,6 @@ export default function DroidToolCard({
     }
   };
 
-  // Pre-fill model list from existing config (supports multi-model)
-  useEffect(() => {
-    if (droidStatus?.installed && !hasInitializedModel.current) {
-      hasInitializedModel.current = true;
-      const existingModels = (droidStatus.settings?.customModels || [])
-        .filter((m) => m.id?.startsWith("custom:9Router"))
-        .sort((a, b) => (a.index || 0) - (b.index || 0))
-        .map((m) => m.model);
-      if (existingModels.length > 0) {
-        setModelList(existingModels);
-      } else {
-        // Legacy: single model stored as custom:9Router-0
-        const legacy = droidStatus.settings?.customModels?.find(
-          (m) => m.id === "custom:9Router-0",
-        );
-        if (legacy?.model) {
-          setModelList([legacy.model]);
-        }
-      }
-    }
-  }, [droidStatus]);
 
   const checkDroidStatus = async () => {
     setCheckingDroid(true);
@@ -124,6 +97,19 @@ export default function DroidToolCard({
       setCheckingDroid(false);
     }
   };
+
+  useEffect(() => {
+    if (!isExpanded) return;
+
+    const timer = setTimeout(() => {
+      if (!droidStatus) {
+        void checkDroidStatus();
+      }
+      void fetchModelAliases();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [droidStatus, isExpanded]);
 
   const getEffectiveBaseUrl = () => {
     const url = customBaseUrl || baseUrl;
