@@ -92,6 +92,7 @@ export const PROVIDER_MODELS = {
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
   ag: [  // Antigravity - special case: models call different backends
+    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Extra Low)" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },

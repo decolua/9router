@@ -32,7 +32,7 @@ export const MEMORY_CONFIG = {
 };
 
 // Stream stall timeout: abort if no chunk received within this duration
-export const STREAM_STALL_TIMEOUT_MS = 60 * 1000;
+export const STREAM_STALL_TIMEOUT_MS = 35 * 1000;
 
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = 20 * 1000;
