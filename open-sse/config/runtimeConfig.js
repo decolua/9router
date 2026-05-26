@@ -43,6 +43,12 @@ export const STREAM_STALL_TIMEOUT_MS = parseInt(
   10,
 );
 
+// Fetch connect timeout: abort if upstream doesn't return response headers within this duration.
+export const FETCH_CONNECT_TIMEOUT_MS = parseInt(
+  process.env.FETCH_CONNECT_TIMEOUT_MS || String(20 * 1000),
+  10,
+);
+
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
