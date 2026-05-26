@@ -86,6 +86,19 @@ function tsArgs(...args) {
   return [...SOCKET_FLAG, ...args];
 }
 
+export function getTailscaleAuthKey(env = process.env) {
+  const authKey = env.TAILSCALE_AUTHKEY;
+  return typeof authKey === "string" ? authKey.trim() : "";
+}
+
+export function buildTailscaleUpArgs(hostname, env = process.env) {
+  const args = tsArgs("up", "--accept-routes");
+  if (hostname) args.push(`--hostname=${hostname}`);
+  const authKey = getTailscaleAuthKey(env);
+  if (authKey) args.push(`--auth-key=${authKey}`);
+  return args;
+}
+
 export function isTailscaleLoggedIn() {
   const bin = getTailscaleBin();
   if (!bin) return false;
@@ -585,8 +598,7 @@ export function startLogin(hostname) {
       return;
     }
 
-    const args = tsArgs("up", "--accept-routes");
-    if (hostname) args.push(`--hostname=${hostname}`);
+    const args = buildTailscaleUpArgs(hostname);
     const child = spawn(bin, args, {
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
@@ -611,9 +623,23 @@ export function startLogin(hostname) {
       resolve({ authUrl: url });
     };
 
+    const finishAlreadyLoggedIn = (source) => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(timeout);
+      clearInterval(statusPoll);
+      console.log(`[Tailscale] login completed (${source})`);
+      child.unref();
+      resolve({ alreadyLoggedIn: true });
+    };
+
     // Poll status --json every 500ms — Windows exposes AuthURL only there
     const statusPoll = setInterval(() => {
       if (resolved) return;
+      if (isTailscaleLoggedIn()) {
+        finishAlreadyLoggedIn("status");
+        return;
+      }
       const url = getAuthUrlFromStatus();
       if (url) finishWithUrl(url, "status");
     }, 500);
@@ -625,6 +651,7 @@ export function startLogin(hostname) {
       child.unref();
       const url = parseAuthUrl(output) || getAuthUrlFromStatus();
       if (url) resolve({ authUrl: url });
+      else if (isTailscaleLoggedIn()) resolve({ alreadyLoggedIn: true });
       else reject(new Error("tailscale up timed out without auth URL"));
     }, 15000);
 
@@ -658,10 +685,7 @@ export function startLogin(hostname) {
       }
       // Only resolve alreadyLoggedIn if status confirms BackendState=Running
       if (isTailscaleLoggedIn()) {
-        resolved = true;
-        clearTimeout(timeout);
-        clearInterval(statusPoll);
-        resolve({ alreadyLoggedIn: true });
+        finishAlreadyLoggedIn("exit");
         return;
       }
       // Otherwise keep polling — daemon may publish AuthURL shortly after exit
