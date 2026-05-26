@@ -58,13 +58,17 @@ const CLAUDE_CONFIG = {
  * @returns {Object} Usage data with quotas
  */
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const providerDataWithProjectId = {
+    ...(providerSpecificData || {}),
+    ...(projectId ? { projectId } : {}),
+  };
 
   switch (provider) {
     case "github":
       return await getGitHubUsage(accessToken, providerSpecificData, proxyOptions);
     case "gemini-cli":
-      return await getGeminiUsage(accessToken, providerSpecificData, proxyOptions);
+      return await getGeminiUsage(accessToken, providerDataWithProjectId, proxyOptions);
     case "antigravity":
       return await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
     case "claude":
@@ -222,18 +226,22 @@ async function getGeminiUsage(accessToken, providerSpecificData, proxyOptions = 
   }
 
   try {
-    // Resolve project id: prefer connection-stored id, else loadCodeAssist lookup
-    let projectId = providerSpecificData?.projectId || null;
+    // Resolve project id: prefer connection-stored id, else loadCodeAssist lookup.
+    // #1271: OAuth save stores projectId on the connection, not providerSpecificData.
+    let projectId = normalizeCloudCodeProjectId(providerSpecificData?.projectId);
     let plan = "Free";
 
     if (!projectId) {
       const subInfo = await getGeminiSubscriptionInfo(accessToken, proxyOptions);
-      projectId = subInfo?.cloudaicompanionProject || null;
+      projectId = normalizeCloudCodeProjectId(subInfo?.cloudaicompanionProject);
       plan = subInfo?.currentTier?.name || plan;
     }
 
     if (!projectId) {
-      return { plan, message: "Gemini CLI project ID not available." };
+      return {
+        plan,
+        message: "Gemini CLI project ID not available. Reconnect Gemini CLI, or configure a Google Cloud project with Gemini Code Assist access before checking quota.",
+      };
     }
 
     const controller = new AbortController();
@@ -287,6 +295,14 @@ async function getGeminiUsage(accessToken, providerSpecificData, proxyOptions = 
   } catch (error) {
     return { message: `Gemini CLI error: ${error.message}` };
   }
+}
+
+function normalizeCloudCodeProjectId(project) {
+  if (typeof project === "string") return project.trim() || null;
+  if (project && typeof project === "object" && typeof project.id === "string") {
+    return project.id.trim() || null;
+  }
+  return null;
 }
 
 /**
