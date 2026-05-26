@@ -1,4 +1,6 @@
 const https = require("https");
+const http2 = require("http2");
+const tls = require("tls");
 const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
@@ -133,7 +135,6 @@ async function passthrough(req, res, bodyBuffer, onResponse) {
   // Only rewrite host for chat endpoints — daily-cloudcode-pa rejects auth/login requests
   const isChatEndpoint = req.url.includes(":generateContent") || req.url.includes(":streamGenerateContent");
   const targetHost = isChatEndpoint ? (HOST_REWRITE[originalHost] || originalHost) : originalHost;
-  const targetIP = await resolveTargetIP(targetHost);
   const dumper = ENABLE_FILE_LOG ? createResponseDumper(req, "passthrough") : null;
 
   const tool = getToolForHost(req.headers.host);
@@ -146,12 +147,121 @@ async function passthrough(req, res, bodyBuffer, onResponse) {
     headersForForwarding["content-length"] = String(bodyForForwarding.length);
   }
 
+  // ALPN negotiate: try HTTP/2 first (like browsers/mitmweb), fallback HTTP/1.1
+  try {
+    const proto = await negotiateAlpn(targetHost);
+    if (proto === "h2") {
+      return await passthroughHttp2(req, res, bodyForForwarding, headersForForwarding, targetHost, onResponse, dumper);
+    }
+  } catch (e) {
+    err(`[mitm] ALPN negotiate failed: ${e.message}, fallback to HTTP/1.1`);
+  }
+
+  return passthroughHttps(req, res, bodyForForwarding, headersForForwarding, targetHost, onResponse, dumper);
+}
+
+// ── ALPN negotiation cache ────────────────────────────────────
+const alpnCache = new Map(); // host → "h2" | "http/1.1"
+async function negotiateAlpn(host) {
+  if (alpnCache.has(host)) return alpnCache.get(host);
+  const ip = await resolveTargetIP(host);
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({
+      host: ip, port: 443, servername: host,
+      ALPNProtocols: ["h2", "http/1.1"], rejectUnauthorized: false,
+    }, () => {
+      const proto = socket.alpnProtocol || "http/1.1";
+      alpnCache.set(host, proto);
+      log(`🔗 [mitm] ALPN ${host} → ${proto}`);
+      socket.end();
+      resolve(proto);
+    });
+    socket.once("error", reject);
+    socket.setTimeout(5000, () => { socket.destroy(new Error("ALPN timeout")); });
+  });
+}
+
+// HTTP/2 passthrough using node:http2 native
+async function passthroughHttp2(req, res, bodyBuffer, headers, targetHost, onResponse, dumper) {
+  const targetIP = await resolveTargetIP(targetHost);
+  // HTTP/2 pseudo-headers required; strip HTTP/1.1-only headers
+  const h2Headers = {};
+  for (const [k, v] of Object.entries(headers)) {
+    const lk = k.toLowerCase();
+    if (lk === "host" || lk === "connection" || lk === "keep-alive" ||
+        lk === "transfer-encoding" || lk === "upgrade" || lk === "proxy-connection") continue;
+    h2Headers[lk] = v;
+  }
+  h2Headers[":method"] = req.method;
+  h2Headers[":path"] = req.url;
+  h2Headers[":scheme"] = "https";
+  h2Headers[":authority"] = targetHost;
+
+  return new Promise((resolve) => {
+    const client = http2.connect(`https://${targetHost}`, {
+      createConnection: () => tls.connect({
+        host: targetIP, port: 443, servername: targetHost,
+        ALPNProtocols: ["h2"], rejectUnauthorized: false,
+      }),
+    });
+    client.once("error", (e) => {
+      err(`[mitm] http2 client error: ${e.message}`);
+      if (dumper) { dumper.writeChunk(`\n[ERROR h2] ${e.message}\n`); dumper.end(); }
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end("Bad Gateway");
+      try { client.close(); } catch {}
+      resolve();
+    });
+
+    const stream = client.request(h2Headers, { endStream: bodyBuffer.length === 0 });
+    if (bodyBuffer.length > 0) stream.end(bodyBuffer);
+
+    stream.once("response", (responseHeaders) => {
+      const status = responseHeaders[":status"];
+      // Filter pseudo-headers + connection-specific
+      const outHeaders = {};
+      for (const [k, v] of Object.entries(responseHeaders)) {
+        if (k.startsWith(":")) continue;
+        if (k === "connection" || k === "keep-alive" || k === "transfer-encoding") continue;
+        outHeaders[k] = v;
+      }
+      res.writeHead(status, outHeaders);
+      if (dumper) dumper.writeHeader(status, outHeaders);
+
+      const chunks = [];
+      stream.on("data", chunk => {
+        if (dumper) dumper.writeChunk(chunk);
+        if (onResponse) chunks.push(chunk);
+        res.write(chunk);
+      });
+      stream.on("end", () => {
+        if (dumper) dumper.end();
+        if (!res.writableEnded) res.end();
+        if (onResponse) try { onResponse(Buffer.concat(chunks), outHeaders); } catch {}
+        try { client.close(); } catch {}
+        resolve();
+      });
+    });
+    stream.once("error", (e) => {
+      err(`[mitm] http2 stream error: ${e.message}`);
+      if (dumper) { dumper.writeChunk(`\n[ERROR h2-stream] ${e.message}\n`); dumper.end(); }
+      if (!res.headersSent) res.writeHead(502);
+      if (!res.writableEnded) res.end();
+      try { client.close(); } catch {}
+      resolve();
+    });
+  });
+}
+
+// Fallback: raw https.request HTTP/1.1 with custom DNS (bypasses /etc/hosts MITM loop)
+async function passthroughHttps(req, res, bodyBuffer, headers, targetHost, onResponse, dumper) {
+  const targetIP = await resolveTargetIP(targetHost);
   const forwardReq = https.request({
     hostname: targetIP,
     port: 443,
     path: req.url,
     method: req.method,
-    headers: headersForForwarding,
+    headers,
     servername: targetHost,
     rejectUnauthorized: false
   }, (forwardRes) => {

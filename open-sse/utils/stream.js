@@ -65,10 +65,7 @@ export function createSSEStream(options = {}) {
 
   return new TransformStream({
     transform(chunk, controller) {
-      if (!ttftAt) {
-        ttftAt = Date.now();
-        dbg("SSE", `${provider}/${model} | first chunk received | size=${chunk?.byteLength || 0}B`);
-      }
+      if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -83,7 +80,6 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("event:")) {
             const evt = trimmed.slice(6).trim();
             eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
-            if (eventTypeCounts[evt] <= 2) dbg("SSE", `recv event: ${evt} (#${eventTypeCounts[evt]})`);
           }
         }
 

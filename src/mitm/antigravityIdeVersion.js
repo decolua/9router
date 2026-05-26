@@ -34,6 +34,7 @@ function applyAntigravityIdeVersionOverride(bodyBuffer, headers) {
     if (!shouldRewriteMetadata(parsed?.metadata)) {
       return { bodyBuffer, headers: nextHeaders, applied: userAgentChanged, version: ANTIGRAVITY_IDE_VERSION };
     }
+
     parsed.metadata.ideVersion = ANTIGRAVITY_IDE_VERSION;
     const nextBodyBuffer = Buffer.from(JSON.stringify(parsed));
     return { bodyBuffer: nextBodyBuffer, headers: nextHeaders, applied: true, version: ANTIGRAVITY_IDE_VERSION };
