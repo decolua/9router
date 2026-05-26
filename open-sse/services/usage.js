@@ -4,6 +4,8 @@
 
 import { CLIENT_METADATA, getPlatformUserAgent } from "../config/appConstants.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { getKimiCliAccessToken } from "../../src/lib/kimi/kimiCliCredentials.js";
+import { kimiOutboundHeaders } from "../../src/mitm/kimiHeaders.js";
 
 // GitHub API config
 const GITHUB_CONFIG = {
@@ -89,6 +91,8 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     case "minimax":
     case "minimax-cn":
       return await getMiniMaxUsage(apiKey, provider, proxyOptions);
+    case "kimi-coding":
+      return await getKimiCodingUsage(proxyOptions);
     default:
       return { message: `Usage API not implemented for ${provider}` };
   }
@@ -1148,4 +1152,105 @@ async function getMiniMaxUsage(apiKey, provider, proxyOptions = null) {
   }
 
   return { message: lastErrorMessage ? `MiniMax connected. Unable to fetch usage: ${lastErrorMessage}` : "MiniMax connected. Unable to fetch usage." };
+}
+
+// ---- kimi-coding ------------------------------------------------------------
+//
+// Calls https://api.kimi.com/coding/v1/usages using the user's existing KimiCLI
+// session and reshapes the response into the standard {plan, extraUsage, quotas}
+// contract used by other providers in this file.
+//
+// Kimi sends limit windows as {duration, timeUnit} where timeUnit is one of
+// SECOND, MINUTE, HOUR, DAY, WEEK. A naive integer-only mapper labels a 5-hour
+// window as "5 minutes" because `duration: 300, timeUnit: TIME_UNIT_MINUTE`
+// means 5 HOURS, not 5 minutes. The mapper below resolves duration*unit to
+// seconds first, then labels.
+
+async function getKimiCodingUsage(proxyOptions = null) {
+  try {
+    const accessToken = await getKimiCliAccessToken();
+    const r = await proxyAwareFetch("https://api.kimi.com/coding/v1/usages", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        ...kimiOutboundHeaders(),
+      },
+    }, proxyOptions);
+    if (!r.ok) {
+      return { message: `KimiCLI connected. Usage API returned ${r.status}` };
+    }
+    const j = await r.json();
+
+    const parseIntSafe = (x) => typeof x === "string" ? parseInt(x, 10) || 0 : (typeof x === "number" ? x : 0);
+    const row = (used, total, resetAt) => {
+      const u = parseIntSafe(used);
+      const t = parseIntSafe(total);
+      const rem = Math.max(0, t - u);
+      return {
+        used: u, total: t, remaining: rem,
+        remainingPercentage: t > 0 ? Math.round((rem / t) * 100) : 0,
+        resetAt: resetAt || null, unlimited: false,
+      };
+    };
+
+    const toSec = (dur, unit) => {
+      const d = parseIntSafe(dur);
+      const u = String(unit || "TIME_UNIT_SECOND").toUpperCase();
+      if (u.includes("MINUTE")) return d * 60;
+      if (u.includes("HOUR"))   return d * 3600;
+      if (u.includes("DAY"))    return d * 86400;
+      if (u.includes("WEEK"))   return d * 604800;
+      return d;
+    };
+
+    const labelFor = (sec) => {
+      if (sec === 18000)  return "session (5h)";
+      if (sec === 604800) return "weekly (7d)";
+      if (sec === 86400)  return "daily (24h)";
+      if (sec === 3600)   return "hourly (1h)";
+      if (sec === 300)    return "5m window";
+      if (sec >= 86400 && sec % 86400 === 0) return `window (${sec / 86400}d)`;
+      if (sec >= 3600  && sec % 3600  === 0) return `window (${sec / 3600}h)`;
+      if (sec >= 60)                          return `window (${Math.round(sec / 60)}m)`;
+      if (sec > 0)                            return `window (${sec}s)`;
+      return "window";
+    };
+
+    const quotas = {};
+    const usedKeys = new Set();
+
+    if (Array.isArray(j.limits)) {
+      for (const lim of j.limits) {
+        if (!lim || !lim.detail) continue;
+        const sec = lim.window ? toSec(lim.window.duration, lim.window.timeUnit) : 0;
+        const lbl = labelFor(sec);
+        let key = lbl;
+        let i = 2;
+        while (usedKeys.has(key)) key = `${lbl} #${i++}`;
+        usedKeys.add(key);
+        const usedN = parseIntSafe(lim.detail.limit) - parseIntSafe(lim.detail.remaining);
+        quotas[key] = row(usedN, lim.detail.limit, lim.detail.resetTime);
+      }
+    }
+
+    if (j.usage && j.usage.limit) {
+      let key = "weekly (7d)";
+      let i = 2;
+      while (usedKeys.has(key)) key = `weekly (7d) #${i++}`;
+      usedKeys.add(key);
+      quotas[key] = row(j.usage.used, j.usage.limit, j.usage.resetTime);
+    }
+
+    let plan = "Kimi Code";
+    if (j.user && j.user.membership && j.user.membership.level) {
+      plan = "Kimi " + String(j.user.membership.level)
+        .replace("LEVEL_", "")
+        .toLowerCase()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
+    return { plan, extraUsage: null, quotas };
+  } catch (e) {
+    return { message: `KimiCLI unavailable. ${e.message}` };
+  }
 }
