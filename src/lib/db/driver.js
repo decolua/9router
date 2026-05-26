@@ -1,14 +1,16 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
+if (!global._dbAdapter)
+  global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
   if (!process.versions.bun) return null;
   try {
-    const { createBunSqliteAdapter } = await import("./adapters/bunSqliteAdapter.js");
+    const { createBunSqliteAdapter } =
+      await import("./adapters/bunSqliteAdapter.js");
     return await createBunSqliteAdapter(DATA_FILE);
   } catch (e) {
     console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
@@ -20,7 +22,8 @@ async function tryBetterSqlite() {
   // Skip on Bun — better-sqlite3 native bindings unsupported
   if (process.versions.bun) return null;
   try {
-    const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
+    const { createBetterSqliteAdapter } =
+      await import("./adapters/betterSqliteAdapter.js");
     return createBetterSqliteAdapter(DATA_FILE);
   } catch (e) {
     console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
@@ -34,7 +37,8 @@ async function tryNodeSqlite() {
   const [maj, min] = process.versions.node.split(".").map(Number);
   if (maj < 22 || (maj === 22 && min < 5)) return null;
   try {
-    const { createNodeSqliteAdapter } = await import("./adapters/nodeSqliteAdapter.js");
+    const { createNodeSqliteAdapter } =
+      await import("./adapters/nodeSqliteAdapter.js");
     return await createNodeSqliteAdapter(DATA_FILE);
   } catch (e) {
     console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
@@ -61,7 +65,10 @@ async function initAdapter() {
   if (!adapter) adapter = await tryBetterSqlite();
   if (!adapter) adapter = await tryNodeSqlite();
   if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+  if (!adapter)
+    throw new Error(
+      "[DB] No SQLite driver available (bun/better/node/sql.js all failed)",
+    );
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);
@@ -75,11 +82,46 @@ async function initAdapter() {
 
 export async function getAdapter() {
   if (state.instance) return state.instance;
-  if (!state.initPromise) state.initPromise = initAdapter().then((a) => { state.instance = a; return a; });
+  if (!state.initPromise)
+    state.initPromise = initAdapter().then((a) => {
+      state.instance = a;
+      return a;
+    });
   return state.initPromise;
 }
 
 export function getAdapterSync() {
-  if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
+  if (!state.instance)
+    throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;
+}
+
+let workerInstance = null;
+
+export async function getObservabilityWorker() {
+  if (workerInstance) return workerInstance;
+
+  try {
+    const { Worker } = await import("worker_threads");
+    const { fileURLToPath } = await import("url");
+    const path = await import("path");
+    
+    // Resolve absolute path string directly from the ESM raw string metadata to bypass Webpack's URL polyfill
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const workerPath = path.join(__dirname, "observabilityWorker.js");
+
+    workerInstance = new Worker(workerPath);
+
+    workerInstance.on("error", (err) => {
+      console.error("[ObservabilityWorker] Worker thread error:", err);
+    });
+  } catch (err) {
+    console.error(
+      "[ObservabilityWorker] Failed to initialize worker thread:",
+      err.message,
+    );
+  }
+
+  return workerInstance;
 }

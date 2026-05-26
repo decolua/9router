@@ -63,7 +63,7 @@ export function autoDetectFilter(text) {
   if (nonEmpty.length >= 5) return dedupLog;
 
   // Last resort: big blob with no structure — smart truncate
-  if (text.split("\n").length >= SMART_TRUNCATE_MIN_LINES) return smartTruncate;
+  if (hasMinLines(text, SMART_TRUNCATE_MIN_LINES)) return smartTruncate;
 
   return null;
 }
@@ -108,4 +108,15 @@ function isLineNumbered(lines) {
 function countMatches(text, re) {
   const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
   return (text.match(g) || []).length;
+}
+
+function hasMinLines(str, minLines) {
+  let count = 0;
+  let pos = -1;
+  while (count < minLines) {
+    pos = str.indexOf("\n", pos + 1);
+    if (pos === -1) break;
+    count++;
+  }
+  return count >= minLines;
 }

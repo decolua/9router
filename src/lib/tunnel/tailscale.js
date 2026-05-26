@@ -31,6 +31,19 @@ const UNIX_TAILSCALE_CANDIDATES = [
   "/usr/bin/tailscale",
 ];
 
+const UNIX_TAILSCALED_CANDIDATES = [
+  "/usr/local/bin/tailscaled",
+  "/opt/homebrew/bin/tailscaled",
+  "/usr/sbin/tailscaled",
+  "/usr/bin/tailscaled",
+];
+
+function getTailscaledBin() {
+  if (IS_WINDOWS) return "tailscaled";
+  return UNIX_TAILSCALED_CANDIDATES.find((p) => fs.existsSync(p)) || null;
+}
+
+
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
 const PROBE_TTL_MS = 10000;
 const PROBE_TIMEOUT_MS = 1500;
@@ -78,7 +91,12 @@ function getTailscaleBin() {
 }
 
 export function isTailscaleInstalled() {
-  return getTailscaleBin() !== null;
+  const bin = getTailscaleBin();
+  if (!bin) return false;
+  if (!IS_WINDOWS) {
+    return getTailscaledBin() !== null;
+  }
+  return true;
 }
 
 /** Build tailscale CLI args with custom socket (no root needed) */
@@ -515,7 +533,9 @@ export async function startDaemonWithPassword(sudoPassword) {
   // Reclaim folder ownership (previous root daemon may have locked it)
   await ensureUserOwnedDir(TAILSCALE_DIR);
 
-  const tailscaledBin = IS_MAC ? "/usr/local/bin/tailscaled" : "tailscaled";
+  const tailscaledBin = IS_MAC
+    ? (getTailscaledBin() || "/usr/local/bin/tailscaled")
+    : "tailscaled";
   const daemonArgs = [
     `--socket=${TAILSCALE_SOCKET}`,
     `--statedir=${TAILSCALE_DIR}`,

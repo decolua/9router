@@ -83,7 +83,9 @@ export default function NewProviderPage() {
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Add New Provider
+        </h1>
         <p className="text-text-muted mt-2">
           Configure a new AI provider to use with your applications.
         </p>
@@ -106,9 +108,7 @@ export default function NewProviderPage() {
           {/* Provider Info */}
           {selectedProvider && (
             <Card.Section className="flex items-center gap-3">
-              <div
-                className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border"
-              >
+              <div className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border">
                 <span
                   className="material-symbols-outlined text-xl"
                   style={{ color: selectedProvider.color }}
@@ -118,9 +118,7 @@ export default function NewProviderPage() {
               </div>
               <div>
                 <p className="font-medium">{selectedProvider.name}</p>
-                <p className="text-sm text-text-muted">
-                  Selected provider
-                </p>
+                <p className="text-sm text-text-muted">Selected provider</p>
               </div>
             </Card.Section>
           )}
@@ -208,7 +206,12 @@ export default function NewProviderPage() {
                 Cancel
               </Button>
             </Link>
-            <Button type="submit" loading={loading} fullWidth className="flex-1">
+            <Button
+              type="submit"
+              loading={loading}
+              fullWidth
+              className="flex-1"
+            >
               Create Provider
             </Button>
           </div>
@@ -217,4 +220,3 @@ export default function NewProviderPage() {
     </div>
   );
 }
-

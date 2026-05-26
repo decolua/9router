@@ -26,6 +26,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isLocalhost, setIsLocalhost] = useState(false);
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
@@ -288,6 +289,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
     if (isOpen && provider) {
+      wasOpenRef.current = true;
       setAuthData(null);
       setCallbackUrl("");
       setError(null);
@@ -297,12 +299,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       pollingAbortRef.current = false;
       startOAuthFlow();
     } else if (!isOpen) {
-      // Abort polling and cleanup proxy when modal closes
-      pollingAbortRef.current = true;
-      if (provider === "codex") {
-        fetch("/api/oauth/codex/stop-proxy").catch(() => {});
-      } else if (provider === "xai") {
-        fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+      // Abort polling and cleanup proxy only when modal was actually open and is now closed
+      if (wasOpenRef.current) {
+        wasOpenRef.current = false;
+        pollingAbortRef.current = true;
+        if (provider === "codex") {
+          fetch("/api/oauth/codex/stop-proxy").catch(() => {});
+        } else if (provider === "xai") {
+          fetch("/api/oauth/xai/stop-proxy").catch(() => {});
+        }
       }
     }
   }, [isOpen, provider, startOAuthFlow]);

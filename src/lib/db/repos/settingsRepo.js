@@ -3,6 +3,11 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
+// In-memory cache to avoid repeated SQLite reads per request
+let _settingsCache = null;
+let _settingsCacheTs = 0;
+const SETTINGS_CACHE_TTL_MS = 1000;
+
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   tunnelEnabled: false,
@@ -64,8 +69,14 @@ function mergeWithDefaults(raw) {
 }
 
 export async function getSettings() {
+  const now = Date.now();
+  if (_settingsCache && now - _settingsCacheTs < SETTINGS_CACHE_TTL_MS) {
+    return _settingsCache;
+  }
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  _settingsCache = mergeWithDefaults(raw);
+  _settingsCacheTs = now;
+  return _settingsCache;
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)
@@ -78,9 +89,12 @@ export async function updateSettings(updates) {
     next = { ...current, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)]
+      [stringifyJson(next)],
     );
   });
+  // Invalidate cache so next getSettings() reads fresh data
+  _settingsCache = null;
+  _settingsCacheTs = 0;
   return mergeWithDefaults(next);
 }
 

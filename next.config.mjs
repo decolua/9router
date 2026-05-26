@@ -18,7 +18,13 @@ const nextConfig = {
   },
   outputFileTracingRoot: tracingRoot,
   outputFileTracingExcludes: {
-    "*": ["./gitbook/**/*"]
+    "*": [
+      "./gitbook/**/*",
+      "**/*.sqlite",
+      "**/*.sqlite-shm",
+      "**/*.sqlite-wal",
+      "**/.9router/**/*"
+    ]
   },
   images: {
     unoptimized: true

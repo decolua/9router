@@ -1,8 +1,21 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import {
+  extractUsage,
+  hasValidUsage,
+  estimateUsage,
+  logUsage,
+  addBufferToUsage,
+  filterUsageForFormat,
+  COLORS,
+} from "./usageTracking.js";
+import {
+  parseSSELine,
+  hasValuableContent,
+  fixInvalidId,
+  formatSSE,
+} from "./streamHelpers.js";
 
 export { COLORS, formatSSE };
 
@@ -13,8 +26,8 @@ const sharedEncoder = new TextEncoder();
  * Stream modes
  */
 const STREAM_MODE = {
-  TRANSLATE: "translate",    // Full translation between formats
-  PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
+  TRANSLATE: "translate", // Full translation between formats
+  PASSTHROUGH: "passthrough", // No translation, normalize output, extract usage
 };
 
 /**
@@ -43,7 +56,7 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
   } = options;
 
   let buffer = "";
@@ -52,7 +65,10 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const state =
+    mode === STREAM_MODE.TRANSLATE
+      ? { ...initState(sourceFormat), provider, toolNameMap, model }
+      : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -79,7 +95,10 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
 
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+          if (
+            trimmed.startsWith("data:") &&
+            trimmed.slice(5).trim() !== "[DONE]"
+          ) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
@@ -88,8 +107,14 @@ export function createSSEStream(options = {}) {
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
               if (parsed.choices !== undefined) {
-                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+                if (!parsed.object) {
+                  parsed.object = "chat.completion.chunk";
+                  fieldsInjected = true;
+                }
+                if (!parsed.created) {
+                  parsed.created = Math.floor(Date.now() / 1000);
+                  fieldsInjected = true;
+                }
               }
 
               // Strip Azure-specific non-standard fields from streaming chunks
@@ -129,7 +154,11 @@ export function createSSEStream(options = {}) {
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+                const estimated = estimateUsage(
+                  body,
+                  totalContentLength,
+                  FORMATS.OPENAI,
+                );
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
@@ -143,7 +172,7 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
-            } catch { }
+            } catch {}
           }
 
           if (!injectedUsage) {
@@ -184,7 +213,7 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
         }
-        
+
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
@@ -192,10 +221,11 @@ export function createSSEStream(options = {}) {
         }
         // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
+          totalContentLength +=
+            parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
-        
+
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
@@ -216,7 +246,12 @@ export function createSSEStream(options = {}) {
         if (extracted) state.usage = extracted; // Keep original usage for logging
 
         // Translate: targetFormat -> openai -> sourceFormat
-        const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        const translated = translateResponse(
+          targetFormat,
+          sourceFormat,
+          parsed,
+          state,
+        );
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -234,9 +269,19 @@ export function createSSEStream(options = {}) {
             }
 
             // Inject estimated usage if finish chunk has no valid usage
-            const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+            const isFinishChunk =
+              item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+            if (
+              state.finishReason &&
+              isFinishChunk &&
+              !hasValidUsage(item.usage) &&
+              totalContentLength > 0
+            ) {
+              const estimated = estimateUsage(
+                body,
+                totalContentLength,
+                sourceFormat,
+              );
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
@@ -269,37 +314,63 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
           }
 
-          if (!hasValidUsage(usage) && totalContentLength > 0) {
-            usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-          }
-
-          if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId, apiKey);
-          } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
-          }
-          
-          // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
-          // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
-          //   data: [DONE]\n\n
-          // Without it they can hang until timeout and trigger failover.
+          // IMPORTANT: Enqueue [DONE] sentinel FIRST — before any heavy logging.
+          // Clients (e.g. OpenClaw) can hang without it.
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
 
-          if (onStreamComplete) {
-            onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
-            }, usage, ttftAt);
-          }
+          // Defer heavy operations (usage estimation, DB writes) to next tick
+          // so the stream closes immediately for the client.
+          const _usage = usage;
+          const _body = body;
+          const _totalContentLength = totalContentLength;
+          const _accumulatedContent = accumulatedContent;
+          const _accumulatedThinking = accumulatedThinking;
+          const _ttftAt = ttftAt;
+          setImmediate(() => {
+            let finalUsage = _usage;
+            if (!hasValidUsage(finalUsage) && _totalContentLength > 0) {
+              finalUsage = estimateUsage(
+                _body,
+                _totalContentLength,
+                FORMATS.OPENAI,
+              );
+            }
+            if (hasValidUsage(finalUsage)) {
+              logUsage(provider, finalUsage, model, connectionId, apiKey);
+            } else {
+              appendRequestLog({
+                model,
+                provider,
+                connectionId,
+                tokens: null,
+                status: "200 OK",
+              }).catch(() => {});
+            }
+            if (onStreamComplete) {
+              onStreamComplete(
+                {
+                  content: _accumulatedContent,
+                  thinking: _accumulatedThinking,
+                },
+                finalUsage,
+                _ttftAt,
+              );
+            }
+          });
           return;
         }
 
         if (buffer.trim()) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const translated = translateResponse(
+              targetFormat,
+              sourceFormat,
+              parsed,
+              state,
+            );
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -318,7 +389,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+        const flushed = translateResponse(
+          targetFormat,
+          sourceFormat,
+          null,
+          state,
+        );
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
@@ -335,34 +411,70 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // Enqueue [DONE] sentinel before deferring heavy work
         const doneOutput = "data: [DONE]\n\n";
         reqLogger?.appendConvertedChunk?.(doneOutput);
         controller.enqueue(sharedEncoder.encode(doneOutput));
 
-        if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
-          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
-        }
-
-        if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
-        } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
-        }
-        
-        if (onStreamComplete) {
-          onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
-        }
+        // Defer heavy operations (usage estimation, DB writes) to next tick
+        const _state = state;
+        const _body = body;
+        const _totalContentLength = totalContentLength;
+        const _accumulatedContent = accumulatedContent;
+        const _accumulatedThinking = accumulatedThinking;
+        const _ttftAt = ttftAt;
+        setImmediate(() => {
+          if (!hasValidUsage(_state?.usage) && _totalContentLength > 0) {
+            _state.usage = estimateUsage(
+              _body,
+              _totalContentLength,
+              sourceFormat,
+            );
+          }
+          if (hasValidUsage(_state?.usage)) {
+            logUsage(
+              _state.provider || targetFormat,
+              _state.usage,
+              model,
+              connectionId,
+              apiKey,
+            );
+          } else {
+            appendRequestLog({
+              model,
+              provider,
+              connectionId,
+              tokens: null,
+              status: "200 OK",
+            }).catch(() => {});
+          }
+          if (onStreamComplete) {
+            onStreamComplete(
+              { content: _accumulatedContent, thinking: _accumulatedThinking },
+              _state?.usage,
+              _ttftAt,
+            );
+          }
+        });
       } catch (error) {
         console.log("Error in flush:", error);
       }
-    }
+    },
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(
+  targetFormat,
+  sourceFormat,
+  provider = null,
+  reqLogger = null,
+  toolNameMap = null,
+  model = null,
+  connectionId = null,
+  body = null,
+  onStreamComplete = null,
+  apiKey = null,
+) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -374,11 +486,19 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(
+  provider = null,
+  reqLogger = null,
+  model = null,
+  connectionId = null,
+  body = null,
+  onStreamComplete = null,
+  apiKey = null,
+) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -387,6 +507,6 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
   });
 }
