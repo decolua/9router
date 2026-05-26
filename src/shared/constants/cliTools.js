@@ -29,11 +29,12 @@ export const MITM_TOOLS = {
     description: "GitHub Copilot IDE with MITM",
     configType: "mitm",
     mitmDomain: "api.individual.githubcopilot.com",
-    modelAliases: ["gpt-4o-mini", "claude-haiku-4.5", "gpt-4o", "gpt-5-mini"],
+    modelAliases: ["gpt-4o-mini", "claude-haiku-4.5", "gpt-4o", "gpt-5-mini", "claude-sonnet-4-6"],
     defaultModels: [
       { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
       { id: "gpt-4.1", name: "GPT-4.1", alias: "gpt-4.1" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
     ],
   },
   kiro: {
