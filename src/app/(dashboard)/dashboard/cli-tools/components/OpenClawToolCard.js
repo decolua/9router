@@ -37,7 +37,8 @@ export default function OpenClawToolCard({
   );
   const [selectedModel, setSelectedModel] = useState(() => {
     const provider = initialStatus?.settings?.models?.providers?.["9router"];
-    const primaryModel = initialStatus?.settings?.agents?.defaults?.model?.primary;
+    const primaryModel =
+      initialStatus?.settings?.agents?.defaults?.model?.primary;
     return provider && primaryModel ? primaryModel.replace("9router/", "") : "";
   });
   const [agentModels, setAgentModels] = useState(() => {
@@ -79,7 +80,6 @@ export default function OpenClawToolCard({
       console.log("Error fetching model aliases:", error);
     }
   };
-
 
   const checkOpenclawStatus = async () => {
     setCheckingOpenclaw(true);

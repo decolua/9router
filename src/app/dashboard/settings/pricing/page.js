@@ -24,7 +24,7 @@ export default function PricingSettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handlePricingUpdated = () => {
     loadPricing();

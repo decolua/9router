@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { formatResetTime, getRemainingPercentage } from "./utils";
 
 const PAGE_SIZE = 10;
@@ -56,7 +56,9 @@ function QuotaTableContent({
                 >
                   <td className={`${cellPad} w-[30%]`}>
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[10px] shrink-0">{colors.emoji}</span>
+                      <span className="text-[10px] shrink-0">
+                        {colors.emoji}
+                      </span>
                       <span
                         className={`${nameText} font-medium text-text-primary truncate`}
                       >
@@ -86,7 +88,7 @@ function QuotaTableContent({
                         className={`flex items-center justify-between ${compact ? "text-[10px]" : "text-xs"}`}
                       >
                         <span className="text-text-muted">
-                          {quota.used.toLocaleString()} / {" "}
+                          {quota.used.toLocaleString()} /{" "}
                           {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
                         </span>
                         <span className={`font-medium ${colors.text}`}>
@@ -296,10 +298,12 @@ export default function QuotaTable({
   const totalPages = Math.max(1, Math.ceil(sortedQuotas.length / PAGE_SIZE));
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage(1);
   }, [sortMode, quotas]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPage((currentPage) => Math.min(currentPage, totalPages));
   }, [totalPages]);
 

@@ -1,5 +1,5 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
-export default {
+const provider = {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey)
       throw new Error("No OpenRouter API key configured");
@@ -72,3 +72,5 @@ export default {
     return { base64: chunks.join(""), format: "wav" };
   },
 };
+
+export default provider;

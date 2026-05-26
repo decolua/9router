@@ -3,7 +3,7 @@ import { sleep, nowSec, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
 
 const BASE_URL = "https://api.bfl.ai/v1";
 
-export default {
+const provider = {
   async: true,
   buildUrl: (model) => `${BASE_URL}/${model}`,
   buildHeaders: (creds) => {
@@ -44,3 +44,5 @@ export default {
     return { created: nowSec(), data: [] };
   },
 };
+
+export default provider;

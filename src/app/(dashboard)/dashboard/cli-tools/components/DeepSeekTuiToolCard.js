@@ -73,7 +73,6 @@ export default function DeepSeekTuiToolCard({
     }
   };
 
-
   const checkStatus = async () => {
     setChecking(true);
     try {

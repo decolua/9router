@@ -2,7 +2,13 @@
 
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
-import { ReactFlow, Handle, Position, Controls } from "@xyflow/react";
+import {
+  ReactFlow,
+  Handle,
+  Position,
+  Controls,
+  Background,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -63,6 +69,7 @@ function ProviderNode({ data }) {
         style={{ backgroundColor: `${color}15` }}
       >
         {!imgError ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={imageUrl}
             alt={label}
@@ -134,6 +141,7 @@ function RouterNode({ data }) {
         className="!bg-transparent !border-0 !w-0 !h-0"
       />
 
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/favicon.svg" alt="9Router" className="w-6 h-6 mr-2" />
       <span className="text-sm font-bold text-primary">9Router</span>
       {data.activeCount > 0 && (
@@ -262,7 +270,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
   return { nodes, edges };
 }
 
-function ProviderTopology({
+export default function ProviderTopology({
   providers = [],
   activeRequests = [],
   lastProvider = "",
@@ -333,6 +341,7 @@ function ProviderTopology({
 
   const { nodes, edges } = useMemo(
     () => buildLayout(providers, activeSet, lastSet, errorSet),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [providers, activeSetKey, lastSet, errorSet],
   );
 
@@ -418,8 +427,6 @@ function ProviderTopology({
     </div>
   );
 }
-
-export default ProviderTopology;
 
 ProviderTopology.propTypes = {
   providers: PropTypes.arrayOf(

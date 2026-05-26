@@ -128,6 +128,7 @@ function ConnectionRow({
     return () => {
       if (t) clearInterval(t);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelLockUntil]);
 
   useEffect(() => {

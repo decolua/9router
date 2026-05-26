@@ -38,7 +38,8 @@ export default function CopilotToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [selectedModels, setSelectedModels] = useState(() => {
-    if (!initialStatus?.config || !Array.isArray(initialStatus.config)) return [];
+    if (!initialStatus?.config || !Array.isArray(initialStatus.config))
+      return [];
     const entry = initialStatus.config.find((e) => e.name === "9Router");
     return entry?.models?.length > 0 ? entry.models.map((m) => m.id) : [];
   });

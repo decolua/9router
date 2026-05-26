@@ -131,46 +131,38 @@ export async function exportDb() {
         createdAt: r.createdAt,
         updatedAt: r.updatedAt,
       })),
-    providerNodes: db
-      .all(`SELECT * FROM providerNodes`)
-      .map((r) => ({
-        ...parseJson(r.data, {}),
-        id: r.id,
-        type: r.type,
-        name: r.name,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
-    proxyPools: db
-      .all(`SELECT * FROM proxyPools`)
-      .map((r) => ({
-        ...parseJson(r.data, {}),
-        id: r.id,
-        isActive: r.isActive === 1,
-        testStatus: r.testStatus,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
-    apiKeys: db
-      .all(`SELECT * FROM apiKeys`)
-      .map((r) => ({
-        id: r.id,
-        key: r.key,
-        name: r.name,
-        machineId: r.machineId,
-        isActive: r.isActive === 1,
-        createdAt: r.createdAt,
-      })),
-    combos: db
-      .all(`SELECT * FROM combos`)
-      .map((r) => ({
-        id: r.id,
-        name: r.name,
-        kind: r.kind,
-        models: parseJson(r.models, []),
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+    providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      type: r.type,
+      name: r.name,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({
+      ...parseJson(r.data, {}),
+      id: r.id,
+      isActive: r.isActive === 1,
+      testStatus: r.testStatus,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({
+      id: r.id,
+      key: r.key,
+      name: r.name,
+      machineId: r.machineId,
+      isActive: r.isActive === 1,
+      createdAt: r.createdAt,
+    })),
+    combos: db.all(`SELECT * FROM combos`).map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      models: parseJson(r.models, []),
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    })),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},

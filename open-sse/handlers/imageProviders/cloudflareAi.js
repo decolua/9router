@@ -143,7 +143,7 @@ function normalizeCloudflareResponse(responseBody) {
   };
 }
 
-export default {
+const provider = {
   buildUrl: (model, creds) => {
     const accountId = creds?.providerSpecificData?.accountId;
     if (!accountId)
@@ -188,3 +188,5 @@ export default {
 
   normalize: normalizeCloudflareResponse,
 };
+
+export default provider;

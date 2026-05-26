@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
@@ -73,9 +73,14 @@ const buildOptions = ({
 
 const getInitialMode = ({ options, value }) => {
   const normalizedValue = (value || "").trim();
-  const matchedOption = options.find((option) => option.url === normalizedValue);
+  const matchedOption = options.find(
+    (option) => option.url === normalizedValue,
+  );
   if (matchedOption) return matchedOption.value;
-  return options.find((option) => option.value !== CUSTOM_VALUE)?.value || CUSTOM_VALUE;
+  return (
+    options.find((option) => option.value !== CUSTOM_VALUE)?.value ||
+    CUSTOM_VALUE
+  );
 };
 
 export default function BaseUrlSelect({
@@ -125,25 +130,32 @@ export default function BaseUrlSelect({
 
   const selectedOption = options.find((option) => option.value === mode);
   const fallbackOption =
-    options.find((option) => option.value !== CUSTOM_VALUE) || options[0] || null;
-  const effectiveMode = selectedOption ? mode : fallbackOption?.value || CUSTOM_VALUE;
+    options.find((option) => option.value !== CUSTOM_VALUE) ||
+    options[0] ||
+    null;
+  const effectiveMode = selectedOption
+    ? mode
+    : fallbackOption?.value || CUSTOM_VALUE;
   const isSaved = effectiveMode.startsWith("saved:");
   const isCustom = effectiveMode === CUSTOM_VALUE;
   const canSave = isCustom && (customInput || "").trim().length > 0;
 
-  if (!initializedRef.current && fallbackOption) {
-    initializedRef.current = true;
-    const normalizedValue = (value || "").trim();
-    if (!normalizedValue) {
-      if (fallbackOption.value !== CUSTOM_VALUE) {
-        setMode(fallbackOption.value);
-        queueMicrotask(() => onChange(fallbackOption.url));
+  useEffect(() => {
+    if (!initializedRef.current && fallbackOption) {
+      initializedRef.current = true;
+      const normalizedValue = (value || "").trim();
+      if (!normalizedValue) {
+        if (fallbackOption.value !== CUSTOM_VALUE) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setMode(fallbackOption.value);
+          onChange(fallbackOption.url);
+        }
+      } else if (!selectedOption && effectiveMode === CUSTOM_VALUE) {
+        setMode(CUSTOM_VALUE);
+        setCustomInput(normalizedValue);
       }
-    } else if (!selectedOption && effectiveMode === CUSTOM_VALUE) {
-      setMode(CUSTOM_VALUE);
-      setCustomInput(normalizedValue);
     }
-  }
+  }, [value, fallbackOption, selectedOption, effectiveMode, onChange]);
 
   const handleSelect = (e) => {
     const next = e.target.value;

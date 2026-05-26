@@ -84,7 +84,6 @@ export default function DroidToolCard({
     }
   };
 
-
   const checkDroidStatus = async () => {
     setCheckingDroid(true);
     try {

@@ -70,7 +70,6 @@ export default function JcodeToolCard({
     }
   };
 
-
   const checkJcodeStatus = async () => {
     setCheckingJcode(true);
     try {

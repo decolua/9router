@@ -5,7 +5,7 @@ function modelPath(model) {
   return model.startsWith("models/") ? model : `models/${model}`;
 }
 
-export default {
+const geminiEmbeddingProvider = {
   buildUrl: (model, creds, { input } = {}) => {
     const apiKey = creds.apiKey || creds.accessToken;
     const path = modelPath(model);
@@ -60,3 +60,5 @@ export default {
     };
   },
 };
+
+export default geminiEmbeddingProvider;

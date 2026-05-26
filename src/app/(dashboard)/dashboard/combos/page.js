@@ -52,9 +52,9 @@ export default function CombosPage() {
 
   useEffect(() => {
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const [combosRes, providersRes, settingsRes] = await Promise.all([
         fetch("/api/combos"),
@@ -77,7 +77,7 @@ export default function CombosPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleCreate = async (data) => {
     try {

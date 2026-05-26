@@ -9,7 +9,7 @@ import {
 
 const BASE_URL = "https://queue.fal.run";
 
-export default {
+const provider = {
   async: true,
   buildUrl: (model) => `${BASE_URL}/${model}`,
   buildHeaders: (creds) => {
@@ -51,3 +51,5 @@ export default {
     };
   },
 };
+
+export default provider;

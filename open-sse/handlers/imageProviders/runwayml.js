@@ -9,7 +9,7 @@ import {
 
 const BASE_URL = "https://api.dev.runwayml.com/v1";
 
-export default {
+const provider = {
   async: true,
   buildUrl: (model) => {
     // Image models (gen4_image*) → text_to_image; video models → image_to_video
@@ -65,3 +65,5 @@ export default {
     return { created: nowSec(), data: outputs.map((url) => ({ url })) };
   },
 };
+
+export default provider;

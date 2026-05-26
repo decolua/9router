@@ -211,7 +211,7 @@ export default function ConnectionRow({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [modelLockUntil]);
+  }, [modelLockUntil]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Determine effective status (override unavailable if cooldown expired)
   const effectiveStatus =

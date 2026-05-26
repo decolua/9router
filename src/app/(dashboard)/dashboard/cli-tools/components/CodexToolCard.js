@@ -63,7 +63,6 @@ export default function CodexToolCard({
     }
   };
 
-
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
     if (!codexStatus.config) return "not_configured";

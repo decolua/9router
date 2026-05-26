@@ -515,6 +515,7 @@ export default function ComboDetailPage() {
                       Download
                     </a>
                   </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={testResult.imageUrl}
                     alt="Generated"

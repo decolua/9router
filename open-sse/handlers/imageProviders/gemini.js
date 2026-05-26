@@ -3,7 +3,7 @@ import { nowSec } from "./_base.js";
 
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-export default {
+const provider = {
   buildUrl: (model, creds) => {
     const apiKey = creds?.apiKey || creds?.accessToken;
     const modelId = model.replace(/^models\//, "");
@@ -26,3 +26,5 @@ export default {
     };
   },
 };
+
+export default provider;

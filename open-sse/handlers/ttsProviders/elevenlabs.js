@@ -24,7 +24,7 @@ export async function fetchElevenLabsVoices(apiKey) {
   return voices;
 }
 
-export default {
+const provider = {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("ElevenLabs API key required");
     let modelId = "eleven_flash_v2_5";
@@ -58,3 +58,5 @@ export default {
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
   },
 };
+
+export default provider;

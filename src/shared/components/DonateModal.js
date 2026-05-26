@@ -140,6 +140,7 @@ function DonateChannelCard({ channel }) {
         </div>
       )}
       {qr && (
+        /* eslint-disable-next-line @next/next/no-img-element */
         <img
           src={qr}
           alt={`${label} QR`}

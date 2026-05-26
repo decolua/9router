@@ -68,7 +68,6 @@ export default function HermesToolCard({
     }
   };
 
-
   const checkStatus = async () => {
     setChecking(true);
     try {

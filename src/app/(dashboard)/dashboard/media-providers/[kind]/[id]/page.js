@@ -630,7 +630,7 @@ function TtsExampleCard({ providerId }) {
     // config (nvidia, hyperbolic, deepgram, huggingface, cartesia, playht, coqui, tortoise, inworld, qwen):
     // use ttsConfig.models for model selector; voice is empty by default (backend uses provider default)
     return () => clearTimeout(timer);
-  }, [providerId]);
+  }, [providerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update voices when model changes (voicesPerModel providers)
   useEffect(() => {
@@ -1598,6 +1598,7 @@ function GenericExampleCard({ providerId, kind }) {
                 )}
               </div>
               {refImagePreviewSrc && (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={refImagePreviewSrc}
                   alt="Reference"
@@ -1640,6 +1641,7 @@ function GenericExampleCard({ providerId, kind }) {
                 )}
               </div>
               {maskImagePreviewSrc && (
+                /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   src={maskImagePreviewSrc}
                   alt="Mask"
@@ -1789,6 +1791,7 @@ function GenericExampleCard({ providerId, kind }) {
             <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               Partial preview
             </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={`data:image/png;base64,${partialImage.b64_json}`}
               alt="Partial"
@@ -1845,6 +1848,7 @@ function GenericExampleCard({ providerId, kind }) {
                   Download
                 </a>
               </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={
                   binaryImageUrl ||

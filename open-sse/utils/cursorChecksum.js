@@ -151,9 +151,11 @@ export function buildCursorHeaders(
   };
 }
 
-export default {
+const utility = {
   generateCursorChecksum,
   buildCursorHeaders,
   generateHashed64Hex,
   generateSessionId,
 };
+
+export default utility;

@@ -244,6 +244,7 @@ export default function BasicChatPageClient() {
   const historyMenuRef = useRef(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsHydrated(true);
   }, []);
 
@@ -483,6 +484,7 @@ export default function BasicChatPageClient() {
           ? modelIndex.get(session.modelId)
           : savedModel;
       initializedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveSessionId(session.id);
       setActiveProviderId(sessionModel?.providerId || savedProvider.providerId);
       setActiveModelId(sessionModel?.id || savedModel.id);
@@ -1143,6 +1145,7 @@ export default function BasicChatPageClient() {
                               rel="noreferrer"
                               className="overflow-hidden rounded-[18px] border border-white/10 bg-black/20"
                             >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img
                                 src={attachment.dataUrl}
                                 alt={attachment.name}

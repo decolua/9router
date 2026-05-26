@@ -1,7 +1,7 @@
 // OpenAI TTS — model format: "tts-model/voice"
 import { Buffer } from "node:buffer";
 
-export default {
+const provider = {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("No OpenAI API key configured");
 
@@ -36,3 +36,5 @@ export default {
     return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
   },
 };
+
+export default provider;

@@ -47,11 +47,7 @@ export default function MitmToolCard({
   const canRunWithoutPassword =
     isWin || hasCachedPassword || needsSudoPassword === false;
 
-  useEffect(() => {
-    if (isExpanded) loadSavedMappings();
-  }, [isExpanded]);
-
-  const loadSavedMappings = async () => {
+  const loadSavedMappings = useCallback(async () => {
     try {
       const res = await fetch(
         `/api/cli-tools/antigravity-mitm/alias?tool=${tool.id}`,
@@ -64,7 +60,12 @@ export default function MitmToolCard({
     } catch {
       /* ignore */
     }
-  };
+  }, [tool.id]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isExpanded) loadSavedMappings();
+  }, [isExpanded, loadSavedMappings]);
 
   const saveMappings = useCallback(
     async (mappings) => {

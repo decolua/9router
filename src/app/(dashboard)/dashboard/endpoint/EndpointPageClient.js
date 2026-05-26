@@ -162,6 +162,7 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     fetchData();
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
@@ -185,6 +186,7 @@ export default function APIPageClient({ machineId }) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tunnelEnabled, tsEnabled, tunnelReachable, tsReachable]);
 
   // Browser-side periodic ping: probes tunnel/tailscale URLs directly so UI stays
@@ -270,7 +272,7 @@ export default function APIPageClient({ machineId }) {
   );
 
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
-  const syncTunnelStatus = async () => {
+  async function syncTunnelStatus() {
     try {
       const statusRes = await fetch("/api/tunnel/status", {
         cache: "no-store",
@@ -308,9 +310,9 @@ export default function APIPageClient({ machineId }) {
     } catch {
       /* ignore poll errors */
     }
-  };
+  }
 
-  const loadSettings = async () => {
+  async function loadSettings() {
     setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
@@ -367,7 +369,7 @@ export default function APIPageClient({ machineId }) {
     } finally {
       setTunnelChecking(false);
     }
-  };
+  }
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
@@ -484,7 +486,7 @@ export default function APIPageClient({ machineId }) {
     patchSetting({ cavemanLevel: level });
   };
 
-  const fetchData = async () => {
+  async function fetchData() {
     try {
       const keysRes = await fetch("/api/keys");
       const keysData = await keysRes.json();
@@ -496,7 +498,7 @@ export default function APIPageClient({ machineId }) {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
@@ -998,6 +1000,7 @@ export default function APIPageClient({ machineId }) {
   // Hydration fix: Only access window on client side
   useEffect(() => {
     if (typeof window !== "undefined") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBaseUrl(`${window.location.origin}/v1`);
     }
   }, []);
@@ -1445,7 +1448,7 @@ export default function APIPageClient({ machineId }) {
             <p className="font-medium">Auto-Retry Overloaded Errors</p>
             <p className="text-sm text-text-muted">
               Automatically retry initial requests when providers return
-              "overloaded" (503/529) or busy 429 status codes.
+              &quot;overloaded&quot; (503/529) or busy 429 status codes.
             </p>
           </div>
           <Toggle
