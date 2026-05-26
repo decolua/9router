@@ -3,8 +3,10 @@ import {
   RETRY_CONFIG,
   DEFAULT_RETRY_CONFIG,
   resolveRetryEntry,
+  FETCH_CONNECT_TIMEOUT_MS,
 } from "../config/runtimeConfig.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { dbg } from "../utils/debugLog.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -164,9 +166,18 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Create a dedicated AbortController for this fetch request
+      // Abort if upstream doesn't return response headers within FETCH_CONNECT_TIMEOUT_MS,
+      // while still preserving the branch-specific per-provider connection timeout.
       const fetchController = new AbortController();
-      const { signal: fetchSignal } = fetchController;
+      const connectCtrl = new AbortController();
+      const connectTimer = setTimeout(
+        () => connectCtrl.abort(new Error("fetch connect timeout")),
+        FETCH_CONNECT_TIMEOUT_MS,
+      );
+      const mergedSignal = AbortSignal.any([
+        fetchController.signal,
+        connectCtrl.signal,
+      ]);
 
       // Forward client abort to fetch signal
       let clientSignalListener = null;
@@ -181,7 +192,7 @@ export class BaseExecutor {
         }
       }
 
-      // Start connection timeout timer (only covers the initial connection phase)
+      // Start branch-specific connection timeout timer.
       let timedOut = false;
       const timeoutTimer = setTimeout(() => {
         timedOut = true;
@@ -190,34 +201,49 @@ export class BaseExecutor {
       }, timeoutMs);
 
       try {
+        const bodyStr = JSON.stringify(transformedBody);
+        const fetchT0 = Date.now();
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${FETCH_CONNECT_TIMEOUT_MS}ms | providerTimeout=${timeoutMs}ms`,
+        );
         const response = await proxyAwareFetch(
           url,
           {
             method: "POST",
             headers,
-            body: JSON.stringify(transformedBody),
-            signal: fetchSignal,
+            body: bodyStr,
+            signal: mergedSignal,
           },
           proxyOptions,
         );
 
-        // Connection successful! Clear the timeout timer immediately to let the stream run indefinitely
+        clearTimeout(connectTimer);
         clearTimeout(timeoutTimer);
+
+        const ct = response.headers?.get?.("content-type") || "";
+        const cl = response.headers?.get?.("content-length") || "?";
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`,
+        );
+
+        // Connection successful! Let the stream run indefinitely after headers arrive.
+
+        if (clientSignalListener && signal) {
+          signal.removeEventListener("abort", clientSignalListener);
+        }
+
+        retryAttemptsByUrl[urlIndex] = 0;
 
         if (
           await tryRetry(urlIndex, response.status, `status ${response.status}`)
         ) {
-          if (clientSignalListener && signal) {
-            signal.removeEventListener("abort", clientSignalListener);
-          }
           urlIndex--;
           continue;
         }
 
         if (this.shouldRetry(response.status, urlIndex)) {
-          if (clientSignalListener && signal) {
-            signal.removeEventListener("abort", clientSignalListener);
-          }
           log?.debug?.(
             "RETRY",
             `${response.status} on ${url}, trying fallback ${urlIndex + 1}`,
@@ -228,21 +254,29 @@ export class BaseExecutor {
 
         return { response, url, headers, transformedBody };
       } catch (error) {
+        clearTimeout(connectTimer);
         clearTimeout(timeoutTimer);
         if (clientSignalListener && signal) {
           signal.removeEventListener("abort", clientSignalListener);
         }
 
         lastError = error;
+        const isConnectTimeout =
+          connectCtrl.signal.aborted && error.name === "AbortError";
+        dbg(
+          "FETCH",
+          `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`,
+        );
 
-        // Detect if this is a connection timeout error
+        // Preserve branch-specific provider timeout behavior.
         const isTimeout =
           timedOut ||
           error.name === "TimeoutError" ||
-          error.status === 504;
+          error.status === 504 ||
+          isConnectTimeout;
         if (isTimeout) {
           const timeoutError = new Error(
-            `Connection to provider ${this.provider} timed out after ${timeoutMs}ms`,
+            `Connection to provider ${this.provider} timed out after ${timedOut ? timeoutMs : FETCH_CONNECT_TIMEOUT_MS}ms`,
           );
           timeoutError.name = "TimeoutError";
           timeoutError.status = 504;
